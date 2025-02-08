@@ -2,11 +2,11 @@ use areamy;
 
 use std::collections::VecDeque;
 
-pub struct Adder {
+pub struct AddOne {
     output: VecDeque<usize>,
 }
 
-impl Adder {
+impl AddOne {
     pub fn new() -> Result<Self, areamy::error::Error> {
         Ok(Self {
             output: VecDeque::new(),
@@ -14,7 +14,7 @@ impl Adder {
     }
 }
 
-impl areamy::LineRoutine<usize, usize> for Adder {
+impl areamy::LineRoutine<usize, usize> for AddOne {
     fn output(&mut self) -> &mut VecDeque<usize> {
         &mut self.output
     }
@@ -30,9 +30,9 @@ impl areamy::LineRoutine<usize, usize> for Adder {
 
 #[test]
 fn simple_sync() -> Result<(), areamy::error::Error> {
-    let mut in_node = areamy::sync::make_line(Adder::new())?;
-    let mut middle_node = areamy::sync::make_line(Adder::new())?;
-    let mut out_node = areamy::sync::make_line(Adder::new())?;
+    let mut in_node = areamy::sync::make_line(AddOne::new())?;
+    let mut middle_node = areamy::sync::make_line(AddOne::new())?;
+    let mut out_node = areamy::sync::make_line(AddOne::new())?;
 
     let source = areamy::sync::Source::<usize>::of(in_node.clone())?;
 
@@ -61,9 +61,9 @@ impl areamy::ThreadId for HelperThread {}
 fn sync_multithread() -> Result<(), areamy::error::Error> {
     // Example of multithreaded graph.
 
-    let mut in_node = areamy::sync::make_line(Adder::new())?;
-    let mut middle_node = areamy::sync::make_line(Adder::new())?;
-    let mut out_node = areamy::sync::make_line(Adder::new())?;
+    let mut in_node = areamy::sync::make_line(AddOne::new())?;
+    let mut middle_node = areamy::sync::make_line(AddOne::new())?;
+    let mut out_node = areamy::sync::make_line(AddOne::new())?;
 
     let source = areamy::sync::Source::<usize>::of(in_node.clone())?;
     areamy::sync::Connect::<usize>::bidi(&mut in_node, &mut middle_node)?;
@@ -98,12 +98,12 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
     // Nosync is useful to avoid unnecessary mutexes.
     // each connection is lockfree, at the cost of not being `Sync`.
 
-    let in_node = areamy::nosync::root(Adder::new())?;
+    let in_node = areamy::nosync::root(AddOne::new())?;
 
     let source = areamy::sync::Source::<usize>::of(in_node.input.clone())?;
 
-    let middle_node = areamy::nosync::Connect::<usize>::pull(in_node, Adder::new())?;
-    let out_node = areamy::nosync::Connect::<usize>::pull(middle_node, Adder::new())?;
+    let middle_node = areamy::nosync::Connect::<usize>::pull(in_node, AddOne::new())?;
+    let out_node = areamy::nosync::Connect::<usize>::pull(middle_node, AddOne::new())?;
 
     let sink = areamy::nosync::Sink::new(out_node);
 

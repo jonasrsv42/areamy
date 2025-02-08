@@ -17,9 +17,9 @@ See [tests/example.rs](tests/example.rs)
 
 ```rust
 
-let mut in_node = areamy::sync::make_line(Adder::new())?;
-let mut middle_node = areamy::sync::make_line(Adder::new())?;
-let mut out_node = areamy::sync::make_line(Adder::new())?;
+let mut in_node = areamy::sync::make_line(AddOne::new())?;
+let mut middle_node = areamy::sync::make_line(AddOne::new())?;
+let mut out_node = areamy::sync::make_line(AddOne::new())?;
 
 let source = areamy::sync::Source::<usize>::of(in_node.clone())?;
 
@@ -60,9 +60,9 @@ the graph computation is split across two threads.
 
 ```rust
 
-let mut in_node = areamy::sync::make_line(Adder::new())?;
-let mut middle_node = areamy::sync::make_line(Adder::new())?;
-let mut out_node = areamy::sync::make_line(Adder::new())?;
+let mut in_node = areamy::sync::make_line(AddOne::new())?;
+let mut middle_node = areamy::sync::make_line(AddOne::new())?;
+let mut out_node = areamy::sync::make_line(AddOne::new())?;
 
 let source = areamy::sync::Source::<usize>::of(in_node.clone())?;
 areamy::sync::Connect::<usize>::bidi(&mut in_node, &mut middle_node)?;

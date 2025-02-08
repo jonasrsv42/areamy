@@ -8,7 +8,7 @@ It serves a purpose similar to https://github.com/google-ai-edge/mediapipe
 
 The areamy repository itself only has the basic building blocks of the runtime.  
 
-> **Warning**  
+> [!NOTE]  
 > Areamy is a very early experiment whos primary purpose is to serve as a runtime for other project. Hence it may change at anytime to serve those projects.
 
 

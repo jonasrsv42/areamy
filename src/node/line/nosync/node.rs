@@ -46,8 +46,10 @@ where
             None => (),
         }
 
-        // TODO implement resume
-        let resume = 1;
+        // TODO implement resume, we will need this for generative models. 
+        // to allow a routine to emit partial results and then resume computation 
+        // on the same input.
+        let _resume = 1;
 
         loop {
             let input_is_empty = self.input.is_empty()?;

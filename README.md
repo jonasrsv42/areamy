@@ -39,6 +39,9 @@ assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
 
 ```
 
+
+### Multithreading
+
 The purpose of areamy is to support multithreaded graphs such as the example below. Where 
 there are two threads working on the graph. The main thread and a `HelperThread`. In the example below
 

@@ -1,0 +1,432 @@
+use crate::error::Error;
+use crate::node::bifurcation::routine::BifurcationRoutine;
+use crate::signal::Visitors;
+use crate::SyncQueue;
+use crate::{fatal, DefaultThread, ThreadId};
+use crate::{
+    AddPushable, AddWorkable, Connection, GetPushable, Message, Origin, Pushable, Workable,
+};
+use std::sync::{Arc, Mutex};
+
+pub struct LeftSink {}
+pub struct RightSink {}
+impl Connection for LeftSink {}
+impl Connection for RightSink {}
+
+// The contract of a `Sync` node forming a bifurcation.
+// it has two outputs.
+pub trait BifurcationTrait:
+    // We can work on the line to produce output.
+    Workable
+    // We can add edges it should push into.
+    + AddPushable<LeftSink, Message = Message<Self::Left, Self::Signal>>
+    + AddPushable<RightSink, Message = Message<Self::Right, Self::Signal>>
+
+    // We can add things for it to work on, parents nodes.
+    + AddWorkable<ThreadId = <Self as Workable>::ThreadId>
+
+    // We can retrieve pushable edges
+    + GetPushable<Pushable = Arc<SyncQueue<Message<Self::In, Self::Signal>>>>
+{
+    // The input data entering it. 
+    type In: Clone + Send + Sync + 'static;
+    // The output data going out of the bifurcation.
+    type Left: Clone + Send + Sync;
+    type Right: Clone + Send + Sync;
+    // The signal type used in the graph.
+    type Signal: Origin + Clone + 'static;
+    // The coroutine associated with this node.
+    type BifurcationRoutine: BifurcationRoutine<Self::In, Self::Left, Self::Right>;
+
+}
+
+impl<BifurcationType: BifurcationTrait> BifurcationTrait for Arc<Mutex<BifurcationType>> {
+    type In = BifurcationType::In;
+    type Left = BifurcationType::Left;
+    type Right = BifurcationType::Right;
+    type Signal = BifurcationType::Signal;
+    type BifurcationRoutine = BifurcationType::BifurcationRoutine;
+}
+
+pub struct Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    pub left_visitors: Visitors,
+    pub right_visitors: Visitors,
+    pub worker: RoutineType,
+
+    pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
+
+    pub left_pushes: Vec<Box<dyn Pushable<Message = Message<Left, SignalType>>>>,
+    pub right_pushes: Vec<Box<dyn Pushable<Message = Message<Right, SignalType>>>>,
+    pub input: Arc<SyncQueue<Message<In, SignalType>>>,
+}
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> Workable
+    for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    fn work(&mut self) -> Result<(), Error> {
+        let mut push_ok;
+        {
+            let left_ok = self.try_left_output()?;
+            let right_ok = self.try_right_output()?;
+
+            push_ok = left_ok | right_ok;
+        }
+        // Otherwise we loop until we have some output.
+        // To produce output we work on all the input
+        // or request more input by working.
+        while !push_ok {
+            let input_is_empty = self.input.is_empty()?;
+            // If we have some input we work on it.
+            if !input_is_empty {
+                let input_object = self.input.read_front()?;
+
+                // Do work on our input or forward signals from input to output.
+                match input_object {
+                    Message::Data(data) => {
+                        self.worker.work(data)?;
+
+                        // Try to push after performing the work, to see if we got something.
+                        let left_ok = self.try_left_output()?;
+                        let right_ok = self.try_right_output()?;
+
+                        // If left or right is OK push is OK.
+                        push_ok = left_ok | right_ok;
+                    }
+                    Message::Flush(origin) => {
+                        self.worker.flush()?;
+
+                        // Try to push after flush to see if we got something
+                        self.try_left_output()?;
+                        self.try_right_output()?;
+
+                        // Forward the flush
+                        push_ok = self.maybe_left_flush(&origin)?;
+                        push_ok = push_ok | self.maybe_right_flush(&origin)?;
+                    }
+                    Message::Marker(origin) => {
+                        push_ok = self.maybe_left_mark(&origin)?;
+                        push_ok = push_ok | self.maybe_right_mark(&origin)?;
+                    }
+                }
+
+                // Continue to avoid unecessary work.
+                continue;
+            }
+
+            // If there were no available input we grab ownership of our
+            // sources and work them.
+
+            if self.workers.is_empty() {
+                self.input.wait_front()?;
+            }
+
+            // Then we work input from each source once.
+            for workable in self.workers.iter_mut() {
+                workable.work()?;
+            }
+        }
+
+        Ok(())
+    }
+
+    type ThreadId = ThreadIdType;
+}
+
+impl<In, Left, Right, SignalType, RoutineType>
+    Bifurcation<In, Left, Right, SignalType, DefaultThread, RoutineType>
+where
+    In: Clone + Send + Sync,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    pub fn new(worker: RoutineType) -> Self {
+        Bifurcation {
+            left_visitors: Visitors::new(),
+            right_visitors: Visitors::new(),
+            worker,
+            workers: Vec::new(),
+            left_pushes: Vec::new(),
+            right_pushes: Vec::new(),
+            input: Arc::new(SyncQueue::new()),
+        }
+    }
+}
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+    Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    pub fn of(worker: RoutineType) -> Self {
+        Bifurcation {
+            left_visitors: Visitors::new(),
+            right_visitors: Visitors::new(),
+            worker,
+            workers: Vec::new(),
+            left_pushes: Vec::new(),
+            right_pushes: Vec::new(),
+            input: Arc::new(SyncQueue::new()),
+        }
+    }
+
+    fn maybe_left_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
+        if self.left_visitors.contains(flush) {
+            return Ok(false);
+        }
+
+        self.left_visitors.insert(flush);
+        self.push_left(Message::Flush(flush.clone()))?;
+
+        Ok(true)
+    }
+
+    fn maybe_left_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
+        if self.left_visitors.contains(mark) {
+            return Ok(false);
+        }
+
+        self.left_visitors.insert(mark);
+        self.push_left(Message::Marker(mark.clone()))?;
+
+        Ok(true)
+    }
+
+    fn maybe_right_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
+        // If we already visited. We do not propagate.
+        if self.right_visitors.contains(flush) {
+            return Ok(false);
+        }
+
+        self.right_visitors.insert(flush);
+        self.push_right(Message::Flush(flush.clone()))?;
+
+        Ok(true)
+    }
+
+    fn maybe_right_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
+        // If we already visited. We do not propagate.
+        if self.right_visitors.contains(mark) {
+            return Ok(false);
+        }
+
+        self.right_visitors.insert(mark);
+        self.push_right(Message::Marker(mark.clone()))?;
+
+        Ok(true)
+    }
+
+    fn try_left_output(&mut self) -> Result<bool, Error> {
+        // If we have output in our worker queue just immediately return it.
+        let output_is_empty = self.worker.left_output().is_empty();
+        if !output_is_empty {
+            self.left_visitors.clear();
+            let output_object = self
+                .worker
+                .left_output()
+                .pop_front()
+                .ok_or(fatal!("Missing front element"))?;
+
+            self.push_left(Message::Data(output_object))?;
+
+            return Ok(true);
+        }
+
+        return Ok(false);
+    }
+
+    fn try_right_output(&mut self) -> Result<bool, Error> {
+        // If we have output in our worker queue just immediately return it.
+        let output_is_empty = self.worker.right_output().is_empty();
+        if !output_is_empty {
+            self.right_visitors.clear();
+            let output_object = self
+                .worker
+                .right_output()
+                .pop_front()
+                .ok_or(fatal!("Missing front element"))?;
+
+            self.push_right(Message::Data(output_object))?;
+
+            return Ok(true);
+        }
+
+        return Ok(false);
+    }
+
+    fn push_left(&mut self, obj: Message<Left, SignalType>) -> Result<(), Error> {
+        for pushable in self.left_pushes.iter_mut() {
+            pushable.push(obj.clone())?;
+        }
+
+        Ok(())
+    }
+
+    fn push_right(&mut self, obj: Message<Right, SignalType>) -> Result<(), Error> {
+        for pushable in self.right_pushes.iter_mut() {
+            pushable.push(obj.clone())?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> BifurcationTrait
+    for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    type In = In;
+    type Left = Left;
+    type Right = Right;
+    type Signal = SignalType;
+    type BifurcationRoutine = RoutineType;
+}
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> GetPushable
+    for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    type Pushable = Arc<SyncQueue<Message<In, SignalType>>>;
+
+    fn get(&self) -> Result<Self::Pushable, Error> {
+        Ok(self.input.clone())
+    }
+}
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> AddPushable<LeftSink>
+    for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    type Message = Message<Left, SignalType>;
+
+    fn add<PushableType: Pushable<Message = Self::Message> + 'static>(
+        &mut self,
+        pushable: PushableType,
+    ) -> Result<(), Error> {
+        Ok(self.left_pushes.push(Box::new(pushable)))
+    }
+}
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> AddPushable<RightSink>
+    for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    type Message = Message<Right, SignalType>;
+
+    fn add<PushableType: Pushable<Message = Self::Message> + 'static>(
+        &mut self,
+        pushable: PushableType,
+    ) -> Result<(), Error> {
+        Ok(self.right_pushes.push(Box::new(pushable)))
+    }
+}
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> AddWorkable
+    for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Clone + Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    type ThreadId = ThreadIdType;
+
+    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
+        &mut self,
+        workable: WorkableType,
+    ) -> Result<(), Error> {
+        Ok(self.workers.push(Box::new(workable)))
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::node::bifurcation::routine::tests::MockBifurcation;
+    use crate::{sync::make_bifurcation, sync::Sink, sync::Source, Pushable};
+
+    #[test]
+    fn run_bifurcation() {
+        let bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
+
+        let mut source = Source::new(bifur.input()).unwrap();
+
+        let mut left_sink = Sink::new(bifur.workable(), &mut bifur.output().left).unwrap();
+        let mut right_sink = Sink::new(bifur.workable(), &mut bifur.output().right).unwrap();
+
+        // Add one flush
+        source.push(Message::Data(1)).unwrap();
+        source.push(Message::Data(2)).unwrap();
+
+        assert_eq!(left_sink.read().unwrap(), Message::Data(2));
+        assert_eq!(left_sink.read().unwrap(), Message::Data(5));
+
+        source.push(Message::Flush("hi".into())).unwrap();
+
+        assert_eq!(right_sink.read().unwrap(), Message::Data(3));
+        assert_eq!(right_sink.read().unwrap(), Message::Data(7));
+
+        // Now comes the flush
+        match right_sink.read().unwrap() {
+            Message::Flush(_) => assert!(true),
+            _ => assert!(false),
+        }
+
+        match left_sink.read().unwrap() {
+            Message::Flush(_) => assert!(true),
+            _ => assert!(false),
+        }
+
+        source.push(Message::Data(2)).unwrap();
+
+        assert_eq!(left_sink.read().unwrap(), Message::Data(4));
+        assert_eq!(right_sink.read().unwrap(), Message::Data(6));
+    }
+}

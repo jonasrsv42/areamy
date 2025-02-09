@@ -14,3 +14,12 @@ where
     }
 }
 
+impl<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity, GetType>
+    Get<ConnectionType, MultiplicityType> for Box<GetType>
+where
+    GetType: Get<ConnectionType, MultiplicityType>,
+{
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
+        Get::get(self.as_ref())
+    }
+}

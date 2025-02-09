@@ -1,5 +1,5 @@
 mod reader;
-mod routine;
+pub mod routine;
 pub mod sync;
 
 pub use reader::BifurcationReader;

@@ -64,7 +64,7 @@ where
     pub input: Arc<SyncQueue<Message<In, SignalType>>>,
 }
 
-// Mark our Line as a possible connection in a graph. It's a connection 
+// Mark our Line as a possible connection in a graph. It's a connection
 // because it is `Workable`.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Connection
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
@@ -321,14 +321,14 @@ pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
     use crate::{make_bidi, sync::make_line};
-    use crate::{sync::Connect, sync::Sink, sync::Source};
+    use crate::{sink::sync::tee, sync::Connect, sync::Sink, sync::Source};
     use std::time::Instant;
 
     #[test]
     fn line_basic_run() {
-        let mut line = make_line(MockLine::new()).unwrap();
-        let mut source = Source::new(line.input()).unwrap();
-        let mut sink = Sink::new(line.workable(), line.output()).unwrap();
+        let line = make_line(MockLine::new()).unwrap();
+        let mut source = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
 
         // Add one flush
         source.push(Message::Data(1)).unwrap();
@@ -348,9 +348,9 @@ pub mod tests {
 
     #[test]
     fn line_can_mark() {
-        let mut line = make_line(MockLine::new()).unwrap();
-        let mut source = Source::new(line.input()).unwrap();
-        let mut sink = Sink::new(line.workable(), line.output()).unwrap();
+        let line = make_line(MockLine::new()).unwrap();
+        let mut source = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
 
         // One data
         source.push(Message::Data(1)).unwrap();
@@ -362,9 +362,9 @@ pub mod tests {
 
     #[test]
     fn line_can_flush() {
-        let mut line = make_line(MockLine::new()).unwrap();
-        let mut source = Source::new(line.input()).unwrap();
-        let mut sink = Sink::new(line.workable(), line.output()).unwrap();
+        let line = make_line(MockLine::new()).unwrap();
+        let mut source = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
 
         // One data
         source.push(Message::Data(1)).unwrap();
@@ -376,13 +376,13 @@ pub mod tests {
 
     #[test]
     fn line_can_be_stacked() {
-        let mut line_1 = make_line(MockLine::new()).unwrap();
+        let line_1 = make_line(MockLine::new()).unwrap();
         let mut line_2 = make_line(MockLine::new()).unwrap();
 
-        make_bidi(&mut line_1, &mut line_2).unwrap();
+        let mut source = Source::new(&line_1).unwrap();
+        make_bidi(line_1, &mut line_2).unwrap();
 
-        let mut source = Source::new(line_1.input()).unwrap();
-        let mut sink = Sink::new(line_2.workable(), line_2.output()).unwrap();
+        let mut sink = Sink::new(line_2).unwrap();
 
         // Add one flush
         source.push(Message::Data(1)).unwrap();
@@ -402,16 +402,17 @@ pub mod tests {
 
     #[test]
     fn line_can_be_stacked_with_type_hints() {
-        let mut line_1 = make_line(MockLine::new()).unwrap();
+        let line_1 = make_line(MockLine::new()).unwrap();
         let mut line_2 = make_line(MockLine::new()).unwrap();
+
+        let mut source = Source::new(&line_1).unwrap();
 
         // This typehint is not needed as exemplified by other tests
         // but it helps readability to be explicit when building
         // the graph.
-        Connect::<usize>::bidi(&mut line_1, &mut line_2).unwrap();
+        Connect::<usize>::bidi(line_1, &mut line_2).unwrap();
 
-        let mut source = Source::new(line_1.input()).unwrap();
-        let mut sink = Sink::new(line_2.workable(), line_2.output()).unwrap();
+        let mut sink = Sink::new(line_2).unwrap();
 
         // Add one flush
         source.push(Message::Data(1)).unwrap();
@@ -431,15 +432,22 @@ pub mod tests {
 
     #[test]
     fn line_can_tee() {
+        // TODO make a tee sink where the sink only gets pushable references
+        // but does not own the workable.
         let mut line = make_line(MockLine::new()).unwrap();
 
-        let mut source = Source::new(line.input()).unwrap();
-        let mut sink_1 = Sink::new(line.workable(), line.output()).unwrap();
-        let mut sink_2 = Sink::new(line.workable(), line.output()).unwrap();
+        let mut source = Source::new(&line).unwrap();
+        let mut sink_1 = tee::Sink::new(line.as_mut()).unwrap();
+        let mut sink_2 = tee::Sink::new(line.as_mut()).unwrap();
+
+        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = line;
 
         // Add one flush
         source.push(Message::Data(1)).unwrap();
         source.push(Message::Data(2)).unwrap();
+
+        workable.work().unwrap();
+        workable.work().unwrap();
 
         assert_eq!(sink_1.read().unwrap(), Message::Data(2));
         assert_eq!(sink_1.read().unwrap(), Message::Data(6));
@@ -450,21 +458,23 @@ pub mod tests {
         // Reset processing
         source.push(Message::Flush("hi".into())).unwrap();
         // Read the Flush
+        workable.work().unwrap();
         assert_eq!(sink_1.read().unwrap(), Message::Flush("hi".into()));
         assert_eq!(sink_2.read().unwrap(), Message::Flush("hi".into()));
 
         source.push(Message::Data(2)).unwrap();
+        workable.work().unwrap();
         assert_eq!(sink_1.read().unwrap(), Message::Data(4));
         assert_eq!(sink_2.read().unwrap(), Message::Data(4));
     }
 
     #[test]
     fn line_can_merge() {
-        let mut line = make_line(MockLine::new()).unwrap();
+        let line = make_line(MockLine::new()).unwrap();
 
-        let mut source_1 = Source::new(line.input()).unwrap();
-        let mut source_2 = Source::new(line.input()).unwrap();
-        let mut sink = Sink::new(line.workable(), line.output()).unwrap();
+        let mut source_1 = Source::new(&line).unwrap();
+        let mut source_2 = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
 
         // Add one flush
         source_1.push(Message::Data(1)).unwrap();
@@ -492,7 +502,10 @@ pub mod tests {
     #[ignore]
     #[test]
     fn line_basic_many_stack_benchmark() {
-        let mut line_0 = make_line(MockLine::new()).unwrap();
+        let line_0 = make_line(MockLine::new()).unwrap();
+
+        let mut source = Source::new(&line_0).unwrap();
+
         let mut line_1 = make_line(MockLine::new()).unwrap();
         let mut line_2 = make_line(MockLine::new()).unwrap();
         let mut line_3 = make_line(MockLine::new()).unwrap();
@@ -504,19 +517,18 @@ pub mod tests {
         let mut line_9 = make_line(MockLine::new()).unwrap();
         let mut line_10 = make_line(MockLine::new()).unwrap();
 
-        make_bidi(&mut line_0, &mut line_1).unwrap();
-        make_bidi(&mut line_1, &mut line_2).unwrap();
-        make_bidi(&mut line_2, &mut line_3).unwrap();
-        make_bidi(&mut line_3, &mut line_4).unwrap();
-        make_bidi(&mut line_4, &mut line_5).unwrap();
-        make_bidi(&mut line_5, &mut line_6).unwrap();
-        make_bidi(&mut line_6, &mut line_7).unwrap();
-        make_bidi(&mut line_7, &mut line_8).unwrap();
-        make_bidi(&mut line_8, &mut line_9).unwrap();
-        make_bidi(&mut line_9, &mut line_10).unwrap();
+        make_bidi(line_0, &mut line_1).unwrap();
+        make_bidi(line_1, &mut line_2).unwrap();
+        make_bidi(line_2, &mut line_3).unwrap();
+        make_bidi(line_3, &mut line_4).unwrap();
+        make_bidi(line_4, &mut line_5).unwrap();
+        make_bidi(line_5, &mut line_6).unwrap();
+        make_bidi(line_6, &mut line_7).unwrap();
+        make_bidi(line_7, &mut line_8).unwrap();
+        make_bidi(line_8, &mut line_9).unwrap();
+        make_bidi(line_9, &mut line_10).unwrap();
 
-        let mut source = Source::new(line_0.input()).unwrap();
-        let mut sink = Sink::new(line_10.workable(), line_10.output()).unwrap();
+        let mut sink = Sink::new(line_10).unwrap();
 
         let before = Instant::now();
         for _ in 0..10000 {

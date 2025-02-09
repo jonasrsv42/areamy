@@ -398,25 +398,31 @@ where
 pub mod tests {
     use super::*;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{sync::make_bifurcation, sync::Sink, sync::Source, Pushable};
+    use crate::{sink::sync::tee, sync::make_bifurcation, sync::Source, Pushable};
 
     #[test]
     fn run_bifurcation() {
-        let bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
+        let mut bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
 
-        let mut source = Source::new(bifur.input()).unwrap();
+        let mut source = Source::new(&bifur).unwrap();
 
-        let mut left_sink = Sink::new(bifur.workable(), &mut bifur.output().left).unwrap();
-        let mut right_sink = Sink::new(bifur.workable(), &mut bifur.output().right).unwrap();
+        let mut left_sink = tee::Sink::new::<LeftSink>(&mut bifur).unwrap();
+        let mut right_sink = tee::Sink::new::<RightSink>(&mut bifur).unwrap();
+
+        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
 
         // Add one flush
         source.push(Message::Data(1)).unwrap();
         source.push(Message::Data(2)).unwrap();
 
+        workable.work().unwrap();
+        workable.work().unwrap();
+
         assert_eq!(left_sink.read().unwrap(), Message::Data(2));
         assert_eq!(left_sink.read().unwrap(), Message::Data(5));
 
         source.push(Message::Flush("hi".into())).unwrap();
+        workable.work().unwrap();
 
         assert_eq!(right_sink.read().unwrap(), Message::Data(3));
         assert_eq!(right_sink.read().unwrap(), Message::Data(7));
@@ -433,6 +439,7 @@ pub mod tests {
         }
 
         source.push(Message::Data(2)).unwrap();
+        workable.work().unwrap();
 
         assert_eq!(left_sink.read().unwrap(), Message::Data(4));
         assert_eq!(right_sink.read().unwrap(), Message::Data(6));

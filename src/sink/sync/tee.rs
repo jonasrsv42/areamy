@@ -1,69 +1,33 @@
 use crate::error::Error;
 use crate::SyncQueue;
-use crate::{
-    graph::Add, marker::Multiplicity, DefaultThread, Pushable, ThreadId, Trackable, Workable,
-};
+use crate::{graph::Add, marker::Multiplicity, DefaultThread, Pushable, Trackable};
 use crate::{Message, Origin};
 use std::sync::Arc;
 
-pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
+pub struct Sink<DataType, SignalType = Trackable<&'static str>>
 where
     DataType: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
 {
-    workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
     buffer: Arc<SyncQueue<Message<DataType, SignalType>>>,
 }
 
-impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>
+impl<DataType, SignalType> Sink<DataType, SignalType>
 where
     DataType: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
 {
     pub fn new<MultiplicityType>(
-        mut workable: Box<
-            impl Workable<ThreadId = DefaultThread>
-                + Add<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>
-                + 'static,
-        >,
+        workable: &mut (impl Add<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>
+                  + 'static),
     ) -> Result<Self, Error>
     where
         MultiplicityType: Multiplicity,
     {
         let shared_buffer = Arc::new(SyncQueue::new());
 
-        Add::add(workable.as_mut(), Box::new(shared_buffer.clone()))?;
+        Add::add(workable, Box::new(shared_buffer.clone()))?;
         let sink = Self {
-            workable,
-            buffer: shared_buffer.clone(),
-        };
-
-        return Ok(sink);
-    }
-}
-
-impl<DataType, SignalType, ThreadIdType> Sink<DataType, SignalType, ThreadIdType>
-where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
-{
-    pub fn of<MultiplicityType>(
-        mut workable: Box<
-            impl Workable<ThreadId = ThreadIdType>
-                + Add<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>
-                + 'static,
-        >,
-    ) -> Result<Self, Error>
-    where
-        MultiplicityType: Multiplicity,
-    {
-        let shared_buffer = Arc::new(SyncQueue::new());
-
-        Add::add(workable.as_mut(), Box::new(shared_buffer.clone()))?;
-        let sink = Self {
-            workable,
             buffer: shared_buffer.clone(),
         };
 
@@ -71,27 +35,18 @@ where
     }
 
     pub fn read(&mut self) -> Result<Message<DataType, SignalType>, Error> {
-        let mut output_is_empty = self.buffer.is_empty()?;
-        while output_is_empty {
-            self.workable.work()?;
-
-            output_is_empty = self.buffer.is_empty()?;
-        }
-
         let output = self.buffer.read_front()?;
         return Ok(output);
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> crate::sink::Sink
-    for Sink<DataType, SignalType, ThreadIdType>
+impl<DataType, SignalType> crate::sink::Sink for Sink<DataType, SignalType>
 where
     DataType: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
 {
     type Message = Message<DataType, SignalType>;
-    type ThreadId = ThreadIdType;
+    type ThreadId = DefaultThread;
 
     fn read(&mut self) -> Result<Self::Message, Error> {
         Sink::read(self)
@@ -101,7 +56,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{graph::Get, marker::Connection, Pushable};
+    use crate::{graph::Get, marker::Connection, DefaultThread, Pushable, Workable};
     use std::sync::Mutex;
 
     struct MockNode {
@@ -138,57 +93,71 @@ mod tests {
 
     #[test]
     fn sink_basic() {
-        let mock_node = Arc::new(Mutex::new(MockNode {
+        let mut mock_node = Arc::new(Mutex::new(MockNode {
             output: Message::Data(5),
             pushable: Vec::new(),
         }));
-        let mut sink = Sink::new(Box::new(mock_node.clone())).unwrap();
+        let mut sink = Sink::new(&mut Box::new(mock_node.clone())).unwrap();
 
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Data(5));
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Data(5));
 
         mock_node.lock().unwrap().output = Message::Data(8);
 
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Data(8));
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Data(8));
 
         mock_node.lock().unwrap().output = Message::Data(10);
 
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Data(10));
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Data(10));
     }
 
     #[test]
     fn sink_flush() {
-        let mock_node = Arc::new(Mutex::new(MockNode {
+        let mut mock_node = Arc::new(Mutex::new(MockNode {
             output: Message::Flush("hi"),
             pushable: Vec::new(),
         }));
-        let mut sink = Sink::new(Box::new(mock_node.clone())).unwrap();
+        let mut sink = Sink::new(&mut Box::new(mock_node.clone())).unwrap();
 
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Flush("hi"));
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Flush("hi"));
 
         mock_node.lock().unwrap().output = Message::Flush("bye");
 
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Flush("bye"));
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Flush("bye"));
     }
 
     #[test]
     fn sink_mark() {
-        let mock_node = Arc::new(Mutex::new(MockNode {
+        let mut mock_node = Arc::new(Mutex::new(MockNode {
             output: Message::Marker("hi"),
             pushable: Vec::new(),
         }));
-        let mut sink = Sink::new(Box::new(mock_node.clone())).unwrap();
+        let mut sink = Sink::new(&mut Box::new(mock_node.clone())).unwrap();
 
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Marker("hi"));
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Marker("hi"));
 
         mock_node.lock().unwrap().output = Message::Marker("bye");
 
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Marker("bye"));
+        mock_node.work().unwrap();
         assert_eq!(sink.read().unwrap(), Message::Marker("bye"));
     }
 }

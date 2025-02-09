@@ -36,18 +36,18 @@ where
         ChildType,
         ParentMultiplicity: Multiplicity,
         ChildMultiplicity: Multiplicity,
-        ThreadIdType
+        ThreadIdType,
     >(
-        parent: &mut ParentType,
+        parent: Box<ParentType>,
         child: &mut ChildType,
     ) -> Result<(), Error>
     where
         ChildType: 'static
             + Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
             + Get<dyn Pushable<Message = Message<DataType, SignalType>>, ChildMultiplicity>,
-        ParentType: 'static
-            + Add<dyn Pushable<Message = Message<DataType, SignalType>>, ParentMultiplicity>
-            + Get<dyn Workable<ThreadId = ThreadIdType>, ParentMultiplicity>,
+        ParentType: Add<dyn Pushable<Message = Message<DataType, SignalType>>, ParentMultiplicity>
+            + Workable<ThreadId = ThreadIdType>
+            + 'static,
     {
         make_bidi(parent, child)?;
 

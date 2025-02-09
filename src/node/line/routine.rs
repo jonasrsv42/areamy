@@ -62,6 +62,7 @@ pub mod tests {
                 out: VecDeque::new(),
             })
         }
+
     }
 
     impl LineRoutine<usize, usize> for MockLine {

@@ -441,12 +441,12 @@ pub mod tests {
 
     #[test]
     fn run_biunion() {
-        let mut biun = make_biunion(Ok(MockBiunion::new())).unwrap();
+        let biun = make_biunion(Ok(MockBiunion::new())).unwrap();
 
-        let mut left_source = Source::new(&biun.input().left).unwrap();
-        let mut right_source = Source::new(&biun.input().right).unwrap();
+        let mut left_source = Source::new::<LeftSource>(&biun).unwrap();
+        let mut right_source = Source::new::<RightSource>(&biun).unwrap();
 
-        let mut sink = Sink::new(biun.workable(), biun.output()).unwrap();
+        let mut sink = Sink::new(biun).unwrap();
 
         left_source.push(Message::Data(1)).unwrap();
         right_source.push(Message::Data(2)).unwrap();

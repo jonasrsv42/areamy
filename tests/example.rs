@@ -30,16 +30,16 @@ impl areamy::LineRoutine<usize, usize> for AddOne {
 
 #[test]
 fn simple_sync() -> Result<(), areamy::error::Error> {
-    let mut in_node = areamy::sync::make_line(AddOne::new())?;
+    let in_node = areamy::sync::make_line(AddOne::new())?;
     let mut middle_node = areamy::sync::make_line(AddOne::new())?;
     let mut out_node = areamy::sync::make_line(AddOne::new())?;
 
     let source = areamy::sync::Source::<usize>::of(&in_node)?;
 
-    areamy::sync::Connect::<usize>::bidi(&mut in_node, &mut middle_node)?;
-    areamy::sync::Connect::<usize>::bidi(&mut middle_node, &mut out_node)?;
+    areamy::sync::Connect::<usize>::bidi(in_node, &mut middle_node)?;
+    areamy::sync::Connect::<usize>::bidi(middle_node, &mut out_node)?;
 
-    let sink = areamy::sync::Sink::new(out_node.workable(), out_node.output())?;
+    let sink = areamy::sync::Sink::new(out_node)?;
 
     let mut reader = areamy::LineReader::new(source, sink);
 
@@ -61,22 +61,22 @@ impl areamy::ThreadId for HelperThread {}
 fn sync_multithread() -> Result<(), areamy::error::Error> {
     // Example of multithreaded graph.
 
-    let mut in_node = areamy::sync::make_line(AddOne::new())?;
+    let in_node = areamy::sync::make_line(AddOne::new())?;
     let mut middle_node = areamy::sync::make_line(AddOne::new())?;
-    let mut out_node = areamy::sync::make_line(AddOne::new())?;
+    let out_node = areamy::sync::make_line(AddOne::new())?;
 
     let source = areamy::sync::Source::<usize>::of(&in_node)?;
-    areamy::sync::Connect::<usize>::bidi(&mut in_node, &mut middle_node)?;
+    areamy::sync::Connect::<usize>::bidi(in_node, &mut middle_node)?;
 
     let mut helper_thread = areamy::ThreadStream::<HelperThread>::new();
-
-    // Now helper thread will work on the middle_node subgraph.
-    areamy::make_work(&middle_node, helper_thread.as_mut())?;
 
     // Ensure that middle node, using the `HelperThread` pushes data into out node.
     areamy::sync::Connect::<usize>::push(&mut middle_node, &out_node)?;
 
-    let sink = areamy::sync::Sink::new(out_node.workable(), out_node.output())?;
+    // Now helper thread will work on the middle_node subgraph.
+    areamy::make_work(middle_node, helper_thread.as_mut())?;
+
+    let sink = areamy::sync::Sink::new(out_node)?;
     let mut reader = areamy::LineReader::new(source, sink);
 
     // Start the helper thread.

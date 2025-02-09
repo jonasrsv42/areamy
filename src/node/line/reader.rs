@@ -95,9 +95,9 @@ mod tests {
 
     #[test]
     fn readers_line_objects() {
-        let mut line = make_line(MockLine::new()).unwrap();
-        let source = Source::new(line.input()).unwrap();
-        let sink = Sink::new(line.workable(), line.output()).unwrap();
+        let line = make_line(MockLine::new()).unwrap();
+        let source = Source::new(&line).unwrap();
+        let sink = Sink::new(line).unwrap();
 
         let mut reader = LineReader::new(source, sink);
 
@@ -118,9 +118,9 @@ mod tests {
 
     #[test]
     fn readers_line_mread() {
-        let mut line = make_line(MockLine::new()).unwrap();
-        let source = Source::new(line.input()).unwrap();
-        let sink = Sink::new(line.workable(), line.output()).unwrap();
+        let line = make_line(MockLine::new()).unwrap();
+        let source = Source::new(&line).unwrap();
+        let sink = Sink::new(line).unwrap();
 
         let mut reader = LineReader::new(source, sink);
 

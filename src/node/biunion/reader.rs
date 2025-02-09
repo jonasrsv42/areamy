@@ -93,16 +93,17 @@ where
 mod tests {
     use super::*;
     use crate::node::biunion::routine::tests::MockBiunion;
+    use crate::node::biunion::sync::node::{LeftSource, RightSource};
     use crate::{sync::make_biunion, sync::Sink, sync::Source};
 
     #[test]
     fn readers_biunion_read() {
-        let mut biun = make_biunion(Ok(MockBiunion::new())).unwrap();
+        let biun = make_biunion(Ok(MockBiunion::new())).unwrap();
 
-        let left_source = Source::new(&biun.input().left).unwrap();
-        let right_source = Source::new(&biun.input().right).unwrap();
+        let left_source = Source::new::<LeftSource>(&biun).unwrap();
+        let right_source = Source::new::<RightSource>(&biun).unwrap();
 
-        let sink = Sink::new(biun.workable(), biun.output()).unwrap();
+        let sink = Sink::new(biun).unwrap();
 
         let mut reader = BiunionReader::new(left_source, right_source, sink);
 

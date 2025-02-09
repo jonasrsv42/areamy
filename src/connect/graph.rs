@@ -158,8 +158,8 @@ pub trait Pullable: Send + Connection {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{fatal, make_bidi, make_push, DefaultThread, Message, NoPull, SyncQueue};
-    use std::sync::{Arc, Mutex};
+    use crate::{make_bidi, make_push, DefaultThread, Message, NoPull, SyncQueue};
+    use std::sync::Arc;
 
     // This is a `Stupid` coroutine. Coroutines are still experimental
     // at the time of writing 2024/12/11.
@@ -233,38 +233,26 @@ pub mod tests {
 
     impl Connection for SyncNode {}
 
-    // Builder struct for constructing `Sync` graph(s).
-    pub struct SyncBuilder(pub Arc<Mutex<SyncNode>>);
-
-    impl Get<dyn Pushable<Message = Message<usize, usize>>> for SyncBuilder {
+    impl Get<dyn Pushable<Message = Message<usize, usize>>> for SyncNode {
         fn get(&self) -> Result<Box<dyn Pushable<Message = Message<usize, usize>>>, Error> {
-            let owned = self.0.lock().map_err(|e| fatal!(e))?;
-            Ok(Box::new(owned.input.clone()))
+            Ok(Box::new(self.input.clone()))
         }
     }
 
-    impl Get<dyn Workable<ThreadId = DefaultThread>> for SyncBuilder {
-        fn get(&self) -> Result<Box<dyn Workable<ThreadId = DefaultThread>>, Error> {
-            Ok(Box::new(self.0.clone()))
-        }
-    }
-
-    impl Add<dyn Pushable<Message = Message<usize, usize>>> for SyncBuilder {
+    impl Add<dyn Pushable<Message = Message<usize, usize>>> for SyncNode {
         fn add(
             &mut self,
             connection: Box<dyn Pushable<Message = Message<usize, usize>>>,
         ) -> Result<(), Error> {
-            let mut owned = self.0.lock().map_err(|e| fatal!(e))?;
-            Ok(owned.outputs.push(Box::new(connection)))
+            Ok(self.outputs.push(connection))
         }
     }
-    impl Add<dyn Workable<ThreadId = DefaultThread>> for SyncBuilder {
+    impl Add<dyn Workable<ThreadId = DefaultThread>> for SyncNode {
         fn add(
             &mut self,
             connection: Box<dyn Workable<ThreadId = DefaultThread>>,
         ) -> Result<(), Error> {
-            let mut owned = self.0.lock().map_err(|e| fatal!(e))?;
-            Ok(owned.workables.push(connection))
+            Ok(self.workables.push(connection))
         }
     }
 
@@ -338,23 +326,21 @@ pub mod tests {
     // A chain that can be shared between threads.
     #[test]
     fn connect_sync_bidi_chain() {
-        let mut node_1_builder = SyncBuilder(Arc::new(Mutex::new(SyncNode::new())));
-        let mut node_2_builder = SyncBuilder(Arc::new(Mutex::new(SyncNode::new())));
+        let node_1 = Box::new(SyncNode::new());
+        let mut node_2 = Box::new(SyncNode::new());
 
-        make_bidi(&mut node_1_builder, &mut node_2_builder).unwrap();
+        let mut input = Get::<dyn Pushable<Message = Message<usize, usize>>>::get(&node_1).unwrap();
 
-        let mut input =
-            Get::<dyn Pushable<Message = Message<usize, usize>>>::get(&node_1_builder).unwrap();
+        make_bidi(node_1, node_2.as_mut()).unwrap();
 
         let sink = Arc::new(SyncQueue::new());
 
-        make_push(&mut node_2_builder, &sink).unwrap();
+        make_push(&mut node_2, &sink).unwrap();
 
         input.push(Message::Data(0)).unwrap();
         input.push(Message::Data(1)).unwrap();
         input.push(Message::Data(2)).unwrap();
 
-        let mut node_2 = node_2_builder.0;
         node_2.work().unwrap();
         node_2.work().unwrap();
         node_2.work().unwrap();

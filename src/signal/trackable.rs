@@ -126,54 +126,24 @@ impl Visitors {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::Error;
-    use crate::{sync::make_bifurcation, BifurcationRoutine, Message, Pushable};
-    use crate::{sync::Sink, sync::Source};
-    use std::collections::VecDeque;
-
-    struct MockBifurcation {
-        left_out: VecDeque<usize>,
-        right_out: VecDeque<usize>,
-    }
-
-    impl MockBifurcation {
-        pub fn new() -> Self {
-            MockBifurcation {
-                left_out: VecDeque::new(),
-                right_out: VecDeque::new(),
-            }
-        }
-    }
-
-    impl BifurcationRoutine<usize, usize, usize> for MockBifurcation {
-        fn left_output(&mut self) -> &mut VecDeque<usize> {
-            &mut self.left_out
-        }
-
-        fn right_output(&mut self) -> &mut VecDeque<usize> {
-            &mut self.right_out
-        }
-
-        fn work(&mut self, object: usize) -> Result<(), Error> {
-            self.left_out.push_back(object);
-            self.right_out.push_back(object);
-
-            Ok(())
-        }
-
-        fn flush(&mut self) -> Result<(), Error> {
-            Ok(())
-        }
-    }
+    use crate::node::bifurcation::routine::tests::MockBifurcation;
+    use crate::{
+        node::bifurcation::sync::node::{LeftSink, RightSink},
+        sink::sync::tee,
+        sync::Source,
+    };
+    use crate::{sync::make_bifurcation, DefaultThread, Message, Pushable, Workable};
 
     #[test]
     fn trackable_signal_tracks_active() {
-        let bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
+        let mut bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
 
-        let mut source = Source::new(bifur.input()).unwrap();
+        let mut source = Source::new(&bifur).unwrap();
 
-        let mut left_sink = Sink::new(bifur.workable(), &mut bifur.output().left).unwrap();
-        let mut right_sink = Sink::new(bifur.workable(), &mut bifur.output().right).unwrap();
+        let mut left_sink = tee::Sink::new::<LeftSink>(&mut bifur).unwrap();
+        let mut right_sink = tee::Sink::new::<RightSink>(&mut bifur).unwrap();
+
+        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
 
         let hello_track = Trackable::new("hello");
 
@@ -184,6 +154,7 @@ mod tests {
         source.push(Message::Flush(hello_track.clone())).unwrap();
 
         assert_eq!(hello_track.active(), 2);
+        workable.work().unwrap();
 
         {
             let _signal = left_sink.read().unwrap();

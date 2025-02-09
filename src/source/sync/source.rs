@@ -27,15 +27,13 @@ impl<DataType> Source<DataType, Trackable<&'static str>>
 where
     DataType: Clone + Send + Sync + 'static,
 {
-    pub fn new<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
-    where
-        Node: Get<
-            dyn Pushable<Message = Message<DataType, Trackable<&'static str>>>,
+    pub fn new<MultiplicityType: Multiplicity>(
+        input: &impl Get<
+            dyn Pushable<Message = Message<DataType, Trackable<&'static str>>> + 'static,
             MultiplicityType,
         >,
-        MultiplicityType: Multiplicity,
-    {
-        let pushable = node.get()?;
+    ) -> Result<Self, Error> {
+        let pushable = input.get()?;
         Ok(Self { pushable })
     }
 }

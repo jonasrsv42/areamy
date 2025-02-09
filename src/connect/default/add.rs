@@ -17,22 +17,12 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::connect::graph::tests::{SyncBuilder, SyncNode};
-    use crate::SyncQueue;
-    use crate::{Message, Pushable};
-    use std::sync::Arc;
-
-    #[test]
-    fn add_pushable_sh_mut() {
-        let mut add_pushable = Arc::new(Mutex::new(SyncBuilder(Arc::new(Mutex::new(
-            SyncNode::new(),
-        )))));
-
-        let pushable: Box<dyn Pushable<Message = Message<usize, usize>>> =
-            Box::new(Arc::new(SyncQueue::new()));
-        let _ = Add::add(&mut add_pushable, pushable);
+impl<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity, AddType>
+    Add<ConnectionType, MultiplicityType> for Box<AddType>
+where
+    AddType: Add<ConnectionType, MultiplicityType>,
+{
+    fn add(&mut self, connection: Box<ConnectionType>) -> Result<(), Error> {
+        Add::add(self.as_mut(), connection)
     }
 }

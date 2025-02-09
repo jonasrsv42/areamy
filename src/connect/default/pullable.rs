@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::{fatal, Pullable, ThreadId};
+use crate::{fatal, marker::Connection, Pullable, ThreadId};
 use std::marker::PhantomData;
 
 // For all `Sync` node implementations or root `nosync` we provide this default implementation for
@@ -8,6 +8,8 @@ pub struct NoPull<ThreadId, Message> {
     thread_id: PhantomData<ThreadId>,
     message: PhantomData<Message>,
 }
+
+impl<ThreadId, Message> Connection for NoPull<ThreadId, Message> {}
 
 // Default empty `Pullable`.
 impl<ThreadIdType, MessageType> Pullable for NoPull<ThreadIdType, MessageType>
@@ -31,6 +33,8 @@ mod tests {
     struct Root {
         value: usize,
     }
+
+    impl Connection for Root {}
 
     impl Pullable for Root {
         type ThreadId = DefaultThread;

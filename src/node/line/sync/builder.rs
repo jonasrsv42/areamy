@@ -2,8 +2,9 @@ use crate::error::Error;
 use crate::node::line::sync::bridge::Bridge;
 use crate::node::line::sync::node::LineTrait;
 use crate::{
-    sync::Line, AddPushable, AddWorkable, GetPushable, GetWorkable, LineRoutine, Message, Origin,
-    Pullable, Pushable, ThreadId, Workable,
+    graph::{Add, Get},
+    sync::Line,
+    LineRoutine, Message, Origin, Pullable, Pushable, ThreadId, Workable,
 };
 use std::sync::{Arc, Mutex};
 
@@ -40,51 +41,50 @@ where
     }
 }
 
-impl<LineType> GetWorkable for GraphBuilder<LineType>
+impl<LineType> Get<dyn Pushable<Message = Message<LineType::In, LineType::Signal>>>
+    for GraphBuilder<LineType>
 where
-    LineType: LineTrait + GetPushable + Sync + Clone + 'static,
+    LineType: LineTrait + Sync + Clone + 'static,
 {
-    type Workable = LineType;
-    fn get(&self) -> Result<Self::Workable, Error> {
-        Ok(self.line.clone())
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Pushable<Message = Message<LineType::In, LineType::Signal>>>, Error> {
+        Get::get(&self.line)
     }
 }
 
-impl<LineType> GetPushable for GraphBuilder<LineType>
+impl<ThreadIdType, LineType> Get<dyn Workable<ThreadId = ThreadIdType>> for GraphBuilder<LineType>
 where
-    LineType: LineTrait + GetPushable + Sync + Clone + 'static,
+    LineType: LineTrait<ThreadId = ThreadIdType> + Sync + Clone + 'static,
 {
-    type Pushable = LineType::Pushable;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
-        GetPushable::get(&self.line)
+    fn get(&self) -> Result<Box<dyn Workable<ThreadId = ThreadIdType>>, Error> {
+        Ok(Box::new(self.line.clone()))
     }
 }
 
-impl<LineType> AddPushable for GraphBuilder<LineType>
+impl<LineType> Add<dyn Pushable<Message = Message<LineType::Out, LineType::Signal>>>
+    for GraphBuilder<LineType>
 where
-    LineType:
-        LineTrait + AddPushable<Message = Message<LineType::Out, LineType::Signal>> + Sync + Clone,
+    LineType: LineTrait + Sync + Clone,
 {
-    type Message = Message<LineType::Out, LineType::Signal>;
-    fn add<PushableType: Pushable<Message = Message<LineType::Out, LineType::Signal>> + 'static>(
+    fn add(
         &mut self,
-        pushable: PushableType,
+        pushable: Box<dyn Pushable<Message = Message<LineType::Out, LineType::Signal>>>,
     ) -> Result<(), Error> {
-        AddPushable::add(&mut self.line, pushable)
+        Add::add(&mut self.line, pushable)
     }
 }
 
-impl<LineType> AddWorkable for GraphBuilder<LineType>
+impl<LineType> Add<dyn Workable<ThreadId = <LineType as Workable>::ThreadId>>
+    for GraphBuilder<LineType>
 where
-    LineType: LineTrait + AddWorkable<ThreadId = <LineType as Workable>::ThreadId> + Sync + Clone,
+    LineType: LineTrait + Sync + Clone,
 {
-    type ThreadId = <LineType as Workable>::ThreadId;
-    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
+    fn add(
         &mut self,
-        workable: WorkableType,
+        workable: Box<dyn Workable<ThreadId = <LineType as Workable>::ThreadId>>,
     ) -> Result<(), Error> {
-        AddWorkable::add(&mut self.line, workable)
+        Add::add(&mut self.line, workable)
     }
 }
 
@@ -95,7 +95,7 @@ pub fn make_line<In, Out, SignalType, ThreadIdType, RoutineType>(
         impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
             // Need to specify workables outside of the `LineTrait` to disambiguate.
             + Workable<ThreadId = ThreadIdType>
-            + AddWorkable<ThreadId = ThreadIdType>
+            + Add<dyn Workable<ThreadId = ThreadIdType>>
             + Clone
             + Send
             + Sync,
@@ -130,7 +130,7 @@ pub fn bridge_nosync<In, Out, SignalType, ThreadIdType, RoutineType, PullableTyp
         impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
             + Clone
             + Workable<ThreadId = ThreadIdType>
-            + AddWorkable<ThreadId = ThreadIdType>
+            + Add<dyn Workable<ThreadId = ThreadIdType>>
             + Send
             + Sync,
     >,

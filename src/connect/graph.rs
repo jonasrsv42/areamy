@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::marker::{Connection, Unary};
 use crate::ThreadId;
 
 /// -------------------------------------------------------------------------
@@ -57,8 +58,8 @@ use crate::ThreadId;
 /// but is encouraged to do so, since many basic nodes
 /// will just work again if there's no output produced by parent.
 ///
-/// We supply utility traits such as `AddWorkable`, `AddPushable`
-/// and `GetPushable` to simplify convenience functions such as
+/// We supply utility traits such as `Add`,
+/// and `Get` to simplify convenience functions such as
 /// `make_bidi`. A `bidi or bi-directional connection is a
 /// connection between a parent and child where the child can
 /// work the parent and parent can push into the child.
@@ -84,7 +85,7 @@ use crate::ThreadId;
 /// Threads are assigned to some leaf node and then children works the parents :).
 ///
 /// Usually a work should yield data pushed into a nodes `Pushable`.
-pub trait Workable: Send {
+pub trait Workable: Send + Connection {
     // Thread associated with this `Workable`.
     type ThreadId: ThreadId;
     fn work(&mut self) -> Result<(), Error>;
@@ -112,80 +113,31 @@ pub trait Workable: Send {
 /// they hold a reference to something that
 /// is `Pushable` such as a Arc<SyncQueue<...>>
 /// Or Rc<RefCell<Vec<..>>>
-pub trait Pushable: Sync + Send {
+pub trait Pushable: Sync + Send + Connection {
     type Message;
 
     fn push(&mut self, msg: Self::Message) -> Result<(), Error>;
 }
 
-// A type Indicating an connection of a nodes output and input
-// For example the biunion node has two inputs hence it
-// needs two different types of `AddWorkable` one for
-// `AddWorkable<Left>` and for `AddWorkable<Right>`.
-//
-// Likewise the bifurcation has
-// AddPushable<Left> and AddPushable<Right> we are
-// just using templating instead of making longer
-// function names like `AddPushableLeft` and
-// `AddPushableRight` etc. This also allows us
-// to have some functions be generic to the
-// `Connection`. Like `make_bidi`
-pub trait Connection {}
-
-// Default connection. Implies we have only a single
-// connection such as input and output of a line.
-#[derive(Clone)]
-pub struct Unary {}
-impl Connection for Unary {}
-
-/// `AddWorkable` means that a workable edge can be connected by this trait.
+/// trait `Add`(ing) an edge of a node type to a node.
 /// All `Sync` node builders should implement this trait. E.g. look to `line`, `biunion` or `bifurcation`
 /// as example.
 ///
-/// As it allows a parent to connect to a child by allowing the child to
-/// share ownership of a parent and to lend its thread to the parent for computation.
-
-// AddWorkable has a `Source` generic, for nodes with more than 1 source, to indicate
-// what source it is coming from.
-pub trait AddWorkable<Source: Connection = Unary> {
-    type ThreadId: ThreadId;
-
-    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
-        &mut self,
-        workable: WorkableType,
-    ) -> Result<(), Error>;
+/// As it allows nodes to recieve connections from other nodes.
+/// E.g. for recieving outgoing or ingoing connections.
+pub trait Add<ConnectionType: Connection + ?Sized, Multiplicity = Unary> {
+    fn add(&mut self, connection: Box<ConnectionType>) -> Result<(), Error>;
 }
 
-// Get workable is necessary when creating a connection with `AddWorkable`.
-// a graph builder will implement this and connect functions will retrieve
-// parent `Workable` using `GetWorkable` and add it to child with
-// `AddWorkable`.
-pub trait GetWorkable {
-    type Workable: Workable + 'static;
-
-    fn get(&self) -> Result<Self::Workable, Error>;
-}
-
-/// `AddPushable` means that a pushable edge can be connected by this trait.
-/// Nodes typically implement this to consume pushable references.
-
-// AddPushable has a `Sink` generic, for nodes with more than 1 sink to, indicate
-// what sink it is going into.
-pub trait AddPushable<Sink: Connection = Unary> {
-    type Message;
-    fn add<PushableType: Pushable<Message = Self::Message> + 'static>(
-        &mut self,
-        pushable: PushableType,
-    ) -> Result<(), Error>;
-}
-
-// GetPushable is implemented to allow convenince functions like `make_bidi`.
-// It allows functions to query for the underlying `Pushable` inside a node.
-//
-// The underlying `Pushable` is usually a Arc<SyncQueue<...>>
-pub trait GetPushable<Source: Connection = Unary> {
-    type Pushable: Pushable + 'static;
-    fn get(&self) -> Result<Self::Pushable, Error>;
+/// trait Get`(ting) an edge of a node type .
+/// All `Sync` node builders should implement this trait. E.g. look to `line`, `biunion` or `bifurcation`
+/// as example.
+///
+/// This allows to `Get` connections from a node and then `Add` it to another.
+/// Such as getting one of its input queues and adding as output queue to a different node.
+/// E.g. for recieving outgoing or ingoing connections.
+pub trait Get<ConnectionType: Connection + ?Sized, Multiplicity = Unary> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error>;
 }
 
 // `Pullable` connections can be used in no-`Sync` segments of our
@@ -196,7 +148,7 @@ pub trait GetPushable<Source: Connection = Unary> {
 // to be `Sync` but only `Send`. The `Pullable` types lets us
 // express the line-segments in subgraph without needed unnecessary
 // syncronization. TL;DR it lets us skip a few mutexes and queues.
-pub trait Pullable: Send {
+pub trait Pullable: Send + Connection {
     type ThreadId: ThreadId;
     type Message;
 
@@ -279,44 +231,40 @@ pub mod tests {
         type ThreadId = DefaultThread;
     }
 
+    impl Connection for SyncNode {}
+
     // Builder struct for constructing `Sync` graph(s).
     pub struct SyncBuilder(pub Arc<Mutex<SyncNode>>);
 
-    impl GetWorkable for SyncBuilder {
-        type Workable = Arc<Mutex<dyn Workable<ThreadId = DefaultThread>>>;
-
-        fn get(&self) -> Result<Self::Workable, Error> {
-            Ok(self.0.clone())
-        }
-    }
-
-    impl GetPushable for SyncBuilder {
-        type Pushable = Arc<SyncQueue<Message<usize, usize>>>;
-        fn get(&self) -> Result<Self::Pushable, Error> {
+    impl Get<dyn Pushable<Message = Message<usize, usize>>> for SyncBuilder {
+        fn get(&self) -> Result<Box<dyn Pushable<Message = Message<usize, usize>>>, Error> {
             let owned = self.0.lock().map_err(|e| fatal!(e))?;
-            Ok(owned.input.clone())
+            Ok(Box::new(owned.input.clone()))
         }
     }
 
-    impl AddPushable for SyncBuilder {
-        type Message = Message<usize, usize>;
-        fn add<PushableType>(&mut self, pushable: PushableType) -> Result<(), Error>
-        where
-            PushableType: Pushable<Message = Message<usize, usize>> + 'static,
-        {
-            let mut owned = self.0.lock().map_err(|e| fatal!(e))?;
-            Ok(owned.outputs.push(Box::new(pushable)))
+    impl Get<dyn Workable<ThreadId = DefaultThread>> for SyncBuilder {
+        fn get(&self) -> Result<Box<dyn Workable<ThreadId = DefaultThread>>, Error> {
+            Ok(Box::new(self.0.clone()))
         }
     }
 
-    impl AddWorkable for SyncBuilder {
-        type ThreadId = DefaultThread;
-        fn add<WorkableType>(&mut self, workable: WorkableType) -> Result<(), Error>
-        where
-            WorkableType: Workable<ThreadId = DefaultThread> + 'static,
-        {
+    impl Add<dyn Pushable<Message = Message<usize, usize>>> for SyncBuilder {
+        fn add(
+            &mut self,
+            connection: Box<dyn Pushable<Message = Message<usize, usize>>>,
+        ) -> Result<(), Error> {
             let mut owned = self.0.lock().map_err(|e| fatal!(e))?;
-            Ok(owned.workables.push(Box::new(workable)))
+            Ok(owned.outputs.push(Box::new(connection)))
+        }
+    }
+    impl Add<dyn Workable<ThreadId = DefaultThread>> for SyncBuilder {
+        fn add(
+            &mut self,
+            connection: Box<dyn Workable<ThreadId = DefaultThread>>,
+        ) -> Result<(), Error> {
+            let mut owned = self.0.lock().map_err(|e| fatal!(e))?;
+            Ok(owned.workables.push(connection))
         }
     }
 
@@ -382,6 +330,11 @@ pub mod tests {
         }
     }
 
+    impl<PullableType> Connection for NoSyncNode<PullableType> where
+        PullableType: Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>
+    {
+    }
+
     // A chain that can be shared between threads.
     #[test]
     fn connect_sync_bidi_chain() {
@@ -390,7 +343,8 @@ pub mod tests {
 
         make_bidi(&mut node_1_builder, &mut node_2_builder).unwrap();
 
-        let mut input = GetPushable::get(&node_1_builder).unwrap();
+        let mut input =
+            Get::<dyn Pushable<Message = Message<usize, usize>>>::get(&node_1_builder).unwrap();
 
         let sink = Arc::new(SyncQueue::new());
 

@@ -1,7 +1,11 @@
 use crate::error::Error;
 use crate::node::line::LineRoutine;
 use crate::signal::Visitors;
-use crate::{AddPushable, AddWorkable, DefaultThread, GetPushable, SyncQueue, ThreadId};
+use crate::{
+    graph::{Add, Get},
+    marker::Connection,
+    DefaultThread, SyncQueue, ThreadId,
+};
 use crate::{Message, Origin};
 use crate::{Pushable, Workable};
 use std::sync::{Arc, Mutex};
@@ -11,15 +15,15 @@ pub trait LineTrait:
     // We can work on the line to produce output.
     Workable
     // We can add things for it to work on, parents nodes.
-    + AddWorkable<ThreadId = <Self as Workable>::ThreadId>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
     // We can add edges it should push into.
-    + AddPushable<Message = Message<Self::Out, Self::Signal>>
+    + Add<dyn Pushable<Message = Message<Self::Out, Self::Signal>>>
     // We can retrieve its edge for others to push into.
-    + GetPushable<Pushable = Arc<SyncQueue<Message<Self::In, Self::Signal>>>>
+    + Get<dyn Pushable<Message =  Message<Self::In, Self::Signal>>>
 {
     // The input data going into the line.
     type In: Clone + Send + Sync + 'static;
-    // The output data leaving it..
+    // The output data leaving it.
     type Out: Clone + Send + Sync;
     // The signal type used in the graph.
     type Signal: Origin + Clone + 'static;
@@ -28,6 +32,7 @@ pub trait LineTrait:
 
 }
 
+// A Send+Sync+Clone variant of our line.
 impl<LineType: LineTrait> LineTrait for Arc<Mutex<LineType>> {
     type In = LineType::In;
     type Out = LineType::Out;
@@ -59,6 +64,19 @@ where
     pub input: Arc<SyncQueue<Message<In, SignalType>>>,
 }
 
+// Mark our Line as a possible connection in a graph. It's a connection 
+// because it is `Workable`.
+impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Connection
+    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+where
+    In: Clone + Send + Sync,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    LineRoutineType: LineRoutine<In, Out>,
+{
+}
+
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Workable
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
@@ -79,7 +97,7 @@ where
 
         // TODO implement resume, we will need this for generative models.
         // to allow a routine to emit partial results and then resume computation
-        // on the same input. The `LineRoutine` already has a resume function 
+        // on the same input. The `LineRoutine` already has a resume function
         // we need to define its contract and implement it.
         let _resume = 1;
 
@@ -236,7 +254,8 @@ where
     }
 }
 
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType> GetPushable
+impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Get<dyn Pushable<Message = Message<In, SignalType>>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Clone + Send + Sync + 'static,
@@ -245,10 +264,8 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    type Pushable = Arc<SyncQueue<Message<In, SignalType>>>;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
-        Ok(self.input.clone())
+    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<In, SignalType>>>, Error> {
+        Get::get(&self.input)
     }
 }
 
@@ -267,7 +284,7 @@ where
     type LineRoutine = LineRoutineType;
 }
 
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType> AddWorkable
+impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Add<dyn Workable<ThreadId = ThreadIdType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Clone + Send + Sync,
@@ -276,16 +293,13 @@ where
     ThreadIdType: ThreadId + Clone,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    type ThreadId = ThreadIdType;
-    fn add<WorkableType>(&mut self, workable: WorkableType) -> Result<(), Error>
-    where
-        WorkableType: Workable<ThreadId = ThreadIdType> + 'static,
-    {
-        Ok(self.workers.push(Box::new(workable)))
+    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
+        Ok(self.workers.push(workable))
     }
 }
 
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType> AddPushable
+impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Add<dyn Pushable<Message = Message<Out, SignalType>>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Clone + Send + Sync,
@@ -294,12 +308,11 @@ where
     ThreadIdType: ThreadId + Clone,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    type Message = Message<Out, SignalType>;
-    fn add<PushableType>(&mut self, pushable: PushableType) -> Result<(), Error>
-    where
-        PushableType: Pushable<Message = Message<Out, SignalType>> + 'static,
-    {
-        Ok(self.pushes.push(Box::new(pushable)))
+    fn add(
+        &mut self,
+        pushable: Box<dyn Pushable<Message = Message<Out, SignalType>>>,
+    ) -> Result<(), Error> {
+        Ok(self.pushes.push(pushable))
     }
 }
 

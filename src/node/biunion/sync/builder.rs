@@ -3,8 +3,11 @@ use crate::node::biunion::{
     sync::node::BiunionTrait, sync::node::LeftSource, sync::node::RightSource, sync::Biunion,
     BiunionRoutine,
 };
-use crate::{AddPushable, AddWorkable, GetWorkable, Origin, Workable};
-use crate::{Connection, GetPushable, ThreadId};
+use crate::{
+    graph::{Add, Get},
+    Message, Origin, Pushable, Workable,
+};
+use crate::{marker::Multiplicity, ThreadId};
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
@@ -16,28 +19,32 @@ where
     biunion: BiunionType,
 }
 
-pub struct GetInput<ConnectionType: Connection, BiunionType: BiunionTrait + Sync + Clone> {
+pub struct GetInput<MultiplicityType: Multiplicity, BiunionType: BiunionTrait + Sync + Clone> {
     biunion: BiunionType,
-    connection: PhantomData<ConnectionType>,
+    connection: PhantomData<MultiplicityType>,
 }
 
-impl<BiunionType: BiunionTrait + Sync + Clone> GetPushable<LeftSource>
+impl<BiunionType: BiunionTrait + Sync + Clone>
+    Get<dyn Pushable<Message = Message<BiunionType::Left, BiunionType::Signal>>, LeftSource>
     for GetInput<LeftSource, BiunionType>
 {
-    type Pushable = <BiunionType as GetPushable<LeftSource>>::Pushable;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
-        GetPushable::<LeftSource>::get(&self.biunion)
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Pushable<Message = Message<BiunionType::Left, BiunionType::Signal>>>, Error>
+    {
+        Get::<dyn Pushable<Message = Message<BiunionType::Left, BiunionType::Signal>>,LeftSource>::get(&self.biunion)
     }
 }
 
-impl<BiunionType: BiunionTrait + Sync + Clone> GetPushable<RightSource>
+impl<BiunionType: BiunionTrait + Sync + Clone>
+    Get<dyn Pushable<Message = Message<BiunionType::Right, BiunionType::Signal>>, RightSource>
     for GetInput<RightSource, BiunionType>
 {
-    type Pushable = <BiunionType as GetPushable<RightSource>>::Pushable;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
-        GetPushable::<RightSource>::get(&self.biunion)
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Pushable<Message = Message<BiunionType::Right, BiunionType::Signal>>>, Error>
+    {
+        Get::<dyn Pushable<Message = Message<BiunionType::Right, BiunionType::Signal>>, RightSource>::get(&self.biunion)
     }
 }
 
@@ -49,34 +56,38 @@ where
     pub right: GetInput<RightSource, BiunionType>,
 }
 
-pub struct AddWorker<ConnectionType: Connection, BiunionType: BiunionTrait + Sync + Clone> {
+pub struct AddWorker<MultiplicityType: Multiplicity, BiunionType: BiunionTrait + Sync + Clone> {
     biunion: BiunionType,
-    connection: PhantomData<ConnectionType>,
+    connection: PhantomData<MultiplicityType>,
 }
 
-impl<BiunionType: BiunionTrait + Sync + Clone> AddWorkable<LeftSource>
+impl<BiunionType: BiunionTrait + Sync + Clone>
+    Add<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId>, LeftSource>
     for AddWorker<LeftSource, BiunionType>
 {
-    type ThreadId = <BiunionType as Workable>::ThreadId;
-
-    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
+    fn add(
         &mut self,
-        workable: WorkableType,
+        workable: Box<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId>>,
     ) -> Result<(), Error> {
-        AddWorkable::<LeftSource>::add(&mut self.biunion, workable)
+        Add::<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId>, LeftSource>::add(
+            &mut self.biunion,
+            workable,
+        )
     }
 }
 
-impl<BiunionType: BiunionTrait + Sync + Clone> AddWorkable<RightSource>
+impl<BiunionType: BiunionTrait + Sync + Clone>
+    Add<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId>, RightSource>
     for AddWorker<RightSource, BiunionType>
 {
-    type ThreadId = <BiunionType as Workable>::ThreadId;
-
-    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
+    fn add(
         &mut self,
-        workable: WorkableType,
+        workable: Box<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId>>,
     ) -> Result<(), Error> {
-        AddWorkable::<RightSource>::add(&mut self.biunion, workable)
+        Add::<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId>, RightSource>::add(
+            &mut self.biunion,
+            workable,
+        )
     }
 }
 
@@ -132,28 +143,26 @@ where
     }
 }
 
-impl<BiunionType> AddPushable for GraphBuilder<BiunionType>
+impl<ThreadIdType, BiunionType> Get<dyn Workable<ThreadId = ThreadIdType>>
+    for GraphBuilder<BiunionType>
 where
-    BiunionType: BiunionTrait + Sync + Clone + 'static,
+    BiunionType: BiunionTrait<ThreadId = ThreadIdType> + Sync + Clone + 'static,
 {
-    type Message = BiunionType::Message;
-
-    fn add<PushableType: crate::Pushable<Message = Self::Message> + 'static>(
-        &mut self,
-        pushable: PushableType,
-    ) -> Result<(), Error> {
-        AddPushable::add(&mut self.biunion, pushable)
+    fn get(&self) -> Result<Box<dyn Workable<ThreadId = ThreadIdType>>, Error> {
+        Ok(Box::new(self.biunion.clone()))
     }
 }
 
-impl<BiunionType> GetWorkable for GraphBuilder<BiunionType>
+impl<BiunionType> Add<dyn Pushable<Message = Message<BiunionType::Out, BiunionType::Signal>>>
+    for GraphBuilder<BiunionType>
 where
     BiunionType: BiunionTrait + Sync + Clone + 'static,
 {
-    type Workable = BiunionType;
-
-    fn get(&self) -> Result<Self::Workable, Error> {
-        Ok(self.biunion.clone())
+    fn add(
+        &mut self,
+        pushable: Box<dyn Pushable<Message = Message<BiunionType::Out, BiunionType::Signal>>>,
+    ) -> Result<(), Error> {
+        Add::add(&mut self.biunion, pushable)
     }
 }
 
@@ -170,8 +179,8 @@ pub fn make_biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>(
             > + Clone
             + Sync
             + Workable<ThreadId = ThreadIdType>
-            + AddWorkable<LeftSource, ThreadId = ThreadIdType>
-            + AddWorkable<RightSource, ThreadId = ThreadIdType>,
+            + Add<dyn Workable<ThreadId = ThreadIdType>, LeftSource>
+            + Add<dyn Workable<ThreadId = ThreadIdType>, RightSource>,
     >,
     Error,
 >

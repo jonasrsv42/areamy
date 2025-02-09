@@ -2,14 +2,17 @@ use crate::error::Error;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::signal::Visitors;
 use crate::SyncQueue;
-use crate::{fatal, Connection, DefaultThread, ThreadId};
-use crate::{AddPushable, AddWorkable, GetPushable, Message, Origin, Pushable, Workable};
+use crate::{fatal, marker::Connection, marker::Multiplicity, DefaultThread, ThreadId};
+use crate::{
+    graph::{Add, Get},
+    Message, Origin, Pushable, Workable,
+};
 use std::sync::{Arc, Mutex};
 
 pub struct LeftSource {}
 pub struct RightSource {}
-impl Connection for LeftSource {}
-impl Connection for RightSource {}
+impl Multiplicity for LeftSource {}
+impl Multiplicity for RightSource {}
 
 // The contract of a `Sync` node forming a biunion.
 // it has two workable sources and inputs.
@@ -17,15 +20,15 @@ pub trait BiunionTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + AddPushable<Message = Message<Self::Out, Self::Signal>>
+    + Add<dyn Pushable<Message = Message<Self::Out, Self::Signal>>>
 
     // We can add things for it to work on, parents nodes.
-    + AddWorkable<LeftSource, ThreadId = <Self as Workable>::ThreadId>
-    + AddWorkable<RightSource, ThreadId = <Self as Workable>::ThreadId>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, LeftSource>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, RightSource>
 
     // We can retrieve pushable edges
-    + GetPushable<LeftSource, Pushable = Arc<SyncQueue<Message<Self::Left, Self::Signal>>>>
-    + GetPushable<RightSource, Pushable = Arc<SyncQueue<Message<Self::Right, Self::Signal>>>>
+    + Get<dyn Pushable<Message = Message<Self::Left, Self::Signal>> ,LeftSource>
+    + Get<dyn Pushable<Message = Message<Self::Right, Self::Signal>>,RightSource>
 {
     // The input data going into the line.
     type Left: Clone + Send + Sync + 'static;
@@ -78,13 +81,25 @@ where
     pub right_input: Arc<SyncQueue<Message<Right, SignalType>>>,
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Workable
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Connection
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out>,
+{
+}
+
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Workable
+    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+where
+    Left: Clone + Send + Sync + 'static,
+    Right: Clone + Send + Sync + 'static,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
@@ -323,7 +338,7 @@ impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> BiunionTrait
 where
     Left: Clone + Send + Sync + 'static,
     Right: Clone + Send + Sync + 'static,
-    Out: Clone + Send + Sync,
+    Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
@@ -335,7 +350,8 @@ where
     type BiunionRoutine = RoutineType;
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> GetPushable<LeftSource>
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn Pushable<Message = Message<Left, SignalType>>, LeftSource>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -345,14 +361,13 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    type Pushable = Arc<SyncQueue<Message<Left, SignalType>>>;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
-        Ok(self.left_input.clone())
+    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<Left, SignalType>>>, Error> {
+        Get::get(&self.left_input)
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> GetPushable<RightSource>
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn Pushable<Message = Message<Right, SignalType>>, RightSource>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -362,14 +377,13 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    type Pushable = Arc<SyncQueue<Message<Right, SignalType>>>;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
-        Ok(self.right_input.clone())
+    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<Right, SignalType>>>, Error> {
+        Get::get(&self.right_input)
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> AddWorkable<LeftSource>
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Add<dyn Workable<ThreadId = ThreadIdType>, LeftSource>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -379,51 +393,41 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    type ThreadId = ThreadIdType;
+    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
+        Ok(self.left_workers.push(workable))
+    }
+}
 
-    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Add<dyn Workable<ThreadId = ThreadIdType>, RightSource>
+    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+where
+    Left: Clone + Send + Sync + 'static,
+    Right: Clone + Send + Sync + 'static,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out>,
+{
+    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
+        Ok(self.right_workers.push(workable))
+    }
+}
+
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Add<dyn Pushable<Message = Message<Out, SignalType>>>
+    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+where
+    Left: Clone + Send + Sync + 'static,
+    Right: Clone + Send + Sync + 'static,
+    Out: Clone + Send + Sync + 'static,
+    SignalType: Origin + Clone + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out>,
+{
+    fn add(
         &mut self,
-        workable: WorkableType,
-    ) -> Result<(), Error> {
-        Ok(self.left_workers.push(Box::new(workable)))
-    }
-}
-
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> AddWorkable<RightSource>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-{
-    type ThreadId = ThreadIdType;
-
-    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
-        &mut self,
-        workable: WorkableType,
-    ) -> Result<(), Error> {
-        Ok(self.right_workers.push(Box::new(workable)))
-    }
-}
-
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> AddPushable
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-{
-    type Message = Message<Out, SignalType>;
-
-    fn add<PushableType: Pushable<Message = Self::Message> + 'static>(
-        &mut self,
-        pushable: PushableType,
+        pushable: Box<dyn Pushable<Message = Message<Out, SignalType>>>,
     ) -> Result<(), Error> {
         Ok(self.pushes.push(Box::new(pushable)))
     }
@@ -439,8 +443,8 @@ pub mod tests {
     fn run_biunion() {
         let mut biun = make_biunion(Ok(MockBiunion::new())).unwrap();
 
-        let mut left_source = Source::new(biun.input().left).unwrap();
-        let mut right_source = Source::new(biun.input().right).unwrap();
+        let mut left_source = Source::new(&biun.input().left).unwrap();
+        let mut right_source = Source::new(&biun.input().right).unwrap();
 
         let mut sink = Sink::new(biun.workable(), biun.output()).unwrap();
 

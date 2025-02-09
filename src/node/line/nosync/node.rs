@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::signal::Visitors;
-use crate::{LineRoutine, Message, Origin};
+use crate::{marker::Connection, LineRoutine, Message, Origin};
 use crate::{Pullable, SyncQueue, ThreadId};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -21,6 +21,18 @@ where
     pub buffer: VecDeque<Message<Out, SignalType>>,
 
     pub input: Arc<SyncQueue<Message<In, SignalType>>>,
+}
+
+impl<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType> Connection
+    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType>
+where
+    In: Clone + Send + Sync,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    LineRoutineType: LineRoutine<In, Out>,
+    PullableType: Pullable<ThreadId = ThreadIdType, Message = Message<In, SignalType>>,
+{
 }
 
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType> Pullable
@@ -46,8 +58,8 @@ where
             None => (),
         }
 
-        // TODO implement resume, we will need this for generative models. 
-        // to allow a routine to emit partial results and then resume computation 
+        // TODO implement resume, we will need this for generative models.
+        // to allow a routine to emit partial results and then resume computation
         // on the same input.
         let _resume = 1;
 
@@ -167,7 +179,7 @@ pub mod tests {
     #[test]
     fn line_nosync_basic_run() {
         let line = root(MockLine::new()).unwrap();
-        let mut source = Source::new(line.input.clone()).unwrap();
+        let mut source = Source::new(&line.input.clone()).unwrap();
         let mut sink = Sink::new(line);
 
         // Add one flush
@@ -194,7 +206,7 @@ pub mod tests {
 
         let line1 = make_pull(root, MockLine::new()).unwrap();
         let line2 = make_pull(line1, MockLine::new()).unwrap();
-        let mut source = Source::new(input.clone()).unwrap();
+        let mut source = Source::new(&input).unwrap();
         let mut sink = Sink::new(line2);
 
         // Add one flush
@@ -231,7 +243,7 @@ pub mod tests {
         let p9 = make_pull(p8, MockLine::new()).unwrap();
         let p10 = make_pull(p9, MockLine::new()).unwrap();
 
-        let mut source = Source::new(input.clone()).unwrap();
+        let mut source = Source::new(&input).unwrap();
         let mut sink = Sink::new(p10);
 
         let before = Instant::now();
@@ -253,7 +265,7 @@ pub mod tests {
 
         let line1 = make_pull(root, MockLine::new()).unwrap();
         let line2 = make_pull(line1, MockLine::new()).unwrap();
-        let mut source = Source::of(input.clone()).unwrap();
+        let mut source = Source::of(&input).unwrap();
         let mut sink = Sink::new(line2);
 
         source.push(Message::Data(1)).unwrap();

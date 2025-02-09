@@ -34,7 +34,7 @@ fn simple_sync() -> Result<(), areamy::error::Error> {
     let mut middle_node = areamy::sync::make_line(AddOne::new())?;
     let mut out_node = areamy::sync::make_line(AddOne::new())?;
 
-    let source = areamy::sync::Source::<usize>::of(in_node.clone())?;
+    let source = areamy::sync::Source::<usize>::of(&in_node)?;
 
     areamy::sync::Connect::<usize>::bidi(&mut in_node, &mut middle_node)?;
     areamy::sync::Connect::<usize>::bidi(&mut middle_node, &mut out_node)?;
@@ -65,7 +65,7 @@ fn sync_multithread() -> Result<(), areamy::error::Error> {
     let mut middle_node = areamy::sync::make_line(AddOne::new())?;
     let mut out_node = areamy::sync::make_line(AddOne::new())?;
 
-    let source = areamy::sync::Source::<usize>::of(in_node.clone())?;
+    let source = areamy::sync::Source::<usize>::of(&in_node)?;
     areamy::sync::Connect::<usize>::bidi(&mut in_node, &mut middle_node)?;
 
     let mut helper_thread = areamy::ThreadStream::<HelperThread>::new();
@@ -100,7 +100,7 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
 
     let in_node = areamy::nosync::root(AddOne::new())?;
 
-    let source = areamy::sync::Source::<usize>::of(in_node.input.clone())?;
+    let source = areamy::sync::Source::<usize>::of(&in_node.input)?;
 
     let middle_node = areamy::nosync::Connect::<usize>::pull(in_node, AddOne::new())?;
     let out_node = areamy::nosync::Connect::<usize>::pull(middle_node, AddOne::new())?;

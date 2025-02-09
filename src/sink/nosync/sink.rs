@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::Message;
-use crate::{DefaultThread, Origin, Pullable, ThreadId, Trackable};
+use crate::{marker::Connection, DefaultThread, Origin, Pullable, ThreadId, Trackable};
 
 pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
 where
@@ -11,6 +11,14 @@ where
     // We store it in the heap to mask the recursive `Pullable` type.
     // If one does not want a heap allocation then reading directly from the pullable is OK.
     pullable: Box<dyn Pullable<ThreadId = ThreadIdType, Message = Message<DataType, SignalType>>>,
+}
+
+impl<DataType, SignalType, ThreadIdType> Connection for Sink<DataType, SignalType, ThreadIdType>
+where
+    DataType: Sync + Send + Clone,
+    SignalType: Origin,
+    ThreadIdType: ThreadId,
+{
 }
 
 impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>

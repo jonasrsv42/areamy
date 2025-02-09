@@ -14,9 +14,11 @@ pub use source::source::Source;
 pub mod nosync;
 
 pub use composable::Composable;
+pub use connect::marker;
+
+pub use crate::connect::graph;
 pub use connect::{
-    make_bidi, make_push, make_work, AddPushable, AddWorkable, Connection, GetPushable,
-    GetWorkable, Marker, NoPull, Pullable, Pushable, Unary, Workable,
+    make_bidi, make_push, make_work, NoPull, Pullable, Pushable, Workable,
 };
 pub use message::Message;
 pub use node::{

@@ -1,17 +1,24 @@
-use crate::{Pullable, Pushable, Workable};
+use crate::{marker::Connection, Pullable, Pushable, Workable};
 pub struct Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
-    PushableType: Pushable<Message = PullableType::Message>
+    PushableType: Pushable<Message = PullableType::Message>,
 {
     pullable: PullableType,
     pushable: PushableType,
 }
 
+impl<PullableType, PushableType> Connection for Bridge<PullableType, PushableType>
+where
+    PullableType: Pullable,
+    PushableType: Pushable<Message = PullableType::Message>,
+{
+}
+
 impl<PullableType, PushableType> Workable for Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
-    PushableType: Pushable<Message = PullableType::Message>
+    PushableType: Pushable<Message = PullableType::Message>,
 {
     type ThreadId = PullableType::ThreadId;
 
@@ -21,16 +28,12 @@ where
     }
 }
 
-impl<PullableType, PushableType> Bridge<PullableType, PushableType> 
+impl<PullableType, PushableType> Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
-    PushableType: Pushable<Message = PullableType::Message>
+    PushableType: Pushable<Message = PullableType::Message>,
 {
     pub fn new(pullable: PullableType, pushable: PushableType) -> Self {
-        Self {
-            pullable,
-            pushable
-        }
+        Self { pullable, pushable }
     }
-
 }

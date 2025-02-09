@@ -1,8 +1,10 @@
 use crate::error::Error;
 use crate::{
-    node::bifurcation::sync::node::BifurcationTrait, sync::Bifurcation, AddPushable, AddWorkable,
-    BifurcationRoutine, Connection, GetPushable, GetWorkable, LeftSink, Origin, Pushable,
-    RightSink, ThreadId, Workable,
+    graph::{Add, Get},
+    marker::Multiplicity,
+    node::bifurcation::sync::node::BifurcationTrait,
+    sync::Bifurcation,
+    BifurcationRoutine, LeftSink, Message, Origin, Pushable, RightSink, ThreadId, Workable,
 };
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
@@ -15,34 +17,45 @@ where
     bifurcation: BifurcationType,
 }
 
-pub struct AddOutput<ConnectionType: Connection, BifurcationType: BifurcationTrait + Sync + Clone> {
+pub struct AddOutput<
+    MultiplicityType: Multiplicity,
+    BifurcationType: BifurcationTrait + Sync + Clone,
+> {
     bifurcation: BifurcationType,
-    connection: PhantomData<ConnectionType>,
+    connection: PhantomData<MultiplicityType>,
 }
 
-impl<BifurcationType: BifurcationTrait + Sync + Clone> AddPushable<LeftSink>
+impl<BifurcationType: BifurcationTrait + Sync + Clone>
+    Add<dyn Pushable<Message = Message<BifurcationType::Left, BifurcationType::Signal>>, LeftSink>
     for AddOutput<LeftSink, BifurcationType>
 {
-    type Message = <BifurcationType as AddPushable<LeftSink>>::Message;
-
-    fn add<PushableType: Pushable<Message = Self::Message> + 'static>(
+    fn add(
         &mut self,
-        pushable: PushableType,
+        pushable: Box<
+            dyn Pushable<Message = Message<BifurcationType::Left, BifurcationType::Signal>>,
+        >,
     ) -> Result<(), Error> {
-        AddPushable::<LeftSink>::add(&mut self.bifurcation, pushable)
+        Add::<
+            dyn Pushable<Message = Message<BifurcationType::Left, BifurcationType::Signal>>,
+            LeftSink,
+        >::add(&mut self.bifurcation, pushable)
     }
 }
 
-impl<BifurcationType: BifurcationTrait + Sync + Clone> AddPushable<RightSink>
+impl<BifurcationType: BifurcationTrait + Sync + Clone>
+    Add<dyn Pushable<Message = Message<BifurcationType::Right, BifurcationType::Signal>>, RightSink>
     for AddOutput<RightSink, BifurcationType>
 {
-    type Message = <BifurcationType as AddPushable<RightSink>>::Message;
-
-    fn add<PushableType: Pushable<Message = Self::Message> + 'static>(
+    fn add(
         &mut self,
-        pushable: PushableType,
+        pushable: Box<
+            dyn Pushable<Message = Message<BifurcationType::Right, BifurcationType::Signal>>,
+        >,
     ) -> Result<(), Error> {
-        AddPushable::<RightSink>::add(&mut self.bifurcation, pushable)
+        Add::<
+            dyn Pushable<Message = Message<BifurcationType::Right, BifurcationType::Signal>>,
+            RightSink,
+        >::add(&mut self.bifurcation, pushable)
     }
 }
 
@@ -88,38 +101,42 @@ where
     }
 }
 
-impl<BifurcationType> GetWorkable for GraphBuilder<BifurcationType>
+impl<BifurcationType>
+    Get<dyn Pushable<Message = Message<BifurcationType::In, BifurcationType::Signal>>>
+    for GraphBuilder<BifurcationType>
 where
     BifurcationType: BifurcationTrait + Clone + Sync + 'static,
 {
-    type Workable = BifurcationType;
-
-    fn get(&self) -> Result<Self::Workable, Error> {
-        Ok(self.bifurcation.clone())
-    }
-}
-
-impl<BifurcationType> GetPushable for GraphBuilder<BifurcationType>
-where
-    BifurcationType: BifurcationTrait + Clone + Sync + 'static,
-{
-    type Pushable = BifurcationType::Pushable;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
+    fn get(
+        &self,
+    ) -> Result<
+        Box<dyn Pushable<Message = Message<BifurcationType::In, BifurcationType::Signal>>>,
+        Error,
+    > {
         BifurcationType::get(&self.bifurcation)
     }
 }
 
-impl<BifurcationType> AddWorkable for GraphBuilder<BifurcationType>
+impl<ThreadIdType, BifurcationType> Get<dyn Workable<ThreadId = ThreadIdType>>
+    for GraphBuilder<BifurcationType>
+where
+    BifurcationType: BifurcationTrait<ThreadId = ThreadIdType> + Clone + Sync + 'static,
+{
+    fn get(&self) -> Result<Box<dyn Workable<ThreadId = ThreadIdType>>, Error> {
+        Ok(Box::new(self.bifurcation.clone()))
+    }
+}
+
+impl<BifurcationType> Add<dyn Workable<ThreadId = <BifurcationType as Workable>::ThreadId>>
+    for GraphBuilder<BifurcationType>
 where
     BifurcationType: BifurcationTrait + Clone + Sync + 'static,
 {
-    type ThreadId = <BifurcationType as Workable>::ThreadId;
-    fn add<WorkableType: Workable<ThreadId = Self::ThreadId> + 'static>(
+    fn add(
         &mut self,
-        workable: WorkableType,
+        workable: Box<dyn Workable<ThreadId = <BifurcationType as Workable>::ThreadId>>,
     ) -> Result<(), Error> {
-        <BifurcationType as AddWorkable>::add(&mut self.bifurcation, workable)
+        <BifurcationType as Add<dyn Workable<ThreadId = <BifurcationType as Workable>::ThreadId>>>::add(&mut self.bifurcation, workable)
     }
 }
 
@@ -133,7 +150,7 @@ pub fn make_bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>(
                 Right = Right,
                 Signal = SignalType,
                 BifurcationRoutine = RoutineType,
-            > + AddWorkable<ThreadId = ThreadIdType>
+            > + Add<dyn Workable<ThreadId = ThreadIdType>>
             + Workable<ThreadId = ThreadIdType>
             + Clone
             + Sync,

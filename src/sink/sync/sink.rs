@@ -1,6 +1,10 @@
 use crate::error::Error;
 use crate::SyncQueue;
-use crate::{AddPushable, Connection, DefaultThread, GetWorkable, ThreadId, Trackable, Workable};
+use crate::{
+    graph::{Add, Get},
+    marker::Multiplicity,
+    DefaultThread, Pushable, ThreadId, Trackable, Workable,
+};
 use crate::{Message, Origin};
 use std::sync::Arc;
 
@@ -19,25 +23,23 @@ where
     DataType: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
 {
-    pub fn new<WorkSource, DataSource, WorkableType, ConnectionType>(
+    pub fn new<WorkSource, DataSource, MultiplicityType>(
         work_source: WorkSource,
         data_source: &mut DataSource,
     ) -> Result<Self, Error>
     where
-        WorkSource: GetWorkable<Workable = WorkableType>,
-        DataSource: AddPushable<ConnectionType, Message = Message<DataType, SignalType>>,
-        WorkableType: Workable<ThreadId = DefaultThread> + 'static,
-        ConnectionType: Connection,
+        WorkSource: Get<dyn Workable<ThreadId = DefaultThread>>,
+        DataSource: Add<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>,
+        MultiplicityType: Multiplicity,
     {
         let workable = work_source.get()?;
-
         let shared_buffer = Arc::new(SyncQueue::new());
         let sink = Self {
-            workable: Box::new(workable),
+            workable,
             buffer: shared_buffer.clone(),
         };
 
-        AddPushable::add(data_source, Box::new(shared_buffer))?;
+        Add::add(data_source, Box::new(shared_buffer))?;
 
         return Ok(sink);
     }
@@ -49,24 +51,23 @@ where
     SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId + 'static,
 {
-    pub fn of<WorkSource, DataSource, ConnectionType>(
+    pub fn of<WorkSource, DataSource, MultiplicityType>(
         work_source: WorkSource,
         data_source: &mut DataSource,
     ) -> Result<Self, Error>
     where
-        WorkSource: GetWorkable<Workable = Box<dyn Workable<ThreadId = ThreadIdType>>>,
-        DataSource: AddPushable<ConnectionType, Message = Message<DataType, SignalType>>,
-        ConnectionType: Connection,
+        WorkSource: Get<dyn Workable<ThreadId = ThreadIdType>>,
+        DataSource: Add<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>,
+        MultiplicityType: Multiplicity,
     {
         let workable = work_source.get()?;
-
         let shared_buffer = Arc::new(SyncQueue::new());
         let sink = Self {
             workable,
             buffer: shared_buffer.clone(),
         };
 
-        AddPushable::add(data_source, Box::new(shared_buffer))?;
+        Add::add(data_source, Box::new(shared_buffer))?;
 
         return Ok(sink);
     }
@@ -102,13 +103,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Pushable;
+    use crate::{marker::Connection, Pushable};
     use std::sync::Mutex;
 
     struct MockNode {
         output: Message<usize, &'static str>,
         pushable: Vec<Box<dyn Pushable<Message = Message<usize, &'static str>>>>,
     }
+
+    impl Connection for MockNode {}
 
     impl Workable for MockNode {
         type ThreadId = DefaultThread;
@@ -120,13 +123,18 @@ mod tests {
         }
     }
 
-    impl AddPushable for MockNode {
-        type Message = Message<usize, &'static str>;
-        fn add<PushableType>(&mut self, pushable: PushableType) -> Result<(), Error>
-        where
-            PushableType: Pushable<Message = Message<usize, &'static str>> + 'static,
-        {
-            Ok(self.pushable.push(Box::new(pushable)))
+    impl Get<dyn Workable<ThreadId = DefaultThread>> for Arc<Mutex<MockNode>> {
+        fn get(&self) -> Result<Box<dyn Workable<ThreadId = DefaultThread>>, Error> {
+            Ok(Box::new(self.clone()))
+        }
+    }
+
+    impl Add<dyn Pushable<Message = Message<usize, &'static str>>> for MockNode {
+        fn add(
+            &mut self,
+            pushable: Box<dyn Pushable<Message = Message<usize, &'static str>>>,
+        ) -> Result<(), Error> {
+            Ok(self.pushable.push(pushable))
         }
     }
 

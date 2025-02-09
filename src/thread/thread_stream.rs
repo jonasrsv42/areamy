@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::{fatal, AddWorkable, ThreadId, Workable};
+use crate::{fatal, graph::Add, ThreadId, Workable};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{spawn, JoinHandle};
@@ -76,14 +76,12 @@ where
     }
 }
 
-impl<ThreadIdType: ThreadId> AddWorkable for ThreadStream<ThreadIdType> {
-    type ThreadId = ThreadIdType;
-    fn add<WorkableType: Workable<ThreadId = ThreadIdType> + 'static>(
-        &mut self,
-        workable: WorkableType,
-    ) -> Result<(), Error> {
+impl<ThreadIdType: ThreadId> Add<dyn Workable<ThreadId = ThreadIdType>>
+    for ThreadStream<ThreadIdType>
+{
+    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
         let mut workables = self.workables.lock().map_err(|e| fatal!(e))?;
-        workables.push(Box::new(workable));
+        workables.push(workable);
         Ok(())
     }
 }

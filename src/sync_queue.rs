@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::{fatal, GetPushable, Pushable};
+use crate::{fatal, graph::Get, Pushable};
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -88,6 +88,8 @@ impl<T: Clone> SyncQueue<T> {
     }
 }
 
+impl<T: Clone> crate::marker::Connection for SyncQueue<T> {}
+
 impl<T: Clone + Send + Sync> Pushable for SyncQueue<T> {
     type Message = T;
 
@@ -104,11 +106,9 @@ impl<T: Clone + Send + Sync> Pushable for Arc<SyncQueue<T>> {
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> GetPushable for Arc<SyncQueue<T>> {
-    type Pushable = Arc<SyncQueue<T>>;
-
-    fn get(&self) -> Result<Self::Pushable, Error> {
-        Ok(self.clone())
+impl<T: Clone + Send + Sync + 'static> Get<dyn Pushable<Message = T>> for Arc<SyncQueue<T>> {
+    fn get(&self) -> Result<Box<dyn Pushable<Message = T>>, Error> {
+        Ok(Box::new(self.clone()))
     }
 }
 

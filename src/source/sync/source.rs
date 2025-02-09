@@ -1,7 +1,11 @@
 use crate::error::Error;
 use crate::Pushable;
 use crate::Trackable;
-use crate::{Connection, GetPushable, Message, Origin};
+use crate::{
+    graph::Get,
+    marker::{Connection, Multiplicity},
+    Message, Origin,
+};
 
 // A `Source` is a convenience type for an input. It forwards data into some `Pushable`.
 pub struct Source<DataType, SignalType = Trackable<&'static str>>
@@ -12,20 +16,27 @@ where
     pushable: Box<dyn Pushable<Message = Message<DataType, SignalType>>>,
 }
 
+impl<DataType, SignalType> Connection for Source<DataType, SignalType>
+where
+    DataType: Send + Sync + Clone,
+    SignalType: Send + Sync + Clone + Origin,
+{
+}
+
 impl<DataType> Source<DataType, Trackable<&'static str>>
 where
     DataType: Clone + Send + Sync + 'static,
 {
-    pub fn new<Node, PushableType, ConnectionType>(node: Node) -> Result<Self, Error>
+    pub fn new<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
-        Node: GetPushable<ConnectionType, Pushable = PushableType>,
-        PushableType: Pushable<Message = Message<DataType, Trackable<&'static str>>> + 'static,
-        ConnectionType: Connection,
+        Node: Get<
+            dyn Pushable<Message = Message<DataType, Trackable<&'static str>>>,
+            MultiplicityType,
+        >,
+        MultiplicityType: Multiplicity,
     {
         let pushable = node.get()?;
-        Ok(Self {
-            pushable: Box::new(pushable),
-        })
+        Ok(Self { pushable })
     }
 }
 
@@ -34,16 +45,13 @@ where
     DataType: Send + Sync + Clone,
     SignalType: Send + Sync + Clone + Origin,
 {
-    pub fn of<Node, PushableType, ConnectionType>(node: Node) -> Result<Self, Error>
+    pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
-        Node: GetPushable<ConnectionType, Pushable = PushableType>,
-        PushableType: Pushable<Message = Message<DataType, SignalType>> + 'static,
-        ConnectionType: Connection,
+        Node: Get<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>,
+        MultiplicityType: Multiplicity,
     {
         let pushable = node.get()?;
-        Ok(Self {
-            pushable: Box::new(pushable),
-        })
+        Ok(Self { pushable })
     }
 }
 
@@ -68,17 +76,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{GetPushable, SyncQueue};
+    use crate::SyncQueue;
     use std::sync::Arc;
 
     struct MockNode {
         input: Arc<SyncQueue<Message<usize, Trackable<&'static str>>>>,
     }
 
-    impl GetPushable for MockNode {
-        type Pushable = Arc<SyncQueue<Message<usize, Trackable<&'static str>>>>;
-        fn get(&self) -> Result<Self::Pushable, Error> {
-            Ok(self.input.clone())
+    impl Get<dyn Pushable<Message = Message<usize, Trackable<&'static str>>>> for MockNode {
+        fn get(
+            &self,
+        ) -> Result<Box<dyn Pushable<Message = Message<usize, Trackable<&'static str>>>>, Error>
+        {
+            Get::get(&self.input)
         }
     }
 

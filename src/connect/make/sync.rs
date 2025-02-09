@@ -2,8 +2,11 @@
 // readability and are not needed for anything else. The `Core` function suffice for building
 // graphs because types can be inferred from context.
 use crate::{
-    error::Error, make_bidi, make_push, AddPushable, AddWorkable, Connection, GetPushable,
-    GetWorkable, Message, Origin, Pushable, Trackable, Workable,
+    error::Error,
+    graph::{Add, Get},
+    make_bidi, make_push,
+    marker::Multiplicity,
+    Message, Origin, Pushable, Trackable, Workable,
 };
 use std::marker::PhantomData;
 pub struct Connect<DataType, SignalType = Trackable<&'static str>> {
@@ -31,22 +34,20 @@ where
     pub fn bidi<
         ParentType,
         ChildType,
-        PushableType,
-        ParentConnection: Connection,
-        ChildConnection: Connection,
+        ParentMultiplicity: Multiplicity,
+        ChildMultiplicity: Multiplicity,
+        ThreadIdType
     >(
         parent: &mut ParentType,
         child: &mut ChildType,
     ) -> Result<(), Error>
     where
-        PushableType: Pushable<Message = Message<DataType, SignalType>>,
-
         ChildType: 'static
-            + AddWorkable<ChildConnection, ThreadId = <ParentType::Workable as Workable>::ThreadId>
-            + GetPushable<ChildConnection, Pushable = PushableType>,
+            + Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
+            + Get<dyn Pushable<Message = Message<DataType, SignalType>>, ChildMultiplicity>,
         ParentType: 'static
-            + AddPushable<ParentConnection, Message = <ChildType::Pushable as Pushable>::Message>
-            + GetWorkable,
+            + Add<dyn Pushable<Message = Message<DataType, SignalType>>, ParentMultiplicity>
+            + Get<dyn Workable<ThreadId = ThreadIdType>, ParentMultiplicity>,
     {
         make_bidi(parent, child)?;
 
@@ -56,19 +57,15 @@ where
     pub fn push<
         ParentType,
         ChildType,
-        PushableType,
-        GetConnection: Connection,
-        AddConnection: Connection,
+        GetMultiplicity: Multiplicity,
+        AddMultiplicity: Multiplicity,
     >(
         parent: &mut ParentType,
         child: &ChildType,
     ) -> Result<(), Error>
     where
-        PushableType: Pushable<Message = Message<DataType, SignalType>>,
-
-        ChildType: GetPushable<GetConnection, Pushable = PushableType>,
-        ParentType:
-            AddPushable<AddConnection, Message = <ChildType::Pushable as Pushable>::Message>,
+        ChildType: Get<dyn Pushable<Message = Message<DataType, SignalType>>, GetMultiplicity>,
+        ParentType: Add<dyn Pushable<Message = Message<DataType, SignalType>>, AddMultiplicity>,
     {
         make_push(parent, child)?;
 

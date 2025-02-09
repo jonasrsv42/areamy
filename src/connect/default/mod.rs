@@ -1,7 +1,5 @@
-mod add_pushable;
-mod add_workable;
-mod get_pushable;
-mod get_workable;
+mod add;
 pub mod pullable;
+mod get;
 mod pushable;
 mod workable;

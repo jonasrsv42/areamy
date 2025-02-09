@@ -99,8 +99,8 @@ mod tests {
     fn readers_biunion_read() {
         let mut biun = make_biunion(Ok(MockBiunion::new())).unwrap();
 
-        let left_source = Source::new(biun.input().left).unwrap();
-        let right_source = Source::new(biun.input().right).unwrap();
+        let left_source = Source::new(&biun.input().left).unwrap();
+        let right_source = Source::new(&biun.input().right).unwrap();
 
         let sink = Sink::new(biun.workable(), biun.output()).unwrap();
 

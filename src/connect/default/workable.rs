@@ -18,13 +18,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::graph::tests::SyncNode;
+    use crate::connect::graph::tests::Node;
     use crate::{Message, SyncQueue};
     use std::sync::Arc;
 
     #[test]
     fn workable_can_work() {
-        let mut node = SyncNode::new();
+        let mut node = Node::new();
 
         let input = node.input.clone();
         let output = Arc::new(SyncQueue::new());
@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn workable_arc_can_work() {
-        let mut node = Arc::new(Mutex::new(SyncNode::new()));
+        let mut node = Arc::new(Mutex::new(Node::new()));
 
         let input = node.lock().unwrap().input.clone();
         let output = Arc::new(SyncQueue::new());

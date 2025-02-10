@@ -158,23 +158,29 @@ pub trait Pullable: Send + Connection {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{make_bidi, make_push, DefaultThread, Message, NoPull, SyncQueue};
+    use crate::{make_bidi, make_push, DefaultThread, Message, SyncQueue};
     use std::sync::Arc;
 
     // This is a `Stupid` coroutine. Coroutines are still experimental
     // at the time of writing 2024/12/11.
-    pub struct Worker {
+    //
+    // A `Simple` "coroutine". At time of writing, 2024/12/11, coroutines
+    // are still experimental in rust.
+    pub struct Routine {
         state: usize,
     }
 
-    impl Worker {
-        fn work(&mut self, v: usize) -> usize {
+    // Our rutine processes digits but adding to its own state
+    // and then returning a digit (D * 2 + self.state). Showcasing
+    // it as a stateful function
+    impl Routine {
+        fn process(&mut self, v: usize) -> usize {
             self.state = self.state + 1;
             return v * 2 + self.state;
         }
     }
 
-    // `Sync` node variants. Can be used to connect `Workers` in a multi-threaded graph.
+    // `Node`  variants. Can be used to connect `Routine(s)` in a multi-threaded graph.
     //
     //   default thread
     //       ↑
@@ -190,29 +196,46 @@ pub mod tests {
     //  where we spread audio encoding and state space search (decoding)
     //  into separate threads to improve latency.
     //
-    pub struct SyncNode {
+    pub struct Node {
+        // Incoming data connection(s), `Pushable`(s).
         pub input: Arc<SyncQueue<Message<usize, usize>>>,
-        pub worker: Worker,
-        pub workables: Vec<Box<dyn Workable<ThreadId = DefaultThread>>>,
+        // The underyling routine of the node.
+        pub routine: Routine,
+
+        // Incoming scheduling connection(s) `Workable` that we can
+        // invoke for data.
+        pub workers: Vec<Box<dyn Workable<ThreadId = DefaultThread>>>,
+
+        // Incoming combo `Pullable` that we can invoke for data and scheduling.
+        pub pullable:
+            Option<Box<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>>>,
+
+        // Outgoing data connections. Lets us shovel data into our child nodes.
         pub outputs: Vec<Box<dyn Pushable<Message = Message<usize, usize>>>>,
     }
 
-    impl SyncNode {
+    impl Node {
         pub fn new() -> Self {
-            SyncNode {
+            Node {
                 input: Arc::new(SyncQueue::new()),
-                worker: Worker { state: 0 },
-                workables: Vec::new(),
+                routine: Routine { state: 0 },
+                workers: Vec::new(),
+                pullable: None,
                 outputs: Vec::new(),
             }
         }
     }
 
-    impl Workable for SyncNode {
+    // Mark that our node will act as a connection in a graph.
+    impl Connection for Node {}
+
+    // Let's make our Node capable of being part of a `push`, `pull` graph by implementing
+    // `Workable` and `Pushable`
+    impl Workable for Node {
         fn work(&mut self) -> Result<(), Error> {
             let is_empty = self.input.is_empty()?;
             if is_empty {
-                for workable in self.workables.iter_mut() {
+                for workable in self.workers.iter_mut() {
                     workable.work()?;
                 }
             }
@@ -220,7 +243,7 @@ pub mod tests {
             let input_message = self.input.read_front()?;
             for output in self.outputs.iter_mut() {
                 match input_message.clone() {
-                    Message::Data(d) => output.push(Message::Data(self.worker.work(d)))?,
+                    Message::Data(d) => output.push(Message::Data(self.routine.process(d)))?,
                     signal => output.push(signal)?,
                 }
             }
@@ -231,15 +254,21 @@ pub mod tests {
         type ThreadId = DefaultThread;
     }
 
-    impl Connection for SyncNode {}
+    // To enable graph building we must implement factory methods for it
+    //
+    // 1. For `get`ing its input to give to something else.
+    // 2. For `add`ing something elses input to its output.
+    // 3. For `add`ing something elses `Workable` for scheduling.
 
-    impl Get<dyn Pushable<Message = Message<usize, usize>>> for SyncNode {
+    // Method for fetching input. We put it in a `Box` for dynamic dispatch.
+    impl Get<dyn Pushable<Message = Message<usize, usize>>> for Node {
         fn get(&self) -> Result<Box<dyn Pushable<Message = Message<usize, usize>>>, Error> {
             Ok(Box::new(self.input.clone()))
         }
     }
 
-    impl Add<dyn Pushable<Message = Message<usize, usize>>> for SyncNode {
+    // Method adding something to output.
+    impl Add<dyn Pushable<Message = Message<usize, usize>>> for Node {
         fn add(
             &mut self,
             connection: Box<dyn Pushable<Message = Message<usize, usize>>>,
@@ -247,16 +276,65 @@ pub mod tests {
             Ok(self.outputs.push(connection))
         }
     }
-    impl Add<dyn Workable<ThreadId = DefaultThread>> for SyncNode {
+    // Method for adding a schedulable node to be worked on.
+    impl Add<dyn Workable<ThreadId = DefaultThread>> for Node {
         fn add(
             &mut self,
             connection: Box<dyn Workable<ThreadId = DefaultThread>>,
         ) -> Result<(), Error> {
-            Ok(self.workables.push(connection))
+            Ok(self.workers.push(connection))
         }
     }
 
-    // NoSync variant of our node. Can be used to connect `Workers` without
+    // A `work` and `push` chain example. Since we use `SyncQueue` for message passing
+    // it is excellent for sharing nodes across different threads. As in the mutli-threaded graph
+    // example above.
+    #[test]
+    fn connect_push_work_bidi_chain() {
+        let node_1 = Box::new(Node::new());
+        let mut node_2 = Box::new(Node::new());
+        let mut node_3 = Box::new(Node::new());
+
+        let mut input = Get::<dyn Pushable<Message = Message<usize, usize>>>::get(&node_1).unwrap();
+
+        make_bidi(node_1, node_2.as_mut()).unwrap();
+        make_bidi(node_2, node_3.as_mut()).unwrap();
+
+        let sink = Arc::new(SyncQueue::new());
+
+        make_push(&mut node_3, &sink).unwrap();
+
+        input.push(Message::Data(0)).unwrap();
+        input.push(Message::Data(1)).unwrap();
+        input.push(Message::Data(2)).unwrap();
+
+        node_3.work().unwrap();
+        node_3.work().unwrap();
+        node_3.work().unwrap();
+
+        // 7 =
+        //   Node 1 (0 * 2 + 1) = 1
+        //   Node 2 (1 * 2 + 1) = 3
+        //   Node 3 (3 * 2 + 1) = 7
+        //
+        // 22 =
+        //  Node 1 (1 * 2 + 2) = 4
+        //  Node 2 (4 * 2 + 2) = 10
+        //  Node 3 (10 * 2 + 2) = 22
+        //
+        // 37 =
+        //  Node 1 (2 * 2 + 3) = 7
+        //  Node 2 (7 * 2 + 3) = 17
+        //  Node 3 (17 * 2 + 3) = 37
+        assert_eq!(
+            sink.read_all().unwrap(),
+            vec![Message::Data(7), Message::Data(22), Message::Data(37)]
+        );
+    }
+
+    // Now we can make out Node usable in a `Pull` graph with a few additional methods.
+
+    // Such a variant of a graph can be used to connect `Workers` without
     // synchronization such as condvars, arcs and mutexes
     //
     //   default thread
@@ -266,42 +344,8 @@ pub mod tests {
     //      node
     //       ↑
     //      node
-    pub struct NoSyncNode<PullableType>
-    where
-        PullableType: Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>,
-    {
-        pub input: Arc<SyncQueue<Message<usize, usize>>>,
-        pub pullable: Option<PullableType>,
-        pub worker: Worker,
-    }
 
-    impl<PullableType> NoSyncNode<PullableType>
-    where
-        PullableType: Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>,
-    {
-        pub fn new(pullable: PullableType) -> Self {
-            Self {
-                input: Arc::new(SyncQueue::new()),
-                pullable: Some(pullable),
-                worker: Worker { state: 0 },
-            }
-        }
-    }
-
-    impl NoSyncNode<NoPull<DefaultThread, Message<usize, usize>>> {
-        pub fn root() -> Self {
-            Self {
-                input: Arc::new(SyncQueue::new()),
-                pullable: None,
-                worker: Worker { state: 0 },
-            }
-        }
-    }
-
-    impl<PullableType> Pullable for NoSyncNode<PullableType>
-    where
-        PullableType: Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>,
-    {
+    impl Pullable for Node {
         type ThreadId = DefaultThread;
         type Message = Message<usize, usize>;
 
@@ -312,60 +356,57 @@ pub mod tests {
             };
 
             match value {
-                Message::Data(d) => return Ok(Message::Data(self.worker.work(d))),
+                Message::Data(d) => return Ok(Message::Data(self.routine.process(d))),
                 signal => return Ok(signal),
             }
         }
     }
 
-    impl<PullableType> Connection for NoSyncNode<PullableType> where
-        PullableType: Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>
-    {
+    // Graph building for `Pullable`
+    // Method adding something to output.
+    impl Add<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>> for Node {
+        fn add(
+            &mut self,
+            connection: Box<
+                dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>,
+            >,
+        ) -> Result<(), Error> {
+            self.pullable = Some(connection);
+
+            Ok(())
+        }
     }
 
-    // A chain that can be shared between threads.
+    // A chain that has `pull` connection, not using unnecessary mutexes, arcs and convars.
     #[test]
-    fn connect_sync_bidi_chain() {
-        let node_1 = Box::new(SyncNode::new());
-        let mut node_2 = Box::new(SyncNode::new());
-
-        let mut input = Get::<dyn Pushable<Message = Message<usize, usize>>>::get(&node_1).unwrap();
-
-        make_bidi(node_1, node_2.as_mut()).unwrap();
-
-        let sink = Arc::new(SyncQueue::new());
-
-        make_push(&mut node_2, &sink).unwrap();
-
-        input.push(Message::Data(0)).unwrap();
-        input.push(Message::Data(1)).unwrap();
-        input.push(Message::Data(2)).unwrap();
-
-        node_2.work().unwrap();
-        node_2.work().unwrap();
-        node_2.work().unwrap();
-
-        assert_eq!(
-            sink.read_all().unwrap(),
-            vec![Message::Data(3), Message::Data(10), Message::Data(17)]
-        );
-    }
-
-    // A chain that is no-Sync, not using unnecessary mutexes, arcs and convars.
-    #[test]
-    fn connect_nosync_bidi_chain() {
-        let node_1 = NoSyncNode::root();
+    fn connect_pull_bidi_chain() {
+        let node_1 = Box::new(Node::new());
+        let mut node_2 = Box::new(Node::new());
+        let mut node_3 = Box::new(Node::new());
 
         let mut input = node_1.input.clone();
 
-        let mut node_2 = NoSyncNode::new(node_1);
+        Add::<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>>::add(
+            node_2.as_mut(),
+            node_1,
+        )
+        .unwrap();
+        Add::<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>>::add(
+            node_3.as_mut(),
+            node_2,
+        )
+        .unwrap();
 
         input.push(Message::Data(0)).unwrap();
         input.push(Message::Data(1)).unwrap();
         input.push(Message::Data(2)).unwrap();
 
-        assert_eq!(node_2.pull().unwrap(), Message::Data(3));
-        assert_eq!(node_2.pull().unwrap(), Message::Data(10));
-        assert_eq!(node_2.pull().unwrap(), Message::Data(17));
+        assert_eq!(node_3.pull().unwrap(), Message::Data(7));
+        assert_eq!(node_3.pull().unwrap(), Message::Data(22));
+        assert_eq!(node_3.pull().unwrap(), Message::Data(37));
     }
+
+    // A pull graph can easily be used without dynamic dispatch if all connection(s) are unary.
+    // See the node -> line -> nosync -> node for an example. This can be useful for hotpath(s) of
+    // the graph if small messages are passed.
 }

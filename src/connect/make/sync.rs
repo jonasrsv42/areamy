@@ -9,18 +9,44 @@ use crate::{
     Message, Origin, Pushable, Trackable, Workable,
 };
 use std::marker::PhantomData;
+
+/// [`Connect`] is a utility that serves no purpose beyond improving readability
+/// it provides no additional functionality beyond what [make_push] and [make_bidi] does.
+///
+/// What it does provide is the ability to annotate the data that is [Pushable::push]ed through
+/// the connection. It has been deemed to reduce cognitive overhead when it comes to reading
+/// the graph declaration if typing is more visible.
+///
+/// Compare
+///
+/// ```rust
+/// areamy::sync::Connect<EncoderFrame>(a, b)
+/// areamy::sync::Connect<DecoderFrame>(b, c)
+/// areamy::sync::Connect<Decision>(c, d)
+/// ```
+/// versus
+///
+/// ```rust
+/// make_bidi(a, b)
+/// make_bidi(b, c)
+/// make_bidi(c, d)
+/// ```
+///
+/// While rust is completely fine to infer all the types in the graph as-long as
+/// all input nodes and output nodes are typed, it does help readability to be
+/// able to annotate the data in the code of intermediate nodes as well.
 pub struct Connect<DataType, SignalType = Trackable<&'static str>> {
-    // We do not need to store this type, the graph connections
-    // can infer the types from context.
-    //
-    // However annotating the data that flows through the
-    // graph during declaration does help with readability.
-    // (subjective).
-    //
-    // If you do not want to be annotating types, use
-    // the `make_bidi` method that this class invokes.
-    // it is only templates on `ParentType` and `ChildType`
-    // which can be inferred from context in connections.
+    /// We do not need to store this type, the graph connections
+    /// can infer the types from context.
+    ///
+    /// However annotating the data that flows through the
+    /// graph during declaration does help with readability.
+    /// (subjective).
+    ///
+    /// If you do not want to be annotating types, use
+    /// the `make_bidi` method that this class invokes.
+    /// it is only templates on `ParentType` and `ChildType`
+    /// which can be inferred from context in connections.
     datatype: PhantomData<DataType>,
     signaltype: PhantomData<SignalType>,
 }
@@ -30,7 +56,7 @@ where
     DataType: Send + Sync + Clone,
     SignalType: Origin,
 {
-    // Bidi connection with type hints for the data flowing :)
+    /// Exactly the same as [make_bidi] but with ability to ergonomically annotate the DataType.
     pub fn bidi<
         ParentType,
         ChildType,
@@ -54,6 +80,7 @@ where
         Ok(())
     }
 
+    /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
     pub fn push<
         ParentType,
         ChildType,

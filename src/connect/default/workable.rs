@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::{fatal, ThreadId, Workable};
 use std::sync::{Arc, Mutex};
 
+/// A [Workable] that is [std::marker::Send] + [std::marker::Sync] is also a [Workable]
 impl<WorkableType, ThreadIdType> Workable for Arc<Mutex<WorkableType>>
 where
     ThreadIdType: ThreadId,

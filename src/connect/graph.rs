@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::marker::{Connection, Unary};
+use crate::marker::{Connection, Multiplicity, Unary};
 use crate::ThreadId;
 
 /// A [`Workable`] is a [Connection] in our graph that is used to for scheduling.
@@ -49,10 +49,18 @@ pub trait Pullable: Send + Connection {
     fn pull(&mut self) -> Result<Self::Message, Error>;
 }
 
-/// [`Add`] trait is used to create connection(s) between our nodes.
-/// it also lets us declare the type of connection(s) that nodes are
+/// [`Add`] trait is used to create [Connection]s between our nodes.
+/// it also lets us declare the type of [Connection]s that nodes are
 /// expected to have through generics with dynamic dispatch.
-pub trait Add<ConnectionType: Connection + ?Sized, Multiplicity = Unary> {
+///
+/// [Add] is generic over [Connection] to allow [Add::add] different types, for example
+/// [Workable] or [Pushable]. It is also ?Sized because we make liberal use of
+/// dynamic dispatch, hence a common pattern is to [Add::add] `dyn Trait`.
+///
+/// [Add] is generic over [Multiplicity] to allow [Add::add] multiple inbound and outbound
+/// [Connection] for a single node. Per default all implementations are [Unary] unless
+/// otherwise stated to avoid specifying [Multiplicity] where not necessary.
+pub trait Add<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity = Unary> {
     fn add(&mut self, connection: Box<ConnectionType>) -> Result<(), Error>;
 }
 
@@ -62,9 +70,14 @@ pub trait Add<ConnectionType: Connection + ?Sized, Multiplicity = Unary> {
 /// Such as getting one of its input queues and adding as output queue to a different node.
 /// E.g. for recieving outgoing or ingoing connections.
 ///
-/// The templating lets us declare on nodes with dynamic dispatch what it's expected
-/// structure is.
-pub trait Get<ConnectionType: Connection + ?Sized, Multiplicity = Unary> {
+/// [Get] is generic over [Connection] to allow [Get::get] different types, for example
+/// [Pushable]. It is also ?Sized because we make liberal use of
+/// dynamic dispatch, hence a common pattern is to [Get::get] a `dyn Trait`.
+///
+/// [Get] is generic over [Multiplicity] to allow [Get::get] multiple inbound
+/// [Connection] for a single node. Per default all implementations are [Unary] unless
+/// otherwise stated to avoid specifying [Multiplicity] where not necessary.
+pub trait Get<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity = Unary> {
     fn get(&self) -> Result<Box<ConnectionType>, Error>;
 }
 
@@ -319,5 +332,4 @@ pub mod tests {
         assert_eq!(node_3.pull().unwrap(), Message::Data(22));
         assert_eq!(node_3.pull().unwrap(), Message::Data(37));
     }
-
 }

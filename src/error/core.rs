@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::backtrace::Backtrace;
 
+/// [`Location`] in the code of an error.
 #[derive(Debug)]
 pub struct Location {
     pub file: &'static str,
@@ -13,19 +14,25 @@ impl std::fmt::Display for Location {
     }
 }
 
+/// [`AnyErr`] is an error type and [Any] type to support reflection
+/// and propagating user defined errors via Areamy.
+///
+/// Since third-parties may implement nodes for Areamy and need to propagate
+/// custom errors through Areamy we support this via the [AnyErr] using reflection.
 pub trait AnyErr: Any + std::error::Error {}
 
+/// [`ErrorKind`] describes the types of errors that can occur in Areamy.
 #[derive(Debug)]
 pub enum ErrorKind {
-    // For fatal errors that are not recoverable.
-    // These should just bubble up to the main binary
-    // and provide a helpful error message.
+    /// For fatal errors that are not recoverable.
+    /// These should just bubble up to the main binary
+    /// and provide a helpful error message.
     Fatal(String),
-    // Other kinds of errors, could be user-defined.
-    // To handle these users have to try to runtime cast
-    // it to types they can handle and then handle it.
-    // We leverage `Any` because we cannot possibly
-    // enumerate all possible error types users may define.
+    /// Other kinds of errors, could be user-defined.
+    /// To handle these users have to try to runtime cast
+    /// it to types they can handle and then handle it.
+    /// We leverage `Any` because we cannot possibly
+    /// enumerate all possible error types users may define.
     Any(Box<dyn AnyErr>),
 }
 
@@ -41,6 +48,7 @@ impl std::fmt::Display for ErrorKind {
     }
 }
 
+/// [`crate::fatal`] is a macro for producing a [ErrorKind::Fatal] error.
 #[macro_export]
 macro_rules! fatal {
     ($message:expr) => {
@@ -55,6 +63,7 @@ macro_rules! fatal {
     };
 }
 
+/// [`crate::any_err`] is a macro for producing a [ErrorKind::Any] error.
 #[macro_export]
 macro_rules! any_err {
     ($any:expr) => {
@@ -69,9 +78,14 @@ macro_rules! any_err {
     };
 }
 
+/// [`Error`] is the error type typically returned in [std::result::Result]. it supports user defined errors, backtraces and storing error
+/// locations.
 pub struct Error {
+    /// The type of error carried, could be user defined.
     pub kind: ErrorKind,
+    /// The code location of the error.
     pub location: Location,
+    /// The backtrace, if supported.
     pub backtrace: Backtrace,
 }
 

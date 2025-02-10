@@ -4,6 +4,8 @@ use std::marker::PhantomData;
 
 // For all `Sync` node implementations or root `nosync` we provide this default implementation for
 // convenince.
+//
+// TODO get rid of!
 pub struct NoPull<ThreadId, Message> {
     thread_id: PhantomData<ThreadId>,
     message: PhantomData<Message>,

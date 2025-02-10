@@ -13,12 +13,12 @@ use crate::{
 /// The child lends its `ThreadIdType` to the parent for it to `work` and then `push` the `MessageType`
 /// back into the child.
 ///
-/// * `parent` - A [Workable] that we can add a (Pushable) into. The
-///     [Workable] will be added to the child so the child can schedule the work. The (Pushable)
-///     will be added as output for the child so it can push into the parent.
+/// * `parent` - A [Workable] that we can [Add] a [Pushable] into. The
+///     [Workable] will be [Add] to the child so the child can schedule the [Workable::work]. The
+///     [Pushable] will be [Add]ed as output for the child so it can [Pushable::push] into the parent.
 ///
-/// * `child` - A type that we can add the parent [Workable] into to grab ownership and from which we can retrieve the
-///     (Pushable) and give to the parent.
+/// * `child` - A type that we can [Add] the parent [Workable] into to grab ownership and from which we can [Get] the
+///     [Pushable] and give to the parent.
 ///
 ///
 /// The function takes the parent by value as its ownership will be transferred into the child.
@@ -51,16 +51,16 @@ where
     Ok(())
 }
 
-/// [`make_push`] creates a `push` connection between two nodes.
+/// [`make_push`] creates a [Pushable::push] connection between two nodes.
 ///
-/// A `push` (push connection) is a connection where data flows from parent to child.
+/// A [Pushable::push] is a connection where data flows from parent to child.
 ///
-/// The parent `push`es Message data to the child
+/// The parent [Pushable::push]es Message data to the child
 ///
-/// * `parent` - A node that we can add a [Pushable] too. The parent will push data into
+/// * `parent` - A node that we can [Add] a [Pushable] too. The parent will [Pushable::push] data into
 ///     it when the parent is scheduled.
 ///
-/// * `child` - A node that we fetch the `Pushable` from. It will recieve the data when the parent
+/// * `child` - A node that we [Get] the [Pushable] from. It will recieve the data when the parent
 ///     is scheduled.
 ///
 /// The parent is &mut because we mutate it by adding a `Pushable` edge to it. The child
@@ -81,10 +81,10 @@ pub fn make_push<GetMultiplicity: Multiplicity, AddMultiplicity: Multiplicity, M
 /// A `work` connection in a scheduling connection. In this case the child can make the parent
 /// work.
 ///
-/// * `parent` - A [Workable]. The parent will be added to the child so the 
-///     child can schedule the work. 
+/// * `parent` - A [Workable]. The parent will be [Add]ed to the child so the
+///     child can schedule the work.
 ///
-/// * `child` - A type that we can add the parent [Workable] to for scheduling.
+/// * `child` - A type that we can [Add] the parent [Workable] to for scheduling.
 ///
 /// The function takes the parent by value as its ownership will be transferred to the child.
 /// The child is taken by mutable reference as we will be adding the parent to it.
@@ -92,12 +92,11 @@ pub fn make_push<GetMultiplicity: Multiplicity, AddMultiplicity: Multiplicity, M
 /// After this call, the `child` will own the parent. The child can keep being connected into
 /// things in the graph, but the `parent` is done.
 ///
-///
 /// <div class="info">  
 /// By transferring ownership upon scheduling connection we make it hard to introduce bugs such as
 /// scheduling circles, which would be deadlocks.
 /// </div>
-/// 
+///
 pub fn make_work<ParentType, ChildMultiplicity: Multiplicity, ThreadIdType>(
     parent: Box<ParentType>,
     child: &mut impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>,

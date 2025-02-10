@@ -1,3 +1,7 @@
+//!
+//! Utilities for creating [crate::connect::marker::Connection] between Nodes.
+//!
+//!
 mod core;
 pub mod sync;
 

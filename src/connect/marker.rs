@@ -27,6 +27,7 @@ impl<MessageType> Add<dyn Pushable<Message = MessageType>> for PhantomNode<Messa
     }
 }
 
+/// [`Connection`]
 pub trait Connection {}
 
 impl<ConnectionType: Connection + ?Sized> Connection for Arc<Mutex<ConnectionType>> {}

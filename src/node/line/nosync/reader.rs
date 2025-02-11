@@ -23,3 +23,70 @@ where
         a.push(message)
     }
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::node::line::nosync::builder::{make_pull, Root};
+    use crate::sync::Source;
+    use crate::{DefaultThread, Message, Pushable};
+    use std::collections::VecDeque;
+
+    pub struct Identity {
+        output: VecDeque<usize>,
+    }
+
+    impl Identity {
+        pub fn new() -> Result<Self, Error> {
+            Ok(Self {
+                output: VecDeque::new(),
+            })
+        }
+    }
+
+    impl crate::LineRoutine<usize, usize> for Identity {
+        fn output(&mut self) -> &mut VecDeque<usize> {
+            &mut self.output
+        }
+
+        fn work(&mut self, message: usize) -> Result<(), Error> {
+            Ok(self.output.push_back(message))
+        }
+
+        fn flush(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn line_nosync_readers_basic() {
+        let root = Root::<Message<usize, usize>, DefaultThread>::new();
+        let mut source = Source::of(&root).unwrap();
+
+        let mut line = make_pull(root, Identity::new()).unwrap();
+
+        source.push(Message::Data(1)).unwrap();
+        source.push(Message::Data(2)).unwrap();
+        source.push(Message::Data(3)).unwrap();
+        source.push(Message::Data(4)).unwrap();
+        source.push(Message::Marker(0)).unwrap();
+        source.push(Message::Data(5)).unwrap();
+        source.push(Message::Data(6)).unwrap();
+        source.push(Message::Marker(0)).unwrap();
+
+        assert_eq!(
+            read_until(&mut line, Message::Marker(0)).unwrap(),
+            vec![
+                Message::Data(1),
+                Message::Data(2),
+                Message::Data(3),
+                Message::Data(4)
+            ]
+        );
+
+        assert_eq!(
+            read_until(&mut line, Message::Marker(0)).unwrap(),
+            vec![Message::Data(5), Message::Data(6),]
+        );
+    }
+}

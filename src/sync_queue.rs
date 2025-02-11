@@ -39,6 +39,12 @@ impl<T: Clone> SyncQueue<T> {
         }
     }
 
+    /// poll element from front of queue
+    pub fn poll(&self) -> Result<Option<T>, Error> {
+        let mut buffer = self.buffer.lock().map_err(|e| fatal!(e))?;
+        Ok(buffer.pop_front())
+    }
+
     /// wait for element from front of queue
     pub fn wait_front(&self) -> Result<(), Error> {
         let mut buffer = self.buffer.lock().map_err(|e| fatal!(e))?;
@@ -132,6 +138,14 @@ mod tests {
         queue.push_back(3.5).unwrap();
         assert_eq!(queue.read_front().unwrap(), 3.5);
         assert_eq!(queue.len().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_poll() {
+        let queue = SyncQueue::<f64>::new();
+        assert_eq!(queue.poll().unwrap(), None);
+        queue.push_back(3.5).unwrap();
+        assert_eq!(queue.poll().unwrap(), Some(3.5));
     }
 
     #[test]

@@ -130,18 +130,11 @@ where
         let _resume = 1;
 
         let mut push_ok = false;
-        // Otherwise we loop until we have some output.
-        // To produce output we work on all the input
-        // or request more input by working.
+
+        //Work until we have some output
         while !push_ok {
-            let input_is_empty = self.input.is_empty()?;
-
-            if !input_is_empty {
-                let input_object = self.input.read_front()?;
-                // If we have some input we work on it.
-
-                // Do work on our input or forward signals from input to output.
-                match input_object {
+            match self.input.poll()? {
+                Some(input) => match input {
                     Message::Data(data) => {
                         self.worker.work(data.clone())?;
 
@@ -171,26 +164,20 @@ where
                     Message::Marker(origin) => {
                         push_ok = self.maybe_mark(&origin)?;
                     }
+                },
+
+                None => {
+                    // sources and work them.
+                    if self.workers.is_empty() {
+                        // Just wait until there is an element.
+                        self.input.wait_front()?;
+                    }
+
+                    // Then we work input from each source once.
+                    for workable in self.workers.iter_mut() {
+                        workable.work()?;
+                    }
                 }
-
-                // Continue to avoid unecessary work.
-                continue;
-            }
-
-            // NOTE: this part is unreachable if our node has `Pullable` input.
-            // as it will always pull it until it gets something.
-            // This following part is for nodes without nosync `Pullable` input.
-            //
-            // If there were no available input we grab ownership of our
-            // sources and work them.
-            if self.workers.is_empty() {
-                // Just wait until there is an element.
-                self.input.wait_front()?;
-            }
-
-            // Then we work input from each source once.
-            for workable in self.workers.iter_mut() {
-                workable.work()?;
             }
         }
 
@@ -243,7 +230,7 @@ where
         }
     }
 
-    /// Maybe forward a flush signal. If the signal has travelled in a loop 
+    /// Maybe forward a flush signal. If the signal has travelled in a loop
     /// we ignore it and stop its graph traversal.
     fn maybe_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
         // If we already visited. We do not propagate.
@@ -257,7 +244,7 @@ where
         Ok(true)
     }
 
-    /// Maybe forward a mark signal. If the signal has travelled in a loop 
+    /// Maybe forward a mark signal. If the signal has travelled in a loop
     /// we ignore it and stop its graph traversal.
     fn maybe_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
         // If we already visited. We do not propagate.
@@ -294,9 +281,8 @@ where
     }
 }
 
-
-/// Implement [LineTrait] for [Line]. 
-/// It's mostly a type mapping after we've implemented 
+/// Implement [LineTrait] for [Line].
+/// It's mostly a type mapping after we've implemented
 /// all the supertraits.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> LineTrait
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
@@ -313,7 +299,7 @@ where
     type LineRoutine = LineRoutineType;
 }
 
-/// Implement the [Get] constructor for inbound [Pushable] edge. 
+/// Implement the [Get] constructor for inbound [Pushable] edge.
 /// This allows users to get the input connection of this node.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
     Get<dyn Pushable<Message = Message<In, SignalType>>>
@@ -330,7 +316,7 @@ where
     }
 }
 
-/// Implement the [Add] constructor for inbound [Workable] edge. 
+/// Implement the [Add] constructor for inbound [Workable] edge.
 /// This allows users to add [Workable] edges to this node such that it can schedule them.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Add<dyn Workable<ThreadId = ThreadIdType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
@@ -346,7 +332,7 @@ where
     }
 }
 
-/// Implement the [Add] constructor for output [Pushable] edge. 
+/// Implement the [Add] constructor for output [Pushable] edge.
 /// This allows users to add [Pushable] edges to this node such that it can [Pushable::push] data
 /// into them when scheduled.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
@@ -368,7 +354,7 @@ where
 }
 
 /// [make_line] creates a [LineTrait] implementation from a [LineRoutine] this
-/// can then be connected to other graph nodes using the functions such as 
+/// can then be connected to other graph nodes using the functions such as
 /// - [crate::make_bidi]
 /// - [crate::make_push]
 /// - [crate::make_work]
@@ -404,10 +390,25 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::node::line::routine::tests::MockLine;
+    use crate::node::line::routine::tests::{AccMockLine, MockLine};
     use crate::{make_bidi, sync::make_line};
     use crate::{sink::sync::tee, sync::Connect, sync::Sink, sync::Source};
     use std::time::Instant;
+
+    #[test]
+    fn line_accumulating_node_works() {
+        let line = make_line(AccMockLine::new()).unwrap();
+        let mut source = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
+
+        // Add one flush
+        source.push(Message::Data(1)).unwrap();
+        source.push(Message::Data(2)).unwrap();
+
+        assert_eq!(sink.read().unwrap(), Message::Data(vec![1, 2]));
+
+        // Write test showing that if a node needs two messages to return pullable still works.
+    }
 
     #[test]
     fn line_basic_run() {

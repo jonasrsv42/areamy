@@ -77,11 +77,9 @@ where
         // on the same input.
         let _resume = 1;
 
-        let input_object = self.pullable.pull()?;
-
         loop {
-            // Do work on our input or forward signals from input to output.
-            match &input_object {
+            // Pull until we manage to produce an output
+            match self.pullable.pull()? {
                 Message::Data(data) => {
                     self.worker.work(data.clone())?;
 
@@ -165,11 +163,27 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::nosync::builder::{make_pull, Root};
-    use crate::node::line::routine::tests::MockLine;
+    use crate::node::line::routine::tests::{AccMockLine, MockLine};
     use crate::nosync::Sink;
     use crate::sync::Source;
     use crate::Pushable;
     use std::time::Instant;
+
+    #[test]
+    fn line_accumulating_node_works() {
+        let root = Root::new();
+        let mut source = Source::new(&root).unwrap();
+        let line = make_pull(root, AccMockLine::new()).unwrap();
+        let mut sink = Sink::new(line);
+
+        // Add one flush
+        source.push(Message::Data(1)).unwrap();
+        source.push(Message::Data(2)).unwrap();
+
+        assert_eq!(sink.pull().unwrap(), Message::Data(vec![1, 2]));
+
+        // Write test showing that if a node needs two messages to return pullable still works.
+    }
 
     #[test]
     fn line_nosync_basic_run() {

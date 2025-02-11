@@ -1,3 +1,4 @@
+//! Type markers.
 use crate::graph::Add;
 use crate::Pushable;
 use std::marker::PhantomData;

@@ -98,10 +98,10 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
     // Nosync is useful to avoid unnecessary mutexes.
     // each connection is lockfree, at the cost of not being `Sync`.
 
-    let in_node = areamy::nosync::root(AddOne::new())?;
+    let root = areamy::nosync::Root::new();
+    let source = areamy::sync::Source::<usize>::of(&root)?;
 
-    let source = areamy::sync::Source::<usize>::of(&in_node.input)?;
-
+    let in_node = areamy::nosync::Connect::<usize>::pull(root,AddOne::new())?;
     let middle_node = areamy::nosync::Connect::<usize>::pull(in_node, AddOne::new())?;
     let out_node = areamy::nosync::Connect::<usize>::pull(middle_node, AddOne::new())?;
 

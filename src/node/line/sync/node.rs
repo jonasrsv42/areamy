@@ -1,3 +1,4 @@
+//! [LineTrait] and default implementation for running [LineRoutine].
 use crate::error::Error;
 use crate::node::line::LineRoutine;
 use crate::signal::Visitors;
@@ -11,6 +12,20 @@ use crate::{Pushable, Workable};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a line.
+/// [`LineTrait`] describes the contract of this Node.
+///
+/// - The node is [Workable]
+/// - We can [Add] a [Workable] to it.
+/// - We can [Add] [Pushable] to it, outbound connections to send data.
+/// - We can [Get] a [Pushable] from it. Inbound connection to recieve data.
+///
+/// It forms the basis if a node that recieves one input stream of data and
+/// produces one output stream of data using a [LineRoutine].
+///
+/// Areamy provides a default implementation [Line], but users are
+/// encouraged to implement [LineTrait] whenever [Line] does not
+/// suit their needs.
+
 pub trait LineTrait:
     // We can work on the line to produce output.
     Workable
@@ -21,18 +36,18 @@ pub trait LineTrait:
     // We can retrieve its edge for others to push into.
     + Get<dyn Pushable<Message =  Message<Self::In, Self::Signal>>>
 {
-    // The input data going into the line.
+    /// The input data going into the line.
     type In: Clone + Send + Sync + 'static;
-    // The output data leaving it.
+    /// The output data leaving it.
     type Out: Clone + Send + Sync;
-    // The signal type used in the graph.
+    /// The signal type used in the graph.
     type Signal: Origin + Clone + 'static;
-    // The coroutine associated with this node.
+    /// The coroutine associated with this node.
     type LineRoutine: LineRoutine<Self::In, Self::Out>;
 
 }
 
-// A Send+Sync+Clone variant of our line.
+///  A Send+Sync+Clone variant of our [LineTrait] for types that implement it.
 impl<LineType: LineTrait> LineTrait for Arc<Mutex<LineType>> {
     type In = LineType::In;
     type Out = LineType::Out;
@@ -40,6 +55,12 @@ impl<LineType: LineTrait> LineTrait for Arc<Mutex<LineType>> {
     type LineRoutine = LineType::LineRoutine;
 }
 
+/// [`Line`] is a default implementation of [LineTrait]. See [Line::work]
+/// for implementation details on how it works.
+///
+/// If the implementation is not suitable for a usecase then implementing
+/// your own [LineTrait] will let it be used as a drop-in replacement
+/// for [Line].
 pub struct Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Clone + Send + Sync,
@@ -48,24 +69,24 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    // State to keep track of signal visitors. It is used
-    // to support signal passing in e.g. cyclic graphs.
+    /// State to keep track of signal visitors. It is used
+    /// to support signal passing in e.g. cyclic graphs.
     pub visitors: Visitors,
-    // Worker or `Coroutine` associated with the current node.
+    /// Worker or `Coroutine` associated with the current node.
     pub worker: LineRoutineType,
 
-    // Parent nodes that we can pull on.
+    /// Parent nodes that we can schedule to work.
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
-    // Child inputs that we can push into.
+    /// Edges that we can push data into.
     pub pushes: Vec<Box<dyn Pushable<Message = Message<Out, SignalType>>>>,
 
-    // Input to our current node that parents will push into.
+    /// Input to our current node that parents will push into.
     pub input: Arc<SyncQueue<Message<In, SignalType>>>,
 }
 
-// Mark our Line as a possible connection in a graph. It's a connection
-// because it is `Workable`.
+/// Mark our Line as a possible connection in a graph. It's a connection
+/// because it is `Workable`.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Connection
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
@@ -86,6 +107,13 @@ where
     SignalType: Origin + Clone + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
 {
+    /// [Line::work] will produce output into all its [Line::pushes] when
+    /// [Line::work] is invoked.
+    ///
+    /// It will prioritize returning [Line::worker] output from the last time
+    /// it was scheduled. If there's no buffered output it will create new
+    /// by working more on the [Line::worker] or by scheduling [Line::workers]
+    /// to recieve additional input.
     fn work(&mut self) -> Result<(), Error> {
         // First we try to push any available output from our workers buffer.
         match self.next_output()? {
@@ -179,6 +207,9 @@ where
     SignalType: Origin + Clone + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
 {
+    /// Create a [Line] owned by the [DefaultThread] with routine [LineRoutine].
+    ///
+    /// * `worker` - A [LineRoutine] that will transform data in this node.
     pub fn new(worker: LineRoutineType) -> Self {
         Line {
             visitors: Visitors::new(),
@@ -199,6 +230,9 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
+    /// Create a [Line] with routine [LineRoutine].
+    ///
+    /// * `worker` - A [LineRoutine] that will transform data in this node.
     pub fn of(worker: LineRoutineType) -> Self {
         Line {
             visitors: Visitors::new(),
@@ -209,6 +243,8 @@ where
         }
     }
 
+    /// Maybe forward a flush signal. If the signal has travelled in a loop 
+    /// we ignore it and stop its graph traversal.
     fn maybe_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
         // If we already visited. We do not propagate.
         if self.visitors.contains(flush) {
@@ -221,6 +257,8 @@ where
         Ok(true)
     }
 
+    /// Maybe forward a mark signal. If the signal has travelled in a loop 
+    /// we ignore it and stop its graph traversal.
     fn maybe_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
         // If we already visited. We do not propagate.
         if self.visitors.contains(mark) {
@@ -233,6 +271,7 @@ where
         Ok(true)
     }
 
+    /// Get buffered output and reset signal traversal buffers.
     fn next_output(&mut self) -> Result<Option<Message<Out, SignalType>>, Error> {
         // If we have output in our worker queue just immediately return it.
         match self.worker.output().pop_front() {
@@ -245,6 +284,7 @@ where
         }
     }
 
+    /// push output into all [Pushable::push] edges.
     fn push(&mut self, obj: Message<Out, SignalType>) -> Result<(), Error> {
         for pushable in self.pushes.iter_mut() {
             pushable.push(obj.clone())?;
@@ -254,21 +294,10 @@ where
     }
 }
 
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Get<dyn Pushable<Message = Message<In, SignalType>>>
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Clone + Send + Sync + 'static,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
-{
-    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<In, SignalType>>>, Error> {
-        Get::get(&self.input)
-    }
-}
 
+/// Implement [LineTrait] for [Line]. 
+/// It's mostly a type mapping after we've implemented 
+/// all the supertraits.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> LineTrait
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
@@ -284,6 +313,25 @@ where
     type LineRoutine = LineRoutineType;
 }
 
+/// Implement the [Get] constructor for inbound [Pushable] edge. 
+/// This allows users to get the input connection of this node.
+impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Get<dyn Pushable<Message = Message<In, SignalType>>>
+    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+where
+    In: Clone + Send + Sync + 'static,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    LineRoutineType: LineRoutine<In, Out>,
+{
+    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<In, SignalType>>>, Error> {
+        Get::get(&self.input)
+    }
+}
+
+/// Implement the [Add] constructor for inbound [Workable] edge. 
+/// This allows users to add [Workable] edges to this node such that it can schedule them.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Add<dyn Workable<ThreadId = ThreadIdType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
@@ -298,6 +346,9 @@ where
     }
 }
 
+/// Implement the [Add] constructor for output [Pushable] edge. 
+/// This allows users to add [Pushable] edges to this node such that it can [Pushable::push] data
+/// into them when scheduled.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
     Add<dyn Pushable<Message = Message<Out, SignalType>>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
@@ -314,6 +365,40 @@ where
     ) -> Result<(), Error> {
         Ok(self.pushes.push(pushable))
     }
+}
+
+/// [make_line] creates a [LineTrait] implementation from a [LineRoutine] this
+/// can then be connected to other graph nodes using the functions such as 
+/// - [crate::make_bidi]
+/// - [crate::make_push]
+/// - [crate::make_work]
+pub fn make_line<In, Out, SignalType, ThreadIdType, RoutineType>(
+    maybe_worker: Result<RoutineType, Error>,
+) -> Result<
+    Box<
+        impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
+            + Workable<ThreadId = ThreadIdType>
+            + Add<dyn Workable<ThreadId = ThreadIdType>>
+            + Send,
+    >,
+    Error,
+>
+where
+    In: Clone + Send + Sync + 'static,
+    Out: Clone + Send + Sync + 'static,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId + Clone,
+    RoutineType: LineRoutine<In, Out> + 'static,
+{
+    let worker = maybe_worker?;
+
+    Ok(Box::new(Line::<
+        In,
+        Out,
+        SignalType,
+        ThreadIdType,
+        RoutineType,
+    >::of(worker)))
 }
 
 #[cfg(test)]

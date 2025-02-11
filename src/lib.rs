@@ -18,7 +18,7 @@ pub use connect::marker;
 
 pub use crate::connect::graph;
 pub use connect::{
-    make_bidi, make_push, make_work, NoPull, Pullable, Pushable, Workable,
+    make_bidi, make_push, make_work, marker::Connection, Pullable, Pushable, Workable,
 };
 pub use message::Message;
 pub use node::{

@@ -1,6 +1,4 @@
-// Utility function for typed graph declarations. These functions are only useful for improving
-// readability and are not needed for anything else. The `Core` function suffice for building
-// graphs because types can be inferred from context.
+//! Utility functions for typed [make_bidi] and [make_push]
 use crate::{
     error::Error,
     graph::{Add, Get},
@@ -19,14 +17,14 @@ use std::marker::PhantomData;
 ///
 /// Compare
 ///
-/// ```rust
+/// ```bash
 /// areamy::sync::Connect<EncoderFrame>(a, b)
 /// areamy::sync::Connect<DecoderFrame>(b, c)
 /// areamy::sync::Connect<Decision>(c, d)
 /// ```
 /// versus
 ///
-/// ```rust
+/// ```bash
 /// make_bidi(a, b)
 /// make_bidi(b, c)
 /// make_bidi(c, d)

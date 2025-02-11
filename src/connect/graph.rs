@@ -1,3 +1,4 @@
+//! Graph connections and building blocks.
 use crate::error::Error;
 use crate::marker::{Connection, Multiplicity, Unary};
 use crate::ThreadId;
@@ -5,8 +6,8 @@ use crate::ThreadId;
 /// A [`Workable`] is a [Connection] in our graph that is used to for scheduling.
 /// Child nodes will invoke the [Workable] connection to parents to make parent work.
 ///
-/// The [Workable] has an associated [ThreadId] to indicate the unique thread that
-/// is allowed to work on this node. By marking nodes we can ensure we don't have
+/// The [Workable] has an associated [Workable::ThreadId] to indicate the unique thread that
+/// is allowed to [Workable::work] on this node. By marking nodes we can ensure we don't have
 /// threads contending on nodes.
 pub trait Workable: Send + Connection {
     // Thread associated with this `Workable`.
@@ -15,11 +16,10 @@ pub trait Workable: Send + Connection {
 }
 
 /// A [`Pushable`] is a data [Connection] in our graph, it is used for dataflow.
-/// The associated Message type is the type that can be accepted into this [Pushable]
-/// [Connection].
+/// The associated [Pushable::Message] type is the type that can be [Pushable::push]ed through this [Connection].
 ///
 /// Child nodes will typically hold [Pushable] referencs to queues owned by a parent
-/// and push data into them when scheduled.
+/// and [Pushable::push] [Pushable::Message] into them when scheduled.
 ///
 /// <div class="warning"> Nodes should never implement [Pushable] as it
 /// easily leads to circualar references and memory leaks </div>
@@ -33,8 +33,8 @@ pub trait Pushable: Sync + Send + Connection {
 }
 
 /// [`Pullable`] combines [Workable] and [Pushable] in being both a scheduling and dataflow
-/// [Connection]. As with [Workable] the [Pullable] connection has a unique [ThreadId] associated
-/// with it as well as a message that it will yield upon scheduling.
+/// [Connection]. As with [Workable] the [Pullable] connection has a unique [Pullable::ThreadId] associated
+/// with it as well as a [Pullable::Message] that it will yield upon scheduling.
 ///
 /// A [Pullable] is less flexible but is useful to declare line segments in the graph. It lets
 /// us skip the syncronization parts of [Pushable] connections.

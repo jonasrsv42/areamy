@@ -1,40 +1,69 @@
+//! [LineRoutine] is the work horse of all Line nodes. It is a frankenstein [std::ops::Coroutine].
+
 use crate::error::Error;
 use std::collections::VecDeque;
 
+/// Signal to the runtime of the [LineRoutine] state.
 pub enum Resume {
-    // The Routine is for now. It should await
-    // the next message to become available.
+    /// The [LineRoutine] is done now, pending further input.
+    /// the Node should await additional input and invoke [LineRoutine::work].
+    ///
+    /// Further calls to [LineRoutine::resume] will only yield await, or an [Error].
     Await,
 
-    // The Routine is still Resumable.
+    /// The [LineRoutine] can be [LineRoutine::resume]
     Continue,
 }
 
-// A line `Routine` is a stateful mapping.
-// Taking a stream on `In` types and produces
-// a stream of `Out` types.
+/// [`LineRoutine`] is a stateful mapping taking a stream off `In` types and producing
+/// a stream of `Out` types through its output queue.
 pub trait LineRoutine<In, Out>: Send
 where
     In: Clone,
     Out: Clone,
 {
-    // Retrieve the output queue
+    /// [LineRoutine::output] returns a mutable reference of the [LineRoutine]s buffered output.
     fn output(&mut self) -> &mut VecDeque<Out>;
 
-    // `work` is invoked as soon as a `message` is ready. This method performs processing in
-    // a synchronous manner. It is expected to populate the output once the routine has
-    // accumulated sufficient state.
+    /// [LineRoutine::work] instructs the [LineRoutine]  to work on the next message
+    /// and, Optionally, produce some output in the [LineRoutine::output] queue.
+    ///
+    /// The routine does not have to produce any output and is expected to accumulate
+    /// state while being invoked.
+    ///
+    /// After [LineRoutine::work] is invoked [LineRoutine::resume] will be invoked
+    /// until it yields [Resume::Await]. Then [LineRoutine::work] will be invoked
+    /// again and so it repeats.
+    ///
+    /// ```bash
+    /// [LineRoutine::work] -> [LineRoutine::resume] (until [Resume::Await]) -> [LineRoutine::work]
+    /// ```
+    ///
+    /// The Routine will loop like that, potentially forever.
+    ///
+    /// However, **it is not guaranteed** that [LineRoutine::resume] is invoked again after it yields a
+    /// [Resume::Continue] as the parent node may choose to invoke [LineRoutine::work]
+    /// upon reception of new input. [LineRoutine] thus has to be robust to [LineRoutine::work] being called at any time.
+    /// Even during a [Resume::Continue] loop. The [LineRoutine] may choose to just buffer the new
+    /// message internally though.
+    ///
+    ///
     fn work(&mut self, message: In) -> Result<(), Error>;
 
-    // Flush the routine. This is expected to output if there's sufficient state and
-    // to reset all the internal state of the `Routine`.
+    /// [LineRoutine::flush] signals to the routine that it should output any state it can into
+    /// the [LineRoutine::output] and then reset all of its internal state.
+    ///
+    /// <div class="warning"> The routine should never reset its output queue </div>
+    ///
+    /// It should only reset all other state associated with processing.
     fn flush(&mut self) -> Result<(), Error>;
 
-    // `resume` is invoked after `work` if a Node does not have more messages
-    // to work on yet. It will keep getting invoked until
-    // 1. `Await` is returned
-    // 2. A message becomes available to `work` on.
-    // 3. Flush is invoked.
+    /// [LineRoutine::resume] is invoked after [LineRoutine::work] to allow a node to quickly emit
+    /// something and then be resumed. [LineRoutine::resume] will keep getting invoked until
+    ///
+    /// 1. [Resume::Await] is invoked, at which point the next call will be to [LineRoutine::work].
+    /// 2. New input data is available for the node, at which point [LineRoutine::work] may be
+    ///    invoked again.
     fn resume(&mut self) -> Result<Resume, Error> {
         // Per default our `Routine` is not Resumable so we just await.
         Ok(Resume::Await)
@@ -62,7 +91,6 @@ pub mod tests {
                 out: VecDeque::new(),
             })
         }
-
     }
 
     impl LineRoutine<usize, usize> for MockLine {

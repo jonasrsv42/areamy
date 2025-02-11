@@ -131,9 +131,12 @@ where
 
         let mut push_ok = false;
 
-        //Work until we have some output
+        // Work until we have some output to push into children.
         while !push_ok {
+
+            // Poll for input.
             match self.input.poll()? {
+                // If there's input forward to coroutine and output any new things.
                 Some(input) => match input {
                     Message::Data(data) => {
                         self.worker.work(data.clone())?;
@@ -166,10 +169,10 @@ where
                     }
                 },
 
+                // If no input make parents work in hopes of producing input.
                 None => {
-                    // sources and work them.
+                    // If there's no parents we just wait forever hoping someone gives us smt.
                     if self.workers.is_empty() {
-                        // Just wait until there is an element.
                         self.input.wait_front()?;
                     }
 

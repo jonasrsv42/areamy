@@ -97,14 +97,15 @@ pub fn make_push<GetMultiplicity: Multiplicity, AddMultiplicity: Multiplicity, M
 /// scheduling circles, which would be deadlocks.
 /// </div>
 ///
-pub fn make_work<ParentType, ChildMultiplicity: Multiplicity, ThreadIdType>(
-    parent: Box<ParentType>,
-    child: &mut impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>,
+pub fn make_work<MultiplicityType: Multiplicity, ThreadIdType>(
+    parent: Box<impl Workable<ThreadId = ThreadIdType> + 'static>,
+    child: &mut impl Add<dyn Workable<ThreadId = ThreadIdType>, MultiplicityType>,
 ) -> Result<(), Error>
 where
-    ParentType: Workable<ThreadId = ThreadIdType> + 'static,
 {
     Add::add(child, parent)?;
 
     Ok(())
 }
+
+

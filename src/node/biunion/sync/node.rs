@@ -1,18 +1,14 @@
+use crate::biunion;
 use crate::error::Error;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::signal::Visitors;
 use crate::SyncQueue;
-use crate::{fatal, marker::Connection, marker::Multiplicity, DefaultThread, ThreadId};
+use crate::{fatal, marker::Connection, DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
     Message, Origin, Pushable, Workable,
 };
 use std::sync::{Arc, Mutex};
-
-pub struct LeftSource {}
-pub struct RightSource {}
-impl Multiplicity for LeftSource {}
-impl Multiplicity for RightSource {}
 
 // The contract of a `Sync` node forming a biunion.
 // it has two workable sources and inputs.
@@ -23,12 +19,12 @@ pub trait BiunionTrait:
     + Add<dyn Pushable<Message = Message<Self::Out, Self::Signal>>>
 
     // We can add things for it to work on, parents nodes.
-    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, LeftSource>
-    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, RightSource>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Left>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Right>
 
     // We can retrieve pushable edges
-    + Get<dyn Pushable<Message = Message<Self::Left, Self::Signal>> ,LeftSource>
-    + Get<dyn Pushable<Message = Message<Self::Right, Self::Signal>>,RightSource>
+    + Get<dyn Pushable<Message = Message<Self::Left, Self::Signal>> ,biunion::Left>
+    + Get<dyn Pushable<Message = Message<Self::Right, Self::Signal>>,biunion::Right>
 {
     // The input data going into the line.
     type Left: Clone + Send + Sync + 'static;
@@ -109,50 +105,31 @@ where
         // To produce output we work on all the input
         // or request more input by working.
         while !push_ok {
-            // We prioritize left inputs.
-            let left_input_is_empty = self.left_input.is_empty()?;
-            if !left_input_is_empty {
-                push_ok = self.do_left_input()?;
+            match self.left_input.poll()? {
+                Some(message) => push_ok = self.do_left_input(message)?,
+                None => match self.right_input.poll()? {
+                    Some(message) => push_ok = self.do_right_input(message)?,
+                    None => {
+                        // We always work left and right. This is problematic if
+                        // one workable is much more active than the other. If there is a use-case for this
+                        // we may need to make workables limited blocking.. or adaptive.. or throw more threads
+                        // at it.
+                        //
+                        // However the primary use-case for biunion now involves connecting one
+                        // input only as pushable to send reset signals. So won't fix now.
+                        //
+                        // Future me may complain.
+                        //
+                        // If Workables are emtpy we also do spinlocking for now. Need to think about that.
+                        for workable in self.left_workers.iter_mut() {
+                            workable.work()?;
+                        }
 
-                // Continue to `maybe` quickly propagate the left result.
-                continue;
-            }
-
-            let right_input_is_empty = self.right_input.is_empty()?;
-            if !right_input_is_empty {
-                push_ok = self.do_right_input()?;
-
-                // Continue to `maybe` quickly propagate the left result.
-                continue;
-            }
-
-            // We always work left and right. This is problematic if
-            // one workable is much more active than the other. If there is a use-case for this
-            // we may need to make workables limited blocking.. or adaptive.. or throw more threads
-            // at it.
-            //
-            // However the primary use-case for biunion now involves connecting one
-            // input only as pushable to send reset signals. So won't fix now.
-            //
-            // Future me may complain.
-            //
-            // If Workables are emtpy we also do spinlocking for now. Need to think about that.
-
-            {
-                // If there were no available input we grab ownership of our
-                // sources and work them.
-
-                // Then we work input from each source once.
-                for workable in self.left_workers.iter_mut() {
-                    workable.work()?;
-                }
-            }
-
-            {
-                // Then we work input from each source once.
-                for workable in self.right_workers.iter_mut() {
-                    workable.work()?;
-                }
+                        for workable in self.right_workers.iter_mut() {
+                            workable.work()?;
+                        }
+                    }
+                },
             }
         }
 
@@ -254,12 +231,10 @@ where
         Ok(true)
     }
 
-    fn do_left_input(&mut self) -> Result<bool, Error> {
-        let input_object = self.left_input.read_front()?;
-
+    fn do_left_input(&mut self, message: Message<Left, SignalType>) -> Result<bool, Error> {
         let push_ok;
         // Do work on our input or forward signals from input to output.
-        match input_object {
+        match message {
             Message::Data(data) => {
                 self.worker.left_work(data)?;
                 // If left or right is OK push is OK.
@@ -278,12 +253,10 @@ where
         return Ok(push_ok);
     }
 
-    fn do_right_input(&mut self) -> Result<bool, Error> {
-        let input_object = self.right_input.read_front()?;
-
+    fn do_right_input(&mut self, message: Message<Right, SignalType>) -> Result<bool, Error> {
         let push_ok;
         // Do work on our input or forward signals from input to output.
-        match input_object {
+        match message {
             Message::Data(data) => {
                 self.worker.right_work(data)?;
 
@@ -305,8 +278,7 @@ where
 
     fn try_push(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
-        let output_is_empty = self.worker.output().is_empty();
-        if !output_is_empty {
+        if !self.worker.output().is_empty() {
             let output_object = self
                 .worker
                 .output()
@@ -351,7 +323,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<Message = Message<Left, SignalType>>, LeftSource>
+    Get<dyn Pushable<Message = Message<Left, SignalType>>, biunion::Left>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -367,7 +339,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<Message = Message<Right, SignalType>>, RightSource>
+    Get<dyn Pushable<Message = Message<Right, SignalType>>, biunion::Right>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -383,7 +355,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Workable<ThreadId = ThreadIdType>, LeftSource>
+    Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Left>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -399,7 +371,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Workable<ThreadId = ThreadIdType>, RightSource>
+    Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Right>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -443,8 +415,8 @@ pub mod tests {
     fn run_biunion() {
         let biun = make_biunion(Ok(MockBiunion::new())).unwrap();
 
-        let mut left_source = Source::new::<LeftSource>(&biun).unwrap();
-        let mut right_source = Source::new::<RightSource>(&biun).unwrap();
+        let mut left_source = Source::new::<biunion::Left>(&biun).unwrap();
+        let mut right_source = Source::new::<biunion::Right>(&biun).unwrap();
 
         let mut sink = Sink::new(biun).unwrap();
 

@@ -79,19 +79,10 @@ where
     }
 
     /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
-    pub fn push<
-        ParentType,
-        ChildType,
-        GetMultiplicity: Multiplicity,
-        AddMultiplicity: Multiplicity,
-    >(
-        parent: &mut ParentType,
-        child: &ChildType,
-    ) -> Result<(), Error>
-    where
-        ChildType: Get<dyn Pushable<Message = Message<DataType, SignalType>>, GetMultiplicity>,
-        ParentType: Add<dyn Pushable<Message = Message<DataType, SignalType>>, AddMultiplicity>,
-    {
+    pub fn push<AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
+        parent: &mut impl Add<dyn Pushable<Message = Message<DataType, SignalType>>, AddMultiplicity>,
+        child: &impl Get<dyn Pushable<Message = Message<DataType, SignalType>>, GetMultiplicity>,
+    ) -> Result<(), Error> {
         make_push(parent, child)?;
 
         Ok(())

@@ -96,6 +96,10 @@ where
     fn read(&mut self) -> Result<Self::Message, Error> {
         Sink::read(self)
     }
+
+    fn poll(&mut self) -> Result<Option<Self::Message>, Error> {
+        self.buffer.poll()
+    }
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+//! Track the [Origin] and path of signals passing through the graph.
 use std::fmt::Debug;
 use std::hash::Hash;
 

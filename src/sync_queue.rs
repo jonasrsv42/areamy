@@ -1,10 +1,11 @@
+//! A synchronous queue, [std::marker::Sync] compatible connection.
 use crate::error::Error;
 use crate::{fatal, graph::Get, Pushable};
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 
 #[derive(Debug)]
-/// Thread-safe queue that blocks pop on empty.
+/// [`SyncQueue`] is a thread-safe queue with utilites to serve as a graph edge for passing data.
 pub struct SyncQueue<T: Clone> {
     buffer: Mutex<VecDeque<T>>,
     signal: Condvar,

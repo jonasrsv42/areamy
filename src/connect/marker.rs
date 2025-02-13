@@ -21,9 +21,7 @@ impl<MessageType> Add<dyn Pushable<Message = MessageType>> for PhantomNode<Messa
     fn add(
         &mut self,
         _connection: Box<dyn Pushable<Message = MessageType>>,
-    ) -> Result<(), crate::error::Error> {
-        todo!()
-    }
+    ) -> Result<(), crate::error::Error> { Ok(()) }
 }
 
 /// [`Connection`] is the base marker indicating that something can form an edge in our graph.

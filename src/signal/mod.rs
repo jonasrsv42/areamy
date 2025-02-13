@@ -1,3 +1,4 @@
+//! Graph signal passing for synchronization and message passing.
 mod origin;
 mod trackable;
 

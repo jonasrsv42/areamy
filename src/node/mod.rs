@@ -1,3 +1,5 @@
+//! Collection of [crate::graph] nodes.
+
 pub mod bifurcation;
 pub mod biunion;
 pub mod line;

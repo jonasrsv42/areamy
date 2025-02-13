@@ -1,3 +1,4 @@
+use crate::bifurcation;
 use crate::error::Error;
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::signal::Visitors;
@@ -6,15 +7,9 @@ use crate::{fatal, DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
     marker::Connection,
-    marker::Multiplicity,
     Message, Origin, Pushable, Workable,
 };
 use std::sync::{Arc, Mutex};
-
-pub struct LeftSink {}
-pub struct RightSink {}
-impl Multiplicity for LeftSink {}
-impl Multiplicity for RightSink {}
 
 // The contract of a `Sync` node forming a bifurcation.
 // it has two outputs.
@@ -22,8 +17,8 @@ pub trait BifurcationTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Pushable<Message = Message<Self::Left, Self::Signal>>, LeftSink>
-    + Add<dyn Pushable<Message = Message<Self::Right, Self::Signal>>, RightSink>
+    + Add<dyn Pushable<Message = Message<Self::Left, Self::Signal>>, bifurcation::Left>
+    + Add<dyn Pushable<Message = Message<Self::Right, Self::Signal>>, bifurcation::Right>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
@@ -105,13 +100,8 @@ where
         // To produce output we work on all the input
         // or request more input by working.
         while !push_ok {
-            let input_is_empty = self.input.is_empty()?;
-            // If we have some input we work on it.
-            if !input_is_empty {
-                let input_object = self.input.read_front()?;
-
-                // Do work on our input or forward signals from input to output.
-                match input_object {
+            match self.input.poll()? {
+                Some(message) => match message {
                     Message::Data(data) => {
                         self.worker.work(data)?;
 
@@ -137,22 +127,18 @@ where
                         push_ok = self.maybe_left_mark(&origin)?;
                         push_ok = push_ok | self.maybe_right_mark(&origin)?;
                     }
+                },
+
+                None => {
+                    if self.workers.is_empty() {
+                        self.input.wait_front()?;
+                    }
+
+                    // Then we work input from each source once.
+                    for workable in self.workers.iter_mut() {
+                        workable.work()?;
+                    }
                 }
-
-                // Continue to avoid unecessary work.
-                continue;
-            }
-
-            // If there were no available input we grab ownership of our
-            // sources and work them.
-
-            if self.workers.is_empty() {
-                self.input.wait_front()?;
-            }
-
-            // Then we work input from each source once.
-            for workable in self.workers.iter_mut() {
-                workable.work()?;
             }
         }
 
@@ -341,7 +327,7 @@ where
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<Message = Message<Left, SignalType>>, LeftSink>
+    Add<dyn Pushable<Message = Message<Left, SignalType>>, bifurcation::Left>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Clone + Send + Sync + 'static,
@@ -360,7 +346,7 @@ where
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<Message = Message<Right, SignalType>>, RightSink>
+    Add<dyn Pushable<Message = Message<Right, SignalType>>, bifurcation::Right>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Clone + Send + Sync + 'static,
@@ -406,8 +392,8 @@ pub mod tests {
 
         let mut source = Source::new(&bifur).unwrap();
 
-        let mut left_sink = tee::Sink::new::<LeftSink>(&mut bifur).unwrap();
-        let mut right_sink = tee::Sink::new::<RightSink>(&mut bifur).unwrap();
+        let mut left_sink = tee::Sink::new::<bifurcation::Left>(&mut bifur).unwrap();
+        let mut right_sink = tee::Sink::new::<bifurcation::Right>(&mut bifur).unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
 

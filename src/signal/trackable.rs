@@ -1,3 +1,4 @@
+//! Track signals in graph using [Trackable] TODO docs.
 use crate::Origin;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -126,12 +127,9 @@ impl Visitors {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{
-        node::bifurcation::sync::node::{LeftSink, RightSink},
-        sink::sync::tee,
-        sync::Source,
-    };
+    use crate::{sink::sync::tee, sync::Source};
     use crate::{sync::make_bifurcation, DefaultThread, Message, Pushable, Workable};
 
     #[test]
@@ -140,8 +138,8 @@ mod tests {
 
         let mut source = Source::new(&bifur).unwrap();
 
-        let mut left_sink = tee::Sink::new::<LeftSink>(&mut bifur).unwrap();
-        let mut right_sink = tee::Sink::new::<RightSink>(&mut bifur).unwrap();
+        let mut left_sink = tee::Sink::new::<bifurcation::Left>(&mut bifur).unwrap();
+        let mut right_sink = tee::Sink::new::<bifurcation::Right>(&mut bifur).unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
 

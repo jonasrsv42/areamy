@@ -21,9 +21,8 @@ pub use connect::{
     make_bidi, make_push, make_work, marker::Connection, Pullable, Pushable, Workable,
 };
 pub use message::Message;
+pub use node::{bifurcation, biunion};
 pub use node::{
-    bifurcation::sync::node::{LeftSink, RightSink},
-    biunion::sync::node::{LeftSource, RightSource},
     BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, LineReader, LineRoutine,
 };
 pub use signal::{Origin, Trackable};

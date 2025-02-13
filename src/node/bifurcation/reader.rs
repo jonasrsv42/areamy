@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::{DefaultThread, Message, Origin, ThreadId, Trackable, Workable};
+use crate::{fatal, DefaultThread, Message, Origin, ThreadId, Trackable, Workable};
 use crate::{Pushable, Sink};
 use std::fmt::Debug;
 
@@ -16,6 +16,28 @@ where
     pub workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
 }
 
+impl<SourceType, LeftSinkType, RightSinkType>
+    BifurcationReader<SourceType, LeftSinkType, RightSinkType, DefaultThread>
+where
+    SourceType: Pushable,
+    LeftSinkType: Sink,
+    RightSinkType: Sink,
+{
+    pub fn new(
+        input: SourceType,
+        left: LeftSinkType,
+        right: RightSinkType,
+        workable: Box<dyn Workable<ThreadId = DefaultThread>>,
+    ) -> BifurcationReader<SourceType, LeftSinkType, RightSinkType, DefaultThread> {
+        Self {
+            input,
+            left,
+            right,
+            workable,
+        }
+    }
+}
+
 impl<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
     BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
@@ -24,34 +46,33 @@ where
     RightSinkType: Sink,
     ThreadIdType: ThreadId,
 {
-    pub fn new(
-        input: SourceType,
-        left: LeftSinkType,
-        right: RightSinkType,
-        workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
-    ) -> BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType> {
-        Self {
-            input,
-            left,
-            right,
-            workable,
+    pub fn left_read(&mut self) -> Result<LeftSinkType::Message, Error> {
+        match self.left.poll()? {
+            Some(message) => Ok(message),
+            None => {
+                self.workable.work()?;
+                match self.left.poll()? {
+                    Some(message) => Ok(message),
+                    None => fatal!("Work did not yield new message.").into(),
+                }
+            }
         }
     }
 
-    pub fn left_read(&mut self) -> Result<LeftSinkType::Message, Error> {
-        self.left.read()
-    }
-
-    pub fn work(&mut self) -> Result<(), Error> {
-        self.workable.work()
-    }
-
     pub fn right_read(&mut self) -> Result<RightSinkType::Message, Error> {
-        self.right.read()
+        match self.right.poll()? {
+            Some(message) => Ok(message),
+            None => {
+                self.workable.work()?;
+                match self.right.poll()? {
+                    Some(message) => Ok(message),
+                    None => fatal!("Work did not yield new message.").into(),
+                }
+            }
+        }
     }
 
     pub fn push(&mut self, object: SourceType::Message) -> Result<(), Error> {
-        // Left or right does not matter here since it's the same source.
         self.input.push(object)?;
         Ok(())
     }
@@ -74,16 +95,17 @@ where
         self.input.push(Message::Marker(trackable.clone()))?;
         let mut datas: Vec<Left> = Vec::new();
         loop {
-            let object = self.left.read()?;
-
-            match object {
-                Message::Data(data) => datas.push(data.clone()),
-                Message::Flush(_) => (),
-                Message::Marker(trackable_) => {
-                    if trackable_ == trackable && trackable.active() <= 3 {
-                        return Ok(datas);
+            match self.left.poll()? {
+                Some(message) => match message {
+                    Message::Data(data) => datas.push(data.clone()),
+                    Message::Flush(_) => (),
+                    Message::Marker(trackable_) => {
+                        if trackable_ == trackable && trackable.active() <= 3 {
+                            return Ok(datas);
+                        }
                     }
-                }
+                },
+                None => self.workable.work()?,
             }
         }
     }
@@ -93,16 +115,17 @@ where
         self.input.push(Message::Marker(trackable.clone()))?;
         let mut datas: Vec<Right> = Vec::new();
         loop {
-            let object = self.right.read()?;
-
-            match object {
-                Message::Data(data) => datas.push(data.clone()),
-                Message::Flush(_) => (),
-                Message::Marker(trackable_) => {
-                    if trackable_ == trackable && trackable.active() <= 3 {
-                        return Ok(datas);
+            match self.right.poll()? {
+                Some(message) => match message {
+                    Message::Data(data) => datas.push(data.clone()),
+                    Message::Flush(_) => (),
+                    Message::Marker(trackable_) => {
+                        if trackable_ == trackable && trackable.active() <= 3 {
+                            return Ok(datas);
+                        }
                     }
-                }
+                },
+                None => self.workable.work()?,
             }
         }
     }
@@ -111,9 +134,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::node::bifurcation::sync::node::{LeftSink, RightSink};
-    use crate::{sink::sync::tee, sync::make_bifurcation, sync::Source, DefaultThread, Workable};
+    use crate::{sink::sync::tee, sync::make_bifurcation, sync::Source};
 
     #[test]
     fn readers_bifurcation_read() {
@@ -122,25 +145,19 @@ mod tests {
 
         let source = Source::new(&bifur).unwrap();
 
-        let left_sink = tee::Sink::new::<LeftSink>(&mut bifur).unwrap();
-        let right_sink = tee::Sink::new::<RightSink>(&mut bifur).unwrap();
+        let left_sink = tee::Sink::new::<bifurcation::Left>(&mut bifur).unwrap();
+        let right_sink = tee::Sink::new::<bifurcation::Right>(&mut bifur).unwrap();
 
-        let workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
-
-        let mut reader = BifurcationReader::new(source, left_sink, right_sink, workable);
+        let mut reader = BifurcationReader::new(source, left_sink, right_sink, bifur);
 
         // Add one flush
         reader.push(Message::Data(1)).unwrap();
         reader.push(Message::Data(2)).unwrap();
 
-        reader.work().unwrap();
-        reader.work().unwrap();
-
         assert_eq!(reader.left_read().unwrap(), Message::Data(2));
         assert_eq!(reader.left_read().unwrap(), Message::Data(5));
 
         reader.push(Message::Flush("hi".into())).unwrap();
-        reader.work().unwrap();
 
         assert_eq!(reader.right_read().unwrap(), Message::Data(3));
         assert_eq!(reader.right_read().unwrap(), Message::Data(7));
@@ -149,7 +166,6 @@ mod tests {
         assert_eq!(reader.left_read().unwrap(), Message::Flush("hi".into()));
 
         reader.push(Message::Data(2)).unwrap();
-        reader.work().unwrap();
 
         assert_eq!(reader.left_read().unwrap(), Message::Data(4));
         assert_eq!(reader.right_read().unwrap(), Message::Data(6));

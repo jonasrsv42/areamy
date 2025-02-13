@@ -92,16 +92,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::biunion;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::node::biunion::sync::node::{LeftSource, RightSource};
     use crate::{sync::make_biunion, sync::Sink, sync::Source};
 
     #[test]
     fn readers_biunion_read() {
         let biun = make_biunion(Ok(MockBiunion::new())).unwrap();
 
-        let left_source = Source::new::<LeftSource>(&biun).unwrap();
-        let right_source = Source::new::<RightSource>(&biun).unwrap();
+        let left_source = Source::new::<biunion::Left>(&biun).unwrap();
+        let right_source = Source::new::<biunion::Right>(&biun).unwrap();
 
         let sink = Sink::new(biun).unwrap();
 

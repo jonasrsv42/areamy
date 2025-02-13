@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::Message;
-use crate::{marker::Connection, DefaultThread, Origin, Pullable, ThreadId, Trackable};
+use crate::{marker::Connection, sink, DefaultThread, Origin, Pullable, ThreadId, Trackable};
 
 pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
 where
@@ -52,8 +52,7 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> crate::sink::Sink
-    for Sink<DataType, SignalType, ThreadIdType>
+impl<DataType, SignalType, ThreadIdType> sink::Sink for Sink<DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send + Clone,
     SignalType: Origin,
@@ -64,5 +63,11 @@ where
 
     fn read(&mut self) -> Result<Self::Message, Error> {
         Sink::pull(self)
+    }
+
+    /// [Pullable] [sink::Sink] is not [sink::Sink::poll]able since it
+    /// maintains no buffer.
+    fn poll(&mut self) -> Result<Option<Self::Message>, Error> {
+        Ok(None)
     }
 }

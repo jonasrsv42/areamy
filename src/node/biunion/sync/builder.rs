@@ -1,8 +1,6 @@
+use crate::biunion;
 use crate::error::Error;
-use crate::node::biunion::{
-    sync::node::BiunionTrait, sync::node::LeftSource, sync::node::RightSource, sync::Biunion,
-    BiunionRoutine,
-};
+use crate::node::biunion::{sync::node::BiunionTrait, sync::Biunion, BiunionRoutine};
 use crate::ThreadId;
 use crate::{graph::Add, Origin, Workable};
 
@@ -17,8 +15,8 @@ pub fn make_biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>(
                 Signal = SignalType,
                 BiunionRoutine = RoutineType,
             > + Workable<ThreadId = ThreadIdType>
-            + Add<dyn Workable<ThreadId = ThreadIdType>, LeftSource>
-            + Add<dyn Workable<ThreadId = ThreadIdType>, RightSource>,
+            + Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Left>
+            + Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Right>,
     >,
     Error,
 >

@@ -147,6 +147,7 @@ mod tests {
         assert_eq!(queue.poll().unwrap(), None);
         queue.push_back(3.5).unwrap();
         assert_eq!(queue.poll().unwrap(), Some(3.5));
+        assert_eq!(queue.poll().unwrap(), None);
     }
 
     #[test]

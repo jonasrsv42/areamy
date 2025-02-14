@@ -1,4 +1,4 @@
-//! Track signals in graph using [Trackable] TODO docs.
+//! [EXPPERIMENTAL] Track signals in graph using [Trackable].
 use crate::Origin;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -6,6 +6,40 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+/// [`Trackable`] is a signal type that encapsulates the usual
+/// user provided [`Origin`] signal.
+///
+/// [Trackable] adds reference counting to a [Origin] it is used
+/// as a means of aiding synchronization via signal tracking.
+///
+/// The graph synchronization feature
+/// via signals is still very **Experimental** and under development.
+///
+/// Illustating with an example, Imagine the following graph with a circular
+/// push path.
+///
+/// ```bash
+///   _____________
+///   v            |
+///  Node (1) -> Node (2) -> Out
+/// ```
+/// When a signal is passed it will fork at Node (2)
+/// one will enter the Out leaf and one traverse back to Node (1).
+///
+/// If data also traversed across the [crate::Pushable] connection as part of for example
+/// a [crate::Message::Flush] we do not want to accept the first instance of the signal entering
+/// `Out` as a `Complete` flush. Because the `Flush` may have triggered some new output going into
+/// Node (1) and when Node (1) is [crate::Message::Flush] by the signal chasing it (Or even by it
+/// just recieving the new data) it may produce new output for Node (2) and the cycle may repeat.
+///
+/// The idea is that when we are [crate::Message::Flush]ing we don't just want to wait to recieve the
+/// signal at our output node. But we want to wait until the signal has chased around the graph and
+/// the graph is no longer transmitting data as part of the signal traversal.
+///
+/// For this to work as intended there should only be a [crate::Message::Flush] signal of
+/// the same origin at the same time. If there's multiple signals or if data is actively being
+/// pushed into the graph during the [crate::Message::Flush] then behaviour is not entirely defined
+/// yet.
 #[derive(Debug)]
 pub struct Trackable<OriginType>
 where
@@ -15,6 +49,7 @@ where
     active: Arc<AtomicUsize>,
 }
 
+/// Implement reference incrementing for [Trackable]
 impl<OriginType> Clone for Trackable<OriginType>
 where
     OriginType: Origin + Hash,
@@ -32,6 +67,7 @@ where
     }
 }
 
+/// Implement reference decrementing for [Trackable]
 impl<OriginType> Drop for Trackable<OriginType>
 where
     OriginType: Origin + Hash,
@@ -63,6 +99,9 @@ impl Into<Trackable<&'static str>> for &'static str {
     }
 }
 
+/// [Trackable] needs to expose the [Hash] trait
+/// of origin to keep supporing the loop-breaking
+/// behaviour.
 impl<OriginType> Hash for Trackable<OriginType>
 where
     OriginType: Origin,
@@ -81,7 +120,6 @@ where
 }
 
 impl<OriginType> Eq for Trackable<OriginType> where OriginType: Origin {}
-
 impl<OriginType> Origin for Trackable<OriginType> where OriginType: Origin + Clone + 'static {}
 
 pub struct Visitors {
@@ -89,6 +127,17 @@ pub struct Visitors {
     hasher: DefaultHasher,
 }
 
+/// [`Visitors`] is a structure keeping track of signals with [Origin] passing through
+/// a graph node. This data structure is typically used to enforce the "empty circuit" rule
+/// for loopy graphs described in [Origin].
+///
+/// Usually a node
+/// 1. Forgets all [Visitors] whenever data enters it.
+/// 2. Remembers visitor when a signal enters it.
+/// 3. Drops a signal if it has already seen it (And not forgotten)
+
+/// Right now it's basically a Hashset and we may replace this structure with that
+/// in the future.
 impl Visitors {
     pub fn new() -> Self {
         Visitors {
@@ -131,6 +180,8 @@ mod tests {
     use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::{sink::sync::tee, sync::Source};
     use crate::{sync::make_bifurcation, DefaultThread, Message, Pushable, Workable};
+
+    /// We need many more tests here to ensure Tracking behaves reasonably in semi-complex graphs! :)
 
     #[test]
     fn trackable_signal_tracks_active() {

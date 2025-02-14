@@ -26,7 +26,10 @@ where
     /// clearing the state of the graph in the signals path.
     ///
     /// When a node receives [Message::Flush] it should emit any existing result
-    // it has and reset it's computation state.
+    /// it has and reset it's computation state.
+    ///
+    /// [Message::Flush] can be used to flush a whole graph, but will only work properly if 
+    /// there's only one active [Message::Flush] in the graph until it is finished.
     Flush(SignalType),
     /// [Message::Marker] should be passed a long by graph nodes, it will never enter computation routines and
     /// can be used as a type of message passing and/or synchronization.

@@ -1,4 +1,4 @@
-//! Graph signal passing for synchronization and message passing.
+//! Signals for synchronization and message passing in [crate::graph].
 mod origin;
 mod trackable;
 

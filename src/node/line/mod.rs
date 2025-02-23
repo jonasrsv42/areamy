@@ -5,4 +5,4 @@ mod routine;
 pub mod work;
 
 pub use reader::LineReader;
-pub use routine::{LineRoutine, Resume};
+pub use routine::LineRoutine;

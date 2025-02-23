@@ -123,12 +123,6 @@ where
             None => (),
         }
 
-        // TODO implement resume, we will need this for generative models.
-        // to allow a routine to emit partial results and then resume computation
-        // on the same input. The `LineRoutine` already has a resume function
-        // we need to define its contract and implement it.
-        let _resume = 1;
-
         let mut push_ok = false;
 
         // Work until we have some output to push into children.

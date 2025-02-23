@@ -6,4 +6,4 @@ pub mod line;
 
 pub use bifurcation::{BifurcationReader, BifurcationRoutine};
 pub use biunion::{BiunionReader, BiunionRoutine};
-pub use line::{LineReader, LineRoutine, Resume};
+pub use line::{LineReader, LineRoutine};

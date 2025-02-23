@@ -2,20 +2,10 @@
 
 use crate::error::Error;
 
-/// Signal to the runtime of the [LineRoutine] state.
-pub enum Resume {
-    /// The [LineRoutine] is done now, pending further input.
-    /// the Node should await additional input and invoke [LineRoutine::work].
-    ///
-    /// Further calls to [LineRoutine::resume] will only yield await, or an [Error].
-    Await,
-
-    /// The [LineRoutine] can be [LineRoutine::resume]
-    Continue,
-}
-
-/// [`LineRoutine`] is a stateful mapping accepting a stream off `In` types through
-/// a stream of `Out` types through its output queue.
+/// [`LineRoutine`] is a subset of [std::ops::Coroutine] accepting a stream off `In` types through
+/// [LineRoutine::send] and produces a stream of output with [LineRoutine::next].
+///
+/// [std::ops::Coroutine] was not stable at time of development.
 pub trait LineRoutine<In, Out>: Send
 where
     In: Clone,
@@ -43,12 +33,17 @@ where
     ///
     /// <div class="warning"> The routine should never reset its internal output buffer </div>
     ///
-    /// It should only reset all other state associated with processing.
+    /// It should only reset all other state associated with processing. In other words,
+    /// a [LineRoutine::flush] call should only ever create, potentially premature, additional output, it should
+    /// not remove any output.
     fn flush(&mut self) -> Result<(), Error>;
 
     /// [LineRoutine::next] yields the next output available from the [LineRoutine]. If no
     /// more output can be yielded without additional [LineRoutine::send] it should yield
     /// [Option::None].
+    ///
+    /// [LineRoutine::send] for a [LineRoutine] cannot be invoked again without [LineRoutine::next]
+    /// having yielded [Option::None].
     fn next(&mut self) -> Result<Option<Out>, Error>;
 
     /// [LineRoutine::name] is used to improve logging.

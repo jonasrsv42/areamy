@@ -72,11 +72,6 @@ where
             None => (),
         }
 
-        // TODO implement resume, we will need this for generative models.
-        // to allow a routine to emit partial results and then resume computation
-        // on the same input.
-        let _resume = 1;
-
         loop {
             // Pull until we manage to produce an output
             match self.pullable.pull()? {

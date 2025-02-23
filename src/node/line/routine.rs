@@ -2,7 +2,7 @@
 
 use crate::error::Error;
 
-/// [`LineRoutine`] is a subset of [std::ops::Coroutine] accepting a stream of `In` types through
+/// [`LineRoutine`] is a flushable subset of [std::ops::Coroutine] accepting a stream of `In` types through
 /// [LineRoutine::send] and produce a stream of output with [LineRoutine::next].
 ///
 /// [std::ops::Coroutine] was not stable at time of development.

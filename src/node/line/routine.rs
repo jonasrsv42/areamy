@@ -44,6 +44,9 @@ where
     ///
     /// [LineRoutine::send] for a [LineRoutine] cannot be invoked again without [LineRoutine::next]
     /// having yielded [Option::None].
+    ///
+    /// [LineRoutine::next] must only yield [Option::None] if it requires additional
+    /// [LineRoutine::send] to produce more output. The function should be blocking.
     fn next(&mut self) -> Result<Option<Out>, Error>;
 
     /// [LineRoutine::name] is used to improve logging.

@@ -136,7 +136,7 @@ mod tests {
     use super::*;
     use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{sink::sync::tee, sync::make_bifurcation, sync::Source};
+    use crate::{sink::work::tee, work::make_bifurcation, work::Source};
 
     #[test]
     fn readers_bifurcation_read() {

@@ -113,7 +113,7 @@ where
 mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::{sync::make_line, sync::Sink, sync::Source};
+    use crate::{work::make_line, work::Sink, work::Source};
 
     #[test]
     fn readers_line_objects() {

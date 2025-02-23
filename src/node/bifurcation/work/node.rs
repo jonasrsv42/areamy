@@ -384,7 +384,7 @@ where
 pub mod tests {
     use super::*;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{sink::sync::tee, sync::make_bifurcation, sync::Source, Pushable};
+    use crate::{sink::work::tee, work::make_bifurcation, work::Source, Pushable};
 
     #[test]
     fn run_bifurcation() {

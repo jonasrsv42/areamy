@@ -27,8 +27,8 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::node::line::nosync::builder::{make_pull, Root};
-    use crate::sync::Source;
+    use crate::node::line::pull::builder::{make_pull, Root};
+    use crate::work::Source;
     use crate::{DefaultThread, Message, Pushable};
     use std::collections::VecDeque;
 
@@ -45,11 +45,11 @@ pub mod tests {
     }
 
     impl crate::LineRoutine<usize, usize> for Identity {
-        fn output(&mut self) -> &mut VecDeque<usize> {
-            &mut self.output
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            Ok(self.output.pop_front())
         }
 
-        fn work(&mut self, message: usize) -> Result<(), Error> {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
             Ok(self.output.push_back(message))
         }
 

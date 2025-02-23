@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::{
-    graph::Add, node::bifurcation::sync::node::BifurcationTrait, sync::Bifurcation,
+    graph::Add, node::bifurcation::work::node::BifurcationTrait, work::Bifurcation,
     BifurcationRoutine, Origin, ThreadId, Workable,
 };
 

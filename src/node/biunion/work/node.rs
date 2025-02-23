@@ -409,7 +409,7 @@ where
 pub mod tests {
     use super::*;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{sync::make_biunion, sync::Sink, sync::Source, Pushable};
+    use crate::{work::make_biunion, work::Sink, work::Source, Pushable};
 
     #[test]
     fn run_biunion() {

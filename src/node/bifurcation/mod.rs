@@ -1,9 +1,9 @@
-//! A [crate::Workable] connection with two outputs (Experimental). 
+//! A [crate::Workable] connection with two outputs (Experimental).
 
 mod marker;
 mod reader;
 pub mod routine;
-pub mod sync;
+pub mod work;
 
 pub use marker::{Left, Right};
 pub use reader::BifurcationReader;

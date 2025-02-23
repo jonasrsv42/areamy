@@ -133,13 +133,12 @@ where
 
         // Work until we have some output to push into children.
         while !push_ok {
-
             // Poll for input.
             match self.input.poll()? {
                 // If there's input forward to coroutine and output any new things.
                 Some(input) => match input {
                     Message::Data(data) => {
-                        self.worker.work(data.clone())?;
+                        self.worker.send(data)?;
 
                         // Try to push after performing the work, to see if we got something.
                         push_ok = match self.next_output()? {
@@ -154,12 +153,9 @@ where
                         self.worker.flush()?;
 
                         // Try to push after flush to see if we got something
-                        match self.next_output()? {
-                            Some(message) => {
-                                self.push(message)?;
-                            }
-                            None => (),
-                        };
+                        while let Some(message) = self.next_output()? {
+                            self.push(message)?;
+                        }
 
                         // Maybe forward the flush
                         push_ok = self.maybe_flush(&origin)?;
@@ -264,7 +260,7 @@ where
     /// Get buffered output and reset signal traversal buffers.
     fn next_output(&mut self) -> Result<Option<Message<Out, SignalType>>, Error> {
         // If we have output in our worker queue just immediately return it.
-        match self.worker.output().pop_front() {
+        match self.worker.next()? {
             Some(next_message) => {
                 self.visitors.clear();
 
@@ -393,9 +389,9 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::node::line::routine::tests::{AccMockLine, MockLine};
-    use crate::{make_bidi, sync::make_line};
-    use crate::{sink::sync::tee, sync::Connect, sync::Sink, sync::Source};
+    use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
+    use crate::{make_bidi, work::make_line};
+    use crate::{sink::work::tee, work::Connect, work::Sink, work::Source};
     use std::time::Instant;
 
     #[test]
@@ -404,13 +400,58 @@ pub mod tests {
         let mut source = Source::new(&line).unwrap();
         let mut sink = Sink::new(line).unwrap();
 
-        // Add one flush
         source.push(Message::Data(1)).unwrap();
         source.push(Message::Data(2)).unwrap();
 
         assert_eq!(sink.read().unwrap(), Message::Data(vec![1, 2]));
+    }
 
-        // Write test showing that if a node needs two messages to return pullable still works.
+    #[test]
+    fn line_wait_node_mark_waits() {
+        let line = make_line(MockWaitLine::new(4)).unwrap();
+        let mut source = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
+
+        source.push(Message::Data(1)).unwrap();
+        source.push(Message::Data(2)).unwrap();
+        source.push(Message::Data(3)).unwrap();
+
+        // Send a marker
+        source.push(Message::Marker("no_output".into())).unwrap();
+        // We get marker because no output is ready.
+        assert_eq!(sink.read().unwrap(), Message::Marker("no_output".into()));
+
+        // Send data so that node releases all data.
+        source.push(Message::Data(4)).unwrap();
+
+        // Send marker.
+        source.push(Message::Marker("output!".into())).unwrap();
+
+        // Now we get all data in order and marker last.
+        assert_eq!(sink.read().unwrap(), Message::Data(1));
+        assert_eq!(sink.read().unwrap(), Message::Data(2));
+        assert_eq!(sink.read().unwrap(), Message::Data(3));
+        assert_eq!(sink.read().unwrap(), Message::Data(4));
+        // The marker will arrive last!
+        assert_eq!(sink.read().unwrap(), Message::Marker("output!".into()));
+    }
+
+    #[test]
+    fn line_wait_node_flush_waits() {
+        let line = make_line(MockWaitLine::new(4)).unwrap();
+        let mut source = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
+
+        source.push(Message::Data(1)).unwrap();
+        source.push(Message::Data(2)).unwrap();
+        source.push(Message::Data(3)).unwrap();
+        source.push(Message::Flush("force_output".into())).unwrap();
+
+        assert_eq!(sink.read().unwrap(), Message::Data(1));
+        assert_eq!(sink.read().unwrap(), Message::Data(2));
+        assert_eq!(sink.read().unwrap(), Message::Data(3));
+        // The flush will arrive last!
+        assert_eq!(sink.read().unwrap(), Message::Flush("force_output".into()));
     }
 
     #[test]

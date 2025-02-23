@@ -1,8 +1,8 @@
 //! Bridge a [LineTrait] with a [crate::nosync::Line]
 
 use crate::error::Error;
-use crate::node::line::sync::node::LineTrait;
-use crate::{graph::Add, sync::Line, LineRoutine, Message, Origin, Pullable, ThreadId, Workable};
+use crate::node::line::work::node::LineTrait;
+use crate::{graph::Add, work::Line, LineRoutine, Message, Origin, Pullable, ThreadId, Workable};
 use crate::{marker::Connection, Pushable};
 
 /// [`Bridge`] is a bridge between a [Pullable] and [Workable] segment.
@@ -95,11 +95,11 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::{sync::Sink, sync::Source};
+    use crate::{work::Sink, work::Source};
 
     #[test]
     fn line_basic_bridge() {
-        let root = crate::nosync::Root::new();
+        let root = crate::pull::Root::new();
         let mut source = Source::new(&root).unwrap();
 
         let line = bridge_nosync(root, MockLine::new()).unwrap();

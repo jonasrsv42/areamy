@@ -1,7 +1,7 @@
 //!
 //! Basic building blocks for for declaring and running multithreaded streaming graphs.
 //!
-//! See [graph] for the core of Areamy. Areamy provides a set of [marker::Connection] for 
+//! See [graph] for the core of Areamy. Areamy provides a set of [marker::Connection] for
 //! building [std::marker::Sync] graphs where scheduling can be a connection such as [Workable] and dataflow
 //! can happen through [Pushable] edges.
 //!
@@ -13,8 +13,8 @@
 //! We support building hybrid graphs where certain parts are [std::marker::Sync] but others
 //! are only [std::marker::Send] where those parts can be lock and dispatch free for performance.
 //!
-//! The intended use-case for areamy is to support building various on-device streaming machine learning 
-//! pipelines where each node may be running some data preprocessing, post-processing or model inference 
+//! The intended use-case for areamy is to support building various on-device streaming machine learning
+//! pipelines where each node may be running some data preprocessing, post-processing or model inference
 //! and everything is being executed in a low latency streaming fashion.
 //!
 //! ```bash
@@ -55,5 +55,5 @@ mod make;
 pub mod marker;
 
 pub use graph::{Pullable, Pushable, Workable};
-pub use make::sync;
+pub use make::work;
 pub use make::{make_bidi, make_push, make_work};

@@ -1,7 +1,6 @@
 //! [LineRoutine] is the work horse of all Line nodes. It is a frankenstein [std::ops::Coroutine].
 
 use crate::error::Error;
-use std::collections::VecDeque;
 
 /// Signal to the runtime of the [LineRoutine] state.
 pub enum Resume {
@@ -15,60 +14,44 @@ pub enum Resume {
     Continue,
 }
 
-/// [`LineRoutine`] is a stateful mapping taking a stream off `In` types and producing
+/// [`LineRoutine`] is a stateful mapping accepting a stream off `In` types through
 /// a stream of `Out` types through its output queue.
 pub trait LineRoutine<In, Out>: Send
 where
     In: Clone,
     Out: Clone,
 {
-    /// [LineRoutine::output] returns a mutable reference of the [LineRoutine]s buffered output.
-    fn output(&mut self) -> &mut VecDeque<Out>;
-
-    /// [LineRoutine::work] instructs the [LineRoutine]  to work on the next message
-    /// and, Optionally, produce some output in the [LineRoutine::output] queue.
+    /// [LineRoutine::send] input data into the [LineRoutine] for it to work on.
     ///
     /// The routine does not have to produce any output and is expected to accumulate
-    /// state while being invoked.
+    /// state until it can yield on [LineRoutine::next].
     ///
-    /// After [LineRoutine::work] is invoked [LineRoutine::resume] will be invoked
-    /// until it yields [Resume::Await]. Then [LineRoutine::work] will be invoked
-    /// again and so it repeats.
+    /// After [LineRoutine::send] is invoked [LineRoutine::next] will be invoked
+    /// until it yields [Option::None]. Then [LineRoutine::send] will be invoked
+    /// again and so it may repeat.
     ///
     /// ```bash
-    /// [LineRoutine::work] -> [LineRoutine::resume] (until [Resume::Await]) -> [LineRoutine::work]
+    /// [LineRoutine::send] -> [LineRoutine::next] (until [Option::None]) -> [LineRoutine::send]
     /// ```
     ///
     /// The Routine will loop like that, potentially forever.
-    ///
-    /// However, **it is not guaranteed** that [LineRoutine::resume] is invoked again after it yields a
-    /// [Resume::Continue] as the parent node may choose to invoke [LineRoutine::work]
-    /// upon reception of new input. [LineRoutine] thus has to be robust to [LineRoutine::work] being called at any time.
-    /// Even during a [Resume::Continue] loop. The [LineRoutine] may choose to just buffer the new
-    /// message internally though.
-    ///
-    ///
-    fn work(&mut self, message: In) -> Result<(), Error>;
+    fn send(&mut self, message: In) -> Result<(), Error>;
 
     /// [LineRoutine::flush] signals to the routine that it should output any state it can into
-    /// the [LineRoutine::output] and then reset all of its internal state.
+    /// subsequent [LineRoutine::next] and then reset all of its internal state for future
+    /// [LineRoutine::send] invocations.
     ///
-    /// <div class="warning"> The routine should never reset its output queue </div>
+    /// <div class="warning"> The routine should never reset its internal output buffer </div>
     ///
     /// It should only reset all other state associated with processing.
     fn flush(&mut self) -> Result<(), Error>;
 
-    /// [LineRoutine::resume] is invoked after [LineRoutine::work] to allow a node to quickly emit
-    /// something and then be resumed. [LineRoutine::resume] will keep getting invoked until
-    ///
-    /// 1. [Resume::Await] is invoked, at which point the next call will be to [LineRoutine::work].
-    /// 2. New input data is available for the node, at which point [LineRoutine::work] may be
-    ///    invoked again.
-    fn resume(&mut self) -> Result<Resume, Error> {
-        // Per default our `Routine` is not Resumable so we just await.
-        Ok(Resume::Await)
-    }
+    /// [LineRoutine::next] yields the next output available from the [LineRoutine]. If no
+    /// more output can be yielded without additional [LineRoutine::send] it should yield
+    /// [Option::None].
+    fn next(&mut self) -> Result<Option<Out>, Error>;
 
+    /// [LineRoutine::name] is used to improve logging.
     fn name(&self) -> &str {
         return "unknown";
     }
@@ -94,7 +77,7 @@ pub mod tests {
     }
 
     impl LineRoutine<usize, usize> for MockLine {
-        fn work(&mut self, object: usize) -> Result<(), Error> {
+        fn send(&mut self, object: usize) -> Result<(), Error> {
             self.state += object;
             self.out.push_back(self.state * 2);
 
@@ -106,8 +89,8 @@ pub mod tests {
             Ok(())
         }
 
-        fn output(&mut self) -> &mut VecDeque<usize> {
-            &mut self.out
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            Ok(self.out.pop_front())
         }
     }
 
@@ -126,7 +109,7 @@ pub mod tests {
     }
 
     impl LineRoutine<usize, Vec<usize>> for AccMockLine {
-        fn work(&mut self, object: usize) -> Result<(), Error> {
+        fn send(&mut self, object: usize) -> Result<(), Error> {
             self.num.push(object);
 
             if self.num.len() == 2 {
@@ -142,24 +125,82 @@ pub mod tests {
             Ok(())
         }
 
-        fn output(&mut self) -> &mut VecDeque<Vec<usize>> {
-            &mut self.out
+        fn next(&mut self) -> Result<Option<Vec<usize>>, Error> {
+            Ok(self.out.pop_front())
+        }
+    }
+
+    pub struct MockWaitLine {
+        out: VecDeque<usize>,
+
+        /// [MockWaitLine::release] indicats that we can release all output.
+        release: bool,
+
+        /// Wait for [MockWaitLine::wait] before release is true.
+        wait: usize,
+    }
+
+    impl MockWaitLine {
+        pub fn new(wait: usize) -> Result<Self, Error> {
+            Ok(MockWaitLine {
+                out: VecDeque::new(),
+                release: false,
+                wait,
+            })
+        }
+    }
+
+    impl LineRoutine<usize, usize> for MockWaitLine {
+        fn send(&mut self, object: usize) -> Result<(), Error> {
+            self.out.push_back(object);
+            self.release = self.out.len() >= self.wait;
+
+            Ok(())
+        }
+
+        fn flush(&mut self) -> Result<(), Error> {
+            self.release = true;
+            Ok(())
+        }
+
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            if self.release {
+                Ok(self.out.pop_front())
+            } else {
+                Ok(None)
+            }
         }
     }
 
     #[test]
     fn line_basic_work() {
         let mut line = MockLine::new().unwrap();
-        line.work(2).unwrap();
+        line.send(2).unwrap();
 
-        assert_eq!(line.out, vec![4]);
+        assert_eq!(line.next().unwrap(), Some(4));
     }
     #[test]
     fn line_basic_acc_work() {
         let mut line = AccMockLine::new().unwrap();
-        line.work(2).unwrap();
-        line.work(3).unwrap();
+        line.send(2).unwrap();
+        assert_eq!(line.next().unwrap(), None);
+        line.send(3).unwrap();
 
-        assert_eq!(line.out, vec![vec![2, 3]]);
+        assert_eq!(line.next().unwrap(), Some(vec![2, 3]));
+    }
+
+    #[test]
+    fn line_basic_wait_work() {
+        let mut line = MockWaitLine::new(4).unwrap();
+        line.send(2).unwrap();
+        line.send(3).unwrap();
+        line.send(4).unwrap();
+
+        assert_eq!(line.next().unwrap(), None);
+        line.send(5).unwrap();
+        assert_eq!(line.next().unwrap(), Some(2));
+        assert_eq!(line.next().unwrap(), Some(3));
+        assert_eq!(line.next().unwrap(), Some(4));
+        assert_eq!(line.next().unwrap(), Some(5));
     }
 }

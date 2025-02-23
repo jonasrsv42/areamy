@@ -6,12 +6,12 @@ pub mod node;
 mod signal;
 pub mod sink;
 pub mod source;
-pub mod sync;
 mod sync_queue;
 mod thread;
+pub mod work;
 pub use source::source::Source;
 
-pub mod nosync;
+pub mod pull;
 
 pub use composable::Composable;
 pub use connect::marker;

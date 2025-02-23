@@ -178,8 +178,8 @@ mod tests {
     use super::*;
     use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{sink::sync::tee, sync::Source};
-    use crate::{sync::make_bifurcation, DefaultThread, Message, Pushable, Workable};
+    use crate::{sink::work::tee, work::Source};
+    use crate::{work::make_bifurcation, DefaultThread, Message, Pushable, Workable};
 
     /// We need many more tests here to ensure Tracking behaves reasonably in semi-complex graphs! :)
 

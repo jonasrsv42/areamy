@@ -1,6 +1,6 @@
 use crate::biunion;
 use crate::error::Error;
-use crate::node::biunion::{sync::node::BiunionTrait, sync::Biunion, BiunionRoutine};
+use crate::node::biunion::{work::node::BiunionTrait, work::Biunion, BiunionRoutine};
 use crate::ThreadId;
 use crate::{graph::Add, Origin, Workable};
 

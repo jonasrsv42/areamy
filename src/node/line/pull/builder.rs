@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::node::line::nosync::node::Line;
+use crate::node::line::pull::node::Line;
 use crate::SyncQueue;
 use crate::{graph::Get, Connection, Pullable, Pushable, ThreadId, Trackable};
 use crate::{LineRoutine, Message, Origin};
@@ -121,8 +121,8 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::sync::Source;
-    use crate::nosync::Sink;
+    use crate::pull::Sink;
+    use crate::work::Source;
     use crate::{DefaultThread, Pushable};
 
     #[test]

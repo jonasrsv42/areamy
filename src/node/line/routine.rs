@@ -2,8 +2,8 @@
 
 use crate::error::Error;
 
-/// [`LineRoutine`] is a subset of [std::ops::Coroutine] accepting a stream off `In` types through
-/// [LineRoutine::send] and produces a stream of output with [LineRoutine::next].
+/// [`LineRoutine`] is a subset of [std::ops::Coroutine] accepting a stream of `In` types through
+/// [LineRoutine::send] and produce a stream of output with [LineRoutine::next].
 ///
 /// [std::ops::Coroutine] was not stable at time of development.
 pub trait LineRoutine<In, Out>: Send
@@ -33,9 +33,9 @@ where
     ///
     /// <div class="warning"> The routine should never reset its internal output buffer </div>
     ///
-    /// It should only reset all other state associated with processing. In other words,
-    /// a [LineRoutine::flush] call should only ever create, potentially premature, additional output, it should
-    /// not remove any output.
+    /// It should only reset all other state associated with processing. In other words:
+    /// a [LineRoutine::flush] call should only ever create, potentially premature, additional output. A [LineRoutine::flush]
+    /// call should not remove any output.
     fn flush(&mut self) -> Result<(), Error>;
 
     /// [LineRoutine::next] yields the next output available from the [LineRoutine]. If no

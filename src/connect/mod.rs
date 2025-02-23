@@ -46,7 +46,7 @@
 //!
 //! For [std::marker::Sync] graphs the cost of dynamic dispatch is considered negligable. However,
 //! if for some reason a subgraph needs to be as performant as possible, areamy provides a way to
-//! build a [Pullable] subgraph that avoids dynamic dispatch and all synchronization primitives. See [crate::nosync::Line]
+//! build a [Pullable] subgraph that avoids dynamic dispatch and all synchronization primitives. See [crate::pull::Line]
 //!
 
 mod default;

@@ -86,7 +86,7 @@ where
     Ok(Line::new(worker, pullable))
 }
 
-/// [`Connect`] is a [Pullable] version of [crate::sync::Connect], it's a wrapper around [make_pull] for type hints.
+/// [`Connect`] is a [Pullable] version of [crate::work::Connect], it's a wrapper around [make_pull] for type hints.
 pub struct Connect<DataType, SignalType = Trackable<&'static str>>
 where
     DataType: Send + Sync + Clone,

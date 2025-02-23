@@ -1,4 +1,4 @@
-//! Nodes to make line graphs. One input and one output, simple as it should be.
+//! A variant of [crate::Workable] and [crate::Pullable] nodes with one input and output.
 pub mod pull;
 mod reader;
 mod routine;

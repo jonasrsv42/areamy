@@ -1,4 +1,4 @@
-//! Bridge a [LineTrait] with a [crate::nosync::Line]
+//! Bridge a [LineTrait] with a [crate::pull::Line]
 
 use crate::error::Error;
 use crate::node::line::work::node::LineTrait;
@@ -59,7 +59,7 @@ where
 // node.
 /// [bridge_nosync] creates a [LineTrait] implementation from a [LineRoutine] and
 /// a [Pullable]. The [LineTrait] can the be further connected to other graph nodes using
-/// the same functions as documented in [crate::sync::make_line].
+/// the same functions as documented in [crate::work::make_line].
 ///
 /// * `pullable` - a [Pullable] type that will be owned by [LineTrait]
 /// * `maybe_worker` - a [LineRoutine] that will be in the resulting [LineTrait] node.

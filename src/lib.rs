@@ -23,7 +23,8 @@ pub use connect::{
 pub use message::Message;
 pub use node::{bifurcation, biunion};
 pub use node::{
-    BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, LineReader, LineRoutine,
+    BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, Flush, LineReader,
+    LineRoutine, Next, Send,
 };
 pub use signal::{Origin, Trackable};
 pub use sink::Sink;

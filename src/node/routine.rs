@@ -1,9 +1,9 @@
 //! Traits for implementing routines.
 //!
-//! Routines are insipred by [std::ops::Coroutine], as they should be state machines that are a
+//! Routines are inspired by [std::ops::Coroutine], as they should be state machines that are a
 //! streaming mapping of some set if inputs to some set of outputs.
 //!
-//! For example usage of the [crate::node::routine] traits please see the tests in this file. 
+//! For example usage of the [crate::node::routine] traits please see the tests in this file.
 //! or the various routine implementations such as [crate::LineRoutine]
 
 use crate::error::Error;
@@ -33,12 +33,20 @@ pub trait Next<Message, MultiplicityType: Multiplicity = Unary> {
     fn next(&mut self) -> Result<Option<Message>, Error>;
 }
 
-/// [`Flush`] trait is used to implement handling of the graph [crate::Message::Flush] signal.
+/// [`Flush`] trait is used to implement handling of the graph [crate::Message::Flush] signal for
+/// a routine.
 ///
 /// When flushed a routine should prepare to output everything it can on subsequent [Next]
 /// invocations and it should clear its state for subsequent [Send] invocations.
 pub trait Flush {
     fn flush(&mut self) -> Result<(), Error>;
+}
+
+/// [`Name`] trait is used to name routines for logging purposes.
+pub trait Name {
+    fn name<'a>(&'a self) -> &'a str {
+        "unknown"
+    }
 }
 
 #[cfg(test)]

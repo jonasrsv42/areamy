@@ -30,6 +30,7 @@ pub mod tests {
     use crate::node::line::pull::builder::{make_pull, Root};
     use crate::work::Source;
     use crate::{DefaultThread, Message, Pushable};
+    use crate::{Next, Send};
     use std::collections::VecDeque;
 
     pub struct Identity {
@@ -44,19 +45,26 @@ pub mod tests {
         }
     }
 
-    impl crate::LineRoutine<usize, usize> for Identity {
-        fn next(&mut self) -> Result<Option<usize>, Error> {
-            Ok(self.output.pop_front())
-        }
-
+    impl Send<usize> for Identity {
         fn send(&mut self, message: usize) -> Result<(), Error> {
             Ok(self.output.push_back(message))
         }
+    }
 
+    impl Next<usize> for Identity {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            Ok(self.output.pop_front())
+        }
+    }
+
+    impl crate::Flush for Identity {
         fn flush(&mut self) -> Result<(), Error> {
             Ok(())
         }
     }
+
+    impl crate::node::Name for Identity {}
+    impl crate::LineRoutine<usize, usize> for Identity {}
 
     #[test]
     fn line_nosync_readers_basic() {

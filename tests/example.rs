@@ -14,19 +14,26 @@ impl AddOne {
     }
 }
 
-impl areamy::LineRoutine<usize, usize> for AddOne {
-    fn next(&mut self) -> Result<Option<usize>, areamy::error::Error> {
-        Ok(self.output.pop_front())
-    }
-
+impl areamy::Send<usize> for AddOne {
     fn send(&mut self, message: usize) -> Result<(), areamy::error::Error> {
         Ok(self.output.push_back(message + 1))
     }
+}
 
+impl areamy::Next<usize> for AddOne {
+    fn next(&mut self) -> Result<Option<usize>, areamy::error::Error> {
+        Ok(self.output.pop_front())
+    }
+}
+
+impl areamy::Flush for AddOne {
     fn flush(&mut self) -> Result<(), areamy::error::Error> {
         Ok(())
     }
 }
+
+impl areamy::node::Name for AddOne {}
+impl areamy::LineRoutine<usize, usize> for AddOne {}
 
 #[test]
 fn simple_sync() -> Result<(), areamy::error::Error> {

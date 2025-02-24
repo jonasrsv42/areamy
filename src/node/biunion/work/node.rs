@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::signal::Visitors;
 use crate::SyncQueue;
-use crate::{fatal, marker::Connection, DefaultThread, ThreadId};
+use crate::{marker::Connection, DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
     Message, Origin, Pushable, Workable,
@@ -236,7 +236,7 @@ where
         // Do work on our input or forward signals from input to output.
         match message {
             Message::Data(data) => {
-                self.worker.left_work(data)?;
+                crate::Send::<Left, biunion::Left>::send(&mut self.worker, data)?;
                 // If left or right is OK push is OK.
                 push_ok = self.try_push()?;
             }
@@ -258,7 +258,7 @@ where
         // Do work on our input or forward signals from input to output.
         match message {
             Message::Data(data) => {
-                self.worker.right_work(data)?;
+                crate::Send::<Right, biunion::Right>::send(&mut self.worker, data)?;
 
                 // If left or right is OK push is OK.
                 push_ok = self.try_push()?;
@@ -278,22 +278,17 @@ where
 
     fn try_push(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
-        if !self.worker.output().is_empty() {
-            let output_object = self
-                .worker
-                .output()
-                .pop_front()
-                .ok_or(fatal!("Missing front value"))?;
+        match self.worker.next()? {
+            Some(message) => {
+                self.left_visitors.clear();
+                self.right_visitors.clear();
 
-            self.left_visitors.clear();
-            self.right_visitors.clear();
+                self.push(Message::Data(message))?;
 
-            self.push(Message::Data(output_object))?;
-
-            return Ok(true);
+                return Ok(true);
+            }
+            None => Ok(false),
         }
-
-        return Ok(false);
     }
 
     fn push(&mut self, obj: Message<Out, SignalType>) -> Result<(), Error> {

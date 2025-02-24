@@ -1,27 +1,17 @@
-use crate::error::Error;
-use std::collections::VecDeque;
+use crate::biunion;
 
-pub trait BiunionRoutine<Left, Right, Out>: Send
+pub trait BiunionRoutine<Left, Right, Out>:
+    Send
+    + crate::Send<Left, biunion::Left>
+    + crate::Send<Right, biunion::Right>
+    + crate::Next<Out>
+    + crate::Flush
+    + crate::node::Name
 where
     Left: Clone,
     Right: Clone,
     Out: Clone,
 {
-    // Retrieve the left output queue
-    fn output(&mut self) -> &mut VecDeque<Out>;
-
-    // Work on an object, this method performs processing in a synchronous manner.
-    fn left_work(&mut self, object: Left) -> Result<(), Error>;
-
-    // Work on an object, this method performs processing in a synchronous manner.
-    fn right_work(&mut self, object: Right) -> Result<(), Error>;
-
-    // Flush the bifurcation, outputting available output and resetting internal state.
-    fn flush(&mut self) -> Result<(), Error>;
-
-    fn name(&self) -> &str {
-        return "unknown";
-    }
 }
 
 #[cfg(test)]
@@ -43,30 +33,44 @@ pub mod tests {
         }
     }
 
-    impl BiunionRoutine<usize, usize, usize> for MockBiunion {
-        fn output(&mut self) -> &mut VecDeque<usize> {
-            &mut self.output
-        }
-
-        fn left_work(&mut self, object: usize) -> Result<(), Error> {
-            self.output.push_back(object * 2 + self.shared_state);
+    impl crate::Send<usize, biunion::Left> for MockBiunion {
+        fn send(&mut self, message: usize) -> Result<(), crate::error::Error> {
+            self.output.push_back(message * 2 + self.shared_state);
 
             self.shared_state += 1;
 
             Ok(())
         }
+    }
 
-        fn right_work(&mut self, object: usize) -> Result<(), Error> {
-            self.output.push_back(object * 3 + self.shared_state);
+    impl crate::Send<usize, biunion::Right> for MockBiunion {
+        fn send(&mut self, message: usize) -> Result<(), crate::error::Error> {
+            self.output.push_back(message * 3 + self.shared_state);
 
             self.shared_state += 1;
 
             Ok(())
         }
+    }
 
-        fn flush(&mut self) -> Result<(), Error> {
+    impl crate::Next<usize> for MockBiunion {
+        fn next(&mut self) -> Result<Option<usize>, crate::error::Error> {
+            Ok(self.output.pop_front())
+        }
+    }
+
+    impl crate::Flush for MockBiunion {
+        fn flush(&mut self) -> Result<(), crate::error::Error> {
             self.shared_state = 0;
             Ok(())
         }
     }
+
+    impl crate::node::Name for MockBiunion {
+        fn name<'a>(&'a self) -> &'a str {
+            "MockBiunion"
+        }
+    }
+
+    impl BiunionRoutine<usize, usize, usize> for MockBiunion {}
 }

@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::signal::Visitors;
 use crate::SyncQueue;
-use crate::{fatal, DefaultThread, ThreadId};
+use crate::{DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
     marker::Connection,
@@ -103,7 +103,7 @@ where
             match self.input.poll()? {
                 Some(message) => match message {
                     Message::Data(data) => {
-                        self.worker.work(data)?;
+                        self.worker.send(data)?;
 
                         // Try to push after performing the work, to see if we got something.
                         let left_ok = self.try_left_output()?;
@@ -240,40 +240,29 @@ where
 
     fn try_left_output(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
-        let output_is_empty = self.worker.left_output().is_empty();
-        if !output_is_empty {
-            self.left_visitors.clear();
-            let output_object = self
-                .worker
-                .left_output()
-                .pop_front()
-                .ok_or(fatal!("Missing front element"))?;
+        match crate::Next::<Left, bifurcation::Left>::next(&mut self.worker)? {
+            Some(message) => {
+                self.left_visitors.clear();
+                self.push_left(Message::Data(message))?;
 
-            self.push_left(Message::Data(output_object))?;
-
-            return Ok(true);
+                return Ok(true);
+            }
+            None => return Ok(false),
         }
-
-        return Ok(false);
     }
 
     fn try_right_output(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
-        let output_is_empty = self.worker.right_output().is_empty();
-        if !output_is_empty {
-            self.right_visitors.clear();
-            let output_object = self
-                .worker
-                .right_output()
-                .pop_front()
-                .ok_or(fatal!("Missing front element"))?;
 
-            self.push_right(Message::Data(output_object))?;
+        match crate::Next::<Right, bifurcation::Right>::next(&mut self.worker)? {
+            Some(message) => {
+                self.right_visitors.clear();
+                self.push_right(Message::Data(message))?;
 
-            return Ok(true);
+                return Ok(true);
+            }
+            None => return Ok(false),
         }
-
-        return Ok(false);
     }
 
     fn push_left(&mut self, obj: Message<Left, SignalType>) -> Result<(), Error> {

@@ -1,32 +1,24 @@
-use crate::error::Error;
-use std::collections::VecDeque;
+use crate::bifurcation;
 
-pub trait BifurcationRoutine<In, Left, Right>: Send
+pub trait BifurcationRoutine<In, Left, Right>:
+    Send
+    + crate::Send<In>
+    + crate::Next<Left, bifurcation::Left>
+    + crate::Next<Right, bifurcation::Right>
+    + crate::Flush
+    + crate::node::Name
 where
     In: Clone,
     Left: Clone,
     Right: Clone,
 {
-    // Retrieve the left output queue
-    fn left_output(&mut self) -> &mut VecDeque<Left>;
-
-    // Retrieve the right output queue
-    fn right_output(&mut self) -> &mut VecDeque<Right>;
-
-    // Work on an object, this method performs processing in a synchronous manner.
-    fn work(&mut self, object: In) -> Result<(), Error>;
-
-    // Flush the bifurcation, outputting available output and resetting internal state.
-    fn flush(&mut self) -> Result<(), Error>;
-
-    fn name(&self) -> &str {
-        return "unknown";
-    }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use crate::error::Error;
 
     pub struct MockBifurcation {
         shared_state: usize,
@@ -44,27 +36,41 @@ pub mod tests {
         }
     }
 
-    impl BifurcationRoutine<usize, usize, usize> for MockBifurcation {
-        fn left_output(&mut self) -> &mut VecDeque<usize> {
-            &mut self.left_out
-        }
-
-        fn right_output(&mut self) -> &mut VecDeque<usize> {
-            &mut self.right_out
-        }
-
-        fn work(&mut self, object: usize) -> Result<(), Error> {
-            self.left_out.push_back(object * 2 + self.shared_state);
-            self.right_out.push_back(object * 3 + self.shared_state);
+    impl crate::Send<usize> for MockBifurcation {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
+            self.left_out.push_back(message * 2 + self.shared_state);
+            self.right_out.push_back(message * 3 + self.shared_state);
 
             self.shared_state += 1;
 
             Ok(())
         }
+    }
 
+    impl crate::Next<usize, bifurcation::Right> for MockBifurcation {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            Ok(self.right_out.pop_front())
+        }
+    }
+
+    impl crate::Next<usize, bifurcation::Left> for MockBifurcation {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            Ok(self.left_out.pop_front())
+        }
+    }
+
+    impl crate::Flush for MockBifurcation {
         fn flush(&mut self) -> Result<(), Error> {
             self.shared_state = 0;
             Ok(())
         }
     }
+
+    impl crate::node::Name for MockBifurcation {
+        fn name<'a>(&'a self) -> &'a str {
+            "MockBifurcation"
+        }
+    }
+
+    impl BifurcationRoutine<usize, usize, usize> for MockBifurcation {}
 }

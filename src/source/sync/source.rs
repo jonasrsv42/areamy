@@ -74,11 +74,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SyncQueue;
+    use crate::SyncEdge;
     use std::sync::Arc;
 
     struct MockNode {
-        input: Arc<SyncQueue<Message<usize, Trackable<&'static str>>>>,
+        input: Arc<SyncEdge<usize, Trackable<&'static str>>>,
     }
 
     impl Get<dyn Pushable<Message = Message<usize, Trackable<&'static str>>>> for MockNode {
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn source_basic() {
         let mock_node = MockNode {
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
         };
 
         let mut source = Source::new(&mock_node).unwrap();
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn source_can_flush() {
         let mock_node = MockNode {
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
         };
 
         let mut source = Source::new(&mock_node).unwrap();
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn source_can_mark() {
         let mock_node = MockNode {
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
         };
 
         let mut source = Source::new(&mock_node).unwrap();

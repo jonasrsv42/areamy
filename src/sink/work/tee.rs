@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::SyncQueue;
+use crate::SyncEdge;
 use crate::{graph::Add, marker::Multiplicity, DefaultThread, Pushable, Trackable};
 use crate::{Message, Origin};
 use std::sync::Arc;
@@ -9,7 +9,7 @@ where
     DataType: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
 {
-    buffer: Arc<SyncQueue<Message<DataType, SignalType>>>,
+    buffer: Arc<SyncEdge<DataType, SignalType>>,
 }
 
 impl<DataType, SignalType> Sink<DataType, SignalType>
@@ -24,7 +24,7 @@ where
     where
         MultiplicityType: Multiplicity,
     {
-        let shared_buffer = Arc::new(SyncQueue::new());
+        let shared_buffer = Arc::new(SyncEdge::new());
 
         Add::add(workable, Box::new(shared_buffer.clone()))?;
         let sink = Self {

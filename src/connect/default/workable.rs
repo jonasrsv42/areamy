@@ -20,7 +20,7 @@ where
 mod tests {
     use super::*;
     use crate::connect::graph::tests::Node;
-    use crate::{Message, SyncQueue};
+    use crate::{Message, SyncEdge};
     use std::sync::Arc;
 
     #[test]
@@ -28,7 +28,7 @@ mod tests {
         let mut node = Node::new();
 
         let input = node.input.clone();
-        let output = Arc::new(SyncQueue::new());
+        let output = Arc::new(SyncEdge::<usize, usize>::new());
 
         node.outputs.push(Box::new(output.clone()));
 
@@ -54,7 +54,7 @@ mod tests {
         let mut node = Arc::new(Mutex::new(Node::new()));
 
         let input = node.lock().unwrap().input.clone();
-        let output = Arc::new(SyncQueue::new());
+        let output = Arc::new(SyncEdge::<usize, usize>::new());
 
         node.lock().unwrap().outputs.push(Box::new(output.clone()));
 

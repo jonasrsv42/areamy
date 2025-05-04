@@ -24,7 +24,7 @@ pub trait Workable: Send + Connection {
 /// <div class="warning"> Nodes should never implement [Pushable] as it
 /// easily leads to circualar references and memory leaks </div>
 ///
-/// Instead nodes hold a reference to something that is `Pushable` such as a Arc<SyncQueue<...>> Or Rc<RefCell<Vec<..>>>
+/// Instead nodes hold a reference to something that is `Pushable` such as a Arc<SyncEdge<...>> Or Rc<RefCell<Vec<..>>>
 pub trait Pushable: Sync + Send + Connection {
     /// The Message that can be accepted by this [Pushable]
     type Message;
@@ -84,7 +84,7 @@ pub trait Get<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicit
 #[cfg(any(test, doc))]
 pub mod tests {
     use super::*;
-    use crate::{make_bidi, make_push, DefaultThread, Message, SyncQueue};
+    use crate::{make_bidi, make_push, DefaultThread, Message, SyncEdge};
     use std::sync::Arc;
 
     /// A `Simple` "coroutine". At time of writing, 2024/12/11, coroutines
@@ -122,7 +122,7 @@ pub mod tests {
     ///
     pub struct Node {
         /// Incoming data connection(s), `Pushable`(s).
-        pub input: Arc<SyncQueue<Message<usize, usize>>>,
+        pub input: Arc<SyncEdge<usize, usize>>,
         /// The underyling routine of the node.
         pub routine: Routine,
 
@@ -141,7 +141,7 @@ pub mod tests {
     impl Node {
         pub fn new() -> Self {
             Node {
-                input: Arc::new(SyncQueue::new()),
+                input: Arc::new(SyncEdge::new()),
                 routine: Routine { state: 0 },
                 workers: Vec::new(),
                 pullable: None,
@@ -210,7 +210,7 @@ pub mod tests {
         }
     }
 
-    /// A `work` and `push` chain example. Since we use `SyncQueue` for message passing
+    /// A `work` and `push` chain example. Since we use `SyncEdge` for message passing
     /// it is excellent for sharing nodes across different threads. As in the mutli-threaded graph
     /// example above.
     #[test]
@@ -224,7 +224,7 @@ pub mod tests {
         make_bidi(node_1, node_2.as_mut()).unwrap();
         make_bidi(node_2, node_3.as_mut()).unwrap();
 
-        let sink = Arc::new(SyncQueue::new());
+        let sink = Arc::new(SyncEdge::new());
 
         make_push(&mut node_3, &sink).unwrap();
 

@@ -5,7 +5,7 @@ use crate::signal::Visitors;
 use crate::{
     graph::{Add, Get},
     marker::Connection,
-    DefaultThread, SyncQueue, ThreadId,
+    DefaultThread, SyncEdge, ThreadId,
 };
 use crate::{Message, Origin};
 use crate::{Pushable, Workable};
@@ -82,7 +82,7 @@ where
     pub pushes: Vec<Box<dyn Pushable<Message = Message<Out, SignalType>>>>,
 
     /// Input to our current node that parents will push into.
-    pub input: Arc<SyncQueue<Message<In, SignalType>>>,
+    pub input: Arc<SyncEdge<In, SignalType>>,
 }
 
 /// Mark our Line as a possible connection in a graph. It's a connection
@@ -196,7 +196,7 @@ where
             worker,
             workers: Vec::new(),
             pushes: Vec::new(),
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
         }
     }
 }
@@ -219,7 +219,7 @@ where
             worker,
             workers: Vec::new(),
             pushes: Vec::new(),
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
         }
     }
 

@@ -68,7 +68,7 @@ pub mod tests {
 
     #[test]
     fn line_nosync_readers_basic() {
-        let root = Root::<Message<usize, usize>, DefaultThread>::new();
+        let root = Root::<usize, usize, DefaultThread>::new();
         let mut source = Source::of(&root).unwrap();
 
         let mut line = make_pull(root, Identity::new()).unwrap();

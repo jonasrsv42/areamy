@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::SyncQueue;
+use crate::SyncEdge;
 use crate::{
     graph::Add, marker::Multiplicity, DefaultThread, Pushable, ThreadId, Trackable, Workable,
 };
@@ -13,7 +13,7 @@ where
     ThreadIdType: ThreadId,
 {
     workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
-    buffer: Arc<SyncQueue<Message<DataType, SignalType>>>,
+    buffer: Arc<SyncEdge<DataType, SignalType>>,
 }
 
 impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>
@@ -31,7 +31,7 @@ where
     where
         MultiplicityType: Multiplicity,
     {
-        let shared_buffer = Arc::new(SyncQueue::new());
+        let shared_buffer = Arc::new(SyncEdge::new());
 
         Add::add(workable.as_mut(), Box::new(shared_buffer.clone()))?;
         let sink = Self {
@@ -59,7 +59,7 @@ where
     where
         MultiplicityType: Multiplicity,
     {
-        let shared_buffer = Arc::new(SyncQueue::new());
+        let shared_buffer = Arc::new(SyncEdge::new());
 
         Add::add(workable.as_mut(), Box::new(shared_buffer.clone()))?;
         let sink = Self {

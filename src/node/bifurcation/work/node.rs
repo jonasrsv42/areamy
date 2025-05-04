@@ -2,7 +2,7 @@ use crate::bifurcation;
 use crate::error::Error;
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::signal::Visitors;
-use crate::SyncQueue;
+use crate::SyncEdge;
 use crate::{DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
@@ -63,7 +63,7 @@ where
 
     pub left_pushes: Vec<Box<dyn Pushable<Message = Message<Left, SignalType>>>>,
     pub right_pushes: Vec<Box<dyn Pushable<Message = Message<Right, SignalType>>>>,
-    pub input: Arc<SyncQueue<Message<In, SignalType>>>,
+    pub input: Arc<SyncEdge<In, SignalType>>,
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> Connection
@@ -165,7 +165,7 @@ where
             workers: Vec::new(),
             left_pushes: Vec::new(),
             right_pushes: Vec::new(),
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
         }
     }
 }
@@ -188,7 +188,7 @@ where
             workers: Vec::new(),
             left_pushes: Vec::new(),
             right_pushes: Vec::new(),
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
         }
     }
 

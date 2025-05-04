@@ -2,7 +2,7 @@ use crate::biunion;
 use crate::error::Error;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::signal::Visitors;
-use crate::SyncQueue;
+use crate::SyncEdge;
 use crate::{marker::Connection, DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
@@ -73,8 +73,8 @@ where
     pub pushes: Vec<Box<dyn Pushable<Message = Message<Out, SignalType>>>>,
 
     // Input queues.
-    pub left_input: Arc<SyncQueue<Message<Left, SignalType>>>,
-    pub right_input: Arc<SyncQueue<Message<Right, SignalType>>>,
+    pub left_input: Arc<SyncEdge<Left, SignalType>>,
+    pub right_input: Arc<SyncEdge<Right, SignalType>>,
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Connection
@@ -156,8 +156,8 @@ where
             left_workers: Vec::new(),
             right_workers: Vec::new(),
             pushes: Vec::new(),
-            left_input: Arc::new(SyncQueue::new()),
-            right_input: Arc::new(SyncQueue::new()),
+            left_input: Arc::new(SyncEdge::new()),
+            right_input: Arc::new(SyncEdge::new()),
         }
     }
 }
@@ -180,8 +180,8 @@ where
             left_workers: Vec::new(),
             right_workers: Vec::new(),
             pushes: Vec::new(),
-            left_input: Arc::new(SyncQueue::new()),
-            right_input: Arc::new(SyncQueue::new()),
+            left_input: Arc::new(SyncEdge::new()),
+            right_input: Arc::new(SyncEdge::new()),
         }
     }
 

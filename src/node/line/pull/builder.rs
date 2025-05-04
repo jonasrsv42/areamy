@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::node::line::pull::node::Line;
-use crate::SyncQueue;
+use crate::SyncEdge;
 use crate::{graph::Get, Connection, Pullable, Pushable, ThreadId, Trackable};
 use crate::{LineRoutine, Message, Origin};
 use std::marker::PhantomData;
@@ -8,57 +8,66 @@ use std::sync::Arc;
 
 /// [`Root`] of a [`Pullable`] subgraph. It will await input into its [Pushable] and
 /// then forward it downstream.
-pub struct Root<MessageType, ThreadIdType>
+pub struct Root<DataType, SignalType, ThreadIdType>
 where
-    MessageType: Clone,
+    DataType: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
 {
-    /// The input queue to the [Pullable] chain. For now we have a [SyncQueue]
+    /// The input queue to the [Pullable] chain. For now we have a [SyncEdge]
     /// but will support [std::collections::VecDeque] in the future as well.
     ///
     /// TODO: support having a sync or nosync input.
-    pub input: Arc<SyncQueue<MessageType>>,
+    pub input: Arc<SyncEdge<DataType, SignalType>>,
 
     /// The threadId that belongs to the child nodes.
     thread: PhantomData<ThreadIdType>,
 }
 
-impl<MessageType, ThreadIdType> Root<MessageType, ThreadIdType>
+impl<DataType, SignalType, ThreadIdType> Root<DataType, SignalType, ThreadIdType>
 where
-    MessageType: Clone,
+    DataType: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
 {
     pub fn new() -> Self {
         Self {
-            input: Arc::new(SyncQueue::new()),
+            input: Arc::new(SyncEdge::new()),
             thread: PhantomData,
         }
     }
 }
 
 /// [Root] is a [Pullable] [Connection] in our graph.
-impl<MessageType: Clone, ThreadIdType: ThreadId> Connection for Root<MessageType, ThreadIdType> {}
+impl<DataType, SignalType, ThreadIdType> Connection for Root<DataType, SignalType, ThreadIdType> 
+where
+    DataType: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+{}
 
 /// [Get] the [Pushable] from [Root].
-impl<MessageType, ThreadIdType> Get<dyn Pushable<Message = MessageType>>
-    for Root<MessageType, ThreadIdType>
+impl<DataType, SignalType, ThreadIdType> Get<dyn Pushable<Message = Message<DataType, SignalType>>>
+    for Root<DataType, SignalType, ThreadIdType>
 where
-    MessageType: Clone + Send + Sync + 'static,
+    DataType: Clone + Send + Sync + 'static,
+    SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<Message = MessageType>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<DataType, SignalType>>>, Error> {
         Get::get(&self.input)
     }
 }
 
 /// [Root] is [Pullable] it will serve as the root node of a [Pullable] subgraph.
-impl<MessageType, ThreadIdType> Pullable for Root<MessageType, ThreadIdType>
+impl<DataType, SignalType, ThreadIdType> Pullable for Root<DataType, SignalType, ThreadIdType>
 where
-    MessageType: Clone + Send + Sync + 'static,
+    DataType: Clone + Send + Sync + 'static,
+    SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId,
 {
     type ThreadId = ThreadIdType;
-    type Message = MessageType;
+    type Message = Message<DataType, SignalType>;
 
     fn pull(&mut self) -> Result<Self::Message, Error> {
         self.input.read_front()
@@ -127,7 +136,7 @@ pub mod tests {
 
     #[test]
     fn line_builder_reading_root() {
-        let mut root = Root::<Message<usize, usize>, DefaultThread>::new();
+        let mut root = Root::<usize, usize, DefaultThread>::new();
         let mut source = Source::of(&root).unwrap();
 
         source.push(Message::Data(5)).unwrap();
@@ -139,8 +148,8 @@ pub mod tests {
 
     #[test]
     fn line_builder_make_pull() {
-        let root = Root::new();
-        let mut source = Source::new(&root).unwrap();
+        let root = Root::<usize, usize, DefaultThread>::new();
+        let mut source = Source::of(&root).unwrap();
 
         let line = make_pull(root, MockLine::new()).unwrap();
         let mut sink = Sink::new(line);

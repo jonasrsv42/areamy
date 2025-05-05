@@ -10,7 +10,7 @@ where
 {
     // We store it in the heap to mask the recursive `Pullable` type.
     // If one does not want a heap allocation then reading directly from the pullable is OK.
-    pullable: Box<dyn Pullable<ThreadId = ThreadIdType, Message = Message<DataType, SignalType>>>,
+    pullable: Box<dyn Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>>,
 }
 
 impl<DataType, SignalType, ThreadIdType> Connection for Sink<DataType, SignalType, ThreadIdType>
@@ -27,7 +27,7 @@ where
     SignalType: Origin,
 {
     pub fn new(
-        pullable: impl Pullable<ThreadId = DefaultThread, Message = Message<DataType, SignalType>>
+        pullable: impl Pullable<ThreadId = DefaultThread, DataType = DataType, SignalType = SignalType>
             + 'static,
     ) -> Self {
         let sink = Self {
@@ -45,9 +45,10 @@ where
     ThreadIdType: ThreadId,
 {
     type ThreadId = ThreadIdType;
-    type Message = Message<DataType, SignalType>;
+    type DataType = DataType;
+    type SignalType = SignalType;
 
-    fn pull(&mut self) -> Result<Self::Message, Error> {
+    fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
         self.pullable.pull()
     }
 }
@@ -59,15 +60,16 @@ where
     ThreadIdType: ThreadId,
 {
     type ThreadId = ThreadIdType;
-    type Message = Message<DataType, SignalType>;
+    type DataType = DataType;
+    type SignalType = SignalType;
 
-    fn read(&mut self) -> Result<Self::Message, Error> {
+    fn read(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
         Sink::pull(self)
     }
 
     /// [Pullable] [sink::Sink] is not [sink::Sink::poll]able since it
     /// maintains no buffer.
-    fn poll(&mut self) -> Result<Option<Self::Message>, Error> {
+    fn poll(&mut self) -> Result<Option<Message<Self::DataType, Self::SignalType>>, Error> {
         Ok(None)
     }
 }

@@ -32,9 +32,9 @@ pub trait LineTrait:
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
     // We can add edges it should push into.
-    + Add<dyn Pushable<Message = Message<Self::Out, Self::Signal>>>
+    + Add<dyn Pushable<DataType = Self::Out, SignalType = Self::Signal>>
     // We can retrieve its edge for others to push into.
-    + Get<dyn Pushable<Message =  Message<Self::In, Self::Signal>>>
+    + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
 {
     /// The input data going into the line.
     type In: Clone + Send + Sync + 'static;
@@ -79,7 +79,7 @@ where
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
     /// Edges that we can push data into.
-    pub pushes: Vec<Box<dyn Pushable<Message = Message<Out, SignalType>>>>,
+    pub pushes: Vec<Box<dyn Pushable<DataType = Out, SignalType = SignalType>>>,
 
     /// Input to our current node that parents will push into.
     pub input: Arc<SyncEdge<In, SignalType>>,
@@ -295,7 +295,7 @@ where
 /// Implement the [Get] constructor for inbound [Pushable] edge.
 /// This allows users to get the input connection of this node.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Get<dyn Pushable<Message = Message<In, SignalType>>>
+    Get<dyn Pushable<DataType = In, SignalType = SignalType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Clone + Send + Sync + 'static,
@@ -304,7 +304,7 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<In, SignalType>>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = In, SignalType = SignalType>>, Error> {
         Get::get(&self.input)
     }
 }
@@ -329,7 +329,7 @@ where
 /// This allows users to add [Pushable] edges to this node such that it can [Pushable::push] data
 /// into them when scheduled.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Add<dyn Pushable<Message = Message<Out, SignalType>>>
+    Add<dyn Pushable<DataType = Out, SignalType = SignalType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Clone + Send + Sync,
@@ -340,7 +340,7 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<Message = Message<Out, SignalType>>>,
+        pushable: Box<dyn Pushable<DataType = Out, SignalType = SignalType>>,
     ) -> Result<(), Error> {
         Ok(self.pushes.push(pushable))
     }

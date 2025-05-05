@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::{
     graph::{Add, Get},
     marker::Multiplicity,
+    signal::Origin,
     Pushable, Workable,
 };
 
@@ -33,15 +34,16 @@ pub fn make_bidi<
     ParentType,
     ChildMultiplicity: Multiplicity, // Generic over type of child connection
     ParentMultiplicity: Multiplicity, // Generic over type of parent connection
-    MessageType,
+    DataType: Clone + Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType,
 >(
     mut parent: Box<ParentType>,
     child: &mut (impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
-              + Get<dyn Pushable<Message = MessageType>, ChildMultiplicity>),
+              + Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>),
 ) -> Result<(), Error>
 where
-    ParentType: Add<dyn Pushable<Message = MessageType>, ParentMultiplicity>
+    ParentType: Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
         + Workable<ThreadId = ThreadIdType>
         + 'static,
 {
@@ -66,9 +68,14 @@ where
 /// The parent is &mut because we mutate it by adding a `Pushable` edge to it. The child
 /// does not need to be mut so we take an implementation reference to it to avoid
 /// moving it.
-pub fn make_push<GetMultiplicity: Multiplicity, AddMultiplicity: Multiplicity, MessageType>(
-    parent: &mut impl Add<dyn Pushable<Message = MessageType>, AddMultiplicity>,
-    child: &impl Get<dyn Pushable<Message = MessageType>, GetMultiplicity>,
+pub fn make_push<
+    GetMultiplicity: Multiplicity,
+    AddMultiplicity: Multiplicity,
+    DataType: Clone + Send + Sync,
+    SignalType: Origin + Send + Sync
+>(
+    parent: &mut impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,
+    child: &impl Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
 ) -> Result<(), Error> {
     let pushable = child.get()?;
     Add::add(parent, pushable)?;

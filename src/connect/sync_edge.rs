@@ -214,9 +214,10 @@ where
     DataType: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
 {
-    type Message = Message<DataType, SignalType>;
+    type DataType = DataType;
+    type SignalType = SignalType;
 
-    fn push(&mut self, object: Self::Message) -> Result<(), Error> {
+    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         self.push_back(object)
     }
 }
@@ -226,19 +227,20 @@ where
     DataType: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
 {
-    type Message = Message<DataType, SignalType>;
+    type DataType = DataType;
+    type SignalType = SignalType;
 
-    fn push(&mut self, object: Self::Message) -> Result<(), Error> {
+    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         self.push_back(object)
     }
 }
 
-impl<DataType, SignalType> Get<dyn Pushable<Message = Message<DataType, SignalType>>> for Arc<SyncEdge<DataType, SignalType>>
+impl<DataType, SignalType> Get<dyn Pushable<DataType = DataType, SignalType = SignalType>> for Arc<SyncEdge<DataType, SignalType>>
 where
     DataType: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<DataType, SignalType>>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
         Ok(Box::new(self.clone()))
     }
 }

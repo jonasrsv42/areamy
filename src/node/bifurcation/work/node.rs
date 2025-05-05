@@ -17,14 +17,14 @@ pub trait BifurcationTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Pushable<Message = Message<Self::Left, Self::Signal>>, bifurcation::Left>
-    + Add<dyn Pushable<Message = Message<Self::Right, Self::Signal>>, bifurcation::Right>
+    + Add<dyn Pushable<DataType = Self::Left, SignalType = Self::Signal>, bifurcation::Left>
+    + Add<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, bifurcation::Right>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
 
     // We can retrieve pushable edges
-    + Get<dyn Pushable<Message = Message<Self::In, Self::Signal>>>
+    + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
 {
     // The input data entering it. 
     type In: Clone + Send + Sync + 'static;
@@ -61,8 +61,8 @@ where
 
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
-    pub left_pushes: Vec<Box<dyn Pushable<Message = Message<Left, SignalType>>>>,
-    pub right_pushes: Vec<Box<dyn Pushable<Message = Message<Right, SignalType>>>>,
+    pub left_pushes: Vec<Box<dyn Pushable<DataType = Left, SignalType = SignalType>>>,
+    pub right_pushes: Vec<Box<dyn Pushable<DataType = Right, SignalType = SignalType>>>,
     pub input: Arc<SyncEdge<In, SignalType>>,
 }
 
@@ -300,7 +300,7 @@ where
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<Message = Message<In, SignalType>>>
+    Get<dyn Pushable<DataType = In, SignalType = SignalType>>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Clone + Send + Sync + 'static,
@@ -310,13 +310,13 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right>,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<In, SignalType>>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = In, SignalType = SignalType>>, Error> {
         Get::get(&self.input)
     }
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<Message = Message<Left, SignalType>>, bifurcation::Left>
+    Add<dyn Pushable<DataType = Left, SignalType = SignalType>, bifurcation::Left>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Clone + Send + Sync + 'static,
@@ -328,14 +328,14 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<Message = Message<Left, SignalType>>>,
+        pushable: Box<dyn Pushable<DataType = Left, SignalType = SignalType>>,
     ) -> Result<(), Error> {
         Ok(self.left_pushes.push(pushable))
     }
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<Message = Message<Right, SignalType>>, bifurcation::Right>
+    Add<dyn Pushable<DataType = Right, SignalType = SignalType>, bifurcation::Right>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Clone + Send + Sync + 'static,
@@ -347,7 +347,7 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<Message = Message<Right, SignalType>>>,
+        pushable: Box<dyn Pushable<DataType = Right, SignalType = SignalType>>,
     ) -> Result<(), Error> {
         Ok(self.right_pushes.push(pushable))
     }

@@ -4,7 +4,7 @@ use crate::{
     graph::{Add, Get},
     make_bidi, make_push,
     marker::Multiplicity,
-    Message, Origin, Pushable, Trackable, Workable,
+    Origin, Pushable, Trackable, Workable,
 };
 use std::marker::PhantomData;
 
@@ -68,8 +68,8 @@ where
     where
         ChildType: 'static
             + Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
-            + Get<dyn Pushable<Message = Message<DataType, SignalType>>, ChildMultiplicity>,
-        ParentType: Add<dyn Pushable<Message = Message<DataType, SignalType>>, ParentMultiplicity>
+            + Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>,
+        ParentType: Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
             + Workable<ThreadId = ThreadIdType>
             + 'static,
     {
@@ -80,8 +80,8 @@ where
 
     /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
     pub fn push<AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
-        parent: &mut impl Add<dyn Pushable<Message = Message<DataType, SignalType>>, AddMultiplicity>,
-        child: &impl Get<dyn Pushable<Message = Message<DataType, SignalType>>, GetMultiplicity>,
+        parent: &mut impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,
+        child: &impl Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
     ) -> Result<(), Error> {
         make_push(parent, child)?;
 

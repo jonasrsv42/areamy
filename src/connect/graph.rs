@@ -1,6 +1,8 @@
 //! Graph connections and building blocks.
 use crate::error::Error;
 use crate::marker::{Connection, Multiplicity, Unary};
+use crate::message::Message;
+use crate::signal::Origin;
 use crate::ThreadId;
 
 /// A [`Workable`] is a [Connection] in our graph that is used to for scheduling.
@@ -16,25 +18,30 @@ pub trait Workable: Send + Connection {
 }
 
 /// A [`Pushable`] is a data [Connection] in our graph, it is used for dataflow.
-/// The associated [Pushable::Message] type is the type that can be [Pushable::push]ed through this [Connection].
+/// The associated [Pushable::DataType] and [Pushable::SignalType] types are used to specify
+/// the types for the [Message<DataType, SignalType>] that can be [Pushable::push]ed through this [Connection].
 ///
 /// Child nodes will typically hold [Pushable] referencs to queues owned by a parent
-/// and [Pushable::push] [Pushable::Message] into them when scheduled.
+/// and [Pushable::push] [Message] into them when scheduled.
 ///
 /// <div class="warning"> Nodes should never implement [Pushable] as it
 /// easily leads to circualar references and memory leaks </div>
 ///
 /// Instead nodes hold a reference to something that is `Pushable` such as a Arc<SyncEdge<...>> Or Rc<RefCell<Vec<..>>>
 pub trait Pushable: Sync + Send + Connection {
-    /// The Message that can be accepted by this [Pushable]
-    type Message;
+    /// The DataType used in [Message<DataType, SignalType>] for this [Pushable]
+    type DataType: Clone + Send + Sync;
+    
+    /// The SignalType used in [Message<DataType, SignalType>] for this [Pushable]
+    type SignalType: Origin + Send + Sync;
 
-    fn push(&mut self, msg: Self::Message) -> Result<(), Error>;
+    /// Pushes a message to this [Pushable]
+    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error>;
 }
 
 /// [`Pullable`] combines [Workable] and [Pushable] in being both a scheduling and dataflow
 /// [Connection]. As with [Workable] the [Pullable] connection has a unique [Pullable::ThreadId] associated
-/// with it as well as a [Pullable::Message] that it will yield upon scheduling.
+/// with it as well as a [Message<DataType, SignalType>] that it will yield upon scheduling.
 ///
 /// A [Pullable] is less flexible but is useful to declare line segments in the graph. It lets
 /// us skip the syncronization parts of [Pushable] connections.
@@ -43,10 +50,12 @@ pub trait Pushable: Sync + Send + Connection {
 pub trait Pullable: Send + Connection {
     /// The thread that is allowed to schedule this node.
     type ThreadId: ThreadId;
-    /// The message yielded by this node.
-    type Message;
+    /// The DataType used in [Message<DataType, SignalType>] for this [Pullable]
+    type DataType: Clone + Send + Sync;
+    /// The SignalType used in [Message<DataType, SignalType>] for this [Pullable]
+    type SignalType: Origin + Send + Sync;
 
-    fn pull(&mut self) -> Result<Self::Message, Error>;
+    fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error>;
 }
 
 /// [`Add`] trait is used to create [Connection]s between our nodes.
@@ -132,10 +141,10 @@ pub mod tests {
 
         /// Incoming combo `Pullable` that we can invoke for data and scheduling.
         pub pullable:
-            Option<Box<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>>>,
+            Option<Box<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>>,
 
         /// Outgoing data connections. Lets us shovel data into our child nodes.
-        pub outputs: Vec<Box<dyn Pushable<Message = Message<usize, usize>>>>,
+        pub outputs: Vec<Box<dyn Pushable<DataType = usize, SignalType = usize>>>,
     }
 
     impl Node {
@@ -168,7 +177,8 @@ pub mod tests {
             for output in self.outputs.iter_mut() {
                 match input_message.clone() {
                     Message::Data(d) => output.push(Message::Data(self.routine.process(d)))?,
-                    signal => output.push(signal)?,
+                    Message::Flush(signal) => output.push(Message::Flush(signal))?,
+                    Message::Marker(signal) => output.push(Message::Marker(signal))?,
                 }
             }
 
@@ -185,17 +195,17 @@ pub mod tests {
     /// 3. For `add`ing something elses `Workable` for scheduling.
 
     /// Method for fetching input. We put it in a `Box` for dynamic dispatch.
-    impl Get<dyn Pushable<Message = Message<usize, usize>>> for Node {
-        fn get(&self) -> Result<Box<dyn Pushable<Message = Message<usize, usize>>>, Error> {
+    impl Get<dyn Pushable<DataType = usize, SignalType = usize>> for Node {
+        fn get(&self) -> Result<Box<dyn Pushable<DataType = usize, SignalType = usize>>, Error> {
             Ok(Box::new(self.input.clone()))
         }
     }
 
     /// Method adding something to output.
-    impl Add<dyn Pushable<Message = Message<usize, usize>>> for Node {
+    impl Add<dyn Pushable<DataType = usize, SignalType = usize>> for Node {
         fn add(
             &mut self,
-            connection: Box<dyn Pushable<Message = Message<usize, usize>>>,
+            connection: Box<dyn Pushable<DataType = usize, SignalType = usize>>,
         ) -> Result<(), Error> {
             Ok(self.outputs.push(connection))
         }
@@ -219,7 +229,7 @@ pub mod tests {
         let mut node_2 = Box::new(Node::new());
         let mut node_3 = Box::new(Node::new());
 
-        let mut input = Get::<dyn Pushable<Message = Message<usize, usize>>>::get(&node_1).unwrap();
+        let mut input = Get::<dyn Pushable<DataType = usize, SignalType = usize>>::get(&node_1).unwrap();
 
         make_bidi(node_1, node_2.as_mut()).unwrap();
         make_bidi(node_2, node_3.as_mut()).unwrap();
@@ -274,9 +284,10 @@ pub mod tests {
     /// the graph if small messages are passed.
     impl Pullable for Node {
         type ThreadId = DefaultThread;
-        type Message = Message<usize, usize>;
+        type DataType = usize;
+        type SignalType = usize;
 
-        fn pull(&mut self) -> Result<Self::Message, Error> {
+        fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
             let value = match &mut self.pullable {
                 Some(pullable) => pullable.pull()?,
                 None => self.input.read_front()?,
@@ -284,18 +295,19 @@ pub mod tests {
 
             match value {
                 Message::Data(d) => return Ok(Message::Data(self.routine.process(d))),
-                signal => return Ok(signal),
+                Message::Flush(signal) => return Ok(Message::Flush(signal)),
+                Message::Marker(signal) => return Ok(Message::Marker(signal)),
             }
         }
     }
 
     /// Graph building for `Pullable`
     /// Method adding something to output.
-    impl Add<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>> for Node {
+    impl Add<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>> for Node {
         fn add(
             &mut self,
             connection: Box<
-                dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>,
+                dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>,
             >,
         ) -> Result<(), Error> {
             self.pullable = Some(connection);
@@ -313,12 +325,12 @@ pub mod tests {
 
         let mut input = node_1.input.clone();
 
-        Add::<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>>::add(
+        Add::<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>::add(
             node_2.as_mut(),
             node_1,
         )
         .unwrap();
-        Add::<dyn Pullable<ThreadId = DefaultThread, Message = Message<usize, usize>>>::add(
+        Add::<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>::add(
             node_3.as_mut(),
             node_2,
         )

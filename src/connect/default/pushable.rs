@@ -1,27 +1,33 @@
 use crate::error::Error;
+use crate::message::Message;
+use crate::signal::Origin;
 use crate::Pushable;
 
-impl<Message> Pushable for Box<dyn Pushable<Message = Message>>
+impl<DataType, SignalType> Pushable for Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>
 where
-    Message: Clone,
+    DataType: Clone + Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
-    type Message = Message;
+    type DataType = DataType;
+    type SignalType = SignalType;
 
-    fn push(&mut self, object: Self::Message) -> Result<(), Error> {
+    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         self.as_mut().push(object)
     }
 }
 
-impl<PushableType, MessageType> Pushable for Box<PushableType>
+impl<PushableType, DataType, SignalType> Pushable for Box<PushableType>
 where
-    MessageType: Clone + Send + Sync,
-    PushableType: Pushable<Message = MessageType>,
+    DataType: Clone + Send + Sync,
+    SignalType: Origin + Send + Sync,
+    PushableType: Pushable<DataType = DataType, SignalType = SignalType>,
 {
-    fn push(&mut self, object: Self::Message) -> Result<(), Error> {
+    type DataType = DataType;
+    type SignalType = SignalType;
+
+    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         PushableType::push(self.as_mut(), object)
     }
-
-    type Message = MessageType;
 }
 
 #[cfg(test)]
@@ -30,7 +36,7 @@ mod tests {
     use crate::{Message, SyncEdge};
     use std::sync::Arc;
 
-    fn push(pushable: &mut impl Pushable<Message = Message<usize, usize>>, value: usize) {
+    fn push(pushable: &mut impl Pushable<DataType = usize, SignalType = usize>, value: usize) {
         pushable.push(Message::Data(value)).unwrap();
     }
 
@@ -45,7 +51,7 @@ mod tests {
     fn pushable_arc_dyn_can_push() {
         let queue = Arc::new(SyncEdge::<usize, usize>::new());
 
-        let mut pushable: Box<dyn Pushable<Message = Message<usize, usize>>> = Box::new(queue.clone());
+        let mut pushable: Box<dyn Pushable<DataType = usize, SignalType = usize>> = Box::new(queue.clone());
         push(&mut pushable, 5);
         assert_eq!(queue.read_all().unwrap(), vec![Message::Data(5)]);
     }

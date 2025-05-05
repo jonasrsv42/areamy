@@ -15,7 +15,7 @@ where
     SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
-    PullableType: Pullable<ThreadId = ThreadIdType, Message = Message<In, SignalType>>,
+    PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
     /// We keep track of signal visitors. This is part of an effort to natively support
     /// message synchroniation using signals in the graph.
@@ -41,7 +41,7 @@ where
     SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
-    PullableType: Pullable<ThreadId = ThreadIdType, Message = Message<In, SignalType>>,
+    PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
 }
 
@@ -53,16 +53,17 @@ where
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
-    PullableType: Pullable<ThreadId = ThreadIdType, Message = Message<In, SignalType>>,
+    PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
     type ThreadId = ThreadIdType;
-    type Message = Message<Out, SignalType>;
+    type DataType = Out;
+    type SignalType = SignalType;
 
     /// [Line::pull] yields the next output provided on [Pullable::pull]. It will
     /// prioritize to yield output from the [Line::worker] buffer or its own
     /// [Line::buffer]. If there's no data it'll try to create by processing
     /// [Line::pullable] input.
-    fn pull(&mut self) -> Result<Self::Message, Error> {
+    fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
         // Push anything from our outstanding buffer.
         match self.next_output()? {
             Some(message) => {
@@ -115,7 +116,7 @@ where
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
-    PullableType: Pullable<ThreadId = ThreadIdType, Message = Message<In, SignalType>>,
+    PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
     /// Create a new [Line] from a parent [Pullable] and a [LineRoutine] to operate
     /// in this node.

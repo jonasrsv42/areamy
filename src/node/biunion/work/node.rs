@@ -16,15 +16,15 @@ pub trait BiunionTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Pushable<Message = Message<Self::Out, Self::Signal>>>
+    + Add<dyn Pushable<DataType = Self::Out, SignalType = Self::Signal>>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Left>
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Right>
 
     // We can retrieve pushable edges
-    + Get<dyn Pushable<Message = Message<Self::Left, Self::Signal>> ,biunion::Left>
-    + Get<dyn Pushable<Message = Message<Self::Right, Self::Signal>>,biunion::Right>
+    + Get<dyn Pushable<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
+    + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
 {
     // The input data going into the line.
     type Left: Clone + Send + Sync + 'static;
@@ -70,7 +70,7 @@ where
     pub right_workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
     // Output connection.
-    pub pushes: Vec<Box<dyn Pushable<Message = Message<Out, SignalType>>>>,
+    pub pushes: Vec<Box<dyn Pushable<DataType = Out, SignalType = SignalType>>>,
 
     // Input queues.
     pub left_input: Arc<SyncEdge<Left, SignalType>>,
@@ -318,7 +318,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<Message = Message<Left, SignalType>>, biunion::Left>
+    Get<dyn Pushable<DataType = Left, SignalType = SignalType>, biunion::Left>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -328,13 +328,13 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<Left, SignalType>>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = Left, SignalType = SignalType>>, Error> {
         Get::get(&self.left_input)
     }
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<Message = Message<Right, SignalType>>, biunion::Right>
+    Get<dyn Pushable<DataType = Right, SignalType = SignalType>, biunion::Right>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -344,7 +344,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<Right, SignalType>>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = Right, SignalType = SignalType>>, Error> {
         Get::get(&self.right_input)
     }
 }
@@ -382,7 +382,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<Message = Message<Out, SignalType>>>
+    Add<dyn Pushable<DataType = Out, SignalType = SignalType>>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Clone + Send + Sync + 'static,
@@ -394,9 +394,9 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<Message = Message<Out, SignalType>>>,
+        pushable: Box<dyn Pushable<DataType = Out, SignalType = SignalType>>,
     ) -> Result<(), Error> {
-        Ok(self.pushes.push(Box::new(pushable)))
+        Ok(self.pushes.push(pushable))
     }
 }
 

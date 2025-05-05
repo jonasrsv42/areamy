@@ -13,7 +13,7 @@ where
     DataType: Send + Sync + Clone,
     SignalType: Send + Sync + Clone + Origin,
 {
-    pushable: Box<dyn Pushable<Message = Message<DataType, SignalType>>>,
+    pushable: Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>,
 }
 
 impl<DataType, SignalType> Connection for Source<DataType, SignalType>
@@ -29,7 +29,7 @@ where
 {
     pub fn new<MultiplicityType: Multiplicity>(
         input: &impl Get<
-            dyn Pushable<Message = Message<DataType, Trackable<&'static str>>> + 'static,
+            dyn Pushable<DataType = DataType, SignalType = Trackable<&'static str>> + 'static,
             MultiplicityType,
         >,
     ) -> Result<Self, Error> {
@@ -45,7 +45,7 @@ where
 {
     pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
-        Node: Get<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>,
+        Node: Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>,
         MultiplicityType: Multiplicity,
     {
         let pushable = node.get()?;
@@ -58,8 +58,10 @@ where
     DataType: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
 {
-    type Message = Message<DataType, SignalType>;
-    fn push(&mut self, object: Self::Message) -> Result<(), Error> {
+    type DataType = DataType;
+    type SignalType = SignalType;
+    
+    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         self.pushable.push(object)
     }
 }
@@ -81,10 +83,10 @@ mod tests {
         input: Arc<SyncEdge<usize, Trackable<&'static str>>>,
     }
 
-    impl Get<dyn Pushable<Message = Message<usize, Trackable<&'static str>>>> for MockNode {
+    impl Get<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>> for MockNode {
         fn get(
             &self,
-        ) -> Result<Box<dyn Pushable<Message = Message<usize, Trackable<&'static str>>>>, Error>
+        ) -> Result<Box<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>, Error>
         {
             Get::get(&self.input)
         }

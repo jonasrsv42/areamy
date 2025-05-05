@@ -1,16 +1,19 @@
 use crate::error::Error;
+use crate::message::Message;
 use crate::Pullable;
 
-/// [`read_until`] will [Pullable::pull] until it recieves the target [Pullable::Message]
+/// [`read_until`] will [Pullable::pull] until it recieves the target [Message<DataType, SignalType>]
 ///
 /// * `pullable` - the [Pullable] to [Pullable::pull].
-/// * `condition` - a [Pullable::Message]
-pub fn read_until<ThreadIdType, MessageType>(
-    pullable: &mut impl Pullable<ThreadId = ThreadIdType, Message = MessageType>,
-    condition: MessageType,
-) -> Result<Vec<MessageType>, Error>
+/// * `condition` - the target message to stop at
+pub fn read_until<ThreadIdType, DataType, SignalType>(
+    pullable: &mut impl Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>,
+    condition: Message<DataType, SignalType>,
+) -> Result<Vec<Message<DataType, SignalType>>, Error>
 where
-    MessageType: PartialEq,
+    DataType: Clone + Send + Sync,
+    SignalType: crate::Origin + Send + Sync,
+    Message<DataType, SignalType>: PartialEq,
 {
     let mut a = Vec::new();
     loop {

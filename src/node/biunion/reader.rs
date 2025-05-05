@@ -33,16 +33,16 @@ where
         }
     }
 
-    pub fn read(&mut self) -> Result<SinkType::Message, Error> {
+    pub fn read(&mut self) -> Result<Message<SinkType::DataType, SinkType::SignalType>, Error> {
         self.output.read()
     }
 
-    pub fn left_push(&mut self, msg: LeftPushableType::Message) -> Result<(), Error> {
+    pub fn left_push(&mut self, msg: Message<LeftPushableType::DataType, LeftPushableType::SignalType>) -> Result<(), Error> {
         self.left.push(msg)?;
         Ok(())
     }
 
-    pub fn right_push(&mut self, msg: RightPushableType::Message) -> Result<(), Error> {
+    pub fn right_push(&mut self, msg: Message<RightPushableType::DataType, RightPushableType::SignalType>) -> Result<(), Error> {
         self.right.push(msg)?;
         Ok(())
     }
@@ -55,9 +55,9 @@ where
     Right: Clone + Debug + Send + Sync,
     Out: Clone + Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    LeftPushableType: Pushable<Message = Message<Left, Trackable<OriginType>>>,
-    RightPushableType: Pushable<Message = Message<Right, Trackable<OriginType>>>,
-    SinkType: Sink<Message = Message<Out, Trackable<OriginType>>>,
+    LeftPushableType: Pushable<DataType = Left, SignalType = Trackable<OriginType>>,
+    RightPushableType: Pushable<DataType = Right, SignalType = Trackable<OriginType>>,
+    SinkType: Sink<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     pub fn mark(&mut self, trackable: Trackable<OriginType>) -> Result<Vec<Out>, Error> {
         let mut datas: Vec<Out> = Vec::new();

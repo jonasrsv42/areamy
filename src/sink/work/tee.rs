@@ -18,7 +18,7 @@ where
     SignalType: Origin + Clone + Send + Sync + 'static,
 {
     pub fn new<MultiplicityType>(
-        workable: &mut (impl Add<dyn Pushable<Message = Message<DataType, SignalType>>, MultiplicityType>
+        workable: &mut (impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
                   + 'static),
     ) -> Result<Self, Error>
     where
@@ -45,14 +45,15 @@ where
     DataType: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
 {
-    type Message = Message<DataType, SignalType>;
+    type DataType = DataType;
+    type SignalType = SignalType;
     type ThreadId = DefaultThread;
 
-    fn read(&mut self) -> Result<Self::Message, Error> {
+    fn read(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
         Sink::read(self)
     }
 
-    fn poll(&mut self) -> Result<Option<Self::Message>, Error> {
+    fn poll(&mut self) -> Result<Option<Message<Self::DataType, Self::SignalType>>, Error> {
         self.buffer.poll()
     }
 }
@@ -65,7 +66,7 @@ mod tests {
 
     struct MockNode {
         output: Message<usize, &'static str>,
-        pushable: Vec<Box<dyn Pushable<Message = Message<usize, &'static str>>>>,
+        pushable: Vec<Box<dyn Pushable<DataType = usize, SignalType = &'static str>>>,
     }
 
     impl Connection for MockNode {}
@@ -86,10 +87,10 @@ mod tests {
         }
     }
 
-    impl Add<dyn Pushable<Message = Message<usize, &'static str>>> for MockNode {
+    impl Add<dyn Pushable<DataType = usize, SignalType = &'static str>> for MockNode {
         fn add(
             &mut self,
-            pushable: Box<dyn Pushable<Message = Message<usize, &'static str>>>,
+            pushable: Box<dyn Pushable<DataType = usize, SignalType = &'static str>>,
         ) -> Result<(), Error> {
             Ok(self.pushable.push(pushable))
         }

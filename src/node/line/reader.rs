@@ -31,13 +31,13 @@ where
         Self { source, sink }
     }
 
-    /// Read a [Sink::Message] from the line.
-    pub fn read(&mut self) -> Result<SinkType::Message, Error> {
+    /// Read a Message from the line.
+    pub fn read(&mut self) -> Result<Message<SinkType::DataType, SinkType::SignalType>, Error> {
         return self.sink.read();
     }
 
-    /// Push a [Pushable::Message] into the line.
-    pub fn push(&mut self, object: PushableType::Message) -> Result<(), Error> {
+    /// Push a Message into the line.
+    pub fn push(&mut self, object: Message<PushableType::DataType, PushableType::SignalType>) -> Result<(), Error> {
         self.source.push(object)?;
 
         Ok(())
@@ -49,8 +49,8 @@ where
     In: Clone + Send + Sync,
     Out: Clone + Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    PushableType: Pushable<Message = Message<In, Trackable<OriginType>>>,
-    SinkType: Sink<Message = Message<Out, Trackable<OriginType>>>,
+    PushableType: Pushable<DataType = In, SignalType = Trackable<OriginType>>,
+    SinkType: Sink<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     /// Flush and read operation. It will issue a flush which
     /// will empty and reset the line and then read until

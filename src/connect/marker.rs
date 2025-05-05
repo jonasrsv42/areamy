@@ -17,10 +17,17 @@ impl<Type> PhantomNode<Type> {
     }
 }
 
-impl<MessageType> Add<dyn Pushable<Message = MessageType>> for PhantomNode<MessageType> {
+// We assume MessageType is Message<DataType, SignalType>
+// This is just a placeholder implementation for PhantomNode
+impl<DataType, SignalType> Add<dyn Pushable<DataType = DataType, SignalType = SignalType>> 
+    for PhantomNode<crate::message::Message<DataType, SignalType>> 
+where
+    DataType: Clone + Send + Sync,
+    SignalType: crate::signal::Origin + Send + Sync,
+{
     fn add(
         &mut self,
-        _connection: Box<dyn Pushable<Message = MessageType>>,
+        _connection: Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>,
     ) -> Result<(), crate::error::Error> { Ok(()) }
 }
 

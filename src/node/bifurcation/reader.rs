@@ -46,7 +46,7 @@ where
     RightSinkType: Sink,
     ThreadIdType: ThreadId,
 {
-    pub fn left_read(&mut self) -> Result<LeftSinkType::Message, Error> {
+    pub fn left_read(&mut self) -> Result<Message<LeftSinkType::DataType, LeftSinkType::SignalType>, Error> {
         match self.left.poll()? {
             Some(message) => Ok(message),
             None => {
@@ -59,7 +59,7 @@ where
         }
     }
 
-    pub fn right_read(&mut self) -> Result<RightSinkType::Message, Error> {
+    pub fn right_read(&mut self) -> Result<Message<RightSinkType::DataType, RightSinkType::SignalType>, Error> {
         match self.right.poll()? {
             Some(message) => Ok(message),
             None => {
@@ -72,7 +72,7 @@ where
         }
     }
 
-    pub fn push(&mut self, object: SourceType::Message) -> Result<(), Error> {
+    pub fn push(&mut self, object: Message<SourceType::DataType, SourceType::SignalType>) -> Result<(), Error> {
         self.input.push(object)?;
         Ok(())
     }
@@ -85,9 +85,9 @@ where
     Left: Clone + Debug + Send + Sync + 'static,
     Right: Clone + Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    SourceType: Pushable<Message = Message<In, Trackable<OriginType>>>,
-    LeftSinkType: Sink<Message = Message<Left, Trackable<OriginType>>>,
-    RightSinkType: Sink<Message = Message<Right, Trackable<OriginType>>>,
+    SourceType: Pushable<DataType = In, SignalType = Trackable<OriginType>>,
+    LeftSinkType: Sink<DataType = Left, SignalType = Trackable<OriginType>>,
+    RightSinkType: Sink<DataType = Right, SignalType = Trackable<OriginType>>,
     ThreadIdType: ThreadId,
 {
     pub fn left_mark(&mut self, origin: OriginType) -> Result<Vec<Left>, Error> {

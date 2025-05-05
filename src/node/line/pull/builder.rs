@@ -47,14 +47,14 @@ where
 {}
 
 /// [Get] the [Pushable] from [Root].
-impl<DataType, SignalType, ThreadIdType> Get<dyn Pushable<Message = Message<DataType, SignalType>>>
+impl<DataType, SignalType, ThreadIdType> Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
     for Root<DataType, SignalType, ThreadIdType>
 where
     DataType: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<Message = Message<DataType, SignalType>>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
         Get::get(&self.input)
     }
 }
@@ -67,9 +67,10 @@ where
     ThreadIdType: ThreadId,
 {
     type ThreadId = ThreadIdType;
-    type Message = Message<DataType, SignalType>;
+    type DataType = DataType;
+    type SignalType = SignalType;
 
-    fn pull(&mut self) -> Result<Self::Message, Error> {
+    fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
         self.input.read_front()
     }
 }
@@ -88,7 +89,7 @@ where
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
     RoutineType: 'static + LineRoutine<In, Out>,
-    PullableType: Pullable<ThreadId = ThreadIdType, Message = Message<In, SignalType>> + 'static,
+    PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
 {
     let worker = maybe_worker?;
 
@@ -120,7 +121,7 @@ where
         Out: Clone + Send + Sync + 'static,
         RoutineType: 'static + LineRoutine<DataType, Out>,
         PullableType:
-            Pullable<ThreadId = ThreadIdType, Message = Message<DataType, SignalType>> + 'static,
+            Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType> + 'static,
     {
         make_pull(pullable, maybe_worker)
     }

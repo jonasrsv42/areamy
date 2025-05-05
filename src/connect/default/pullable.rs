@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{Connection, DefaultThread, Pullable, error::Error};
+    use crate::{Connection, DefaultThread, Message, Pullable, error::Error};
 
     struct Root {
         value: usize,
@@ -10,11 +10,12 @@ mod tests {
 
     impl Pullable for Root {
         type ThreadId = DefaultThread;
-        type Message = usize;
+        type DataType = usize;
+        type SignalType = usize;
 
-        fn pull(&mut self) -> Result<Self::Message, Error> {
+        fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
             self.value += 1;
-            Ok(self.value)
+            Ok(Message::Data(self.value))
         }
     }
 
@@ -22,8 +23,8 @@ mod tests {
     fn pullable_can_pull() {
         let mut pullable = Root { value: 0 };
 
-        assert_eq!(pullable.pull().unwrap(), 1);
-        assert_eq!(pullable.pull().unwrap(), 2);
-        assert_eq!(pullable.pull().unwrap(), 3);
+        assert_eq!(pullable.pull().unwrap(), Message::Data(1));
+        assert_eq!(pullable.pull().unwrap(), Message::Data(2));
+        assert_eq!(pullable.pull().unwrap(), Message::Data(3));
     }
 }

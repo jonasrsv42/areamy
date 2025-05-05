@@ -13,7 +13,7 @@ pub enum SignalPolicy {
     /// Always forward signals into the queue
     Forward,
     /// Only forward signals if the last entry was not a signal
-    ForwardAfterData,
+    FollowData,
     /// Never forward signals into the queue
     Block,
 }
@@ -88,7 +88,7 @@ where
                     inner.last_was_data = false;
                     true
                 },
-                SignalPolicy::ForwardAfterData => {
+                SignalPolicy::FollowData => {
                     // Only forward if the last entry was data
                     if inner.last_was_data {
                         inner.buffer.push_back(message);
@@ -322,8 +322,8 @@ mod tests {
     }
     
     #[test]
-    fn test_signal_policy_forward_after_data() {
-        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::ForwardAfterData);
+    fn test_signal_policy_follow_data() {
+        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::FollowData);
         
         // First signal should be dropped (no data yet)
         edge.push_back(Message::Flush(TestSignal(1))).unwrap();
@@ -381,7 +381,7 @@ mod tests {
     
     #[test]
     fn test_push_back_all_with_policy() {
-        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::ForwardAfterData);
+        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::FollowData);
         
         let messages = vec![
             Message::Flush(TestSignal(1)),     // Should be dropped (no data before)

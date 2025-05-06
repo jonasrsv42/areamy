@@ -3,7 +3,7 @@ use crate::{
     graph::{Add, Get},
     marker::Multiplicity,
     signal::Origin,
-    Pushable, Workable,
+    PolicyEdge, Pushable, SignalPolicy, Workable,
 };
 
 /// [`make_bidi`] creates a `bidi` connection between two nodes.
@@ -30,12 +30,17 @@ use crate::{
 ///
 /// By transferring ownership upon scheduling connection we make it hard to introduce bugs such as
 /// scheduling circles, which would be deadlocks.
+///
+/// This connection uses [SignalPolicy::Forward] for data flow between parent and child,
+/// which always forwards signals. Due to our ownership semantics, building cycles of 
+/// bidi chains should be impossible, so Forward is a safe default here without risk 
+/// of infinite signal propagation.
 pub fn make_bidi<
     ParentType,
     ChildMultiplicity: Multiplicity, // Generic over type of child connection
     ParentMultiplicity: Multiplicity, // Generic over type of parent connection
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Send + Sync,
+    DataType: Clone + Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
     ThreadIdType,
 >(
     mut parent: Box<ParentType>,
@@ -47,7 +52,18 @@ where
         + Workable<ThreadId = ThreadIdType>
         + 'static,
 {
-    make_push(parent.as_mut(), child)?;
+    // We need to get the pushable manually and apply Forward policy
+    let pushable = child.get()?;
+    
+    // Apply Forward policy to allow all signals to flow from parent to child
+    // Due to our ownership semantics, building cycles of bidi chains should be impossible,
+    // so Forward is a safe default here without risk of infinite signal propagation
+    let policy_edge = Box::new(PolicyEdge::new(pushable, SignalPolicy::Forward));
+    
+    // Add the pushable with Forward policy to the parent
+    Add::add(parent.as_mut(), policy_edge)?;
+    
+    // Continue with the work connection
     make_work(parent, child)?;
 
     Ok(())
@@ -68,17 +84,26 @@ where
 /// The parent is &mut because we mutate it by adding a `Pushable` edge to it. The child
 /// does not need to be mut so we take an implementation reference to it to avoid
 /// moving it.
+/// 
+/// This connection uses [SignalPolicy::FollowData] by default, which only forwards signals 
+/// when they follow data messages. This is a safety measure for cycles in the graph,
+/// as using [SignalPolicy::Forward] in back-edges can cause infinite signal propagation loops.
 pub fn make_push<
     GetMultiplicity: Multiplicity,
     AddMultiplicity: Multiplicity,
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Send + Sync
+    DataType: Clone + Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static
 >(
     parent: &mut impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,
     child: &impl Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
 ) -> Result<(), Error> {
     let pushable = child.get()?;
-    Add::add(parent, pushable)?;
+    
+    // Apply FollowData policy which only forwards signals after data
+    // This prevents infinite signal propagation in cyclic graphs
+    let policy_edge = Box::new(PolicyEdge::new(pushable, SignalPolicy::FollowData));
+    
+    Add::add(parent, policy_edge)?;
 
     Ok(())
 }

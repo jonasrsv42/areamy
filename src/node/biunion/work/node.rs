@@ -1,13 +1,12 @@
 use crate::biunion;
 use crate::error::Error;
 use crate::node::biunion::routine::BiunionRoutine;
-use crate::signal::Visitors;
 use crate::SyncEdge;
-use crate::{marker::Connection, DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
     Message, Origin, Pushable, Workable,
 };
+use crate::{marker::Connection, DefaultThread, ThreadId};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
@@ -58,10 +57,6 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    // Signal tracking state.
-    pub left_visitors: Visitors,
-    pub right_visitors: Visitors,
-
     // The coroutine of this node.
     pub worker: RoutineType,
 
@@ -150,8 +145,6 @@ where
 {
     pub fn new(worker: RoutineType) -> Self {
         Biunion {
-            left_visitors: Visitors::new(),
-            right_visitors: Visitors::new(),
             worker,
             left_workers: Vec::new(),
             right_workers: Vec::new(),
@@ -174,8 +167,6 @@ where
 {
     pub fn of(worker: RoutineType) -> Self {
         Biunion {
-            left_visitors: Visitors::new(),
-            right_visitors: Visitors::new(),
             worker,
             left_workers: Vec::new(),
             right_workers: Vec::new(),
@@ -185,104 +176,58 @@ where
         }
     }
 
-    fn maybe_left_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
-        // If we already visited. We do not propagate.
-        if self.left_visitors.contains(flush) {
-            return Ok(false);
-        }
-
-        self.left_visitors.insert(flush);
-        self.push(Message::Flush(flush.clone()))?;
-
-        Ok(true)
-    }
-
-    fn maybe_left_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
-        // If we already visited. We do not propagate.
-        if self.left_visitors.contains(mark) {
-            return Ok(false);
-        }
-
-        self.left_visitors.insert(mark);
-        self.push(Message::Marker(mark.clone()))?;
-
-        Ok(true)
-    }
-
-    fn maybe_right_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
-        if self.right_visitors.contains(flush) {
-            return Ok(false);
-        }
-
-        self.right_visitors.insert(flush);
-        self.push(Message::Flush(flush.clone()))?;
-
-        Ok(true)
-    }
-
-    fn maybe_right_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
-        if self.right_visitors.contains(mark) {
-            return Ok(false);
-        }
-
-        self.right_visitors.insert(mark);
-        self.push(Message::Marker(mark.clone()))?;
-
-        Ok(true)
-    }
-
     fn do_left_input(&mut self, message: Message<Left, SignalType>) -> Result<bool, Error> {
-        let push_ok;
         // Do work on our input or forward signals from input to output.
         match message {
             Message::Data(data) => {
                 crate::Send::<Left, biunion::Left>::send(&mut self.worker, data)?;
                 // If left or right is OK push is OK.
-                push_ok = self.try_push()?;
+                return self.try_push();
             }
             Message::Flush(origin) => {
                 self.worker.flush()?;
                 // If left or right is OK push is OK.
                 self.try_push()?;
 
-                push_ok = self.maybe_left_flush(&origin)?;
+                self.push(Message::Flush(origin.clone()))?;
+                return Ok(true);
             }
-            Message::Marker(origin) => push_ok = self.maybe_left_mark(&origin)?,
+            Message::Marker(origin) => {
+                self.push(Message::Marker(origin.clone()))?;
+                return Ok(true);
+            }
         }
-
-        return Ok(push_ok);
     }
 
     fn do_right_input(&mut self, message: Message<Right, SignalType>) -> Result<bool, Error> {
-        let push_ok;
         // Do work on our input or forward signals from input to output.
         match message {
             Message::Data(data) => {
                 crate::Send::<Right, biunion::Right>::send(&mut self.worker, data)?;
 
-                // If left or right is OK push is OK.
-                push_ok = self.try_push()?;
+                // If right is OK push is OK.
+                return self.try_push();
             }
             Message::Flush(origin) => {
                 self.worker.flush()?;
                 // If left or right is OK push is OK.
                 self.try_push()?;
 
-                push_ok = self.maybe_right_flush(&origin)?;
+                self.push(Message::Flush(origin.clone()))?;
+                return Ok(true);
             }
-            Message::Marker(origin) => push_ok = self.maybe_right_mark(&origin)?,
-        }
+            Message::Marker(origin) => {
+                self.push(Message::Marker(origin.clone()))?;
 
-        return Ok(push_ok);
+                return Ok(true);
+            }
+        }
     }
 
     fn try_push(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
         match self.worker.next()? {
             Some(message) => {
-                self.left_visitors.clear();
-                self.right_visitors.clear();
-
                 self.push(Message::Data(message))?;
 
                 return Ok(true);

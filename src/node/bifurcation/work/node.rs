@@ -1,14 +1,13 @@
 use crate::bifurcation;
 use crate::error::Error;
 use crate::node::bifurcation::routine::BifurcationRoutine;
-use crate::signal::Visitors;
 use crate::SyncEdge;
-use crate::{DefaultThread, ThreadId};
 use crate::{
     graph::{Add, Get},
     marker::Connection,
     Message, Origin, Pushable, Workable,
 };
+use crate::{DefaultThread, ThreadId};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a bifurcation.
@@ -55,8 +54,6 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right>,
 {
-    pub left_visitors: Visitors,
-    pub right_visitors: Visitors,
     pub worker: RoutineType,
 
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
@@ -120,12 +117,15 @@ where
                         self.try_right_output()?;
 
                         // Forward the flush
-                        push_ok = self.maybe_left_flush(&origin)?;
-                        push_ok = push_ok | self.maybe_right_flush(&origin)?;
+                        self.push_left(Message::Flush(origin.clone()))?;
+                        self.push_right(Message::Flush(origin.clone()))?;
+
+                        push_ok = true;
                     }
                     Message::Marker(origin) => {
-                        push_ok = self.maybe_left_mark(&origin)?;
-                        push_ok = push_ok | self.maybe_right_mark(&origin)?;
+                        self.push_left(Message::Marker(origin.clone()))?;
+                        self.push_right(Message::Marker(origin.clone()))?;
+                        push_ok = true;
                     }
                 },
 
@@ -159,8 +159,6 @@ where
 {
     pub fn new(worker: RoutineType) -> Self {
         Bifurcation {
-            left_visitors: Visitors::new(),
-            right_visitors: Visitors::new(),
             worker,
             workers: Vec::new(),
             left_pushes: Vec::new(),
@@ -182,8 +180,6 @@ where
 {
     pub fn of(worker: RoutineType) -> Self {
         Bifurcation {
-            left_visitors: Visitors::new(),
-            right_visitors: Visitors::new(),
             worker,
             workers: Vec::new(),
             left_pushes: Vec::new(),
@@ -192,57 +188,10 @@ where
         }
     }
 
-    fn maybe_left_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
-        if self.left_visitors.contains(flush) {
-            return Ok(false);
-        }
-
-        self.left_visitors.insert(flush);
-        self.push_left(Message::Flush(flush.clone()))?;
-
-        Ok(true)
-    }
-
-    fn maybe_left_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
-        if self.left_visitors.contains(mark) {
-            return Ok(false);
-        }
-
-        self.left_visitors.insert(mark);
-        self.push_left(Message::Marker(mark.clone()))?;
-
-        Ok(true)
-    }
-
-    fn maybe_right_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
-        // If we already visited. We do not propagate.
-        if self.right_visitors.contains(flush) {
-            return Ok(false);
-        }
-
-        self.right_visitors.insert(flush);
-        self.push_right(Message::Flush(flush.clone()))?;
-
-        Ok(true)
-    }
-
-    fn maybe_right_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
-        // If we already visited. We do not propagate.
-        if self.right_visitors.contains(mark) {
-            return Ok(false);
-        }
-
-        self.right_visitors.insert(mark);
-        self.push_right(Message::Marker(mark.clone()))?;
-
-        Ok(true)
-    }
-
     fn try_left_output(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
         match crate::Next::<Left, bifurcation::Left>::next(&mut self.worker)? {
             Some(message) => {
-                self.left_visitors.clear();
                 self.push_left(Message::Data(message))?;
 
                 return Ok(true);
@@ -256,7 +205,6 @@ where
 
         match crate::Next::<Right, bifurcation::Right>::next(&mut self.worker)? {
             Some(message) => {
-                self.right_visitors.clear();
                 self.push_right(Message::Data(message))?;
 
                 return Ok(true);

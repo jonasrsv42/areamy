@@ -2,7 +2,6 @@
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
-use crate::signal::Origin;
 use crate::Pushable;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -109,7 +108,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Message, SyncEdge};
+    use crate::{Message, Origin, SyncEdge};
     use std::sync::Arc;
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]

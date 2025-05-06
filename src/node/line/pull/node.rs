@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::signal::Visitors;
 use crate::{marker::Connection, LineRoutine, Message, Origin};
 use crate::{Pullable, ThreadId};
 use std::collections::VecDeque;
@@ -17,9 +16,6 @@ where
     LineRoutineType: LineRoutine<In, Out>,
     PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
-    /// We keep track of signal visitors. This is part of an effort to natively support
-    /// message synchroniation using signals in the graph.
-    pub visitors: Visitors,
 
     /// The [LineRoutine] worker in our node, responsible for transforming input when
     /// scheduled.
@@ -122,7 +118,6 @@ where
     /// in this node.
     pub fn new(worker: LineRoutineType, pullable: PullableType) -> Self {
         Line {
-            visitors: Visitors::new(),
             worker,
             pullable,
             buffer: VecDeque::new(),
@@ -136,7 +131,6 @@ where
         // If we have output in our worker queue just immediately return it.
         match self.worker.next()? {
             Some(next_data) => {
-                self.visitors.clear();
                 return Ok(Some(Message::Data(next_data)));
             }
             None => (),
@@ -145,7 +139,6 @@ where
         // If we have messages left in the node buffer, return it.
         match self.buffer.pop_front() {
             Some(next_msg) => {
-                self.visitors.clear();
                 return Ok(Some(next_msg));
             }
             None => (),

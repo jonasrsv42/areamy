@@ -51,8 +51,8 @@ pub struct Connect<DataType, SignalType = Trackable<&'static str>> {
 
 impl<DataType, SignalType> Connect<DataType, SignalType>
 where
-    DataType: Send + Sync + Clone,
-    SignalType: Origin,
+    DataType: Send + Sync + Clone + 'static,
+    SignalType: Origin + 'static,
 {
     /// Exactly the same as [make_bidi] but with ability to ergonomically annotate the DataType.
     pub fn bidi<

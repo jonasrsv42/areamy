@@ -1,7 +1,6 @@
 //! [LineTrait] and default implementation for running [LineRoutine].
 use crate::error::Error;
 use crate::node::line::LineRoutine;
-use crate::signal::Visitors;
 use crate::{
     graph::{Add, Get},
     marker::Connection,
@@ -69,9 +68,6 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    /// State to keep track of signal visitors. It is used
-    /// to support signal passing in e.g. cyclic graphs.
-    pub visitors: Visitors,
     /// Worker or `Coroutine` associated with the current node.
     pub worker: LineRoutineType,
 
@@ -152,10 +148,12 @@ where
                         }
 
                         // Maybe forward the flush
-                        push_ok = self.maybe_flush(&origin)?;
+                        self.push(Message::Flush(origin.clone()))?;
+                        push_ok = true;
                     }
                     Message::Marker(origin) => {
-                        push_ok = self.maybe_mark(&origin)?;
+                        self.push(Message::Marker(origin.clone()))?;
+                        push_ok = true;
                     }
                 },
 
@@ -192,7 +190,6 @@ where
     /// * `worker` - A [LineRoutine] that will transform data in this node.
     pub fn new(worker: LineRoutineType) -> Self {
         Line {
-            visitors: Visitors::new(),
             worker,
             workers: Vec::new(),
             pushes: Vec::new(),
@@ -215,7 +212,6 @@ where
     /// * `worker` - A [LineRoutine] that will transform data in this node.
     pub fn of(worker: LineRoutineType) -> Self {
         Line {
-            visitors: Visitors::new(),
             worker,
             workers: Vec::new(),
             pushes: Vec::new(),
@@ -223,43 +219,11 @@ where
         }
     }
 
-    /// Maybe forward a flush signal. If the signal has travelled in a loop
-    /// we ignore it and stop its graph traversal.
-    fn maybe_flush(&mut self, flush: &SignalType) -> Result<bool, Error> {
-        // If we already visited. We do not propagate.
-        if self.visitors.contains(flush) {
-            return Ok(false);
-        }
-
-        self.visitors.insert(flush);
-        self.push(Message::Flush(flush.clone()))?;
-
-        Ok(true)
-    }
-
-    /// Maybe forward a mark signal. If the signal has travelled in a loop
-    /// we ignore it and stop its graph traversal.
-    fn maybe_mark(&mut self, mark: &SignalType) -> Result<bool, Error> {
-        // If we already visited. We do not propagate.
-        if self.visitors.contains(mark) {
-            return Ok(false);
-        }
-
-        self.visitors.insert(mark);
-        self.push(Message::Marker(mark.clone()))?;
-
-        Ok(true)
-    }
-
     /// Get buffered output and reset signal traversal buffers.
     fn next_output(&mut self) -> Result<Option<Message<Out, SignalType>>, Error> {
         // If we have output in our worker queue just immediately return it.
         match self.worker.next()? {
-            Some(next_message) => {
-                self.visitors.clear();
-
-                Ok(Some(Message::Data(next_message)))
-            }
+            Some(next_message) => Ok(Some(Message::Data(next_message))),
             None => Ok(None),
         }
     }

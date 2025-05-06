@@ -1,8 +1,7 @@
 //! [EXPPERIMENTAL] Track signals in graph using [Trackable].
 use crate::Origin;
-use std::collections::HashSet;
 use std::fmt::Debug;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::Hash;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -121,57 +120,6 @@ where
 
 impl<OriginType> Eq for Trackable<OriginType> where OriginType: Origin {}
 impl<OriginType> Origin for Trackable<OriginType> where OriginType: Origin + Clone + 'static {}
-
-pub struct Visitors {
-    visitors: HashSet<u64>,
-    hasher: DefaultHasher,
-}
-
-/// [`Visitors`] is a structure keeping track of signals with [Origin] passing through
-/// a graph node. This data structure is typically used to enforce the "empty circuit" rule
-/// for loopy graphs described in [Origin].
-///
-/// Usually a node
-/// 1. Forgets all [Visitors] whenever data enters it.
-/// 2. Remembers visitor when a signal enters it.
-/// 3. Drops a signal if it has already seen it (And not forgotten)
-
-/// Right now it's basically a Hashset and we may replace this structure with that
-/// in the future.
-impl Visitors {
-    pub fn new() -> Self {
-        Visitors {
-            visitors: HashSet::new(),
-            hasher: DefaultHasher::new(),
-        }
-    }
-
-    pub fn contains<OriginType>(&mut self, origin: &OriginType) -> bool
-    where
-        OriginType: Origin,
-    {
-        origin.hash(&mut self.hasher);
-        let hash = self.hasher.finish();
-
-        self.visitors.contains(&hash)
-    }
-
-    pub fn insert<OriginType>(&mut self, origin: &OriginType) -> bool
-    where
-        OriginType: Origin,
-    {
-        origin.hash(&mut self.hasher);
-        let hash = self.hasher.finish();
-
-        self.visitors.insert(hash)
-    }
-
-    pub fn clear(&mut self) -> () {
-        if self.visitors.len() != 0 {
-            self.visitors.clear();
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

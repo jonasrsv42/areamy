@@ -8,8 +8,6 @@ pub trait BiunionRoutine<Left, Right, Out>:
     + crate::Flush
     + crate::node::Name
 where
-    Left: Clone,
-    Right: Clone,
     Out: Clone,
 {
 }

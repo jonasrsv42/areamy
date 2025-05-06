@@ -22,8 +22,8 @@ pub fn make_biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>(
 >
 where
     ThreadIdType: ThreadId + 'static,
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
     RoutineType: 'static + BiunionRoutine<Left, Right, Out>,

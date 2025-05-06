@@ -26,8 +26,8 @@ pub trait BiunionTrait:
     + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
 {
     // The input data going into the line.
-    type Left: Clone + Send + Sync + 'static;
-    type Right: Clone + Send + Sync + 'static;
+    type Left:  Send + Sync + 'static;
+    type Right:  Send + Sync + 'static;
     // The output data leaving it..
     type Out: Clone + Send + Sync;
     // The signal type used in the graph.
@@ -50,8 +50,8 @@ impl<BiunionType: BiunionTrait> BiunionTrait for Arc<Mutex<BiunionType>> {
 
 pub struct Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
+    Left: Send + Sync,
+    Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
@@ -75,8 +75,8 @@ where
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Connection
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
+    Left: Send + Sync,
+    Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
@@ -87,8 +87,8 @@ where
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Workable
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
@@ -137,8 +137,8 @@ where
 impl<Left, Right, Out, SignalType, RoutineType>
     Biunion<Left, Right, Out, SignalType, DefaultThread, RoutineType>
 where
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
+    Left: Send + Sync,
+    Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
     RoutineType: BiunionRoutine<Left, Right, Out>,
@@ -158,8 +158,8 @@ where
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
     Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
+    Left: Send + Sync,
+    Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
@@ -248,8 +248,8 @@ where
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> BiunionTrait
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
@@ -266,8 +266,8 @@ impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
     Get<dyn Pushable<DataType = Left, SignalType = SignalType>, biunion::Left>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
@@ -282,8 +282,8 @@ impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
     Get<dyn Pushable<DataType = Right, SignalType = SignalType>, biunion::Right>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
@@ -298,8 +298,8 @@ impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
     Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Left>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
@@ -314,8 +314,8 @@ impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
     Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Right>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,
@@ -330,8 +330,8 @@ impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
     Add<dyn Pushable<DataType = Out, SignalType = SignalType>>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
-    Left: Clone + Send + Sync + 'static,
-    Right: Clone + Send + Sync + 'static,
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
     ThreadIdType: ThreadId,

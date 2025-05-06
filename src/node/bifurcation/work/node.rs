@@ -26,7 +26,7 @@ pub trait BifurcationTrait:
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
 {
     // The input data entering it. 
-    type In: Clone + Send + Sync + 'static;
+    type In: Send + Sync + 'static;
     // The output data going out of the bifurcation.
     type Left: Clone + Send + Sync;
     type Right: Clone + Send + Sync;
@@ -47,7 +47,7 @@ impl<BifurcationType: BifurcationTrait> BifurcationTrait for Arc<Mutex<Bifurcati
 
 pub struct Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
@@ -66,7 +66,7 @@ where
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> Connection
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
@@ -78,7 +78,7 @@ where
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> Workable
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone,
@@ -151,7 +151,7 @@ where
 impl<In, Left, Right, SignalType, RoutineType>
     Bifurcation<In, Left, Right, SignalType, DefaultThread, RoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
@@ -171,7 +171,7 @@ where
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
@@ -233,7 +233,7 @@ where
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> BifurcationTrait
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
@@ -251,7 +251,7 @@ impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Get<dyn Pushable<DataType = In, SignalType = SignalType>>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
@@ -267,7 +267,7 @@ impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Add<dyn Pushable<DataType = Left, SignalType = SignalType>, bifurcation::Left>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
@@ -286,7 +286,7 @@ impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Add<dyn Pushable<DataType = Right, SignalType = SignalType>, bifurcation::Right>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
@@ -305,7 +305,7 @@ impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Add<dyn Workable<ThreadId = ThreadIdType>>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In: Clone + Send + Sync + 'static,
+    In:  Send + Sync + 'static,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,

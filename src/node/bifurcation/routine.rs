@@ -8,7 +8,6 @@ pub trait BifurcationRoutine<In, Left, Right>:
     + crate::Flush
     + crate::node::Name
 where
-    In: Clone,
     Left: Clone,
     Right: Clone,
 {

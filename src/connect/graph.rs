@@ -30,8 +30,8 @@ pub trait Workable: Send + Connection {
 /// Instead nodes hold a reference to something that is `Pushable` such as a Arc<SyncEdge<...>> Or Rc<RefCell<Vec<..>>>
 pub trait Pushable: Sync + Send + Connection {
     /// The DataType used in [Message<DataType, SignalType>] for this [Pushable]
-    type DataType: Clone + Send + Sync;
-    
+    type DataType: Send + Sync;
+
     /// The SignalType used in [Message<DataType, SignalType>] for this [Pushable]
     type SignalType: Origin + Send + Sync;
 
@@ -51,7 +51,7 @@ pub trait Pullable: Send + Connection {
     /// The thread that is allowed to schedule this node.
     type ThreadId: ThreadId;
     /// The DataType used in [Message<DataType, SignalType>] for this [Pullable]
-    type DataType: Clone + Send + Sync;
+    type DataType: Send + Sync;
     /// The SignalType used in [Message<DataType, SignalType>] for this [Pullable]
     type SignalType: Origin + Send + Sync;
 
@@ -140,8 +140,9 @@ pub mod tests {
         pub workers: Vec<Box<dyn Workable<ThreadId = DefaultThread>>>,
 
         /// Incoming combo `Pullable` that we can invoke for data and scheduling.
-        pub pullable:
-            Option<Box<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>>,
+        pub pullable: Option<
+            Box<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>,
+        >,
 
         /// Outgoing data connections. Lets us shovel data into our child nodes.
         pub outputs: Vec<Box<dyn Pushable<DataType = usize, SignalType = usize>>>,
@@ -229,7 +230,8 @@ pub mod tests {
         let mut node_2 = Box::new(Node::new());
         let mut node_3 = Box::new(Node::new());
 
-        let mut input = Get::<dyn Pushable<DataType = usize, SignalType = usize>>::get(&node_1).unwrap();
+        let mut input =
+            Get::<dyn Pushable<DataType = usize, SignalType = usize>>::get(&node_1).unwrap();
 
         make_bidi(node_1, node_2.as_mut()).unwrap();
         make_bidi(node_2, node_3.as_mut()).unwrap();

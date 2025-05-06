@@ -9,14 +9,13 @@ use std::collections::VecDeque;
 /// and process its [LineRoutine] until it produces some output.
 pub struct Line<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType>
 where
-    In: Clone + Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    In: Send + Sync,
+    Out: Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
     PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
-
     /// The [LineRoutine] worker in our node, responsible for transforming input when
     /// scheduled.
     pub worker: LineRoutineType,
@@ -32,9 +31,9 @@ where
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType> Connection
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType>
 where
-    In: Clone + Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    In: Send + Sync,
+    Out: Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
     PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
@@ -45,9 +44,9 @@ impl<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType> Pullable
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType>
 where
     ThreadIdType: ThreadId,
-    In: Clone + Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    In: Send + Sync,
+    Out: Send + Sync,
+    SignalType: Origin + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
     PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
@@ -97,7 +96,7 @@ where
                     }
                 }
                 Message::Marker(origin) => {
-                    return Ok(Message::Marker(origin.clone()));
+                    return Ok(Message::Marker(origin));
                 }
             }
         }
@@ -108,9 +107,9 @@ impl<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType>
     Line<In, Out, SignalType, ThreadIdType, LineRoutineType, PullableType>
 where
     ThreadIdType: ThreadId,
-    In: Clone + Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    In: Send + Sync,
+    Out: Send + Sync,
+    SignalType: Origin + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
     PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {

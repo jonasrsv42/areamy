@@ -22,7 +22,7 @@ impl<Type> PhantomNode<Type> {
 impl<DataType, SignalType> Add<dyn Pushable<DataType = DataType, SignalType = SignalType>> 
     for PhantomNode<crate::message::Message<DataType, SignalType>> 
 where
-    DataType: Clone + Send + Sync,
+    DataType:  Send + Sync,
     SignalType: crate::signal::Origin + Send + Sync,
 {
     fn add(

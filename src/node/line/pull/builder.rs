@@ -10,8 +10,8 @@ use std::sync::Arc;
 /// then forward it downstream.
 pub struct Root<DataType, SignalType, ThreadIdType>
 where
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
 {
     /// The input queue to the [Pullable] chain. For now we have a [SyncEdge]
@@ -26,8 +26,8 @@ where
 
 impl<DataType, SignalType, ThreadIdType> Root<DataType, SignalType, ThreadIdType>
 where
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
 {
     pub fn new() -> Self {
@@ -39,22 +39,26 @@ where
 }
 
 /// [Root] is a [Pullable] [Connection] in our graph.
-impl<DataType, SignalType, ThreadIdType> Connection for Root<DataType, SignalType, ThreadIdType> 
+impl<DataType, SignalType, ThreadIdType> Connection for Root<DataType, SignalType, ThreadIdType>
 where
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-{}
-
-/// [Get] the [Pushable] from [Root].
-impl<DataType, SignalType, ThreadIdType> Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
-    for Root<DataType, SignalType, ThreadIdType>
-where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
+}
+
+/// [Get] the [Pushable] from [Root].
+impl<DataType, SignalType, ThreadIdType>
+    Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+    for Root<DataType, SignalType, ThreadIdType>
+where
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+{
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
         Get::get(&self.input)
     }
 }
@@ -62,8 +66,8 @@ where
 /// [Root] is [Pullable] it will serve as the root node of a [Pullable] subgraph.
 impl<DataType, SignalType, ThreadIdType> Pullable for Root<DataType, SignalType, ThreadIdType>
 where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
     ThreadIdType: ThreadId,
 {
     type ThreadId = ThreadIdType;
@@ -85,11 +89,12 @@ pub fn make_pull<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
 ) -> Result<Line<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>, Error>
 where
     ThreadIdType: ThreadId + 'static,
-    In: Clone + Send + Sync + 'static,
-    Out: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
+    Out: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
     RoutineType: 'static + LineRoutine<In, Out>,
-    PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
+    PullableType:
+        Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
 {
     let worker = maybe_worker?;
 
@@ -99,7 +104,7 @@ where
 /// [`Connect`] is a [Pullable] version of [crate::work::Connect], it's a wrapper around [make_pull] for type hints.
 pub struct Connect<DataType, SignalType = Trackable<&'static str>>
 where
-    DataType: Send + Sync + Clone,
+    DataType: Send + Sync,
     SignalType: Origin,
 {
     datatype: PhantomData<DataType>,
@@ -108,8 +113,8 @@ where
 
 impl<DataType, SignalType> Connect<DataType, SignalType>
 where
-    DataType: Send + Sync + Clone + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
 {
     /// [Connect::pull] is the same as [make_pull] but with type hints.
     pub fn pull<Out, ThreadIdType, RoutineType, PullableType>(
@@ -118,10 +123,10 @@ where
     ) -> Result<Line<DataType, Out, SignalType, ThreadIdType, RoutineType, PullableType>, Error>
     where
         ThreadIdType: ThreadId + 'static,
-        Out: Clone + Send + Sync + 'static,
+        Out: Send + Sync + 'static,
         RoutineType: 'static + LineRoutine<DataType, Out>,
-        PullableType:
-            Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType> + 'static,
+        PullableType: Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>
+            + 'static,
     {
         make_pull(pullable, maybe_worker)
     }

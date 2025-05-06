@@ -5,7 +5,7 @@ use crate::Pushable;
 
 impl<DataType, SignalType> Pushable for Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>
 where
-    DataType: Clone + Send + Sync,
+    DataType:  Send + Sync,
     SignalType: Origin + Send + Sync,
 {
     type DataType = DataType;
@@ -18,7 +18,7 @@ where
 
 impl<PushableType, DataType, SignalType> Pushable for Box<PushableType>
 where
-    DataType: Clone + Send + Sync,
+    DataType:  Send + Sync,
     SignalType: Origin + Send + Sync,
     PushableType: Pushable<DataType = DataType, SignalType = SignalType>,
 {

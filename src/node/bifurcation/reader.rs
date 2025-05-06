@@ -46,7 +46,9 @@ where
     RightSinkType: Sink,
     ThreadIdType: ThreadId,
 {
-    pub fn left_read(&mut self) -> Result<Message<LeftSinkType::DataType, LeftSinkType::SignalType>, Error> {
+    pub fn left_read(
+        &mut self,
+    ) -> Result<Message<LeftSinkType::DataType, LeftSinkType::SignalType>, Error> {
         match self.left.poll()? {
             Some(message) => Ok(message),
             None => {
@@ -59,7 +61,9 @@ where
         }
     }
 
-    pub fn right_read(&mut self) -> Result<Message<RightSinkType::DataType, RightSinkType::SignalType>, Error> {
+    pub fn right_read(
+        &mut self,
+    ) -> Result<Message<RightSinkType::DataType, RightSinkType::SignalType>, Error> {
         match self.right.poll()? {
             Some(message) => Ok(message),
             None => {
@@ -72,7 +76,10 @@ where
         }
     }
 
-    pub fn push(&mut self, object: Message<SourceType::DataType, SourceType::SignalType>) -> Result<(), Error> {
+    pub fn push(
+        &mut self,
+        object: Message<SourceType::DataType, SourceType::SignalType>,
+    ) -> Result<(), Error> {
         self.input.push(object)?;
         Ok(())
     }
@@ -81,9 +88,9 @@ where
 impl<In, Left, Right, OriginType, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
     BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
-    In: Clone + Send + Sync,
-    Left: Clone + Debug + Send + Sync + 'static,
-    Right: Clone + Debug + Send + Sync + 'static,
+    In: Send + Sync,
+    Left: Debug + Send + Sync + 'static,
+    Right: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
     SourceType: Pushable<DataType = In, SignalType = Trackable<OriginType>>,
     LeftSinkType: Sink<DataType = Left, SignalType = Trackable<OriginType>>,
@@ -97,7 +104,7 @@ where
         loop {
             match self.left.poll()? {
                 Some(message) => match message {
-                    Message::Data(data) => datas.push(data.clone()),
+                    Message::Data(data) => datas.push(data),
                     Message::Flush(_) => (),
                     Message::Marker(trackable_) => {
                         if trackable_ == trackable && trackable.active() <= 3 {
@@ -117,7 +124,7 @@ where
         loop {
             match self.right.poll()? {
                 Some(message) => match message {
-                    Message::Data(data) => datas.push(data.clone()),
+                    Message::Data(data) => datas.push(data),
                     Message::Flush(_) => (),
                     Message::Marker(trackable_) => {
                         if trackable_ == trackable && trackable.active() <= 3 {

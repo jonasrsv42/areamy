@@ -37,12 +37,18 @@ where
         self.output.read()
     }
 
-    pub fn left_push(&mut self, msg: Message<LeftPushableType::DataType, LeftPushableType::SignalType>) -> Result<(), Error> {
+    pub fn left_push(
+        &mut self,
+        msg: Message<LeftPushableType::DataType, LeftPushableType::SignalType>,
+    ) -> Result<(), Error> {
         self.left.push(msg)?;
         Ok(())
     }
 
-    pub fn right_push(&mut self, msg: Message<RightPushableType::DataType, RightPushableType::SignalType>) -> Result<(), Error> {
+    pub fn right_push(
+        &mut self,
+        msg: Message<RightPushableType::DataType, RightPushableType::SignalType>,
+    ) -> Result<(), Error> {
         self.right.push(msg)?;
         Ok(())
     }
@@ -51,9 +57,9 @@ where
 impl<Left, Right, Out, OriginType, LeftPushableType, RightPushableType, SinkType>
     BiunionReader<LeftPushableType, RightPushableType, SinkType>
 where
-    Left: Clone + Send + Sync,
-    Right: Clone + Debug + Send + Sync,
-    Out: Clone + Debug + Send + Sync + 'static,
+    Left: Send + Sync,
+    Right: Debug + Send + Sync,
+    Out: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
     LeftPushableType: Pushable<DataType = Left, SignalType = Trackable<OriginType>>,
     RightPushableType: Pushable<DataType = Right, SignalType = Trackable<OriginType>>,
@@ -65,7 +71,7 @@ where
             let object = self.output.read()?;
 
             match object {
-                Message::Data(data) => datas.push(data.clone()),
+                Message::Data(data) => datas.push(data),
                 Message::Flush(_) => (),
                 Message::Marker(trackable_) => {
                     if trackable_ == trackable && trackable.active() == 2 {

@@ -194,5 +194,49 @@ mod tests {
 
         println!("=== Test completed successfully ===");
     }
+    
+    #[test]
+    fn test_cycle_with_multiple_values() {
+        // Create our nodes
+        let biunion = make_biunion(Ok(IncrementBiunion::new())).unwrap();
+        let mut bifurcation = make_bifurcation(Ok(DeciderBifurcation::new())).unwrap();
+
+        // Create a source to input to biunion's right side
+        let source = Source::new::<biunion::Right>(&biunion).unwrap();
+
+        // Connect bifurcation's left output back to biunion's left input (backward connection)
+        Connect::<usize>::push::<bifurcation::Left, biunion::Left>(
+            bifurcation.as_mut(),
+            biunion.as_ref(),
+        )
+        .unwrap();
+
+        // Connect biunion's output to bifurcation's input (forward connection)
+        make_bidi(biunion, &mut bifurcation).unwrap();
+
+        // Create a sink for the bifurcation's right output
+        let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
+
+        let mut reader = LineReader::new(source, sink);
+        println!("=== Starting cycle test with values 1-6 ===");
+
+        // Input values 1 through 6
+        for i in 1..=6 {
+            println!("Pushing value {}", i);
+            reader.push(Message::Data(i)).unwrap();
+        }
+
+        // Flush and check the results
+        let results = reader.flush("flush-test".into()).unwrap();
+        println!("Results after flush: {:?}", results);
+        
+        // The expected results:
+        // - Values 1-5 go through the cycle and increment until they exceed 5
+        // - Value 6 goes directly to output after one increment (becomes 7)
+        // So we expect: [6, 6, 6, 6, 6, 7]
+        assert_eq!(results, vec![6, 6, 6, 6, 6, 7]);
+
+        println!("=== Multiple values test completed successfully ===");
+    }
 }
 

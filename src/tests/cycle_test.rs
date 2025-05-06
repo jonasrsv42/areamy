@@ -335,29 +335,33 @@ mod tests {
         // IMPORTANT: The line node implementation produces a different result order
         // compared to the biunion test [6, 6, 6, 6, 6, 7]. Here's why:
         //
-        // 1. Order of Processing:
-        //    - Line node processes inputs sequentially through the same queue
-        //    - Biunion has separate Left/Right input queues with different handling
+        // The actual sequence of events from the logs:
+        // 1. We push values 1-6 to the line node, queuing them for processing
+        // 2. Value 1 is processed first:
+        //    - Goes through the full cycle 1→2→3→4→5→6
+        //    - The 6 is sent to output (first 6 in our result)
+        // 3. Value 6 is processed next (NOT value 2):
+        //    - Incremented to 7
+        //    - Sent to output (the 7 in our result)
+        // 4. Remaining values 2-5 get processed in order:
+        //    - Each cycles until exceeding 5 (becoming 6)
+        //    - Each produces a 6 in the output
         //
-        // 2. Data Flow Scheduling:
-        //    - Line node: When the first value (1) arrives, it's processed completely
-        //      through its entire cycle (1→2→3→4→5→6→output) before the next value (6) is processed
-        //    - Biunion node: Has different scheduling characteristics due to its dual input 
-        //      nature, causing values to be interleaved differently in the processing queue
+        // The ordering [6, 7, 6, 6, 6, 6] happens because:
+        // - The graph processes the inputs in FIFO order (1 then 6 then 2-5)
+        // - Each input completes its full cycle before the next is processed
+        // - The bifurcation node sends outputs as soon as values exceed 5
+        // 
+        // In contrast, the biunion node test produces [6, 6, 6, 6, 6, 7] because:
+        // - Biunion prioritizes the left input (feedback loop) over the right input
+        // - Each value from 1-5 is fully processed (cycling until >5) before 
+        //   the next value from the right input is taken
+        // - This means all of values 1-5 complete their cycles before value 6
+        //   is processed, resulting in five 6's followed by one 7
         //
-        // 3. Feedback Handling:
-        //    - Both implementations use the same cycle logic (values ≤5 cycle back, 
-        //      values >5 go to output)
-        //    - The difference is in how items get scheduled in the processing queues
-        //
-        // 4. Resulting Output Order:
-        //    - Line node: [6, 7, 6, 6, 6, 6]
-        //      1) 6 from value 1 cycling until >5
-        //      2) 7 from value 6 incrementing once
-        //      3-6) 6's from values 2-5 cycling until >5
-        //    - Biunion: [6, 6, 6, 6, 6, 7]
-        //      1-5) 6's from values 1-5 cycling
-        //      6) 7 from value 6 incrementing once
+        // Key Insight: The different scheduling behaviors between line and biunion
+        // nodes demonstrate how internal queue handling affects the dataflow behavior
+        // even when the logical cycle rules are identical.
         //
         // This test demonstrates how the same cycle logic with different node types
         // produces different behaviors due to their internal scheduling mechanisms.

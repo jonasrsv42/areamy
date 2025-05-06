@@ -238,5 +238,132 @@ mod tests {
 
         println!("=== Multiple values test completed successfully ===");
     }
+    
+    // Line routine that increments values by 1
+    struct IncrementLine {
+        output: VecDeque<usize>,
+    }
+    
+    impl IncrementLine {
+        fn new() -> Self {
+            Self {
+                output: VecDeque::new(),
+            }
+        }
+    }
+    
+    // Implementation for receiving input
+    impl crate::Send<usize> for IncrementLine {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
+            println!(
+                "Line received {}, incrementing to {}",
+                message,
+                message + 1
+            );
+            self.output.push_back(message + 1);
+            Ok(())
+        }
+    }
+    
+    // Output implementation
+    impl crate::Next<usize> for IncrementLine {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            let result = self.output.pop_front();
+            if result.is_some() {
+                println!("Line outputting {}", result.unwrap());
+            }
+            Ok(result)
+        }
+    }
+    
+    impl crate::Flush for IncrementLine {
+        fn flush(&mut self) -> Result<(), Error> {
+            println!("Line flushed");
+            Ok(())
+        }
+    }
+    
+    impl crate::node::Name for IncrementLine {
+        fn name<'a>(&'a self) -> &'a str {
+            "IncrementLine"
+        }
+    }
+    
+    impl crate::node::line::LineRoutine<usize, usize> for IncrementLine {}
+    
+    #[test]
+    fn test_cycle_with_line_node() {
+        // Import additional dependencies for line node
+        use crate::work::make_line;
+        
+        // Create our nodes
+        let line = make_line(Ok(IncrementLine::new())).unwrap();
+        let mut bifurcation = make_bifurcation(Ok(DeciderBifurcation::new())).unwrap();
+
+        // Create a source to input to the line node
+        let source = Source::new(&line).unwrap();
+
+        // Connect bifurcation's left output back to line's input (backward connection)
+        // This creates a cycle where values <= 5 go back to the line
+        Connect::<usize>::push::<bifurcation::Left, crate::marker::Unary>(
+            bifurcation.as_mut(),
+            line.as_ref(),
+        )
+        .unwrap();
+
+        // Connect line's output to bifurcation's input (forward connection)
+        make_bidi(line, &mut bifurcation).unwrap();
+
+        // Create a sink for the bifurcation's right output
+        let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
+
+        let mut reader = LineReader::new(source, sink);
+        println!("=== Starting cycle test with line node: values 1-6 ===");
+
+        // Input values 1 through 6
+        for i in 1..=6 {
+            println!("Pushing value {}", i);
+            reader.push(Message::Data(i)).unwrap();
+        }
+
+        // Flush and check the results
+        let results = reader.flush("line-cycle-test".into()).unwrap();
+        println!("Results after flush: {:?}", results);
+        
+        // The expected results for line node: [6, 7, 6, 6, 6, 6]
+        //
+        // IMPORTANT: The line node implementation produces a different result order
+        // compared to the biunion test [6, 6, 6, 6, 6, 7]. Here's why:
+        //
+        // 1. Order of Processing:
+        //    - Line node processes inputs sequentially through the same queue
+        //    - Biunion has separate Left/Right input queues with different handling
+        //
+        // 2. Data Flow Scheduling:
+        //    - Line node: When the first value (1) arrives, it's processed completely
+        //      through its entire cycle (1→2→3→4→5→6→output) before the next value (6) is processed
+        //    - Biunion node: Has different scheduling characteristics due to its dual input 
+        //      nature, causing values to be interleaved differently in the processing queue
+        //
+        // 3. Feedback Handling:
+        //    - Both implementations use the same cycle logic (values ≤5 cycle back, 
+        //      values >5 go to output)
+        //    - The difference is in how items get scheduled in the processing queues
+        //
+        // 4. Resulting Output Order:
+        //    - Line node: [6, 7, 6, 6, 6, 6]
+        //      1) 6 from value 1 cycling until >5
+        //      2) 7 from value 6 incrementing once
+        //      3-6) 6's from values 2-5 cycling until >5
+        //    - Biunion: [6, 6, 6, 6, 6, 7]
+        //      1-5) 6's from values 1-5 cycling
+        //      6) 7 from value 6 incrementing once
+        //
+        // This test demonstrates how the same cycle logic with different node types
+        // produces different behaviors due to their internal scheduling mechanisms.
+        assert_eq!(results, vec![6, 7, 6, 6, 6, 6]);
+
+        println!("=== Line node cycle test completed successfully ===");
+    }
 }
 

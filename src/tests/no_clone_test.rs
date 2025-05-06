@@ -82,6 +82,7 @@ fn format_message(msg: &Message<Box<usize>, Trackable<&'static str>>) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Origin;
 
     #[test]
     fn test_non_cloneable_pipeline() {
@@ -152,6 +153,108 @@ mod tests {
         }
 
         println!("=== Non-cloneable pipeline test completed successfully ===");
+    }
+    
+    // This struct implements Origin for Box<usize> so it can be used as a signal type
+    #[derive(Debug, PartialEq, Eq)]
+    struct BoxedOrigin(Box<usize>);
+    
+    // Origin is a marker trait with Debug + Eq + Sync + Send bounds
+    impl Origin for BoxedOrigin {}
+    
+    impl From<Box<usize>> for BoxedOrigin {
+        fn from(boxed: Box<usize>) -> Self {
+            BoxedOrigin(boxed)
+        }
+    }
+    
+    // Helper function to format messages with boxed signals
+    fn format_boxed_message(msg: &Message<Box<usize>, BoxedOrigin>) -> String {
+        match msg {
+            Message::Data(boxed) => format!("Message::Data(Box({}))", **boxed),
+            Message::Flush(signal) => format!("Message::Flush(Box({}))", *signal.0),
+            Message::Marker(signal) => format!("Message::Marker(Box({}))", *signal.0),
+        }
+    }
+    
+    #[test]
+    fn test_non_cloneable_signal() {
+        // Create a root node using our BoxedOrigin type as the signal type
+        let root = Root::<Box<usize>, BoxedOrigin, DefaultThread>::new();
+        let mut source = Source::of(&root).unwrap();
+        
+        // Create a pullable pipeline
+        let line1 = make_pull(root, BoxIncrementer::new()).unwrap();
+        let line2 = make_pull(line1, BoxIncrementer::new()).unwrap();
+        
+        // Create a sink to read the output
+        let mut sink = Sink::new(line2);
+        
+        println!("=== Starting non-cloneable signal test ===");
+        
+        // Push a boxed value as data
+        let input_value = Box::new(42);
+        println!("Pushing data: Box({})", *input_value);
+        source.push(Message::Data(input_value)).unwrap();
+        
+        // Pull the result
+        let result = Pullable::pull(&mut sink).unwrap();
+        println!("Result from pipeline: {}", format_boxed_message(&result));
+        
+        // The value should have been incremented twice
+        match result {
+            Message::Data(boxed_result) => {
+                assert_eq!(
+                    *boxed_result, 44,
+                    "Value should be incremented twice (42→43→44)"
+                );
+            }
+            _ => panic!("Expected Message::Data but got {}", format_boxed_message(&result)),
+        }
+        
+        // Now push a non-cloneable signal (Box<usize> wrapped in BoxedOrigin)
+        let boxed_signal = Box::new(100);
+        println!("Pushing flush with boxed signal: Box({})", *boxed_signal);
+        source.push(Message::Flush(BoxedOrigin(boxed_signal))).unwrap();
+        
+        // Pull the result with the non-cloneable signal
+        let signal_result = Pullable::pull(&mut sink).unwrap();
+        println!("Signal result from pipeline: {}", format_boxed_message(&signal_result));
+        
+        // Verify we received a flush with our boxed signal
+        match signal_result {
+            Message::Flush(signal) => {
+                assert_eq!(
+                    *signal.0, 100,
+                    "Signal value should be preserved"
+                );
+                println!("Successfully received flush with boxed signal: Box({})", *signal.0);
+            }
+            _ => panic!("Expected Message::Flush but got {}", format_boxed_message(&signal_result)),
+        }
+        
+        // Now try a marker with a boxed signal
+        let boxed_marker = Box::new(200);
+        println!("Pushing marker with boxed signal: Box({})", *boxed_marker);
+        source.push(Message::Marker(BoxedOrigin(boxed_marker))).unwrap();
+        
+        // Pull the marker result
+        let marker_result = Pullable::pull(&mut sink).unwrap();
+        println!("Marker result from pipeline: {}", format_boxed_message(&marker_result));
+        
+        // Verify we received a marker with our boxed signal
+        match marker_result {
+            Message::Marker(signal) => {
+                assert_eq!(
+                    *signal.0, 200,
+                    "Marker signal value should be preserved"
+                );
+                println!("Successfully received marker with boxed signal: Box({})", *signal.0);
+            }
+            _ => panic!("Expected Message::Marker but got {}", format_boxed_message(&marker_result)),
+        }
+        
+        println!("=== Non-cloneable signal test completed successfully ===");
     }
 }
 

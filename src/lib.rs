@@ -8,8 +8,6 @@ pub mod sink;
 pub mod source;
 mod thread;
 pub mod work;
-#[cfg(test)]
-pub mod tests;
 pub use source::source::Source;
 
 pub mod pull;
@@ -31,3 +29,6 @@ pub use signal::{Origin, Trackable};
 pub use sink::Sink;
 pub use thread::thread_id::{DefaultThread, ThreadId};
 pub use thread::thread_stream::ThreadStream;
+
+#[cfg(test)]
+pub mod tests;

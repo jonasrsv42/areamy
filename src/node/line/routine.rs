@@ -45,9 +45,6 @@
 ///
 pub trait LineRoutine<In, Out>:
     Send + crate::Send<In> + crate::Next<Out> + crate::Flush + crate::node::Name
-where
-    In: Clone,
-    Out: Clone,
 {
 }
 

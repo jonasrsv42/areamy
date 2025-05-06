@@ -7,17 +7,6 @@ use crate::{fatal, graph::Get, Pushable};
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-/// Policy for handling signals in the queue
-pub enum SignalPolicy {
-    /// Always forward signals into the queue
-    Forward,
-    /// Only forward signals if the last entry was not a signal
-    FollowData,
-    /// Never forward signals into the queue
-    Block,
-}
-
 #[derive(Debug)]
 /// Tracks the internal state of SyncEdge
 struct Inner<DataType, SignalType>
@@ -26,9 +15,7 @@ where
     SignalType: Origin + Clone + Send + Sync,
 {
     buffer: VecDeque<Message<DataType, SignalType>>,
-    last_was_data: bool,
 }
-
 
 #[derive(Debug)]
 /// [`SyncEdge`] is a thread-safe queue for passing Messages between graph nodes.
@@ -39,7 +26,6 @@ where
 {
     inner: Mutex<Inner<DataType, SignalType>>,
     signal: Condvar,
-    policy: SignalPolicy,
 }
 
 impl<DataType, SignalType> SyncEdge<DataType, SignalType>
@@ -47,68 +33,13 @@ where
     DataType: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
 {
-    /// Create empty blocking queue with default Forward policy
+    /// Create empty blocking queue
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(Inner {
                 buffer: VecDeque::new(),
-                last_was_data: false,
             }),
             signal: Condvar::new(),
-            policy: SignalPolicy::Forward,
-        }
-    }
-    
-    /// Create a new SyncEdge with the specified signal policy
-    pub fn with_policy(policy: SignalPolicy) -> Self {
-        Self {
-            inner: Mutex::new(Inner {
-                buffer: VecDeque::new(),
-                last_was_data: false,
-            }),
-            signal: Condvar::new(),
-            policy,
-        }
-    }
-    
-    /// Helper method to handle message addition based on policy
-    fn add_message(&self, inner: &mut Inner<DataType, SignalType>, message: Message<DataType, SignalType>) -> bool {
-        // Check if the message is a signal
-        let is_signal = match message {
-            Message::Data(_) => false,
-            Message::Flush(_) | Message::Marker(_) => true,
-        };
-
-        // Apply policy for signals
-        if is_signal {
-            match self.policy {
-                SignalPolicy::Forward => {
-                    // Always forward signals
-                    inner.buffer.push_back(message);
-                    inner.last_was_data = false;
-                    true
-                },
-                SignalPolicy::FollowData => {
-                    // Only forward if the last entry was data
-                    if inner.last_was_data {
-                        inner.buffer.push_back(message);
-                        inner.last_was_data = false;
-                        true
-                    } else {
-                        // Skip this signal
-                        false
-                    }
-                },
-                SignalPolicy::Block => {
-                    // Never forward signals
-                    false
-                }
-            }
-        } else {
-            // Always push data messages
-            inner.buffer.push_back(message);
-            inner.last_was_data = true;
-            true
         }
     }
     
@@ -116,11 +47,8 @@ where
     pub fn push_back(&self, message: Message<DataType, SignalType>) -> Result<(), Error> {
         let mut inner = self.inner.lock().map_err(|e| fatal!(e))?;
         
-        let added = self.add_message(&mut inner, message);
-        
-        if added {
-            self.signal.notify_one();
-        }
+        inner.buffer.push_back(message);
+        self.signal.notify_one();
         
         Ok(())
     }
@@ -159,17 +87,12 @@ where
     /// push multiple messages to the back of queue
     pub fn push_back_all(&self, items: &Vec<Message<DataType, SignalType>>) -> Result<(), Error> {
         let mut inner = self.inner.lock().map_err(|e| fatal!(e))?;
-        let mut added = false;
         
         for item in items.iter() {
-            if self.add_message(&mut inner, item.clone()) {
-                added = true;
-            }
+            inner.buffer.push_back(item.clone());
         }
         
-        if added {
-            self.signal.notify_one();
-        }
+        self.signal.notify_one();
         
         Ok(())
     }
@@ -307,100 +230,6 @@ mod tests {
         assert_eq!(messages[1], Message::Marker(TestSignal(2)));
     }
     
-    #[test]
-    fn test_signal_policy_forward() {
-        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::Forward);
-        
-        // Forward policy should allow all signals
-        edge.push_back(Message::Flush(TestSignal(1))).unwrap();
-        edge.push_back(Message::Marker(TestSignal(2))).unwrap();
-        edge.push_back(Message::Flush(TestSignal(3))).unwrap();
-        
-        let messages = edge.read_all().unwrap();
-        assert_eq!(messages.len(), 3);
-        assert_eq!(messages[0], Message::Flush(TestSignal(1)));
-        assert_eq!(messages[1], Message::Marker(TestSignal(2)));
-        assert_eq!(messages[2], Message::Flush(TestSignal(3)));
-    }
-    
-    #[test]
-    fn test_signal_policy_follow_data() {
-        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::FollowData);
-        
-        // First signal should be dropped (no data yet)
-        edge.push_back(Message::Flush(TestSignal(1))).unwrap();
-        assert_eq!(edge.len().unwrap(), 0);
-        
-        // Add data
-        edge.push_back(Message::Data(3.5)).unwrap();
-        assert_eq!(edge.len().unwrap(), 1);
-        
-        // Now signal should be forwarded
-        edge.push_back(Message::Marker(TestSignal(2))).unwrap();
-        assert_eq!(edge.len().unwrap(), 2);
-        
-        // This signal should be dropped (previous was a signal)
-        edge.push_back(Message::Flush(TestSignal(3))).unwrap();
-        assert_eq!(edge.len().unwrap(), 2);
-        
-        // Add more data
-        edge.push_back(Message::Data(4.0)).unwrap();
-        
-        // Now signal should be forwarded again
-        edge.push_back(Message::Flush(TestSignal(4))).unwrap();
-        
-        let messages = edge.read_all().unwrap();
-        assert_eq!(messages.len(), 4);
-        assert_eq!(messages[0], Message::Data(3.5));
-        assert_eq!(messages[1], Message::Marker(TestSignal(2)));
-        assert_eq!(messages[2], Message::Data(4.0));
-        assert_eq!(messages[3], Message::Flush(TestSignal(4)));
-    }
-    
-    #[test]
-    fn test_signal_policy_block() {
-        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::Block);
-        
-        // All signals should be blocked
-        edge.push_back(Message::Flush(TestSignal(1))).unwrap();
-        edge.push_back(Message::Marker(TestSignal(2))).unwrap();
-        assert_eq!(edge.len().unwrap(), 0);
-        
-        // Data should still go through
-        edge.push_back(Message::Data(3.5)).unwrap();
-        edge.push_back(Message::Data(4.0)).unwrap();
-        assert_eq!(edge.len().unwrap(), 2);
-        
-        // More signals should be blocked
-        edge.push_back(Message::Flush(TestSignal(3))).unwrap();
-        assert_eq!(edge.len().unwrap(), 2);
-        
-        let messages = edge.read_all().unwrap();
-        assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0], Message::Data(3.5));
-        assert_eq!(messages[1], Message::Data(4.0));
-    }
-    
-    #[test]
-    fn test_push_back_all_with_policy() {
-        let edge = SyncEdge::<f64, TestSignal>::with_policy(SignalPolicy::FollowData);
-        
-        let messages = vec![
-            Message::Flush(TestSignal(1)),     // Should be dropped (no data before)
-            Message::Data(1.0),                // Should be forwarded
-            Message::Marker(TestSignal(2)),    // Should be forwarded (after data)
-            Message::Flush(TestSignal(3)),     // Should be dropped (after signal)
-            Message::Data(2.0),                // Should be forwarded
-            Message::Flush(TestSignal(4)),     // Should be forwarded (after data)
-        ];
-        
-        edge.push_back_all(&messages).unwrap();
-        
-        let result = edge.read_all().unwrap();
-        assert_eq!(result.len(), 4);
-        assert_eq!(result[0], Message::Data(1.0));
-        assert_eq!(result[1], Message::Marker(TestSignal(2)));
-        assert_eq!(result[2], Message::Data(2.0));
-        assert_eq!(result[3], Message::Flush(TestSignal(4)));
-    }
+    // We're now using PolicyEdge wrapper instead of SyncEdge with policy
+// These tests moved to signal_policy.rs
 }

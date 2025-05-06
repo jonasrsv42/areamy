@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
 where
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
 {
     workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
@@ -18,8 +18,8 @@ where
 
 impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>
 where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
 {
     pub fn new<MultiplicityType>(
         mut workable: Box<
@@ -45,8 +45,8 @@ where
 
 impl<DataType, SignalType, ThreadIdType> Sink<DataType, SignalType, ThreadIdType>
 where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
     ThreadIdType: ThreadId + 'static,
 {
     pub fn of<MultiplicityType>(
@@ -86,8 +86,8 @@ where
 impl<DataType, SignalType, ThreadIdType> crate::sink::Sink
     for Sink<DataType, SignalType, ThreadIdType>
 where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
     ThreadIdType: ThreadId + 'static,
 {
     type ThreadId = ThreadIdType;

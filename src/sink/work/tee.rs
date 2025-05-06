@@ -6,16 +6,16 @@ use std::sync::Arc;
 
 pub struct Sink<DataType, SignalType = Trackable<&'static str>>
 where
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     buffer: Arc<SyncEdge<DataType, SignalType>>,
 }
 
 impl<DataType, SignalType> Sink<DataType, SignalType>
 where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
 {
     pub fn new<MultiplicityType>(
         workable: &mut (impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
@@ -42,8 +42,8 @@ where
 
 impl<DataType, SignalType> crate::sink::Sink for Sink<DataType, SignalType>
 where
-    DataType: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
+    DataType:  Send + Sync + 'static,
+    SignalType: Origin +  Send + Sync + 'static,
 {
     type DataType = DataType;
     type SignalType = SignalType;

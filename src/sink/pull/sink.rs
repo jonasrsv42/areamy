@@ -4,18 +4,19 @@ use crate::{marker::Connection, sink, DefaultThread, Origin, Pullable, ThreadId,
 
 pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
 where
-    DataType: Sync + Send + Clone,
+    DataType: Sync + Send,
     SignalType: Origin,
     ThreadIdType: ThreadId,
 {
     // We store it in the heap to mask the recursive `Pullable` type.
     // If one does not want a heap allocation then reading directly from the pullable is OK.
-    pullable: Box<dyn Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>>,
+    pullable:
+        Box<dyn Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>>,
 }
 
 impl<DataType, SignalType, ThreadIdType> Connection for Sink<DataType, SignalType, ThreadIdType>
 where
-    DataType: Sync + Send + Clone,
+    DataType: Sync + Send,
     SignalType: Origin,
     ThreadIdType: ThreadId,
 {
@@ -23,7 +24,7 @@ where
 
 impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>
 where
-    DataType: Sync + Send + Clone,
+    DataType: Sync + Send,
     SignalType: Origin,
 {
     pub fn new(
@@ -40,7 +41,7 @@ where
 
 impl<DataType, SignalType, ThreadIdType> Pullable for Sink<DataType, SignalType, ThreadIdType>
 where
-    DataType: Sync + Send + Clone,
+    DataType: Sync + Send,
     SignalType: Origin,
     ThreadIdType: ThreadId,
 {
@@ -55,7 +56,7 @@ where
 
 impl<DataType, SignalType, ThreadIdType> sink::Sink for Sink<DataType, SignalType, ThreadIdType>
 where
-    DataType: Sync + Send + Clone,
+    DataType: Sync + Send,
     SignalType: Origin,
     ThreadIdType: ThreadId,
 {

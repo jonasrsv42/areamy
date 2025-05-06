@@ -36,7 +36,7 @@ pub trait LineTrait:
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
 {
     /// The input data going into the line.
-    type In: Clone + Send + Sync + 'static;
+    type In: Send + Sync + 'static;
     /// The output data leaving it.
     type Out: Clone + Send + Sync;
     /// The signal type used in the graph.
@@ -62,7 +62,7 @@ impl<LineType: LineTrait> LineTrait for Arc<Mutex<LineType>> {
 /// for [Line].
 pub struct Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
@@ -86,7 +86,7 @@ where
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Connection
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
@@ -97,8 +97,8 @@ where
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Workable
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    ThreadIdType: ThreadId + Clone,
-    In: Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
@@ -180,7 +180,7 @@ where
 
 impl<In, Out, SignalType, LineRoutineType> Line<In, Out, SignalType, DefaultThread, LineRoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     LineRoutineType: LineRoutine<In, Out>,
@@ -201,7 +201,7 @@ where
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
     Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
@@ -244,10 +244,10 @@ where
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> LineTrait
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    In: Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + Clone,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
     type In = In;
@@ -262,7 +262,7 @@ impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
     Get<dyn Pushable<DataType = In, SignalType = SignalType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    In: Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId,
@@ -278,10 +278,10 @@ where
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Add<dyn Workable<ThreadId = ThreadIdType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + Clone,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
     fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
@@ -296,10 +296,10 @@ impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
     Add<dyn Pushable<DataType = Out, SignalType = SignalType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
-    In: Clone + Send + Sync,
+    In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + Clone,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
     fn add(
@@ -327,10 +327,10 @@ pub fn make_line<In, Out, SignalType, ThreadIdType, RoutineType>(
     Error,
 >
 where
-    In: Clone + Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + Clone,
+    ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out> + 'static,
 {
     let worker = maybe_worker?;

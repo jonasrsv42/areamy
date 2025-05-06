@@ -11,7 +11,7 @@ pub fn read_until<ThreadIdType, DataType, SignalType>(
     condition: Message<DataType, SignalType>,
 ) -> Result<Vec<Message<DataType, SignalType>>, Error>
 where
-    DataType: Clone + Send + Sync,
+    DataType:  Send + Sync,
     SignalType: crate::Origin + Send + Sync,
     Message<DataType, SignalType>: PartialEq,
 {

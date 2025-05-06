@@ -14,7 +14,8 @@ use crate::{marker::Connection, Pushable};
 pub struct Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
-    PushableType: Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
+    PushableType:
+        Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
 {
     /// Parent [Pullable] edge.
     pub pullable: PullableType,
@@ -25,14 +26,16 @@ where
 impl<PullableType, PushableType> Connection for Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
-    PushableType: Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
+    PushableType:
+        Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
 {
 }
 
 impl<PullableType, PushableType> Workable for Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
-    PushableType: Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
+    PushableType:
+        Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
 {
     type ThreadId = PullableType::ThreadId;
 
@@ -47,7 +50,8 @@ where
 impl<PullableType, PushableType> Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
-    PushableType: Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
+    PushableType:
+        Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
 {
     /// Create a [Bridge] from a [Pullable] and [Pushable].
     pub fn new(pullable: PullableType, pushable: PushableType) -> Self {
@@ -76,12 +80,13 @@ pub fn bridge_nosync<In, Out, SignalType, ThreadIdType, RoutineType, PullableTyp
     Error,
 >
 where
-    ThreadIdType: ThreadId + Clone + 'static,
-    In: Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId + 'static,
+    In:  Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
     RoutineType: 'static + LineRoutine<In, Out>,
-    PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
+    PullableType:
+        Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
 {
     let worker = maybe_worker?;
     let mut line = Line::of(worker);
@@ -95,7 +100,7 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::{Message, work::Sink, work::Source};
+    use crate::{work::Sink, work::Source, Message};
 
     #[test]
     fn line_basic_bridge() {

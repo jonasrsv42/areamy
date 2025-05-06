@@ -37,7 +37,10 @@ where
     }
 
     /// Push a Message into the line.
-    pub fn push(&mut self, object: Message<PushableType::DataType, PushableType::SignalType>) -> Result<(), Error> {
+    pub fn push(
+        &mut self,
+        object: Message<PushableType::DataType, PushableType::SignalType>,
+    ) -> Result<(), Error> {
         self.source.push(object)?;
 
         Ok(())
@@ -46,8 +49,8 @@ where
 
 impl<In, Out, OriginType, PushableType, SinkType> LineReader<PushableType, SinkType>
 where
-    In: Clone + Send + Sync,
-    Out: Clone + Debug + Send + Sync + 'static,
+    In: Send + Sync,
+    Out: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
     PushableType: Pushable<DataType = In, SignalType = Trackable<OriginType>>,
     SinkType: Sink<DataType = Out, SignalType = Trackable<OriginType>>,
@@ -69,7 +72,7 @@ where
             let object = self.sink.read()?;
 
             match object {
-                Message::Data(data) => datas.push(data.clone()),
+                Message::Data(data) => datas.push(data),
                 Message::Flush(trackable_) => {
                     if trackable_ == trackable && trackable.active() == 2 {
                         return Ok(datas);
@@ -97,7 +100,7 @@ where
             let object = self.sink.read()?;
 
             match object {
-                Message::Data(data) => datas.push(data.clone()),
+                Message::Data(data) => datas.push(data),
                 Message::Flush(_) => (),
                 Message::Marker(trackable_) => {
                     if trackable_ == trackable && trackable.active() == 2 {

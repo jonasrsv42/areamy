@@ -8,6 +8,8 @@ pub mod sink;
 pub mod source;
 mod thread;
 pub mod work;
+#[cfg(test)]
+pub mod tests;
 pub use source::source::Source;
 
 pub mod pull;

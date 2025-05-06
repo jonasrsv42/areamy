@@ -10,22 +10,22 @@ use crate::{
 // A `Source` is a convenience type for an input. It forwards data into some `Pushable`.
 pub struct Source<DataType, SignalType = Trackable<&'static str>>
 where
-    DataType: Send + Sync + Clone,
-    SignalType: Send + Sync + Clone + Origin,
+    DataType: Send + Sync,
+    SignalType: Send + Sync + Origin,
 {
     pushable: Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>,
 }
 
 impl<DataType, SignalType> Connection for Source<DataType, SignalType>
 where
-    DataType: Send + Sync + Clone,
-    SignalType: Send + Sync + Clone + Origin,
+    DataType: Send + Sync,
+    SignalType: Send + Sync + Origin,
 {
 }
 
 impl<DataType> Source<DataType, Trackable<&'static str>>
 where
-    DataType: Clone + Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
 {
     pub fn new<MultiplicityType: Multiplicity>(
         input: &impl Get<
@@ -40,8 +40,8 @@ where
 
 impl<DataType, SignalType> Source<DataType, SignalType>
 where
-    DataType: Send + Sync + Clone,
-    SignalType: Send + Sync + Clone + Origin,
+    DataType: Send + Sync,
+    SignalType: Send + Sync + Origin,
 {
     pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
@@ -55,12 +55,12 @@ where
 
 impl<DataType, SignalType> Pushable for Source<DataType, SignalType>
 where
-    DataType: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     type DataType = DataType;
     type SignalType = SignalType;
-    
+
     fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         self.pushable.push(object)
     }
@@ -68,8 +68,8 @@ where
 
 impl<DataType, SignalType> crate::Source for Source<DataType, SignalType>
 where
-    DataType: Send + Sync + Clone,
-    SignalType: Send + Sync + Clone + Origin,
+    DataType: Send + Sync,
+    SignalType: Send + Sync + Origin,
 {
 }
 

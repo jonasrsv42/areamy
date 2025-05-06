@@ -1,6 +1,5 @@
 //! Track the [Origin] and path of signals passing through the graph.
 use std::fmt::Debug;
-use std::hash::Hash;
 
 /// [`Origin`] is a trait of a signal type that is passed in from some
 /// entry node to the graph. The [Origin] is suppose to
@@ -21,7 +20,7 @@ use std::hash::Hash;
 ///
 /// If a signal is chasing nodes that produce some output
 /// then it can in theory chase in a circle forever.
-pub trait Origin: Debug + Eq + Sync + Send + Hash {}
+pub trait Origin: Debug + Eq + Sync + Send {}
 
 impl Origin for usize {}
 

@@ -1,7 +1,6 @@
 //! [EXPPERIMENTAL] Track signals in graph using [Trackable].
 use crate::Origin;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -42,7 +41,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct Trackable<OriginType>
 where
-    OriginType: Origin + Hash,
+    OriginType: Origin,
 {
     origin: Arc<OriginType>,
     active: Arc<AtomicUsize>,
@@ -51,7 +50,7 @@ where
 /// Implement reference incrementing for [Trackable]
 impl<OriginType> Clone for Trackable<OriginType>
 where
-    OriginType: Origin + Hash,
+    OriginType: Origin + Clone,
 {
     fn clone(&self) -> Self {
         self.active.fetch_add(1, Ordering::Relaxed);
@@ -69,7 +68,7 @@ where
 /// Implement reference decrementing for [Trackable]
 impl<OriginType> Drop for Trackable<OriginType>
 where
-    OriginType: Origin + Hash,
+    OriginType: Origin,
 {
     fn drop(&mut self) {
         self.active.fetch_sub(1, Ordering::Relaxed);
@@ -78,7 +77,7 @@ where
 
 impl<OriginType> Trackable<OriginType>
 where
-    OriginType: Clone + Origin + Hash + 'static,
+    OriginType: Origin,
 {
     pub fn new(origin: OriginType) -> Self {
         Trackable {
@@ -98,17 +97,6 @@ impl Into<Trackable<&'static str>> for &'static str {
     }
 }
 
-/// [Trackable] needs to expose the [Hash] trait
-/// of origin to keep supporing the loop-breaking
-/// behaviour.
-impl<OriginType> Hash for Trackable<OriginType>
-where
-    OriginType: Origin,
-{
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        Hash::hash(&self.origin, state)
-    }
-}
 impl<OriginType> PartialEq for Trackable<OriginType>
 where
     OriginType: Origin,
@@ -119,7 +107,7 @@ where
 }
 
 impl<OriginType> Eq for Trackable<OriginType> where OriginType: Origin {}
-impl<OriginType> Origin for Trackable<OriginType> where OriginType: Origin + Clone + 'static {}
+impl<OriginType> Origin for Trackable<OriginType> where OriginType: Origin  {}
 
 #[cfg(test)]
 mod tests {

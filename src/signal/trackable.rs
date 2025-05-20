@@ -1,6 +1,7 @@
 //! [EXPPERIMENTAL] Track signals in graph using [Trackable].
 use crate::Origin;
 use std::fmt::Debug;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -108,6 +109,18 @@ where
 
 impl<OriginType> Eq for Trackable<OriginType> where OriginType: Origin {}
 impl<OriginType> Origin for Trackable<OriginType> where OriginType: Origin  {}
+
+/// Implement Deref so Trackable can be dereferenced to the origin
+impl<OriginType> Deref for Trackable<OriginType>
+where
+    OriginType: Origin,
+{
+    type Target = OriginType;
+
+    fn deref(&self) -> &Self::Target {
+        &self.origin
+    }
+}
 
 #[cfg(test)]
 mod tests {

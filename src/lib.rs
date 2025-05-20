@@ -8,7 +8,7 @@ pub mod sink;
 pub mod source;
 mod thread;
 pub mod work;
-pub use source::source::Source;
+pub use source::source::{PullSource, Source};
 
 pub mod pull;
 
@@ -17,7 +17,8 @@ pub use connect::marker;
 
 pub use crate::connect::graph;
 pub use connect::{
-    make_bidi, make_push, make_work, marker::Connection, Pullable, PolicyEdge, Pushable, SignalPolicy, SyncEdge, Workable,
+    make_bidi, make_push, make_work, marker::Connection, PolicyEdge, Pullable, Pushable,
+    SignalPolicy, SyncEdge, Workable,
 };
 pub use message::Message;
 pub use node::{bifurcation, biunion};

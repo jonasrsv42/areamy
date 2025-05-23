@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::backtrace::Backtrace;
+use std::convert::Infallible;
 
 /// [`Location`] in the code of an error.
 #[derive(Debug)]
@@ -119,6 +120,12 @@ impl<T> From<Error> for Result<T, Box<dyn std::error::Error>> {
 impl<T> From<Error> for Result<T, Error> {
     fn from(value: Error) -> Self {
         Err(value)
+    }
+}
+
+impl From<Infallible> for Error {
+    fn from(_: Infallible) -> Self {
+        unreachable!("Infallible errors can never occur")
     }
 }
 

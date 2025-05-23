@@ -1,7 +1,6 @@
 //! [Composable] trait for data accumulation during graph traversal.
 
 use crate::error::Error;
-use std::sync::Arc;
 /// [`Composable`] is a trait that allows an object to compose an instance of `Self` with
 /// type `With` to produce type `To`.
 ///
@@ -37,18 +36,5 @@ use std::sync::Arc;
 /// aggregate information in some subgraph.
 pub trait Composable<With, To> {
     // Create the instance of the type
-    fn compose(&self, argument: With) -> Result<To, Error>;
+    fn compose(self, argument: With) -> Result<To, Error>;
 }
-
-///// Composing with a type on heap yields a type on the heap, this allows
-///// Routine signatures to be ignorant about wether the input type is on the
-///// heap or not. However it restricts it such that if input is in heap
-///// then output is on heap. Hopefully this does not lead to too much pain.
-///// It seems neat at the time of writing.
-//impl<With, To, ComposableType: Composable<With, To>> Composable<With, Arc<To>>
-//    for Arc<ComposableType>
-//{
-//    fn compose(&self, argument: With) -> Result<Arc<To>, Error> {
-//        self.as_ref().compose(argument).map(Arc::new)
-//    }
-//}

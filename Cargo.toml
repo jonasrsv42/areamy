@@ -3,9 +3,3 @@ name = "areamy"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-crossbeam = { version = "0.8", optional = true }
-
-[features]
-default = []
-omnium = ["crossbeam"]

@@ -34,6 +34,9 @@ use crate::error::Error;
 /// Typically primitive types will always be transforms
 /// but a user could create a composite type that will
 /// aggregate information in some subgraph.
+///
+/// A compose operation consumes the 'self' type so that 
+/// it can move fields into a new type without cloning.
 pub trait Composable<With, To> {
     // Create the instance of the type
     fn compose(self, argument: With) -> Result<To, Error>;

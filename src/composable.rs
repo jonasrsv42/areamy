@@ -40,15 +40,15 @@ pub trait Composable<With, To> {
     fn compose(&self, argument: With) -> Result<To, Error>;
 }
 
-/// Composing with a type on heap yields a type on the heap, this allows
-/// Routine signatures to be ignorant about wether the input type is on the
-/// heap or not. However it restricts it such that if input is in heap
-/// then output is on heap. Hopefully this does not lead to too much pain.
-/// It seems neat at the time of writing.
-impl<With, To, ComposableType: Composable<With, To>> Composable<With, Arc<To>>
-    for Arc<ComposableType>
-{
-    fn compose(&self, argument: With) -> Result<Arc<To>, Error> {
-        self.as_ref().compose(argument).map(Arc::new)
-    }
-}
+///// Composing with a type on heap yields a type on the heap, this allows
+///// Routine signatures to be ignorant about wether the input type is on the
+///// heap or not. However it restricts it such that if input is in heap
+///// then output is on heap. Hopefully this does not lead to too much pain.
+///// It seems neat at the time of writing.
+//impl<With, To, ComposableType: Composable<With, To>> Composable<With, Arc<To>>
+//    for Arc<ComposableType>
+//{
+//    fn compose(&self, argument: With) -> Result<Arc<To>, Error> {
+//        self.as_ref().compose(argument).map(Arc::new)
+//    }
+//}

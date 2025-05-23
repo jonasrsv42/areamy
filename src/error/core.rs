@@ -34,7 +34,7 @@ pub enum ErrorKind {
     /// it to types they can handle and then handle it.
     /// We leverage `Any` because we cannot possibly
     /// enumerate all possible error types users may define.
-    Any(Box<dyn AnyErr + Send>),
+    Any(Box<dyn AnyErr>),
 }
 
 impl std::fmt::Display for ErrorKind {

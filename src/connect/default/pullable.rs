@@ -1,3 +1,15 @@
+use crate::{error::Error, Message, Pullable};
+
+impl<PullableType: Pullable + ?Sized> Pullable for Box<PullableType> {
+    type ThreadId = PullableType::ThreadId;
+    type DataType = PullableType::DataType;
+    type SignalType = PullableType::SignalType;
+
+    fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
+        self.as_mut().pull()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{error::Error, Connection, DefaultThread, Message, Pullable};
@@ -16,16 +28,6 @@ mod tests {
         fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
             self.value += 1;
             Ok(Message::Data(self.value))
-        }
-    }
-
-    impl<PullableType: Pullable + ?Sized> Pullable for Box<PullableType> {
-        type ThreadId = PullableType::ThreadId;
-        type DataType = PullableType::DataType;
-        type SignalType = PullableType::SignalType;
-
-        fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
-            self.as_mut().pull()
         }
     }
 

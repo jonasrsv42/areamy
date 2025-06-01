@@ -26,6 +26,10 @@ pub trait Send<Message, MultiplicityType: Multiplicity = Unary> {
 /// [Next] is generic over `Message` to allow yielding various types of data from the routine.
 /// For example a routine might template over a floating point trait.
 ///
+/// // When [Next::next] yields [Option::None] it implies that the node needs additional data
+/// [Send::send] before it can yield output. See individual routine documentation (E.g. line) for how
+/// the [Next::next] contract is implemented.
+///
 /// [Next] is generic over [Multiplicity] to allow a routine to have multiple outputs.
 /// Per default all implementations are [Unary] unless
 /// otherwise stated to avoid specifying [Multiplicity] where not necessary.

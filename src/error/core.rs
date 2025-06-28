@@ -20,7 +20,7 @@ impl std::fmt::Display for Location {
 ///
 /// Since third-parties may implement nodes for Areamy and need to propagate
 /// custom errors through Areamy we support this via the [AnyErr] using reflection.
-pub trait AnyErr: Any + std::error::Error {}
+pub trait AnyErr: Any + std::error::Error + Send {}
 
 /// [`ErrorKind`] describes the types of errors that can occur in Areamy.
 #[derive(Debug)]

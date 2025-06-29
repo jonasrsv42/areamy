@@ -59,16 +59,16 @@ where
     /// [Message::data_from_iter] provides a convenient method of
     /// extracting [Message::Data] content from an [Iterator] of
     /// [Message]
-    pub fn data_from_iter<'a, I>(messages: I) -> Vec<DataType>
+    pub fn data_from_iter<I>(messages: I) -> Vec<DataType>
     where
-        DataType: Clone + Sync + Send + 'a,
-        SignalType: Origin + Sync + Send + 'a,
-        I: Iterator<Item = &'a Message<DataType, SignalType>>,
+        DataType: Sync + Send,
+        SignalType: Origin + Sync + Send,
+        I: Iterator<Item = Message<DataType, SignalType>>,
     {
         let mut a: Vec<DataType> = Vec::new();
         for item in messages {
             match item {
-                Message::Data(data) => a.push(data.clone()),
+                Message::Data(data) => a.push(data),
                 _ => (),
             };
         }
@@ -89,6 +89,6 @@ mod tests {
             Message::Marker(1),
             Message::Data(5),
         ];
-        assert_eq!(Message::data_from_iter(iter.iter()), vec![1, 2, 5]);
+        assert_eq!(Message::data_from_iter(iter.into_iter()), vec![1, 2, 5]);
     }
 }

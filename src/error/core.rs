@@ -155,11 +155,37 @@ impl std::fmt::Display for ErrorKind {
 }
 
 /// [`crate::fatal`] is a macro for producing a [ErrorKind::Fatal] error.
+/// Supports format arguments like `println!`.
+/// 
+/// # Examples
+/// ```
+/// use areamy::fatal;
+/// 
+/// // Simple message
+/// let error = fatal!("Something went wrong");
+/// 
+/// // With format arguments
+/// let user_id = 42;
+/// let error = fatal!("User {} not found", user_id);
+/// 
+/// // With multiple arguments
+/// let error = fatal!("Failed to connect to {}:{} after {} attempts", "localhost", 8080, 3);
+/// ```
 #[macro_export]
 macro_rules! fatal {
     ($message:expr) => {
         $crate::error::Error {
             kind: $crate::error::ErrorKind::Fatal($message.to_string()),
+            location: $crate::error::Location {
+                file: file!(),
+                line: line!(),
+            },
+            backtrace: std::backtrace::Backtrace::capture(),
+        }
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::error::Error {
+            kind: $crate::error::ErrorKind::Fatal(format!($fmt, $($arg)*)),
             location: $crate::error::Location {
                 file: file!(),
                 line: line!(),
@@ -358,5 +384,39 @@ mod tests {
         let fatal_error = fatal!("fatal");
         assert!(!fatal_error.is::<TestErrorA>());
         assert!(!fatal_error.is::<TestErrorB>());
+    }
+
+    #[test]
+    fn test_fatal_macro_formatting() {
+        // Test simple message
+        let error = fatal!("Simple message");
+        match error.kind {
+            ErrorKind::Fatal(ref msg) => {
+                assert_eq!(msg, "Simple message");
+            }
+            _ => panic!("Should be a fatal error"),
+        }
+
+        // Test format arguments
+        let user_id = 42;
+        let error = fatal!("User {} not found", user_id);
+        match error.kind {
+            ErrorKind::Fatal(ref msg) => {
+                assert_eq!(msg, "User 42 not found");
+            }
+            _ => panic!("Should be a fatal error"),
+        }
+
+        // Test multiple format arguments
+        let host = "localhost";
+        let port = 8080;
+        let attempts = 3;
+        let error = fatal!("Failed to connect to {}:{} after {} attempts", host, port, attempts);
+        match error.kind {
+            ErrorKind::Fatal(ref msg) => {
+                assert_eq!(msg, "Failed to connect to localhost:8080 after 3 attempts");
+            }
+            _ => panic!("Should be a fatal error"),
+        }
     }
 }

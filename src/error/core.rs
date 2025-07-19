@@ -83,7 +83,7 @@ impl Error {
     ///     }
     /// }
     /// ```
-    pub fn downcast_any<T: AnyErr + 'static>(self) -> Result<Box<T>, Self> {
+    pub fn downcast_any<T: AnyErr>(self) -> Result<Box<T>, Self> {
         // 1. Use a non-consuming guard clause. If the type doesn't match,
         //    return the original `self` without any mutations.
         if !self.is::<T>() {
@@ -238,7 +238,10 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        match &self.kind {
+            ErrorKind::Any(any_err) => Some(any_err.as_ref()),
+            ErrorKind::Fatal(_) => None,
+        }
     }
 }
 
@@ -418,5 +421,26 @@ mod tests {
             }
             _ => panic!("Should be a fatal error"),
         }
+    }
+
+    #[test]
+    fn test_error_source() {
+        use std::error::Error as StdError;
+
+        // Test Fatal error has no source
+        let fatal_error = fatal!("A fatal error");
+        assert!(fatal_error.source().is_none());
+
+        // Test Any error returns the wrapped error as source
+        let test_err = TestErrorA {
+            message: "inner error".to_string(),
+        };
+        let any_error = any_err!(Box::new(test_err) as Box<dyn AnyErr>);
+        
+        let source = any_error.source().expect("Any error should have a source");
+        assert_eq!(source.to_string(), "TestErrorA: inner error");
+        
+        // Verify the source is the correct type by downcasting
+        assert!(source.downcast_ref::<TestErrorA>().is_some());
     }
 }

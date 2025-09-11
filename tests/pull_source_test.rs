@@ -1,11 +1,11 @@
+use areamy::LineRoutine;
+use areamy::PullSource;
 use areamy::error::Error;
 use areamy::fatal;
 use areamy::marker::Connection;
 use areamy::message::Message;
-use areamy::pull::make_pull;
 use areamy::pull::Sink;
-use areamy::LineRoutine;
-use areamy::PullSource;
+use areamy::pull::make_pull;
 use areamy::{DefaultThread, Pullable};
 use areamy::{Origin, Trackable};
 use std::collections::VecDeque;

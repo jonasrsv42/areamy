@@ -1,7 +1,7 @@
-use crate::error::Error;
 use crate::SyncEdge;
+use crate::error::Error;
 use crate::{
-    graph::Add, marker::Multiplicity, DefaultThread, Pushable, ThreadId, Trackable, Workable,
+    DefaultThread, Pushable, ThreadId, Trackable, Workable, graph::Add, marker::Multiplicity,
 };
 use crate::{Message, Origin};
 use std::sync::Arc;
@@ -24,8 +24,8 @@ where
     pub fn new<MultiplicityType>(
         mut workable: Box<
             impl Workable<ThreadId = DefaultThread>
-                + Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
-                + 'static,
+            + Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
+            + 'static,
         >,
     ) -> Result<Self, Error>
     where
@@ -52,8 +52,8 @@ where
     pub fn of<MultiplicityType>(
         mut workable: Box<
             impl Workable<ThreadId = ThreadIdType>
-                + Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
-                + 'static,
+            + Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
+            + 'static,
         >,
     ) -> Result<Self, Error>
     where
@@ -106,7 +106,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{graph::Get, marker::Connection, Pushable};
+    use crate::{Pushable, graph::Get, marker::Connection};
     use std::sync::Mutex;
 
     struct MockNode {

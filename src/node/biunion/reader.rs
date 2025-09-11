@@ -100,7 +100,7 @@ mod tests {
     use super::*;
     use crate::biunion;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{work::make_biunion, work::Sink, work::Source};
+    use crate::{work::Sink, work::Source, work::make_biunion};
 
     #[test]
     fn readers_biunion_read() {

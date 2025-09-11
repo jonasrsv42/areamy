@@ -1,10 +1,10 @@
-use crate::error::Error;
 use crate::Pushable;
 use crate::Trackable;
+use crate::error::Error;
 use crate::{
+    Message, Origin,
     graph::Get,
     marker::{Connection, Multiplicity},
-    Message, Origin,
 };
 
 // A `Source` is a convenience type for an input. It forwards data into some `Pushable`.

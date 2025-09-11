@@ -1,9 +1,9 @@
 use crate::error::Error;
 use crate::{
+    PolicyEdge, Pushable, SignalPolicy, Workable,
     graph::{Add, Get},
     marker::Multiplicity,
     signal::Origin,
-    PolicyEdge, Pushable, SignalPolicy, Workable,
 };
 
 /// [`make_bidi`] creates a `bidi` connection between two nodes.
@@ -44,8 +44,10 @@ pub fn make_bidi<
     ThreadIdType,
 >(
     mut parent: Box<ParentType>,
-    child: &mut (impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
-              + Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>),
+    child: &mut (
+             impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
+             + Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>
+         ),
 ) -> Result<(), Error>
 where
     ParentType: Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
@@ -91,7 +93,7 @@ where
 pub fn make_push<
     GetMultiplicity: Multiplicity,
     AddMultiplicity: Multiplicity,
-    DataType:  Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 >(
     parent: &mut impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,

@@ -1,9 +1,9 @@
 //! Assign a thread to a subgraph! [ThreadStream] is a leaf Node of a [std::thread::Thread] that will [crate::Workable::work] all parent nodes.
 use crate::error::Error;
-use crate::{fatal, graph::Add, ThreadId, Workable};
-use std::sync::atomic::{AtomicBool, Ordering};
+use crate::{ThreadId, Workable, fatal, graph::Add};
 use std::sync::Arc;
-use std::thread::{spawn, JoinHandle};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::{JoinHandle, spawn};
 
 /// [`ThreadControl`] is shared mutable state between the main thread and the running thread
 /// in this thread stream.

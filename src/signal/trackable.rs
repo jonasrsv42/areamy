@@ -2,8 +2,8 @@
 use crate::Origin;
 use std::fmt::Debug;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// [`Trackable`] is a signal type that encapsulates the usual
 /// user provided [`Origin`] signal.
@@ -108,7 +108,7 @@ where
 }
 
 impl<OriginType> Eq for Trackable<OriginType> where OriginType: Origin {}
-impl<OriginType> Origin for Trackable<OriginType> where OriginType: Origin  {}
+impl<OriginType> Origin for Trackable<OriginType> where OriginType: Origin {}
 
 /// Implement Deref so Trackable can be dereferenced to the origin
 impl<OriginType> Deref for Trackable<OriginType>
@@ -127,8 +127,8 @@ mod tests {
     use super::*;
     use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
+    use crate::{DefaultThread, Message, Pushable, Workable, work::make_bifurcation};
     use crate::{sink::work::tee, work::Source};
-    use crate::{work::make_bifurcation, DefaultThread, Message, Pushable, Workable};
 
     /// We need many more tests here to ensure Tracking behaves reasonably in semi-complex graphs! :)
 

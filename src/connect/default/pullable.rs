@@ -1,4 +1,4 @@
-use crate::{error::Error, Message, Pullable};
+use crate::{Message, Pullable, error::Error};
 
 impl<PullableType: Pullable + ?Sized> Pullable for Box<PullableType> {
     type ThreadId = PullableType::ThreadId;
@@ -12,7 +12,7 @@ impl<PullableType: Pullable + ?Sized> Pullable for Box<PullableType> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{error::Error, Connection, DefaultThread, Message, Pullable};
+    use crate::{Connection, DefaultThread, Message, Pullable, error::Error};
 
     struct Root {
         value: usize,

@@ -35,9 +35,13 @@ use crate::error::Error;
 /// but a user could create a composite type that will
 /// aggregate information in some subgraph.
 ///
-/// A compose operation consumes the 'self' type so that 
+/// A compose operation consumes the 'self' type so that
 /// it can move fields into a new type without cloning.
-pub trait Composable<With, To> {
-    // Create the instance of the type
-    fn compose(self, argument: With) -> Result<To, Error>;
+pub trait Composable<With> {
+    /// [Composable::To] is the unique type produced by Self with With
+    type To;
+
+    // Create the instance of the `Self::To`, consuming self allowing for
+    // move semantics.
+    fn compose(self, argument: With) -> Result<Self::To, Error>;
 }

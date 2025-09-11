@@ -2,9 +2,9 @@
 use crate::error::Error;
 use crate::node::line::LineRoutine;
 use crate::{
+    DefaultThread, SyncEdge, ThreadId,
     graph::{Add, Get},
     marker::Connection,
-    DefaultThread, SyncEdge, ThreadId,
 };
 use crate::{Message, Origin};
 use crate::{Pushable, Workable};
@@ -320,9 +320,9 @@ pub fn make_line<In, Out, SignalType, ThreadIdType, RoutineType>(
 ) -> Result<
     Box<
         impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
-            + Workable<ThreadId = ThreadIdType>
-            + Add<dyn Workable<ThreadId = ThreadIdType>>
-            + Send,
+        + Workable<ThreadId = ThreadIdType>
+        + Add<dyn Workable<ThreadId = ThreadIdType>>
+        + Send,
     >,
     Error,
 >

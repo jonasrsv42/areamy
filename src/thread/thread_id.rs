@@ -10,4 +10,3 @@ pub struct DefaultThread {}
 
 /// [DefaultThread] is a [ThreadId]
 impl ThreadId for DefaultThread {}
-

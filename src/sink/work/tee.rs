@@ -1,6 +1,6 @@
-use crate::error::Error;
 use crate::SyncEdge;
-use crate::{graph::Add, marker::Multiplicity, DefaultThread, Pushable, Trackable};
+use crate::error::Error;
+use crate::{DefaultThread, Pushable, Trackable, graph::Add, marker::Multiplicity};
 use crate::{Message, Origin};
 use std::sync::Arc;
 
@@ -18,8 +18,10 @@ where
     SignalType: Origin + Send + Sync + 'static,
 {
     pub fn new<MultiplicityType>(
-        workable: &mut (impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
-                  + 'static),
+        workable: &mut (
+                 impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
+                 + 'static
+             ),
     ) -> Result<Self, Error>
     where
         MultiplicityType: Multiplicity,
@@ -42,8 +44,8 @@ where
 
 impl<DataType, SignalType> crate::sink::Sink for Sink<DataType, SignalType>
 where
-    DataType:  Send + Sync + 'static,
-    SignalType: Origin +  Send + Sync + 'static,
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
 {
     type DataType = DataType;
     type SignalType = SignalType;
@@ -61,7 +63,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{graph::Get, marker::Connection, DefaultThread, Pushable, Workable};
+    use crate::{DefaultThread, Pushable, Workable, graph::Get, marker::Connection};
     use std::sync::Mutex;
 
     struct MockNode {

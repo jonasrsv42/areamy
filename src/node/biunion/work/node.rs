@@ -1,12 +1,12 @@
+use crate::SyncEdge;
 use crate::biunion;
 use crate::error::Error;
 use crate::node::biunion::routine::BiunionRoutine;
-use crate::SyncEdge;
+use crate::{DefaultThread, ThreadId, marker::Connection};
 use crate::{
-    graph::{Add, Get},
     Message, Origin, Pushable, Workable,
+    graph::{Add, Get},
 };
-use crate::{marker::Connection, DefaultThread, ThreadId};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
@@ -349,7 +349,7 @@ where
 pub mod tests {
     use super::*;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{work::make_biunion, work::Sink, work::Source, Pushable};
+    use crate::{Pushable, work::Sink, work::Source, work::make_biunion};
 
     #[test]
     fn run_biunion() {

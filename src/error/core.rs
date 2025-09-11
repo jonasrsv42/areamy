@@ -40,12 +40,12 @@ pub enum ErrorKind {
 impl Error {
     /// Try to downcast an Any error to a specific type, consuming self.
     /// Returns `Ok(Box<T>)` if the error is of type T, otherwise returns `Err(self)`.
-    /// 
+    ///
     /// # Example
     /// ```
     /// use areamy::error::{AnyErr, Error, ErrorKind};
     /// use std::fmt;
-    /// 
+    ///
     /// #[derive(Debug)]
     /// struct TensorError;
     /// impl fmt::Display for TensorError {
@@ -53,7 +53,7 @@ impl Error {
     /// }
     /// impl std::error::Error for TensorError {}
     /// impl AnyErr for TensorError {}
-    /// 
+    ///
     /// #[derive(Debug)]  
     /// struct ChannelDisconnected;
     /// impl fmt::Display for ChannelDisconnected {
@@ -61,7 +61,7 @@ impl Error {
     /// }
     /// impl std::error::Error for ChannelDisconnected {}
     /// impl AnyErr for ChannelDisconnected {}
-    /// 
+    ///
     /// fn handle_error(error: Error) {
     ///     // You can chain multiple attempts:
     ///     match error.downcast_any::<TensorError>() {
@@ -106,14 +106,14 @@ impl Error {
             _ => unreachable!("The type was already checked with `self.is::<T>()`"),
         }
     }
-    
+
     /// Check if the error contains an Any error of a specific type.
-    /// 
+    ///
     /// # Example
     /// ```
     /// use areamy::error::{AnyErr, Error};
     /// use std::fmt;
-    /// 
+    ///
     /// #[derive(Debug)]
     /// struct ChannelDisconnected;
     /// impl fmt::Display for ChannelDisconnected {
@@ -121,7 +121,7 @@ impl Error {
     /// }
     /// impl std::error::Error for ChannelDisconnected {}
     /// impl AnyErr for ChannelDisconnected {}
-    /// 
+    ///
     /// fn handle_error(error: &Error) {
     ///     if error.is::<ChannelDisconnected>() {
     ///         // Channel disconnected - return gracefully
@@ -134,9 +134,7 @@ impl Error {
     /// ```
     pub fn is<T: AnyErr + 'static>(&self) -> bool {
         match &self.kind {
-            ErrorKind::Any(any_err) => {
-                (any_err.as_ref() as &dyn Any).downcast_ref::<T>().is_some()
-            }
+            ErrorKind::Any(any_err) => (any_err.as_ref() as &dyn Any).downcast_ref::<T>().is_some(),
             _ => false,
         }
     }
@@ -156,18 +154,18 @@ impl std::fmt::Display for ErrorKind {
 
 /// [`crate::fatal`] is a macro for producing a [ErrorKind::Fatal] error.
 /// Supports format arguments like `println!`.
-/// 
+///
 /// # Examples
 /// ```
 /// use areamy::fatal;
-/// 
+///
 /// // Simple message
 /// let error = fatal!("Something went wrong");
-/// 
+///
 /// // With format arguments
 /// let user_id = 42;
 /// let error = fatal!("User {} not found", user_id);
-/// 
+///
 /// // With multiple arguments
 /// let error = fatal!("Failed to connect to {}:{} after {} attempts", "localhost", 8080, 3);
 /// ```
@@ -352,7 +350,7 @@ mod tests {
                     assert_eq!(downcasted.code, 42);
                 }
                 Err(_) => panic!("Should have successfully downcasted to TestErrorB in chain"),
-            }
+            },
         }
     }
 
@@ -414,7 +412,12 @@ mod tests {
         let host = "localhost";
         let port = 8080;
         let attempts = 3;
-        let error = fatal!("Failed to connect to {}:{} after {} attempts", host, port, attempts);
+        let error = fatal!(
+            "Failed to connect to {}:{} after {} attempts",
+            host,
+            port,
+            attempts
+        );
         match error.kind {
             ErrorKind::Fatal(ref msg) => {
                 assert_eq!(msg, "Failed to connect to localhost:8080 after 3 attempts");
@@ -436,10 +439,10 @@ mod tests {
             message: "inner error".to_string(),
         };
         let any_error = any_err!(Box::new(test_err) as Box<dyn AnyErr>);
-        
+
         let source = any_error.source().expect("Any error should have a source");
         assert_eq!(source.to_string(), "TestErrorA: inner error");
-        
+
         // Verify the source is the correct type by downcasting
         assert!(source.downcast_ref::<TestErrorA>().is_some());
     }

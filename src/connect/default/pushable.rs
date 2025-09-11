@@ -1,11 +1,12 @@
+use crate::Pushable;
 use crate::error::Error;
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::Pushable;
 
-impl<DataType, SignalType> Pushable for Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+impl<DataType, SignalType> Pushable
+    for Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>
 where
-    DataType:  Send + Sync,
+    DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
     type DataType = DataType;
@@ -18,7 +19,7 @@ where
 
 impl<PushableType, DataType, SignalType> Pushable for Box<PushableType>
 where
-    DataType:  Send + Sync,
+    DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
     PushableType: Pushable<DataType = DataType, SignalType = SignalType>,
 {
@@ -51,7 +52,8 @@ mod tests {
     fn pushable_arc_dyn_can_push() {
         let queue = Arc::new(SyncEdge::<usize, usize>::new());
 
-        let mut pushable: Box<dyn Pushable<DataType = usize, SignalType = usize>> = Box::new(queue.clone());
+        let mut pushable: Box<dyn Pushable<DataType = usize, SignalType = usize>> =
+            Box::new(queue.clone());
         push(&mut pushable, 5);
         assert_eq!(queue.read_all().unwrap(), vec![Message::Data(5)]);
     }

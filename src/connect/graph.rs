@@ -1,9 +1,9 @@
 //! Graph connections and building blocks.
+use crate::ThreadId;
 use crate::error::Error;
 use crate::marker::{Connection, Multiplicity, Unary};
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::ThreadId;
 
 /// A [`Workable`] is a [Connection] in our graph that is used to for scheduling.
 /// Child nodes will invoke the [Workable] connection to parents to make parent work.
@@ -93,7 +93,7 @@ pub trait Get<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicit
 #[cfg(any(test, doc))]
 pub mod tests {
     use super::*;
-    use crate::{make_bidi, make_push, DefaultThread, Message, SyncEdge};
+    use crate::{DefaultThread, Message, SyncEdge, make_bidi, make_push};
     use std::sync::Arc;
 
     /// A `Simple` "coroutine". At time of writing, 2024/12/11, coroutines

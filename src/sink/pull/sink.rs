@@ -1,6 +1,6 @@
-use crate::error::Error;
 use crate::Message;
-use crate::{marker::Connection, sink, DefaultThread, Origin, Pullable, ThreadId, Trackable};
+use crate::error::Error;
+use crate::{DefaultThread, Origin, Pullable, ThreadId, Trackable, marker::Connection, sink};
 
 pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
 where
@@ -29,7 +29,7 @@ where
 {
     pub fn new(
         pullable: impl Pullable<ThreadId = DefaultThread, DataType = DataType, SignalType = SignalType>
-            + 'static,
+        + 'static,
     ) -> Self {
         let sink = Self {
             pullable: Box::new(pullable),

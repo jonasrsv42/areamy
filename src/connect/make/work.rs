@@ -1,10 +1,10 @@
 //! Utility functions for typed [make_bidi] and [make_push]
 use crate::{
+    Origin, Pushable, Trackable, Workable,
     error::Error,
     graph::{Add, Get},
     make_bidi, make_push,
     marker::Multiplicity,
-    Origin, Pushable, Trackable, Workable,
 };
 use std::marker::PhantomData;
 
@@ -80,7 +80,10 @@ where
 
     /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
     pub fn push<AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
-        parent: &mut impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,
+        parent: &mut impl Add<
+            dyn Pushable<DataType = DataType, SignalType = SignalType>,
+            AddMultiplicity,
+        >,
         child: &impl Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
     ) -> Result<(), Error> {
         make_push(parent, child)?;

@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::{fatal, DefaultThread, Message, Origin, ThreadId, Trackable, Workable};
+use crate::{DefaultThread, Message, Origin, ThreadId, Trackable, Workable, fatal};
 use crate::{Pushable, Sink};
 use std::fmt::Debug;
 
@@ -143,7 +143,7 @@ mod tests {
     use super::*;
     use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{sink::work::tee, work::make_bifurcation, work::Source};
+    use crate::{sink::work::tee, work::Source, work::make_bifurcation};
 
     #[test]
     fn readers_bifurcation_read() {

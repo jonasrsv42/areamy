@@ -1,22 +1,22 @@
+use crate::ThreadId;
 use crate::biunion;
 use crate::error::Error;
-use crate::node::biunion::{work::node::BiunionTrait, work::Biunion, BiunionRoutine};
-use crate::ThreadId;
-use crate::{graph::Add, Origin, Workable};
+use crate::node::biunion::{BiunionRoutine, work::Biunion, work::node::BiunionTrait};
+use crate::{Origin, Workable, graph::Add};
 
 pub fn make_biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>(
     maybe_worker: Result<RoutineType, Error>,
 ) -> Result<
     Box<
         impl BiunionTrait<
-                Left = Left,
-                Right = Right,
-                Out = Out,
-                Signal = SignalType,
-                BiunionRoutine = RoutineType,
-            > + Workable<ThreadId = ThreadIdType>
-            + Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Left>
-            + Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Right>,
+            Left = Left,
+            Right = Right,
+            Out = Out,
+            Signal = SignalType,
+            BiunionRoutine = RoutineType,
+        > + Workable<ThreadId = ThreadIdType>
+        + Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Left>
+        + Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Right>,
     >,
     Error,
 >

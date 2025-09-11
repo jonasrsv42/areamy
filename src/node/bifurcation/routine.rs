@@ -16,8 +16,8 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::collections::VecDeque;
     use crate::error::Error;
+    use std::collections::VecDeque;
 
     pub struct MockBifurcation {
         shared_state: usize,

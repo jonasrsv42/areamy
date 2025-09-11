@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::{fatal, graph::Get, Pushable};
+use crate::{Pushable, fatal, graph::Get};
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 

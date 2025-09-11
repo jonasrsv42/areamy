@@ -2,8 +2,8 @@
 
 use crate::error::Error;
 use crate::node::line::work::node::LineTrait;
-use crate::{graph::Add, work::Line, LineRoutine, Origin, Pullable, ThreadId, Workable};
-use crate::{marker::Connection, Pushable};
+use crate::{LineRoutine, Origin, Pullable, ThreadId, Workable, graph::Add, work::Line};
+use crate::{Pushable, marker::Connection};
 
 /// [`Bridge`] is a bridge between a [Pullable] and [Workable] segment.
 /// it holds a [Pullable] type which it'll [Pullable::pull] when scheduled
@@ -73,15 +73,15 @@ pub fn bridge_nosync<In, Out, SignalType, ThreadIdType, RoutineType, PullableTyp
 ) -> Result<
     Box<
         impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
-            + Workable<ThreadId = ThreadIdType>
-            + Add<dyn Workable<ThreadId = ThreadIdType>>
-            + Send,
+        + Workable<ThreadId = ThreadIdType>
+        + Add<dyn Workable<ThreadId = ThreadIdType>>
+        + Send,
     >,
     Error,
 >
 where
     ThreadIdType: ThreadId + 'static,
-    In:  Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
     RoutineType: 'static + LineRoutine<In, Out>,
@@ -100,7 +100,7 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::{work::Sink, work::Source, Message};
+    use crate::{Message, work::Sink, work::Source};
 
     #[test]
     fn line_basic_bridge() {

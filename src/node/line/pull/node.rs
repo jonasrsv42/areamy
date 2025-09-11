@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::{marker::Connection, LineRoutine, Message, Origin};
+use crate::{LineRoutine, Message, Origin, marker::Connection};
 use crate::{Pullable, ThreadId};
 use std::collections::VecDeque;
 
@@ -150,11 +150,11 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::node::line::pull::builder::{make_pull, Root};
+    use crate::Pushable;
+    use crate::node::line::pull::builder::{Root, make_pull};
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::pull::Sink;
     use crate::work::Source;
-    use crate::Pushable;
     use std::time::Instant;
 
     #[test]

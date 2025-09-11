@@ -1,8 +1,8 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
+use crate::Pushable;
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
-use crate::Pushable;
 
 #[derive(Debug)]
 /// Policy for handling signals in the queue
@@ -184,4 +184,3 @@ mod tests {
         assert_eq!(messages[1], Message::Data(4.0));
     }
 }
-

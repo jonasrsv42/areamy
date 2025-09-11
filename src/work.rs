@@ -5,6 +5,6 @@ pub use crate::node::bifurcation::work::node::Bifurcation;
 pub use crate::node::biunion::work::builder::make_biunion;
 pub use crate::node::biunion::work::node::Biunion;
 pub use crate::node::line::work::bridge::bridge_nosync;
-pub use crate::node::line::work::node::{make_line, Line};
-pub use crate::sink::work::{tee, Sink};
+pub use crate::node::line::work::node::{Line, make_line};
+pub use crate::sink::work::{Sink, tee};
 pub use crate::source::sync::source::Source;

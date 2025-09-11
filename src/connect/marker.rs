@@ -1,6 +1,6 @@
 //! Type markers.
-use crate::graph::Add;
 use crate::Pushable;
+use crate::graph::Add;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
@@ -19,16 +19,18 @@ impl<Type> PhantomNode<Type> {
 
 // We assume MessageType is Message<DataType, SignalType>
 // This is just a placeholder implementation for PhantomNode
-impl<DataType, SignalType> Add<dyn Pushable<DataType = DataType, SignalType = SignalType>> 
-    for PhantomNode<crate::message::Message<DataType, SignalType>> 
+impl<DataType, SignalType> Add<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+    for PhantomNode<crate::message::Message<DataType, SignalType>>
 where
-    DataType:  Send + Sync,
+    DataType: Send + Sync,
     SignalType: crate::signal::Origin + Send + Sync,
 {
     fn add(
         &mut self,
         _connection: Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>,
-    ) -> Result<(), crate::error::Error> { Ok(()) }
+    ) -> Result<(), crate::error::Error> {
+        Ok(())
+    }
 }
 
 /// [`Connection`] is the base marker indicating that something can form an edge in our graph.

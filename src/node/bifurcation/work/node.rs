@@ -1,13 +1,13 @@
+use crate::SyncEdge;
 use crate::bifurcation;
 use crate::error::Error;
 use crate::node::bifurcation::routine::BifurcationRoutine;
-use crate::SyncEdge;
+use crate::{DefaultThread, ThreadId};
 use crate::{
+    Message, Origin, Pushable, Workable,
     graph::{Add, Get},
     marker::Connection,
-    Message, Origin, Pushable, Workable,
 };
-use crate::{DefaultThread, ThreadId};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a bifurcation.
@@ -305,7 +305,7 @@ impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Add<dyn Workable<ThreadId = ThreadIdType>>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
-    In:  Send + Sync + 'static,
+    In: Send + Sync + 'static,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
@@ -321,7 +321,7 @@ where
 pub mod tests {
     use super::*;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{sink::work::tee, work::make_bifurcation, work::Source, Pushable};
+    use crate::{Pushable, sink::work::tee, work::Source, work::make_bifurcation};
 
     #[test]
     fn run_bifurcation() {

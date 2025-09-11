@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::{
-    graph::Add, node::bifurcation::work::node::BifurcationTrait, work::Bifurcation,
-    BifurcationRoutine, Origin, ThreadId, Workable,
+    BifurcationRoutine, Origin, ThreadId, Workable, graph::Add,
+    node::bifurcation::work::node::BifurcationTrait, work::Bifurcation,
 };
 
 pub fn make_bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>(
@@ -9,13 +9,13 @@ pub fn make_bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>(
 ) -> Result<
     Box<
         impl BifurcationTrait<
-                In = In,
-                Left = Left,
-                Right = Right,
-                Signal = SignalType,
-                BifurcationRoutine = RoutineType,
-            > + Add<dyn Workable<ThreadId = ThreadIdType>>
-            + Workable<ThreadId = ThreadIdType>,
+            In = In,
+            Left = Left,
+            Right = Right,
+            Signal = SignalType,
+            BifurcationRoutine = RoutineType,
+        > + Add<dyn Workable<ThreadId = ThreadIdType>>
+        + Workable<ThreadId = ThreadIdType>,
     >,
     Error,
 >

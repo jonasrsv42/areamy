@@ -16,5 +16,4 @@ pub mod routine;
 pub use bifurcation::{BifurcationReader, BifurcationRoutine};
 pub use biunion::{BiunionReader, BiunionRoutine};
 pub use line::{LineReader, LineRoutine};
-pub use routine::{Flush, Next, Send, Name};
-
+pub use routine::{Flush, Name, Next, Send};

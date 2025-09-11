@@ -1,7 +1,7 @@
+use crate::SyncEdge;
 use crate::error::Error;
 use crate::node::line::pull::node::Line;
-use crate::SyncEdge;
-use crate::{graph::Get, Connection, Pullable, Pushable, ThreadId, Trackable};
+use crate::{Connection, Pullable, Pushable, ThreadId, Trackable, graph::Get};
 use crate::{LineRoutine, Message, Origin};
 use std::marker::PhantomData;
 use std::sync::Arc;

@@ -15,10 +15,9 @@
 use crate::error::Error;
 use crate::node::{bifurcation, biunion};
 use crate::{
-    make_bidi,
+    BifurcationRoutine, BiunionRoutine, LineReader, Message, make_bidi,
     work::Connect,
-    work::{make_bifurcation, make_biunion, Sink, Source},
-    BifurcationRoutine, BiunionRoutine, LineReader, Message,
+    work::{Sink, Source, make_bifurcation, make_biunion},
 };
 use std::collections::VecDeque;
 
@@ -194,7 +193,7 @@ mod tests {
 
         println!("=== Test completed successfully ===");
     }
-    
+
     #[test]
     fn test_cycle_with_multiple_values() {
         // Create our nodes
@@ -229,7 +228,7 @@ mod tests {
         // Flush and check the results
         let results = reader.flush("flush-test".into()).unwrap();
         println!("Results after flush: {:?}", results);
-        
+
         // The expected results:
         // - Values 1-5 go through the cycle and increment until they exceed 5
         // - Value 6 goes directly to output after one increment (becomes 7)
@@ -238,12 +237,12 @@ mod tests {
 
         println!("=== Multiple values test completed successfully ===");
     }
-    
+
     // Line routine that increments values by 1
     struct IncrementLine {
         output: VecDeque<usize>,
     }
-    
+
     impl IncrementLine {
         fn new() -> Self {
             Self {
@@ -251,20 +250,16 @@ mod tests {
             }
         }
     }
-    
+
     // Implementation for receiving input
     impl crate::Send<usize> for IncrementLine {
         fn send(&mut self, message: usize) -> Result<(), Error> {
-            println!(
-                "Line received {}, incrementing to {}",
-                message,
-                message + 1
-            );
+            println!("Line received {}, incrementing to {}", message, message + 1);
             self.output.push_back(message + 1);
             Ok(())
         }
     }
-    
+
     // Output implementation
     impl crate::Next<usize> for IncrementLine {
         fn next(&mut self) -> Result<Option<usize>, Error> {
@@ -275,27 +270,27 @@ mod tests {
             Ok(result)
         }
     }
-    
+
     impl crate::Flush for IncrementLine {
         fn flush(&mut self) -> Result<(), Error> {
             println!("Line flushed");
             Ok(())
         }
     }
-    
+
     impl crate::node::Name for IncrementLine {
         fn name<'a>(&'a self) -> &'a str {
             "IncrementLine"
         }
     }
-    
+
     impl crate::node::line::LineRoutine<usize, usize> for IncrementLine {}
-    
+
     #[test]
     fn test_cycle_with_line_node() {
         // Import additional dependencies for line node
         use crate::work::make_line;
-        
+
         // Create our nodes
         let line = make_line(Ok(IncrementLine::new())).unwrap();
         let mut bifurcation = make_bifurcation(Ok(DeciderBifurcation::new())).unwrap();
@@ -329,7 +324,7 @@ mod tests {
         // Flush and check the results
         let results = reader.flush("line-cycle-test".into()).unwrap();
         println!("Results after flush: {:?}", results);
-        
+
         // The expected results for line node: [6, 7, 6, 6, 6, 6]
         //
         // IMPORTANT: The line node implementation produces a different result order
@@ -351,10 +346,10 @@ mod tests {
         // - The graph processes the inputs in FIFO order (1 then 6 then 2-5)
         // - Each input completes its full cycle before the next is processed
         // - The bifurcation node sends outputs as soon as values exceed 5
-        // 
+        //
         // In contrast, the biunion node test produces [6, 6, 6, 6, 6, 7] because:
         // - Biunion prioritizes the left input (feedback loop) over the right input
-        // - Each value from 1-5 is fully processed (cycling until >5) before 
+        // - Each value from 1-5 is fully processed (cycling until >5) before
         //   the next value from the right input is taken
         // - This means all of values 1-5 complete their cycles before value 6
         //   is processed, resulting in five 6's followed by one 7
@@ -370,4 +365,3 @@ mod tests {
         println!("=== Line node cycle test completed successfully ===");
     }
 }
-

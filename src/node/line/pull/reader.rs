@@ -1,6 +1,6 @@
+use crate::Pullable;
 use crate::error::Error;
 use crate::message::Message;
-use crate::Pullable;
 
 /// [`read_until`] will [Pullable::pull] until it recieves the target [Message<DataType, SignalType>]
 ///
@@ -11,7 +11,7 @@ pub fn read_until<ThreadIdType, DataType, SignalType>(
     condition: Message<DataType, SignalType>,
 ) -> Result<Vec<Message<DataType, SignalType>>, Error>
 where
-    DataType:  Send + Sync,
+    DataType: Send + Sync,
     SignalType: crate::Origin + Send + Sync,
     Message<DataType, SignalType>: PartialEq,
 {
@@ -30,7 +30,7 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::node::line::pull::builder::{make_pull, Root};
+    use crate::node::line::pull::builder::{Root, make_pull};
     use crate::work::Source;
     use crate::{DefaultThread, Message, Pushable};
     use crate::{Next, Send};

@@ -23,6 +23,8 @@ pub trait Generates<With> {
     fn generate(&self, argument: With) -> Result<Self::Target, Error>;
 
     // Generation can start without having seen a [self] instance so all
-    // `Generates` types must support a With-only case.
+    // `Generates` types must support a With-only case. [Generates::start]
+    // is not necessarily only invoked once. There may be a long prefix
+    // of generation without context all produced with `start`.
     fn start(argument: With) -> Result<Self::Target, Error>;
 }

@@ -9,12 +9,14 @@ pub mod source;
 mod thread;
 pub mod work;
 pub use source::source::{PullSource, Source};
+mod contains;
 mod generates;
 
 pub mod pull;
 
 pub use composable::Composable;
 pub use connect::marker;
+pub use contains::Contains;
 pub use generates::Generates;
 
 pub use crate::connect::graph;

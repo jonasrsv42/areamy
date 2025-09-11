@@ -21,4 +21,8 @@ pub trait Generates<With> {
     type Target;
     // Generate an instance of `Self::Target` with `With`.
     fn generate(&self, argument: With) -> Result<Self::Target, Error>;
+
+    // Generation can start without having seen a [self] instance so all
+    // `Generates` types must support a With-only case.
+    fn start(argument: With) -> Result<Self::Target, Error>;
 }

@@ -125,8 +125,8 @@ pub mod tests {
     ///       ↑
     ///      node (audio input)
     /// ```
-    ///  For example it allows us to implement a streaming speech graph
-    ///  where we spread audio encoding and state space search (decoding)
+    ///  For example it allows us to implement a streaming graph
+    ///  where we spread encoding and decoding
     ///  into separate threads to improve latency.
     ///
     pub struct Node {

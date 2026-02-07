@@ -1,16 +1,27 @@
-//! A node with a dedicated [std::thread::Thread] that will [crate::Workable::work] on all parents.
+//! Thread lifecycle management with compile-time state guarantees.
+//!
+//! This module provides typestate structs for thread lifecycle:
+//! - [`ThreadStream`]: idle thread, can have workables added and be started
+//! - [`ThreadStreamHandle`]: running thread, can only be joined
+//! - [`ThreadBundle`] / [`ThreadBundleHandle`]: collections of threads
+//!
+//! State transitions are enforced at compile time - you cannot start a running
+//! thread or join an idle thread.
+//!
+//! # Example
+//!
+//! ```ignore
+//! let mut thread = ThreadStream::<MyThread>::new();
+//! // Add workables while idle...
+//! let handle = thread.start();  // ThreadStream -> ThreadStreamHandle
+//! // Thread is now running...
+//! let (thread, work_error) = handle.join()?;  // Ok = recovered, Err = panic
+//! ```
 
-use crate::error::Error;
+mod bundle;
+mod stream;
+mod thread_id;
 
-pub mod thread_id;
-pub mod thread_stream;
-
-pub trait ThreadLike {
-    /// Start running the work owned by the [ThreadLike]. A thread has to be
-    /// joined to the main thread before it can be started again. A double start
-    /// will yield an error.
-    fn start(&mut self) -> Result<(), Error>;
-
-    /// Join the thread. Join has to follow a start, a double join will yield an error.
-    fn join(&mut self) -> Result<(), Error>;
-}
+pub use bundle::{BundlePanics, ThreadBundle, ThreadBundleHandle};
+pub use stream::{ThreadStream, ThreadStreamHandle};
+pub use thread_id::{DefaultThread, ThreadId};

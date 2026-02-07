@@ -32,9 +32,10 @@ pub use node::{
 pub use node::{bifurcation, biunion};
 pub use signal::{Origin, Trackable};
 pub use sink::GraphSink;
-pub use thread::ThreadLike;
-pub use thread::thread_id::{DefaultThread, ThreadId};
-pub use thread::thread_stream::ThreadStream;
+pub use thread::{
+    BundlePanics, DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream,
+    ThreadStreamHandle,
+};
 
 #[cfg(test)]
 pub mod tests;

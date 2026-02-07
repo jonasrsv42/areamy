@@ -1,5 +1,3 @@
-use areamy::ThreadLike;
-
 use std::collections::VecDeque;
 
 pub struct AddOne {
@@ -81,13 +79,13 @@ fn sync_multithread() -> Result<(), areamy::error::Error> {
     areamy::work::Connect::<usize>::push(&mut middle_node, &out_node)?;
 
     // Now helper thread will work on the middle_node subgraph.
-    areamy::make_work(middle_node, helper_thread.as_mut())?;
+    areamy::make_work(middle_node, &mut helper_thread)?;
 
     let sink = areamy::work::Sink::new(out_node)?;
     let mut reader = areamy::LineReader::new(source, sink);
 
-    // Start the helper thread.
-    helper_thread.start()?;
+    // Start the helper thread (consumes thread, returns handle).
+    let _handle = helper_thread.start();
 
     // Helper thread will run the computation in the first two nodes.
     reader.push(areamy::Message::Data(1))?;

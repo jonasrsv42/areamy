@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::{GraphPushSource, Sink, Trackable};
+use crate::{GraphPushSource, GraphSink, Trackable};
 use crate::{Message, Origin};
 use std::fmt::Debug;
 
@@ -7,7 +7,7 @@ pub struct BiunionReader<LeftSourceType, RightSourceType, SinkType>
 where
     LeftSourceType: GraphPushSource,
     RightSourceType: GraphPushSource,
-    SinkType: Sink,
+    SinkType: GraphSink,
 {
     pub left: LeftSourceType,
     pub right: RightSourceType,
@@ -19,7 +19,7 @@ impl<LeftSourceType, RightSourceType, SinkType>
 where
     LeftSourceType: GraphPushSource,
     RightSourceType: GraphPushSource,
-    SinkType: Sink,
+    SinkType: GraphSink,
 {
     pub fn new(
         left: LeftSourceType,
@@ -65,7 +65,7 @@ impl<LeftSourceType, RightSourceType, SinkType> Drop
 where
     LeftSourceType: GraphPushSource,
     RightSourceType: GraphPushSource,
-    SinkType: Sink,
+    SinkType: GraphSink,
 {
     fn drop(&mut self) {
         let _ = self.close();
@@ -81,7 +81,7 @@ where
     OriginType: Origin + Clone + Send + Sync + 'static,
     LeftSourceType: GraphPushSource<DataType = Left, SignalType = Trackable<OriginType>>,
     RightSourceType: GraphPushSource<DataType = Right, SignalType = Trackable<OriginType>>,
-    SinkType: Sink<DataType = Out, SignalType = Trackable<OriginType>>,
+    SinkType: GraphSink<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     pub fn mark(&mut self, trackable: Trackable<OriginType>) -> Result<Vec<Out>, Error> {
         let mut datas: Vec<Out> = Vec::new();

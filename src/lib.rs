@@ -31,7 +31,7 @@ pub use node::{
 };
 pub use node::{bifurcation, biunion};
 pub use signal::{Origin, Trackable};
-pub use sink::Sink;
+pub use sink::GraphSink;
 pub use thread::thread_id::{DefaultThread, ThreadId};
 pub use thread::thread_stream::ThreadStream;
 

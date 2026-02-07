@@ -99,10 +99,10 @@ pub mod tests {
 
     #[test]
     fn line_basic_bridge() {
-        let root = crate::pull::Root::new();
-        let mut source = Source::new(&root).unwrap();
+        let buffer = crate::pull::SourceBuffer::new();
+        let mut source = Source::new(&buffer).unwrap();
 
-        let line = bridge_nosync(root, MockLine::new());
+        let line = bridge_nosync(buffer, MockLine::new());
         let mut sink = Sink::new(line).unwrap();
 
         source.push(Message::Data(1)).unwrap();

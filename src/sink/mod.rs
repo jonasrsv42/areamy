@@ -2,4 +2,4 @@ pub mod pull;
 mod sink;
 pub mod work;
 
-pub use sink::Sink;
+pub use sink::GraphSink;

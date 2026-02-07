@@ -59,28 +59,28 @@ pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
     use crate::pull::Sink;
-    use crate::source::pull::Root;
+    use crate::source::pull::SourceBuffer;
     use crate::work::Source;
     use crate::{DefaultThread, Message, Pullable, Pushable};
 
     #[test]
-    fn line_builder_reading_root() {
-        let mut root = Root::<usize, usize, DefaultThread>::new();
-        let mut source = Source::of(&root).unwrap();
+    fn line_builder_reading_source_buffer() {
+        let mut buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
+        let mut source = Source::of(&buffer).unwrap();
 
         source.push(Message::Data(5)).unwrap();
         source.push(Message::Data(6)).unwrap();
 
-        assert_eq!(root.pull().unwrap(), Message::Data(5));
-        assert_eq!(root.pull().unwrap(), Message::Data(6));
+        assert_eq!(buffer.pull().unwrap(), Message::Data(5));
+        assert_eq!(buffer.pull().unwrap(), Message::Data(6));
     }
 
     #[test]
     fn line_builder_make_pull() {
-        let root = Root::<usize, usize, DefaultThread>::new();
-        let mut source = Source::of(&root).unwrap();
+        let buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
+        let mut source = Source::of(&buffer).unwrap();
 
-        let line = make_pull(root, MockLine::new());
+        let line = make_pull(buffer, MockLine::new());
         let mut sink = Sink::new(line);
 
         source.push(Message::Data(1)).unwrap();

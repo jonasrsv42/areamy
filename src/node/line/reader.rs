@@ -1,7 +1,7 @@
 //! [LineReader] is a convenient way to manage a graph input and output in a single place for
 //! linear graphs.
 use crate::error::Error;
-use crate::{GraphPushSource, Sink};
+use crate::{GraphPushSource, GraphSink};
 use crate::{Message, Origin, Trackable};
 use std::fmt::Debug;
 
@@ -15,7 +15,7 @@ use std::fmt::Debug;
 pub struct LineReader<SourceType, SinkType>
 where
     SourceType: GraphPushSource,
-    SinkType: Sink,
+    SinkType: GraphSink,
 {
     pub source: SourceType,
     pub sink: SinkType,
@@ -24,7 +24,7 @@ where
 impl<SourceType, SinkType> LineReader<SourceType, SinkType>
 where
     SourceType: GraphPushSource,
-    SinkType: Sink,
+    SinkType: GraphSink,
 {
     /// Create a [LineReader] from a [Source] and [Sink]
     pub fn new(source: SourceType, sink: SinkType) -> LineReader<SourceType, SinkType> {
@@ -57,7 +57,7 @@ where
 impl<SourceType, SinkType> Drop for LineReader<SourceType, SinkType>
 where
     SourceType: GraphPushSource,
-    SinkType: Sink,
+    SinkType: GraphSink,
 {
     fn drop(&mut self) {
         let _ = self.close();
@@ -70,7 +70,7 @@ where
     Out: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
     SourceType: GraphPushSource<DataType = In, SignalType = Trackable<OriginType>>,
-    SinkType: Sink<DataType = Out, SignalType = Trackable<OriginType>>,
+    SinkType: GraphSink<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     /// Flush and read operation. It will issue a flush which
     /// will empty and reset the line and then read until

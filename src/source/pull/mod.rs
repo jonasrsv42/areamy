@@ -1,8 +1,17 @@
 //! Pull-based graph sources.
 //!
-//! [`Root`] serves as the entry point to a [`Pullable`](crate::Pullable) subgraph.
-//! It wraps a [`SyncEdge`](crate::SyncEdge) to receive pushed data and makes it
-//! available for pulling by downstream nodes.
+//! This module provides entry points for pull-based graph segments.
+//!
+//! # Source Types
+//!
+//! There are two ways to feed data into a pull graph:
+//!
+//! - **[`SourceBuffer`]**: A buffer you push data into, which can then be pulled by downstream
+//!   nodes. Use this when you have in-memory data or want to bridge from a push-based source.
+//!
+//! - **[`GraphPullSource`](crate::GraphPullSource)**: A trait for "true" pull sources that
+//!   implement [`Pullable`](crate::Pullable) directly, like file readers. These pull data
+//!   on-demand rather than buffering.
 
 use crate::error::Error;
 use crate::graph::Get;
@@ -12,9 +21,34 @@ use crate::{Origin, Pullable, Pushable, SyncEdge, ThreadId};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-/// [`Root`] of a [`Pullable`] subgraph. It will await input into its [Pushable] and
-/// then forward it downstream.
-pub struct Root<DataType, SignalType, ThreadIdType>
+/// A buffer that serves as the entry point to a [`Pullable`] subgraph.
+///
+/// [`SourceBuffer`] accepts pushed data via [`Pushable`] and makes it available for pulling
+/// by downstream nodes. This is useful for bridging push-based data sources into pull-based
+/// graph segments.
+///
+/// For "true" pull sources that read data on-demand (like file readers), implement
+/// [`GraphPullSource`](crate::GraphPullSource) directly instead.
+///
+/// # Example
+///
+/// ```
+/// use areamy::{Message, Pullable, Pushable, DefaultThread};
+/// use areamy::pull::SourceBuffer;
+/// use areamy::work::Source;
+///
+/// let mut buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
+/// let mut source = Source::of(&buffer).unwrap();
+///
+/// // Push data into the buffer
+/// source.push(Message::Data(1)).unwrap();
+/// source.push(Message::Data(2)).unwrap();
+///
+/// // Pull data out
+/// assert_eq!(buffer.pull().unwrap(), Message::Data(1));
+/// assert_eq!(buffer.pull().unwrap(), Message::Data(2));
+/// ```
+pub struct SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -30,7 +64,7 @@ where
     thread: PhantomData<ThreadIdType>,
 }
 
-impl<DataType, SignalType, ThreadIdType> Root<DataType, SignalType, ThreadIdType>
+impl<DataType, SignalType, ThreadIdType> SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -44,7 +78,8 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> Default for Root<DataType, SignalType, ThreadIdType>
+impl<DataType, SignalType, ThreadIdType> Default
+    for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -55,8 +90,9 @@ where
     }
 }
 
-/// [Root] is a [Pullable] [Connection] in our graph.
-impl<DataType, SignalType, ThreadIdType> Connection for Root<DataType, SignalType, ThreadIdType>
+/// [SourceBuffer] is a [Pullable] [Connection] in our graph.
+impl<DataType, SignalType, ThreadIdType> Connection
+    for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -64,10 +100,10 @@ where
 {
 }
 
-/// [Get] the [Pushable] from [Root].
+/// [Get] the [Pushable] from [SourceBuffer].
 impl<DataType, SignalType, ThreadIdType>
     Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
-    for Root<DataType, SignalType, ThreadIdType>
+    for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -80,10 +116,10 @@ where
     }
 }
 
-/// [Get] the [crate::GraphPushSource] from [Root] for closing.
+/// [Get] the [crate::GraphPushSource] from [SourceBuffer] for closing.
 impl<DataType, SignalType, ThreadIdType>
     Get<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>
-    for Root<DataType, SignalType, ThreadIdType>
+    for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -97,8 +133,9 @@ where
     }
 }
 
-/// [Root] is [Pullable] it will serve as the root node of a [Pullable] subgraph.
-impl<DataType, SignalType, ThreadIdType> Pullable for Root<DataType, SignalType, ThreadIdType>
+/// [SourceBuffer] is [Pullable] - it serves as the root node of a [Pullable] subgraph.
+impl<DataType, SignalType, ThreadIdType> Pullable
+    for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -120,14 +157,14 @@ mod tests {
     use crate::work::Source;
 
     #[test]
-    fn root_can_be_pushed_and_pulled() {
-        let mut root = Root::<usize, usize, DefaultThread>::new();
-        let mut source = Source::of(&root).unwrap();
+    fn source_buffer_can_be_pushed_and_pulled() {
+        let mut buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
+        let mut source = Source::of(&buffer).unwrap();
 
         source.push(Message::Data(5)).unwrap();
         source.push(Message::Data(6)).unwrap();
 
-        assert_eq!(root.pull().unwrap(), Message::Data(5));
-        assert_eq!(root.pull().unwrap(), Message::Data(6));
+        assert_eq!(buffer.pull().unwrap(), Message::Data(5));
+        assert_eq!(buffer.pull().unwrap(), Message::Data(6));
     }
 }

@@ -9,7 +9,7 @@ use crate::connect::graph::{Pullable, Pushable}; // Add Pushable and Pullable tr
 use crate::error::Error;
 use crate::node::line::LineRoutine;
 use crate::pull::Sink;
-use crate::pull::{Root, make_pull};
+use crate::pull::{SourceBuffer, make_pull};
 use crate::signal::Trackable; // Add Trackable for signal types
 use crate::work::Source;
 use crate::{DefaultThread, Message, Next, Send}; // Remove unused Origin import
@@ -89,12 +89,12 @@ mod tests {
         // Create a chain of three BoxIncrementer nodes
         // Box<1> -> BoxIncrementer1 -> Box<2> -> BoxIncrementer2 -> Box<3> -> BoxIncrementer3 -> Box<4>
 
-        // Create the root node with the correct signal type
-        let root = Root::<Box<usize>, Trackable<&'static str>, DefaultThread>::new();
-        let mut source = Source::of(&root).unwrap();
+        // Create the source buffer with the correct signal type
+        let buffer = SourceBuffer::<Box<usize>, Trackable<&'static str>, DefaultThread>::new();
+        let mut source = Source::of(&buffer).unwrap();
 
         // Create three BoxIncrementer nodes in a chain
-        let line1 = make_pull(root, BoxIncrementer::new());
+        let line1 = make_pull(buffer, BoxIncrementer::new());
         let line2 = make_pull(line1, BoxIncrementer::new());
         let line3 = make_pull(line2, BoxIncrementer::new());
 
@@ -188,12 +188,12 @@ mod tests {
 
     #[test]
     fn test_non_cloneable_signal() {
-        // Create a root node using our BoxedOrigin type as the signal type
-        let root = Root::<Box<usize>, BoxedOrigin, DefaultThread>::new();
-        let mut source = Source::of(&root).unwrap();
+        // Create a source buffer using our BoxedOrigin type as the signal type
+        let buffer = SourceBuffer::<Box<usize>, BoxedOrigin, DefaultThread>::new();
+        let mut source = Source::of(&buffer).unwrap();
 
         // Create a pullable pipeline
-        let line1 = make_pull(root, BoxIncrementer::new());
+        let line1 = make_pull(buffer, BoxIncrementer::new());
         let line2 = make_pull(line1, BoxIncrementer::new());
 
         // Create a sink to read the output

@@ -83,7 +83,7 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> crate::sink::Sink
+impl<DataType, SignalType, ThreadIdType> crate::sink::GraphSink
     for Sink<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,

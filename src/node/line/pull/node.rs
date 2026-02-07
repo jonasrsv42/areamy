@@ -154,15 +154,15 @@ pub mod tests {
     use crate::node::line::pull::builder::make_pull;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::pull::Sink;
-    use crate::source::pull::Root;
+    use crate::source::pull::SourceBuffer;
     use crate::work::Source;
     use std::time::Instant;
 
     #[test]
     fn line_accumulating_node_works() {
-        let root = Root::new();
-        let mut source = Source::new(&root).unwrap();
-        let line = make_pull(root, AccMockLine::new());
+        let buffer = SourceBuffer::new();
+        let mut source = Source::new(&buffer).unwrap();
+        let line = make_pull(buffer, AccMockLine::new());
         let mut sink = Sink::new(line);
 
         // Add one flush
@@ -174,10 +174,10 @@ pub mod tests {
 
     #[test]
     fn line_nosync_basic_run() {
-        let root = Root::new();
-        let mut source = Source::new(&root).unwrap();
+        let buffer = SourceBuffer::new();
+        let mut source = Source::new(&buffer).unwrap();
 
-        let line = make_pull(root, MockLine::new());
+        let line = make_pull(buffer, MockLine::new());
         let mut sink = Sink::new(line);
 
         // Add one flush
@@ -198,10 +198,10 @@ pub mod tests {
 
     #[test]
     fn line_wait_node_mark_waits() {
-        let root = Root::new();
-        let mut source = Source::new(&root).unwrap();
+        let buffer = SourceBuffer::new();
+        let mut source = Source::new(&buffer).unwrap();
 
-        let line = make_pull(root, MockWaitLine::new(4));
+        let line = make_pull(buffer, MockWaitLine::new(4));
         let mut sink = Sink::new(line);
 
         source.push(Message::Data(1)).unwrap();
@@ -230,10 +230,10 @@ pub mod tests {
 
     #[test]
     fn line_wait_node_flush_waits() {
-        let root = Root::new();
-        let mut source = Source::new(&root).unwrap();
+        let buffer = SourceBuffer::new();
+        let mut source = Source::new(&buffer).unwrap();
 
-        let line = make_pull(root, MockWaitLine::new(4));
+        let line = make_pull(buffer, MockWaitLine::new(4));
         let mut sink = Sink::new(line);
 
         source.push(Message::Data(1)).unwrap();
@@ -250,10 +250,10 @@ pub mod tests {
 
     #[test]
     fn line_nosync_basic_stacked() {
-        let root = Root::new();
-        let mut source = Source::new(&root).unwrap();
+        let buffer = SourceBuffer::new();
+        let mut source = Source::new(&buffer).unwrap();
 
-        let line1 = make_pull(root, MockLine::new());
+        let line1 = make_pull(buffer, MockLine::new());
         let line2 = make_pull(line1, MockLine::new());
         let mut sink = Sink::new(line2);
 
@@ -286,10 +286,10 @@ pub mod tests {
     #[ignore]
     #[test]
     fn line_nosync_basic_many_stack_benchmark() {
-        let root = Root::new();
-        let mut source = Source::new(&root).unwrap();
+        let buffer = SourceBuffer::new();
+        let mut source = Source::new(&buffer).unwrap();
 
-        let p1 = make_pull(root, MockLine::new());
+        let p1 = make_pull(buffer, MockLine::new());
         let p2 = make_pull(p1, MockLine::new());
         let p3 = make_pull(p2, MockLine::new());
         let p4 = make_pull(p3, MockLine::new());
@@ -315,10 +315,10 @@ pub mod tests {
 
     #[test]
     fn line_nosync_respects_signal_ordering() {
-        let root = Root::new();
-        let mut source = Source::of(&root).unwrap();
+        let buffer = SourceBuffer::new();
+        let mut source = Source::of(&buffer).unwrap();
 
-        let line1 = make_pull(root, MockLine::new());
+        let line1 = make_pull(buffer, MockLine::new());
         let line2 = make_pull(line1, MockLine::new());
         let mut sink = Sink::new(line2);
 

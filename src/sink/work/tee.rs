@@ -42,7 +42,7 @@ where
     }
 }
 
-impl<DataType, SignalType> crate::sink::Sink for Sink<DataType, SignalType>
+impl<DataType, SignalType> crate::sink::GraphSink for Sink<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,

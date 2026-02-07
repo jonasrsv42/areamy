@@ -1,4 +1,4 @@
-use crate::Sink;
+use crate::GraphSink;
 use crate::error::Error;
 use crate::{
     DefaultThread, GraphPushSource, Message, Origin, ThreadId, Trackable, Workable, fatal,
@@ -8,8 +8,8 @@ use std::fmt::Debug;
 pub struct BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType = DefaultThread>
 where
     SourceType: GraphPushSource,
-    LeftSinkType: Sink,
-    RightSinkType: Sink,
+    LeftSinkType: GraphSink,
+    RightSinkType: GraphSink,
     ThreadIdType: ThreadId,
 {
     pub input: SourceType,
@@ -22,8 +22,8 @@ impl<SourceType, LeftSinkType, RightSinkType>
     BifurcationReader<SourceType, LeftSinkType, RightSinkType, DefaultThread>
 where
     SourceType: GraphPushSource,
-    LeftSinkType: Sink,
-    RightSinkType: Sink,
+    LeftSinkType: GraphSink,
+    RightSinkType: GraphSink,
 {
     pub fn new(
         input: SourceType,
@@ -44,8 +44,8 @@ impl<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
     BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
     SourceType: GraphPushSource,
-    LeftSinkType: Sink,
-    RightSinkType: Sink,
+    LeftSinkType: GraphSink,
+    RightSinkType: GraphSink,
     ThreadIdType: ThreadId,
 {
     pub fn left_read(
@@ -96,8 +96,8 @@ impl<SourceType, LeftSinkType, RightSinkType, ThreadIdType> Drop
     for BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
     SourceType: GraphPushSource,
-    LeftSinkType: Sink,
-    RightSinkType: Sink,
+    LeftSinkType: GraphSink,
+    RightSinkType: GraphSink,
     ThreadIdType: ThreadId,
 {
     fn drop(&mut self) {
@@ -113,8 +113,8 @@ where
     Right: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
     SourceType: GraphPushSource<DataType = In, SignalType = Trackable<OriginType>>,
-    LeftSinkType: Sink<DataType = Left, SignalType = Trackable<OriginType>>,
-    RightSinkType: Sink<DataType = Right, SignalType = Trackable<OriginType>>,
+    LeftSinkType: GraphSink<DataType = Left, SignalType = Trackable<OriginType>>,
+    RightSinkType: GraphSink<DataType = Right, SignalType = Trackable<OriginType>>,
     ThreadIdType: ThreadId,
 {
     pub fn left_mark(&mut self, origin: OriginType) -> Result<Vec<Left>, Error> {

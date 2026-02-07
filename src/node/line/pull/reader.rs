@@ -31,7 +31,7 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::pull::builder::make_pull;
-    use crate::source::pull::Root;
+    use crate::source::pull::SourceBuffer;
     use crate::work::Source;
     use crate::{DefaultThread, Message, Pushable};
     use crate::{Next, Send};
@@ -72,10 +72,10 @@ pub mod tests {
 
     #[test]
     fn line_nosync_readers_basic() {
-        let root = Root::<usize, usize, DefaultThread>::new();
-        let mut source = Source::of(&root).unwrap();
+        let buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
+        let mut source = Source::of(&buffer).unwrap();
 
-        let mut line = make_pull(root, Identity::new());
+        let mut line = make_pull(buffer, Identity::new());
 
         source.push(Message::Data(1)).unwrap();
         source.push(Message::Data(2)).unwrap();

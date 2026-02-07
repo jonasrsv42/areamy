@@ -54,7 +54,8 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> sink::Sink for Sink<DataType, SignalType, ThreadIdType>
+impl<DataType, SignalType, ThreadIdType> sink::GraphSink
+    for Sink<DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send,
     SignalType: Origin,
@@ -68,7 +69,7 @@ where
         Sink::pull(self)
     }
 
-    /// [Pullable] [sink::Sink] is not [sink::Sink::poll]able since it
+    /// [Pullable] [sink::GraphSink] is not [sink::GraphSink::poll]able since it
     /// maintains no buffer.
     fn poll(&mut self) -> Result<Option<Message<Self::DataType, Self::SignalType>>, Error> {
         Ok(None)

@@ -7,10 +7,10 @@ pub struct AddOne {
 }
 
 impl AddOne {
-    pub fn new() -> Result<Self, areamy::error::Error> {
-        Ok(Self {
+    pub fn new() -> Self {
+        Self {
             output: VecDeque::new(),
-        })
+        }
     }
 }
 
@@ -37,9 +37,9 @@ impl areamy::LineRoutine<usize, usize> for AddOne {}
 
 #[test]
 fn simple_sync() -> Result<(), areamy::error::Error> {
-    let in_node = areamy::work::make_line(AddOne::new())?;
-    let mut middle_node = areamy::work::make_line(AddOne::new())?;
-    let mut out_node = areamy::work::make_line(AddOne::new())?;
+    let in_node = areamy::work::make_line(AddOne::new());
+    let mut middle_node = areamy::work::make_line(AddOne::new());
+    let mut out_node = areamy::work::make_line(AddOne::new());
 
     let source = areamy::work::Source::<usize>::of(&in_node)?;
 
@@ -68,9 +68,9 @@ impl areamy::ThreadId for HelperThread {}
 fn sync_multithread() -> Result<(), areamy::error::Error> {
     // Example of multithreaded graph.
 
-    let in_node = areamy::work::make_line(AddOne::new())?;
-    let mut middle_node = areamy::work::make_line(AddOne::new())?;
-    let out_node = areamy::work::make_line(AddOne::new())?;
+    let in_node = areamy::work::make_line(AddOne::new());
+    let mut middle_node = areamy::work::make_line(AddOne::new());
+    let out_node = areamy::work::make_line(AddOne::new());
 
     let source = areamy::work::Source::<usize>::of(&in_node)?;
     areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
@@ -108,9 +108,9 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
     let root = areamy::pull::Root::new();
     let source = areamy::work::Source::<usize>::of(&root)?;
 
-    let in_node = areamy::pull::Connect::<usize>::pull(root, AddOne::new())?;
-    let middle_node = areamy::pull::Connect::<usize>::pull(in_node, AddOne::new())?;
-    let out_node = areamy::pull::Connect::<usize>::pull(middle_node, AddOne::new())?;
+    let in_node = areamy::pull::Connect::<usize>::pull(root, AddOne::new());
+    let middle_node = areamy::pull::Connect::<usize>::pull(in_node, AddOne::new());
+    let out_node = areamy::pull::Connect::<usize>::pull(middle_node, AddOne::new());
 
     let sink = areamy::pull::Sink::new(out_node);
 

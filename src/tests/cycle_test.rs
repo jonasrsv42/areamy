@@ -162,8 +162,8 @@ mod tests {
     #[test]
     fn test_cycle_with_signal_policies() {
         // Create our nodes
-        let biunion = make_biunion(Ok(IncrementBiunion::new())).unwrap();
-        let mut bifurcation = make_bifurcation(Ok(DeciderBifurcation::new())).unwrap();
+        let biunion = make_biunion(IncrementBiunion::new());
+        let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
         // Create a source to input to biunion's right side
         let source = Source::new::<biunion::Right>(&biunion).unwrap();
@@ -197,8 +197,8 @@ mod tests {
     #[test]
     fn test_cycle_with_multiple_values() {
         // Create our nodes
-        let biunion = make_biunion(Ok(IncrementBiunion::new())).unwrap();
-        let mut bifurcation = make_bifurcation(Ok(DeciderBifurcation::new())).unwrap();
+        let biunion = make_biunion(IncrementBiunion::new());
+        let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
         // Create a source to input to biunion's right side
         let source = Source::new::<biunion::Right>(&biunion).unwrap();
@@ -292,8 +292,8 @@ mod tests {
         use crate::work::make_line;
 
         // Create our nodes
-        let line = make_line(Ok(IncrementLine::new())).unwrap();
-        let mut bifurcation = make_bifurcation(Ok(DeciderBifurcation::new())).unwrap();
+        let line = make_line(IncrementLine::new());
+        let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
         // Create a source to input to the line node
         let source = Source::new(&line).unwrap();

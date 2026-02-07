@@ -1,23 +1,19 @@
-use crate::error::Error;
 use crate::{
     BifurcationRoutine, Origin, ThreadId, Workable, graph::Add,
     node::bifurcation::work::node::BifurcationTrait, work::Bifurcation,
 };
 
 pub fn make_bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>(
-    maybe_worker: Result<RoutineType, Error>,
-) -> Result<
-    Box<
-        impl BifurcationTrait<
-            In = In,
-            Left = Left,
-            Right = Right,
-            Signal = SignalType,
-            BifurcationRoutine = RoutineType,
-        > + Add<dyn Workable<ThreadId = ThreadIdType>>
-        + Workable<ThreadId = ThreadIdType>,
-    >,
-    Error,
+    worker: RoutineType,
+) -> Box<
+    impl BifurcationTrait<
+        In = In,
+        Left = Left,
+        Right = Right,
+        Signal = SignalType,
+        BifurcationRoutine = RoutineType,
+    > + Add<dyn Workable<ThreadId = ThreadIdType>>
+    + Workable<ThreadId = ThreadIdType>,
 >
 where
     In: Clone + Send + Sync + 'static,
@@ -27,7 +23,5 @@ where
     ThreadIdType: ThreadId + 'static,
     RoutineType: 'static + BifurcationRoutine<In, Left, Right>,
 {
-    let worker = maybe_worker?;
-
-    Ok(Box::new(Bifurcation::of(worker)))
+    Box::new(Bifurcation::of(worker))
 }

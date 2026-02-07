@@ -1,100 +1,7 @@
-use crate::SyncEdge;
-use crate::error::Error;
 use crate::node::line::pull::node::Line;
-use crate::{Connection, Pullable, Pushable, ThreadId, Trackable, graph::Get};
-use crate::{LineRoutine, Message, Origin};
+use crate::{LineRoutine, Origin, ThreadId};
+use crate::{Pullable, Trackable};
 use std::marker::PhantomData;
-use std::sync::Arc;
-
-/// [`Root`] of a [`Pullable`] subgraph. It will await input into its [Pushable] and
-/// then forward it downstream.
-pub struct Root<DataType, SignalType, ThreadIdType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-    ThreadIdType: ThreadId,
-{
-    /// The input queue to the [Pullable] chain. For now we have a [SyncEdge]
-    /// but will support [std::collections::VecDeque] in the future as well.
-    ///
-    /// TODO: support having a sync or nosync input.
-    pub input: Arc<SyncEdge<DataType, SignalType>>,
-
-    /// The threadId that belongs to the child nodes.
-    thread: PhantomData<ThreadIdType>,
-}
-
-impl<DataType, SignalType, ThreadIdType> Root<DataType, SignalType, ThreadIdType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-    ThreadIdType: ThreadId,
-{
-    pub fn new() -> Self {
-        Self {
-            input: Arc::new(SyncEdge::new()),
-            thread: PhantomData,
-        }
-    }
-}
-
-/// [Root] is a [Pullable] [Connection] in our graph.
-impl<DataType, SignalType, ThreadIdType> Connection for Root<DataType, SignalType, ThreadIdType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-    ThreadIdType: ThreadId,
-{
-}
-
-/// [Get] the [Pushable] from [Root].
-impl<DataType, SignalType, ThreadIdType>
-    Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
-    for Root<DataType, SignalType, ThreadIdType>
-where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-{
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
-        Get::get(&self.input)
-    }
-}
-
-/// [Get] the [crate::GraphPushSource] from [Root] for closing.
-impl<DataType, SignalType, ThreadIdType>
-    Get<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>
-    for Root<DataType, SignalType, ThreadIdType>
-where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-{
-    fn get(
-        &self,
-    ) -> Result<Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>, Error>
-    {
-        Get::get(&self.input)
-    }
-}
-
-/// [Root] is [Pullable] it will serve as the root node of a [Pullable] subgraph.
-impl<DataType, SignalType, ThreadIdType> Pullable for Root<DataType, SignalType, ThreadIdType>
-where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-{
-    type ThreadId = ThreadIdType;
-    type DataType = DataType;
-    type SignalType = SignalType;
-
-    fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
-        self.input.read_front()
-    }
-}
 
 /// [`make_pull`] creates a [Pullable] connection. The child takes ownership
 /// of the parent. This connection does not use synchronization or dynamic dispatch
@@ -102,8 +9,8 @@ where
 /// and where synchronization or message passing could be a overhead.
 pub fn make_pull<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
     pullable: PullableType,
-    maybe_worker: Result<RoutineType, Error>,
-) -> Result<Line<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>, Error>
+    worker: RoutineType,
+) -> Line<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>
 where
     ThreadIdType: ThreadId + 'static,
     In: Send + Sync + 'static,
@@ -113,9 +20,7 @@ where
     PullableType:
         Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
 {
-    let worker = maybe_worker?;
-
-    Ok(Line::new(worker, pullable))
+    Line::new(worker, pullable)
 }
 
 /// [`Connect`] is a [Pullable] version of [crate::work::Connect], it's a wrapper around [make_pull] for type hints.
@@ -136,8 +41,8 @@ where
     /// [Connect::pull] is the same as [make_pull] but with type hints.
     pub fn pull<Out, ThreadIdType, RoutineType, PullableType>(
         pullable: PullableType,
-        maybe_worker: Result<RoutineType, Error>,
-    ) -> Result<Line<DataType, Out, SignalType, ThreadIdType, RoutineType, PullableType>, Error>
+        worker: RoutineType,
+    ) -> Line<DataType, Out, SignalType, ThreadIdType, RoutineType, PullableType>
     where
         ThreadIdType: ThreadId + 'static,
         Out: Send + Sync + 'static,
@@ -145,7 +50,7 @@ where
         PullableType: Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>
             + 'static,
     {
-        make_pull(pullable, maybe_worker)
+        make_pull(pullable, worker)
     }
 }
 
@@ -154,8 +59,9 @@ pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
     use crate::pull::Sink;
+    use crate::source::pull::Root;
     use crate::work::Source;
-    use crate::{DefaultThread, Pushable};
+    use crate::{DefaultThread, Message, Pullable, Pushable};
 
     #[test]
     fn line_builder_reading_root() {
@@ -174,7 +80,7 @@ pub mod tests {
         let root = Root::<usize, usize, DefaultThread>::new();
         let mut source = Source::of(&root).unwrap();
 
-        let line = make_pull(root, MockLine::new()).unwrap();
+        let line = make_pull(root, MockLine::new());
         let mut sink = Sink::new(line);
 
         source.push(Message::Data(1)).unwrap();

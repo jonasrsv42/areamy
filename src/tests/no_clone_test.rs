@@ -21,10 +21,10 @@ struct BoxIncrementer {
 }
 
 impl BoxIncrementer {
-    fn new() -> Result<Self, Error> {
-        Ok(Self {
+    fn new() -> Self {
+        Self {
             output: VecDeque::new(),
-        })
+        }
     }
 }
 
@@ -94,9 +94,9 @@ mod tests {
         let mut source = Source::of(&root).unwrap();
 
         // Create three BoxIncrementer nodes in a chain
-        let line1 = make_pull(root, BoxIncrementer::new()).unwrap();
-        let line2 = make_pull(line1, BoxIncrementer::new()).unwrap();
-        let line3 = make_pull(line2, BoxIncrementer::new()).unwrap();
+        let line1 = make_pull(root, BoxIncrementer::new());
+        let line2 = make_pull(line1, BoxIncrementer::new());
+        let line3 = make_pull(line2, BoxIncrementer::new());
 
         // Create a sink to read the output
         let mut sink = Sink::new(line3);
@@ -193,8 +193,8 @@ mod tests {
         let mut source = Source::of(&root).unwrap();
 
         // Create a pullable pipeline
-        let line1 = make_pull(root, BoxIncrementer::new()).unwrap();
-        let line2 = make_pull(line1, BoxIncrementer::new()).unwrap();
+        let line1 = make_pull(root, BoxIncrementer::new());
+        let line2 = make_pull(line1, BoxIncrementer::new());
 
         // Create a sink to read the output
         let mut sink = Sink::new(line2);

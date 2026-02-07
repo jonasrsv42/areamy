@@ -1,6 +1,5 @@
 //! Bridge a [LineTrait] with a [crate::pull::Line]
 
-use crate::error::Error;
 use crate::node::line::work::node::LineTrait;
 use crate::{LineRoutine, Origin, Pullable, ThreadId, Workable, graph::Add, work::Line};
 use crate::{Pushable, marker::Connection};
@@ -66,18 +65,15 @@ where
 /// the same functions as documented in [crate::work::make_line].
 ///
 /// * `pullable` - a [Pullable] type that will be owned by [LineTrait]
-/// * `maybe_worker` - a [LineRoutine] that will be in the resulting [LineTrait] node.
+/// * `worker` - a [LineRoutine] that will be in the resulting [LineTrait] node.
 pub fn bridge_nosync<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
     pullable: PullableType,
-    maybe_worker: Result<RoutineType, Error>,
-) -> Result<
-    Box<
-        impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
-        + Workable<ThreadId = ThreadIdType>
-        + Add<dyn Workable<ThreadId = ThreadIdType>>
-        + Send,
-    >,
-    Error,
+    worker: RoutineType,
+) -> Box<
+    impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
+    + Workable<ThreadId = ThreadIdType>
+    + Add<dyn Workable<ThreadId = ThreadIdType>>
+    + Send,
 >
 where
     ThreadIdType: ThreadId + 'static,
@@ -88,12 +84,11 @@ where
     PullableType:
         Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
 {
-    let worker = maybe_worker?;
     let mut line = Line::of(worker);
     let bridge = Bridge::new(pullable, line.input.clone());
     line.workers.push(Box::new(bridge));
 
-    Ok(Box::new(line))
+    Box::new(line)
 }
 
 #[cfg(test)]
@@ -107,7 +102,7 @@ pub mod tests {
         let root = crate::pull::Root::new();
         let mut source = Source::new(&root).unwrap();
 
-        let line = bridge_nosync(root, MockLine::new()).unwrap();
+        let line = bridge_nosync(root, MockLine::new());
         let mut sink = Sink::new(line).unwrap();
 
         source.push(Message::Data(1)).unwrap();

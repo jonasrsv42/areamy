@@ -132,10 +132,10 @@ impl areamy::node::Name for TextProcessor {
 impl LineRoutine<String, String> for TextProcessor {}
 
 impl TextProcessor {
-    fn new() -> Result<Self, Error> {
-        Ok(Self {
+    fn new() -> Self {
+        Self {
             queue: VecDeque::new(),
-        })
+        }
     }
 }
 
@@ -150,7 +150,7 @@ fn test_memory_source() -> Result<(), Error> {
 
     // Create a processing node that converts text to uppercase
     let processor_result = TextProcessor::new();
-    let line = make_pull(memory_source, processor_result)?;
+    let line = make_pull(memory_source, processor_result);
 
     // Create a sink to pull and process data
     let mut sink = Sink::new(line);
@@ -182,7 +182,7 @@ fn test_empty_source() -> Result<(), Error> {
 
     // Create a processing node
     let processor_result = TextProcessor::new();
-    let line = make_pull(memory_source, processor_result)?;
+    let line = make_pull(memory_source, processor_result);
 
     // Create a sink to pull data
     let mut sink = Sink::new(line);

@@ -337,15 +337,12 @@ where
 /// - [crate::make_push]
 /// - [crate::make_work]
 pub fn make_line<In, Out, SignalType, ThreadIdType, RoutineType>(
-    maybe_worker: Result<RoutineType, Error>,
-) -> Result<
-    Box<
-        impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
-        + Workable<ThreadId = ThreadIdType>
-        + Add<dyn Workable<ThreadId = ThreadIdType>>
-        + Send,
-    >,
-    Error,
+    worker: RoutineType,
+) -> Box<
+    impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
+    + Workable<ThreadId = ThreadIdType>
+    + Add<dyn Workable<ThreadId = ThreadIdType>>
+    + Send,
 >
 where
     In: Send + Sync + 'static,
@@ -354,15 +351,9 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out> + 'static,
 {
-    let worker = maybe_worker?;
-
-    Ok(Box::new(Line::<
-        In,
-        Out,
-        SignalType,
-        ThreadIdType,
-        RoutineType,
-    >::of(worker)))
+    Box::new(Line::<In, Out, SignalType, ThreadIdType, RoutineType>::of(
+        worker,
+    ))
 }
 
 #[cfg(test)]
@@ -375,7 +366,7 @@ pub mod tests {
 
     #[test]
     fn line_accumulating_node_works() {
-        let line = make_line(AccMockLine::new()).unwrap();
+        let line = make_line(AccMockLine::new());
         let mut source = Source::new(&line).unwrap();
         let mut sink = Sink::new(line).unwrap();
 
@@ -387,7 +378,7 @@ pub mod tests {
 
     #[test]
     fn line_wait_node_mark_waits() {
-        let line = make_line(MockWaitLine::new(4)).unwrap();
+        let line = make_line(MockWaitLine::new(4));
         let mut source = Source::new(&line).unwrap();
         let mut sink = Sink::new(line).unwrap();
 
@@ -417,7 +408,7 @@ pub mod tests {
 
     #[test]
     fn line_wait_node_flush_waits() {
-        let line = make_line(MockWaitLine::new(4)).unwrap();
+        let line = make_line(MockWaitLine::new(4));
         let mut source = Source::new(&line).unwrap();
         let mut sink = Sink::new(line).unwrap();
 
@@ -435,7 +426,7 @@ pub mod tests {
 
     #[test]
     fn line_basic_run() {
-        let line = make_line(MockLine::new()).unwrap();
+        let line = make_line(MockLine::new());
         let mut source = Source::new(&line).unwrap();
         let mut sink = Sink::new(line).unwrap();
 
@@ -457,7 +448,7 @@ pub mod tests {
 
     #[test]
     fn line_can_mark() {
-        let line = make_line(MockLine::new()).unwrap();
+        let line = make_line(MockLine::new());
         let mut source = Source::new(&line).unwrap();
         let mut sink = Sink::new(line).unwrap();
 
@@ -471,7 +462,7 @@ pub mod tests {
 
     #[test]
     fn line_can_flush() {
-        let line = make_line(MockLine::new()).unwrap();
+        let line = make_line(MockLine::new());
         let mut source = Source::new(&line).unwrap();
         let mut sink = Sink::new(line).unwrap();
 
@@ -485,8 +476,8 @@ pub mod tests {
 
     #[test]
     fn line_can_be_stacked() {
-        let line_1 = make_line(MockLine::new()).unwrap();
-        let mut line_2 = make_line(MockLine::new()).unwrap();
+        let line_1 = make_line(MockLine::new());
+        let mut line_2 = make_line(MockLine::new());
 
         let mut source = Source::new(&line_1).unwrap();
         make_bidi(line_1, &mut line_2).unwrap();
@@ -511,8 +502,8 @@ pub mod tests {
 
     #[test]
     fn line_can_be_stacked_with_type_hints() {
-        let line_1 = make_line(MockLine::new()).unwrap();
-        let mut line_2 = make_line(MockLine::new()).unwrap();
+        let line_1 = make_line(MockLine::new());
+        let mut line_2 = make_line(MockLine::new());
 
         let mut source = Source::new(&line_1).unwrap();
 
@@ -543,7 +534,7 @@ pub mod tests {
     fn line_can_tee() {
         // TODO make a tee sink where the sink only gets pushable references
         // but does not own the workable.
-        let mut line = make_line(MockLine::new()).unwrap();
+        let mut line = make_line(MockLine::new());
 
         let mut source = Source::new(&line).unwrap();
         let mut sink_1 = tee::Sink::new(line.as_mut()).unwrap();
@@ -579,7 +570,7 @@ pub mod tests {
 
     #[test]
     fn line_can_merge() {
-        let line = make_line(MockLine::new()).unwrap();
+        let line = make_line(MockLine::new());
 
         let mut source_1 = Source::new(&line).unwrap();
         let mut source_2 = Source::new(&line).unwrap();
@@ -611,20 +602,20 @@ pub mod tests {
     #[ignore]
     #[test]
     fn line_basic_many_stack_benchmark() {
-        let line_0 = make_line(MockLine::new()).unwrap();
+        let line_0 = make_line(MockLine::new());
 
         let mut source = Source::new(&line_0).unwrap();
 
-        let mut line_1 = make_line(MockLine::new()).unwrap();
-        let mut line_2 = make_line(MockLine::new()).unwrap();
-        let mut line_3 = make_line(MockLine::new()).unwrap();
-        let mut line_4 = make_line(MockLine::new()).unwrap();
-        let mut line_5 = make_line(MockLine::new()).unwrap();
-        let mut line_6 = make_line(MockLine::new()).unwrap();
-        let mut line_7 = make_line(MockLine::new()).unwrap();
-        let mut line_8 = make_line(MockLine::new()).unwrap();
-        let mut line_9 = make_line(MockLine::new()).unwrap();
-        let mut line_10 = make_line(MockLine::new()).unwrap();
+        let mut line_1 = make_line(MockLine::new());
+        let mut line_2 = make_line(MockLine::new());
+        let mut line_3 = make_line(MockLine::new());
+        let mut line_4 = make_line(MockLine::new());
+        let mut line_5 = make_line(MockLine::new());
+        let mut line_6 = make_line(MockLine::new());
+        let mut line_7 = make_line(MockLine::new());
+        let mut line_8 = make_line(MockLine::new());
+        let mut line_9 = make_line(MockLine::new());
+        let mut line_10 = make_line(MockLine::new());
 
         make_bidi(line_0, &mut line_1).unwrap();
         make_bidi(line_1, &mut line_2).unwrap();

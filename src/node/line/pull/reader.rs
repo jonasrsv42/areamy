@@ -30,7 +30,8 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::node::line::pull::builder::{Root, make_pull};
+    use crate::node::line::pull::builder::make_pull;
+    use crate::source::pull::Root;
     use crate::work::Source;
     use crate::{DefaultThread, Message, Pushable};
     use crate::{Next, Send};
@@ -41,10 +42,10 @@ pub mod tests {
     }
 
     impl Identity {
-        pub fn new() -> Result<Self, Error> {
-            Ok(Self {
+        pub fn new() -> Self {
+            Self {
                 output: VecDeque::new(),
-            })
+            }
         }
     }
 
@@ -74,7 +75,7 @@ pub mod tests {
         let root = Root::<usize, usize, DefaultThread>::new();
         let mut source = Source::of(&root).unwrap();
 
-        let mut line = make_pull(root, Identity::new()).unwrap();
+        let mut line = make_pull(root, Identity::new());
 
         source.push(Message::Data(1)).unwrap();
         source.push(Message::Data(2)).unwrap();

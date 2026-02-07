@@ -61,11 +61,11 @@ pub mod tests {
     }
 
     impl MockLine {
-        pub fn new() -> Result<Self, Error> {
-            Ok(MockLine {
+        pub fn new() -> Self {
+            MockLine {
                 state: 0,
                 out: VecDeque::new(),
-            })
+            }
         }
     }
 
@@ -103,11 +103,11 @@ pub mod tests {
     impl crate::node::Name for AccMockLine {}
 
     impl AccMockLine {
-        pub fn new() -> Result<Self, Error> {
-            Ok(AccMockLine {
+        pub fn new() -> Self {
+            AccMockLine {
                 num: Vec::new(),
                 out: VecDeque::new(),
-            })
+            }
         }
     }
 
@@ -150,12 +150,12 @@ pub mod tests {
     }
 
     impl MockWaitLine {
-        pub fn new(wait: usize) -> Result<Self, Error> {
-            Ok(MockWaitLine {
+        pub fn new(wait: usize) -> Self {
+            MockWaitLine {
                 out: VecDeque::new(),
                 release: false,
                 wait,
-            })
+            }
         }
     }
 
@@ -190,14 +190,14 @@ pub mod tests {
 
     #[test]
     fn line_basic_work() {
-        let mut line = MockLine::new().unwrap();
+        let mut line = MockLine::new();
         line.send(2).unwrap();
 
         assert_eq!(line.next().unwrap(), Some(4));
     }
     #[test]
     fn line_basic_acc_work() {
-        let mut line = AccMockLine::new().unwrap();
+        let mut line = AccMockLine::new();
         line.send(2).unwrap();
         assert_eq!(line.next().unwrap(), None);
         line.send(3).unwrap();
@@ -207,7 +207,7 @@ pub mod tests {
 
     #[test]
     fn line_basic_wait_work() {
-        let mut line = MockWaitLine::new(4).unwrap();
+        let mut line = MockWaitLine::new(4);
         line.send(2).unwrap();
         line.send(3).unwrap();
         line.send(4).unwrap();

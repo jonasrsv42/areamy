@@ -348,7 +348,7 @@ pub mod tests {
 
     #[test]
     fn run_bifurcation() {
-        let mut bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
+        let mut bifur = make_bifurcation(MockBifurcation::new());
 
         let mut source = Source::new(&bifur).unwrap();
 

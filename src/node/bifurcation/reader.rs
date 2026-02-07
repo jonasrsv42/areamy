@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn readers_bifurcation_read() {
         // Same as in sync node.
-        let mut bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
+        let mut bifur = make_bifurcation(MockBifurcation::new());
 
         let source = Source::new(&bifur).unwrap();
 

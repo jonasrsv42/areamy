@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn readers_line_objects() {
-        let line = make_line(MockLine::new()).unwrap();
+        let line = make_line(MockLine::new());
         let source = Source::new(&line).unwrap();
         let sink = Sink::new(line).unwrap();
 
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn readers_line_mread() {
-        let line = make_line(MockLine::new()).unwrap();
+        let line = make_line(MockLine::new());
         let source = Source::new(&line).unwrap();
         let sink = Sink::new(line).unwrap();
 

@@ -151,9 +151,10 @@ where
 pub mod tests {
     use super::*;
     use crate::Pushable;
-    use crate::node::line::pull::builder::{Root, make_pull};
+    use crate::node::line::pull::builder::make_pull;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::pull::Sink;
+    use crate::source::pull::Root;
     use crate::work::Source;
     use std::time::Instant;
 
@@ -161,7 +162,7 @@ pub mod tests {
     fn line_accumulating_node_works() {
         let root = Root::new();
         let mut source = Source::new(&root).unwrap();
-        let line = make_pull(root, AccMockLine::new()).unwrap();
+        let line = make_pull(root, AccMockLine::new());
         let mut sink = Sink::new(line);
 
         // Add one flush
@@ -176,7 +177,7 @@ pub mod tests {
         let root = Root::new();
         let mut source = Source::new(&root).unwrap();
 
-        let line = make_pull(root, MockLine::new()).unwrap();
+        let line = make_pull(root, MockLine::new());
         let mut sink = Sink::new(line);
 
         // Add one flush
@@ -200,7 +201,7 @@ pub mod tests {
         let root = Root::new();
         let mut source = Source::new(&root).unwrap();
 
-        let line = make_pull(root, MockWaitLine::new(4)).unwrap();
+        let line = make_pull(root, MockWaitLine::new(4));
         let mut sink = Sink::new(line);
 
         source.push(Message::Data(1)).unwrap();
@@ -232,7 +233,7 @@ pub mod tests {
         let root = Root::new();
         let mut source = Source::new(&root).unwrap();
 
-        let line = make_pull(root, MockWaitLine::new(4)).unwrap();
+        let line = make_pull(root, MockWaitLine::new(4));
         let mut sink = Sink::new(line);
 
         source.push(Message::Data(1)).unwrap();
@@ -252,8 +253,8 @@ pub mod tests {
         let root = Root::new();
         let mut source = Source::new(&root).unwrap();
 
-        let line1 = make_pull(root, MockLine::new()).unwrap();
-        let line2 = make_pull(line1, MockLine::new()).unwrap();
+        let line1 = make_pull(root, MockLine::new());
+        let line2 = make_pull(line1, MockLine::new());
         let mut sink = Sink::new(line2);
 
         // Add one flush
@@ -288,16 +289,16 @@ pub mod tests {
         let root = Root::new();
         let mut source = Source::new(&root).unwrap();
 
-        let p1 = make_pull(root, MockLine::new()).unwrap();
-        let p2 = make_pull(p1, MockLine::new()).unwrap();
-        let p3 = make_pull(p2, MockLine::new()).unwrap();
-        let p4 = make_pull(p3, MockLine::new()).unwrap();
-        let p5 = make_pull(p4, MockLine::new()).unwrap();
-        let p6 = make_pull(p5, MockLine::new()).unwrap();
-        let p7 = make_pull(p6, MockLine::new()).unwrap();
-        let p8 = make_pull(p7, MockLine::new()).unwrap();
-        let p9 = make_pull(p8, MockLine::new()).unwrap();
-        let p10 = make_pull(p9, MockLine::new()).unwrap();
+        let p1 = make_pull(root, MockLine::new());
+        let p2 = make_pull(p1, MockLine::new());
+        let p3 = make_pull(p2, MockLine::new());
+        let p4 = make_pull(p3, MockLine::new());
+        let p5 = make_pull(p4, MockLine::new());
+        let p6 = make_pull(p5, MockLine::new());
+        let p7 = make_pull(p6, MockLine::new());
+        let p8 = make_pull(p7, MockLine::new());
+        let p9 = make_pull(p8, MockLine::new());
+        let p10 = make_pull(p9, MockLine::new());
 
         let mut sink = Sink::new(p10);
 
@@ -317,8 +318,8 @@ pub mod tests {
         let root = Root::new();
         let mut source = Source::of(&root).unwrap();
 
-        let line1 = make_pull(root, MockLine::new()).unwrap();
-        let line2 = make_pull(line1, MockLine::new()).unwrap();
+        let line1 = make_pull(root, MockLine::new());
+        let line2 = make_pull(line1, MockLine::new());
         let mut sink = Sink::new(line2);
 
         source.push(Message::Data(1)).unwrap();

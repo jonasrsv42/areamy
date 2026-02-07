@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn trackable_signal_tracks_active() {
-        let mut bifur = make_bifurcation(Ok(MockBifurcation::new())).unwrap();
+        let mut bifur = make_bifurcation(MockBifurcation::new());
 
         let mut source = Source::new(&bifur).unwrap();
 

@@ -397,7 +397,7 @@ pub mod tests {
 
     #[test]
     fn run_biunion() {
-        let biun = make_biunion(Ok(MockBiunion::new())).unwrap();
+        let biun = make_biunion(MockBiunion::new());
 
         let mut left_source = Source::new::<biunion::Left>(&biun).unwrap();
         let mut right_source = Source::new::<biunion::Right>(&biun).unwrap();

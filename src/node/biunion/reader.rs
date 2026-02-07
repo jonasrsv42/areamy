@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn readers_biunion_read() {
-        let biun = make_biunion(Ok(MockBiunion::new())).unwrap();
+        let biun = make_biunion(MockBiunion::new());
 
         let left_source = Source::new::<biunion::Left>(&biun).unwrap();
         let right_source = Source::new::<biunion::Right>(&biun).unwrap();

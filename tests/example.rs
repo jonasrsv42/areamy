@@ -1,4 +1,4 @@
-use areamy;
+use areamy::ThreadLike;
 
 use std::collections::VecDeque;
 

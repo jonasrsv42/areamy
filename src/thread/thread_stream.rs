@@ -1,5 +1,5 @@
 //! Assign a thread to a subgraph! [ThreadStream] is a leaf Node of a [std::thread::Thread] that will [crate::Workable::work] all parent nodes.
-use crate::Thread;
+use crate::ThreadLike;
 use crate::error::{Error, ErrorKind};
 use crate::{ThreadId, Workable, fatal, graph::Add};
 use std::thread::{JoinHandle, spawn};
@@ -79,7 +79,7 @@ where
     }
 }
 
-impl<ThreadIdType: ThreadId> Thread for ThreadStream<ThreadIdType> {
+impl<ThreadIdType: ThreadId> ThreadLike for ThreadStream<ThreadIdType> {
     /// Start [Workable::work] on all parents in a dedicated thread. This will
     /// transfer ownership of all [Workable] into the new thread.
     ///

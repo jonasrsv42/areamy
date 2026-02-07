@@ -3,3 +3,11 @@ name = "areamy"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+# Disables stderr output for thread errors. By default, ThreadStream prints
+# errors to stderr because they occur in spawned threads and may go unnoticed
+# if the caller doesn't properly join. This can make debugging silent failures
+# very difficult. Enable this feature to suppress these prints.
+silent = []
+

@@ -7,4 +7,4 @@ pub use crate::node::biunion::work::node::Biunion;
 pub use crate::node::line::work::bridge::bridge_nosync;
 pub use crate::node::line::work::node::{Line, make_line};
 pub use crate::sink::work::{Sink, tee};
-pub use crate::source::sync::source::Source;
+pub use crate::source::push::Source;

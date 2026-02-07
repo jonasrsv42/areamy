@@ -7,13 +7,13 @@ use crate::{
     marker::{Connection, Multiplicity},
 };
 
-// A `Source` is a convenience type for an input. It forwards data into some `Pushable`.
+/// A `Source` is a convenience type for an input. It forwards data into some inner source.
 pub struct Source<DataType, SignalType = Trackable<&'static str>>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
-    pushable: Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>,
+    inner: Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>,
 }
 
 impl<DataType, SignalType> Connection for Source<DataType, SignalType>
@@ -29,12 +29,13 @@ where
 {
     pub fn new<MultiplicityType: Multiplicity>(
         input: &impl Get<
-            dyn Pushable<DataType = DataType, SignalType = Trackable<&'static str>> + 'static,
+            dyn crate::GraphPushSource<DataType = DataType, SignalType = Trackable<&'static str>>
+                + 'static,
             MultiplicityType,
         >,
     ) -> Result<Self, Error> {
-        let pushable = input.get()?;
-        Ok(Self { pushable })
+        let inner = input.get()?;
+        Ok(Self { inner })
     }
 }
 
@@ -45,11 +46,14 @@ where
 {
     pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
-        Node: Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>,
+        Node: Get<
+                dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>,
+                MultiplicityType,
+            >,
         MultiplicityType: Multiplicity,
     {
-        let pushable = node.get()?;
-        Ok(Self { pushable })
+        let inner = node.get()?;
+        Ok(Self { inner })
     }
 }
 
@@ -62,15 +66,18 @@ where
     type SignalType = SignalType;
 
     fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        self.pushable.push(object)
+        self.inner.push(object)
     }
 }
 
-impl<DataType, SignalType> crate::Source for Source<DataType, SignalType>
+impl<DataType, SignalType> crate::GraphPushSource for Source<DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
+    fn close(&mut self) -> Result<(), Error> {
+        self.inner.close()
+    }
 }
 
 #[cfg(test)]
@@ -88,6 +95,19 @@ mod tests {
             &self,
         ) -> Result<Box<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>, Error>
         {
+            Get::get(&self.input)
+        }
+    }
+
+    impl Get<dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>>
+        for MockNode
+    {
+        fn get(
+            &self,
+        ) -> Result<
+            Box<dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>>,
+            Error,
+        > {
             Get::get(&self.input)
         }
     }

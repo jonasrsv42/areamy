@@ -8,7 +8,7 @@ pub mod sink;
 pub mod source;
 mod thread;
 pub mod work;
-pub use source::source::{PullSource, Source};
+pub use source::source::{GraphPullSource, GraphPushSource};
 mod contains;
 mod generates;
 

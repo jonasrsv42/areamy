@@ -24,6 +24,10 @@ pub trait BiunionTrait:
     // We can retrieve pushable edges
     + Get<dyn Pushable<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
     + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
+
+    // We can retrieve Sources for closing the input edges.
+    + Get<dyn crate::GraphPushSource<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
+    + Get<dyn crate::GraphPushSource<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
 {
     // The input data going into the line.
     type Left:  Send + Sync + 'static;
@@ -290,6 +294,46 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
     fn get(&self) -> Result<Box<dyn Pushable<DataType = Right, SignalType = SignalType>>, Error> {
+        Get::get(&self.right_input)
+    }
+}
+
+/// Get a [crate::GraphPushSource] for the left input edge.
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn crate::GraphPushSource<DataType = Left, SignalType = SignalType>, biunion::Left>
+    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+where
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out>,
+{
+    fn get(
+        &self,
+    ) -> Result<Box<dyn crate::GraphPushSource<DataType = Left, SignalType = SignalType>>, Error>
+    {
+        Get::get(&self.left_input)
+    }
+}
+
+/// Get a [crate::GraphPushSource] for the right input edge.
+impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn crate::GraphPushSource<DataType = Right, SignalType = SignalType>, biunion::Right>
+    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+where
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out>,
+{
+    fn get(
+        &self,
+    ) -> Result<Box<dyn crate::GraphPushSource<DataType = Right, SignalType = SignalType>>, Error>
+    {
         Get::get(&self.right_input)
     }
 }

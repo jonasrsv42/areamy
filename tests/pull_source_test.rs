@@ -1,5 +1,5 @@
+use areamy::GraphPullSource;
 use areamy::LineRoutine;
-use areamy::PullSource;
 use areamy::error::Error;
 use areamy::fatal;
 use areamy::marker::Connection;
@@ -90,7 +90,14 @@ where
     }
 }
 
-impl<R> PullSource for MemorySource<R> where R: Read + Send {}
+impl<R> GraphPullSource for MemorySource<R>
+where
+    R: Read + Send,
+{
+    fn close(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
 
 // Simple processor that transforms data - in this case, converts text to uppercase
 struct TextProcessor {

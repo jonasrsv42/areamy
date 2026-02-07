@@ -1,31 +1,31 @@
 use crate::error::Error;
+use crate::{GraphPushSource, Sink, Trackable};
 use crate::{Message, Origin};
-use crate::{Pushable, Sink, Trackable};
 use std::fmt::Debug;
 
-pub struct BiunionReader<LeftPushableType, RightPushableType, SinkType>
+pub struct BiunionReader<LeftSourceType, RightSourceType, SinkType>
 where
-    LeftPushableType: Pushable,
-    RightPushableType: Pushable,
+    LeftSourceType: GraphPushSource,
+    RightSourceType: GraphPushSource,
     SinkType: Sink,
 {
-    pub left: LeftPushableType,
-    pub right: RightPushableType,
+    pub left: LeftSourceType,
+    pub right: RightSourceType,
     pub output: SinkType,
 }
 
-impl<LeftPushableType, RightPushableType, SinkType>
-    BiunionReader<LeftPushableType, RightPushableType, SinkType>
+impl<LeftSourceType, RightSourceType, SinkType>
+    BiunionReader<LeftSourceType, RightSourceType, SinkType>
 where
-    LeftPushableType: Pushable,
-    RightPushableType: Pushable,
+    LeftSourceType: GraphPushSource,
+    RightSourceType: GraphPushSource,
     SinkType: Sink,
 {
     pub fn new(
-        left: LeftPushableType,
-        right: RightPushableType,
+        left: LeftSourceType,
+        right: RightSourceType,
         output: SinkType,
-    ) -> BiunionReader<LeftPushableType, RightPushableType, SinkType> {
+    ) -> BiunionReader<LeftSourceType, RightSourceType, SinkType> {
         Self {
             left,
             right,
@@ -39,7 +39,7 @@ where
 
     pub fn left_push(
         &mut self,
-        msg: Message<LeftPushableType::DataType, LeftPushableType::SignalType>,
+        msg: Message<LeftSourceType::DataType, LeftSourceType::SignalType>,
     ) -> Result<(), Error> {
         self.left.push(msg)?;
         Ok(())
@@ -47,22 +47,40 @@ where
 
     pub fn right_push(
         &mut self,
-        msg: Message<RightPushableType::DataType, RightPushableType::SignalType>,
+        msg: Message<RightSourceType::DataType, RightSourceType::SignalType>,
     ) -> Result<(), Error> {
         self.right.push(msg)?;
         Ok(())
     }
+
+    /// Close both left and right sources.
+    pub fn close(&mut self) -> Result<(), Error> {
+        self.left.close()?;
+        self.right.close()
+    }
 }
 
-impl<Left, Right, Out, OriginType, LeftPushableType, RightPushableType, SinkType>
-    BiunionReader<LeftPushableType, RightPushableType, SinkType>
+impl<LeftSourceType, RightSourceType, SinkType> Drop
+    for BiunionReader<LeftSourceType, RightSourceType, SinkType>
+where
+    LeftSourceType: GraphPushSource,
+    RightSourceType: GraphPushSource,
+    SinkType: Sink,
+{
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+impl<Left, Right, Out, OriginType, LeftSourceType, RightSourceType, SinkType>
+    BiunionReader<LeftSourceType, RightSourceType, SinkType>
 where
     Left: Send + Sync,
     Right: Debug + Send + Sync,
     Out: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    LeftPushableType: Pushable<DataType = Left, SignalType = Trackable<OriginType>>,
-    RightPushableType: Pushable<DataType = Right, SignalType = Trackable<OriginType>>,
+    LeftSourceType: GraphPushSource<DataType = Left, SignalType = Trackable<OriginType>>,
+    RightSourceType: GraphPushSource<DataType = Right, SignalType = Trackable<OriginType>>,
     SinkType: Sink<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     pub fn mark(&mut self, trackable: Trackable<OriginType>) -> Result<Vec<Out>, Error> {

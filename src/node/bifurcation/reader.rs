@@ -1,11 +1,13 @@
+use crate::Sink;
 use crate::error::Error;
-use crate::{DefaultThread, Message, Origin, ThreadId, Trackable, Workable, fatal};
-use crate::{Pushable, Sink};
+use crate::{
+    DefaultThread, GraphPushSource, Message, Origin, ThreadId, Trackable, Workable, fatal,
+};
 use std::fmt::Debug;
 
 pub struct BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType = DefaultThread>
 where
-    SourceType: Pushable,
+    SourceType: GraphPushSource,
     LeftSinkType: Sink,
     RightSinkType: Sink,
     ThreadIdType: ThreadId,
@@ -19,7 +21,7 @@ where
 impl<SourceType, LeftSinkType, RightSinkType>
     BifurcationReader<SourceType, LeftSinkType, RightSinkType, DefaultThread>
 where
-    SourceType: Pushable,
+    SourceType: GraphPushSource,
     LeftSinkType: Sink,
     RightSinkType: Sink,
 {
@@ -41,7 +43,7 @@ where
 impl<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
     BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
-    SourceType: Pushable,
+    SourceType: GraphPushSource,
     LeftSinkType: Sink,
     RightSinkType: Sink,
     ThreadIdType: ThreadId,
@@ -83,6 +85,24 @@ where
         self.input.push(object)?;
         Ok(())
     }
+
+    /// Close the input source.
+    pub fn close(&mut self) -> Result<(), Error> {
+        self.input.close()
+    }
+}
+
+impl<SourceType, LeftSinkType, RightSinkType, ThreadIdType> Drop
+    for BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+where
+    SourceType: GraphPushSource,
+    LeftSinkType: Sink,
+    RightSinkType: Sink,
+    ThreadIdType: ThreadId,
+{
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
 }
 
 impl<In, Left, Right, OriginType, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
@@ -92,7 +112,7 @@ where
     Left: Debug + Send + Sync + 'static,
     Right: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    SourceType: Pushable<DataType = In, SignalType = Trackable<OriginType>>,
+    SourceType: GraphPushSource<DataType = In, SignalType = Trackable<OriginType>>,
     LeftSinkType: Sink<DataType = Left, SignalType = Trackable<OriginType>>,
     RightSinkType: Sink<DataType = Right, SignalType = Trackable<OriginType>>,
     ThreadIdType: ThreadId,

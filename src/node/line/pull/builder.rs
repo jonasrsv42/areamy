@@ -63,6 +63,23 @@ where
     }
 }
 
+/// [Get] the [crate::GraphPushSource] from [Root] for closing.
+impl<DataType, SignalType, ThreadIdType>
+    Get<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>
+    for Root<DataType, SignalType, ThreadIdType>
+where
+    DataType: Send + Sync + 'static,
+    SignalType: Origin + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+{
+    fn get(
+        &self,
+    ) -> Result<Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>, Error>
+    {
+        Get::get(&self.input)
+    }
+}
+
 /// [Root] is [Pullable] it will serve as the root node of a [Pullable] subgraph.
 impl<DataType, SignalType, ThreadIdType> Pullable for Root<DataType, SignalType, ThreadIdType>
 where

@@ -24,6 +24,9 @@ pub trait BifurcationTrait:
 
     // We can retrieve pushable edges
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
+
+    // We can retrieve a Source for closing the input edge.
+    + Get<dyn crate::GraphPushSource<DataType = Self::In, SignalType = Self::Signal>>
 {
     // The input data entering it. 
     type In: Send + Sync + 'static;
@@ -259,6 +262,26 @@ where
     RoutineType: BifurcationRoutine<In, Left, Right>,
 {
     fn get(&self) -> Result<Box<dyn Pushable<DataType = In, SignalType = SignalType>>, Error> {
+        Get::get(&self.input)
+    }
+}
+
+/// Get a [crate::GraphPushSource] for this node's input edge.
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+    Get<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>
+    for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
+{
+    fn get(
+        &self,
+    ) -> Result<Box<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>, Error>
+    {
         Get::get(&self.input)
     }
 }

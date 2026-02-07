@@ -1,33 +1,33 @@
 //! [LineReader] is a convenient way to manage a graph input and output in a single place for
 //! linear graphs.
 use crate::error::Error;
+use crate::{GraphPushSource, Sink};
 use crate::{Message, Origin, Trackable};
-use crate::{Pushable, Sink};
 use std::fmt::Debug;
 
-/// [`LineReader`] provides a type that can accept a [Pushable] and [Sink] then
-/// expose functions that makes reading and writing intot the graph simpler.
+/// [`LineReader`] provides a type that can accept a [Source] and [Sink] then
+/// expose functions that makes reading and writing into the graph simpler.
 ///
 /// A [LineReader] is not necessary to read or write to the graph as the
-/// nodes themselves can be read from and written to in varios ways.
+/// nodes themselves can be read from and written to in various ways.
 /// But the line reader combines a graph source with a graph [Sink] in
 /// a convenient struct.
-pub struct LineReader<PushableType, SinkType>
+pub struct LineReader<SourceType, SinkType>
 where
-    PushableType: Pushable,
+    SourceType: GraphPushSource,
     SinkType: Sink,
 {
-    pub source: PushableType,
+    pub source: SourceType,
     pub sink: SinkType,
 }
 
-impl<PushableType, SinkType> LineReader<PushableType, SinkType>
+impl<SourceType, SinkType> LineReader<SourceType, SinkType>
 where
-    PushableType: Pushable,
+    SourceType: GraphPushSource,
     SinkType: Sink,
 {
-    /// Create a [LineReader] from a [Pushable] and [Sink]
-    pub fn new(source: PushableType, sink: SinkType) -> LineReader<PushableType, SinkType> {
+    /// Create a [LineReader] from a [Source] and [Sink]
+    pub fn new(source: SourceType, sink: SinkType) -> LineReader<SourceType, SinkType> {
         Self { source, sink }
     }
 
@@ -39,20 +39,37 @@ where
     /// Push a Message into the line.
     pub fn push(
         &mut self,
-        object: Message<PushableType::DataType, PushableType::SignalType>,
+        object: Message<SourceType::DataType, SourceType::SignalType>,
     ) -> Result<(), Error> {
         self.source.push(object)?;
 
         Ok(())
     }
+
+    /// Close the source, signaling no more data will be produced.
+    /// This will cause downstream readers to receive [crate::error::ErrorKind::Closed]
+    /// when the buffer is empty.
+    pub fn close(&mut self) -> Result<(), Error> {
+        self.source.close()
+    }
 }
 
-impl<In, Out, OriginType, PushableType, SinkType> LineReader<PushableType, SinkType>
+impl<SourceType, SinkType> Drop for LineReader<SourceType, SinkType>
+where
+    SourceType: GraphPushSource,
+    SinkType: Sink,
+{
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+impl<In, Out, OriginType, SourceType, SinkType> LineReader<SourceType, SinkType>
 where
     In: Send + Sync,
     Out: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    PushableType: Pushable<DataType = In, SignalType = Trackable<OriginType>>,
+    SourceType: GraphPushSource<DataType = In, SignalType = Trackable<OriginType>>,
     SinkType: Sink<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     /// Flush and read operation. It will issue a flush which

@@ -35,6 +35,11 @@ pub enum ErrorKind {
     /// We leverage `Any` because we cannot possibly
     /// enumerate all possible error types users may define.
     Any(Box<dyn AnyErr>),
+    /// A connection has been closed. Both reads and writes will fail
+    /// on a closed connection. This is a normal termination signal,
+    /// not an error. ThreadStreams treat this as an exit signal but
+    /// can be restarted. Other consumers can interpret as they wish.
+    Closed,
 }
 
 impl Error {
@@ -148,6 +153,7 @@ impl std::fmt::Display for ErrorKind {
                 write!(f, "\n\n{}", message)
             }
             ErrorKind::Any(any_err) => any_err.fmt(f),
+            ErrorKind::Closed => write!(f, "Closed"),
         }
     }
 }
@@ -208,6 +214,22 @@ macro_rules! any_err {
     };
 }
 
+/// [`crate::closed`] is a macro for producing a [ErrorKind::Closed] error.
+/// Use this to signal that a connection has been closed.
+#[macro_export]
+macro_rules! closed {
+    () => {
+        $crate::error::Error {
+            kind: $crate::error::ErrorKind::Closed,
+            location: $crate::error::Location {
+                file: file!(),
+                line: line!(),
+            },
+            backtrace: std::backtrace::Backtrace::capture(),
+        }
+    };
+}
+
 /// [`Error`] is the error type typically returned in [std::result::Result]. it supports user defined errors, backtraces and storing error
 /// locations.
 pub struct Error {
@@ -239,6 +261,7 @@ impl std::error::Error for Error {
         match &self.kind {
             ErrorKind::Any(any_err) => Some(any_err.as_ref()),
             ErrorKind::Fatal(_) => None,
+            ErrorKind::Closed => None,
         }
     }
 }

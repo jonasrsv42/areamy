@@ -34,6 +34,8 @@ pub trait LineTrait:
     + Add<dyn Pushable<DataType = Self::Out, SignalType = Self::Signal>>
     // We can retrieve its edge for others to push into.
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
+    // We can retrieve a Source for closing the input edge.
+    + Get<dyn crate::GraphPushSource<DataType = Self::In, SignalType = Self::Signal>>
 {
     /// The input data going into the line.
     type In: Send + Sync + 'static;
@@ -269,6 +271,25 @@ where
     LineRoutineType: LineRoutine<In, Out>,
 {
     fn get(&self) -> Result<Box<dyn Pushable<DataType = In, SignalType = SignalType>>, Error> {
+        Get::get(&self.input)
+    }
+}
+
+/// Get a [crate::GraphPushSource] for this node's input edge.
+impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Get<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>
+    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+where
+    In: Send + Sync + 'static,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    LineRoutineType: LineRoutine<In, Out>,
+{
+    fn get(
+        &self,
+    ) -> Result<Box<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>, Error>
+    {
         Get::get(&self.input)
     }
 }

@@ -1,4 +1,5 @@
 //! Assign a thread to a subgraph! [ThreadStream] is a leaf Node of a [std::thread::Thread] that will [crate::Workable::work] all parent nodes.
+use crate::Thread;
 use crate::error::{Error, ErrorKind};
 use crate::{ThreadId, Workable, fatal, graph::Add};
 use std::thread::{JoinHandle, spawn};
@@ -76,7 +77,9 @@ where
             thread: None,
         })
     }
+}
 
+impl<ThreadIdType: ThreadId> Thread for ThreadStream<ThreadIdType> {
     /// Start [Workable::work] on all parents in a dedicated thread. This will
     /// transfer ownership of all [Workable] into the new thread.
     ///
@@ -86,7 +89,7 @@ where
     ///
     /// The stream is restartable - after [ThreadStream::join] returns,
     /// sources can be modified and [ThreadStream::start] called again.
-    pub fn start(&mut self) -> Result<(), Error> {
+    fn start(&mut self) -> Result<(), Error> {
         match self.workables.take() {
             Some(workables) => {
                 self.thread = Some(spawn(move || run(workables)));
@@ -101,7 +104,7 @@ where
     ///
     /// Returns `Ok(())` if the thread exited cleanly (via [ErrorKind::Exhausted]).
     /// Returns `Err(error)` if a workable returned an error.
-    pub fn join(&mut self) -> Result<(), Error> {
+    fn join(&mut self) -> Result<(), Error> {
         match self.thread.take() {
             Some(handle) => {
                 match handle.join().map_err(|err| {

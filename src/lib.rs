@@ -1,3 +1,4 @@
+mod combine;
 pub mod composable;
 pub mod connect;
 pub mod error;
@@ -14,6 +15,7 @@ mod generates;
 
 pub mod pull;
 
+pub use combine::Combine;
 pub use composable::Composable;
 pub use connect::marker;
 pub use contains::Contains;

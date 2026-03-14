@@ -1,6 +1,6 @@
 //! Type markers.
-use crate::Pushable;
 use crate::graph::Add;
+use crate::{Closeable, Pushable};
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +28,20 @@ where
     fn add(
         &mut self,
         _connection: Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>,
+    ) -> Result<(), crate::error::Error> {
+        Ok(())
+    }
+}
+
+impl<DataType, SignalType> Add<dyn Closeable<DataType = DataType, SignalType = SignalType>>
+    for PhantomNode<crate::message::Message<DataType, SignalType>>
+where
+    DataType: Send + Sync,
+    SignalType: crate::signal::Origin + Send + Sync,
+{
+    fn add(
+        &mut self,
+        _connection: Box<dyn Closeable<DataType = DataType, SignalType = SignalType>>,
     ) -> Result<(), crate::error::Error> {
         Ok(())
     }

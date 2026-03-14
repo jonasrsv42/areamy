@@ -1,8 +1,8 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
-use crate::Pushable;
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
+use crate::{Closeable, Pushable};
 
 #[derive(Debug)]
 /// Policy for handling signals in the queue
@@ -15,28 +15,28 @@ pub enum SignalPolicy {
     Block,
 }
 
-/// A wrapper around a `Pushable` that applies a signal policy.
+/// A wrapper around a `Closeable` that applies a signal policy.
 /// This allows for different signal policies to be applied to the same
 /// underlying queue when pushed to from different parents.
 #[derive(Debug)]
-pub struct PolicyEdge<PushableType>
+pub struct PolicyEdge<CloseableType>
 where
-    PushableType: Pushable,
+    CloseableType: Closeable,
 {
     /// The underlying pushable that messages will be sent to
-    inner: PushableType,
+    inner: CloseableType,
     /// The policy to apply when pushing messages
     policy: SignalPolicy,
     /// Tracks if the last message was data (needed for FollowData policy)
     last_was_data: bool,
 }
 
-impl<PushableType> PolicyEdge<PushableType>
+impl<CloseableType> PolicyEdge<CloseableType>
 where
-    PushableType: Pushable,
+    CloseableType: Closeable,
 {
     /// Create a new policy wrapper with the specified policy
-    pub fn new(inner: PushableType, policy: SignalPolicy) -> Self {
+    pub fn new(inner: CloseableType, policy: SignalPolicy) -> Self {
         Self {
             inner,
             policy,
@@ -76,14 +76,14 @@ where
     }
 }
 
-impl<PushableType> Connection for PolicyEdge<PushableType> where PushableType: Pushable {}
+impl<CloseableType> Connection for PolicyEdge<CloseableType> where CloseableType: Closeable {}
 
-impl<PushableType> Pushable for PolicyEdge<PushableType>
+impl<CloseableType> Pushable for PolicyEdge<CloseableType>
 where
-    PushableType: Pushable,
+    CloseableType: Closeable,
 {
-    type DataType = PushableType::DataType;
-    type SignalType = PushableType::SignalType;
+    type DataType = CloseableType::DataType;
+    type SignalType = CloseableType::SignalType;
 
     fn push(&mut self, message: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         // Check if the message is a signal
@@ -98,6 +98,15 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<CloseableType> Closeable for PolicyEdge<CloseableType>
+where
+    CloseableType: Closeable,
+{
+    fn close(&mut self) -> Result<(), Error> {
+        self.inner.close()
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::{
-    PolicyEdge, Pushable, SignalPolicy, Workable,
+    Closeable, PolicyEdge, SignalPolicy, Workable,
     graph::{Add, Get},
     marker::Multiplicity,
     signal::Origin,
@@ -14,12 +14,12 @@ use crate::{
 /// The child lends its `ThreadIdType` to the parent for it to `work` and then `push` the `MessageType`
 /// back into the child.
 ///
-/// * `parent` - A [Workable] that we can [Add] a [Pushable] into. The
+/// * `parent` - A [Workable] that we can [Add] a [Closeable] into. The
 ///     [Workable] will be [Add] to the child so the child can schedule the [Workable::work]. The
-///     [Pushable] will be [Add]ed as output for the child so it can [Pushable::push] into the parent.
+///     [Closeable] will be [Add]ed as output for the child so it can [Closeable::push] into the parent.
 ///
 /// * `child` - A type that we can [Add] the parent [Workable] into to grab ownership and from which we can [Get] the
-///     [Pushable] and give to the parent.
+///     [Closeable] and give to the parent.
 ///
 ///
 /// The function takes the parent by value as its ownership will be transferred into the child.
@@ -46,11 +46,11 @@ pub fn make_bidi<
     mut parent: Box<ParentType>,
     child: &mut (
              impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
-             + Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>
+             + Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>
          ),
 ) -> Result<(), Error>
 where
-    ParentType: Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
+    ParentType: Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
         + Workable<ThreadId = ThreadIdType>
         + 'static,
 {
@@ -71,19 +71,19 @@ where
     Ok(())
 }
 
-/// [`make_push`] creates a [Pushable::push] connection between two nodes.
+/// [`make_push`] creates a [Closeable::push] connection between two nodes.
 ///
-/// A [Pushable::push] is a connection where data flows from parent to child.
+/// A [Closeable::push] is a connection where data flows from parent to child.
 ///
-/// The parent [Pushable::push]es Message data to the child
+/// The parent [Closeable::push]es Message data to the child
 ///
-/// * `parent` - A node that we can [Add] a [Pushable] too. The parent will [Pushable::push] data into
+/// * `parent` - A node that we can [Add] a [Closeable] too. The parent will [Closeable::push] data into
 ///     it when the parent is scheduled.
 ///
-/// * `child` - A node that we [Get] the [Pushable] from. It will recieve the data when the parent
+/// * `child` - A node that we [Get] the [Closeable] from. It will recieve the data when the parent
 ///     is scheduled.
 ///
-/// The parent is &mut because we mutate it by adding a `Pushable` edge to it. The child
+/// The parent is &mut because we mutate it by adding a `Closeable` edge to it. The child
 /// does not need to be mut so we take an implementation reference to it to avoid
 /// moving it.
 ///
@@ -96,8 +96,8 @@ pub fn make_push<
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 >(
-    parent: &mut impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,
-    child: &impl Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
+    parent: &mut impl Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,
+    child: &impl Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
 ) -> Result<(), Error> {
     let pushable = child.get()?;
 

@@ -39,6 +39,19 @@ pub trait Pushable: Sync + Send + Connection {
     fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error>;
 }
 
+/// A [`Closeable`] is a [Pushable] that can be closed to signal no more data will be sent.
+///
+/// When a node receives an error from upstream (via pull/work connections), it should
+/// close all its [Closeable] outputs to propagate the shutdown through push connections.
+/// This enables clean shutdown cascade through the entire graph.
+///
+/// The exact semantics of close (e.g., first-close-wins vs refcounted) are up to the
+/// implementation.
+pub trait Closeable: Pushable {
+    /// Close this connection, signaling no more data will be sent.
+    fn close(&mut self) -> Result<(), Error>;
+}
+
 /// [`Pullable`] combines [Workable] and [Pushable] in being both a scheduling and dataflow
 /// [Connection]. As with [Workable] the [Pullable] connection has a unique [Pullable::ThreadId] associated
 /// with it as well as a [Message<DataType, SignalType>] that it will yield upon scheduling.
@@ -145,7 +158,7 @@ pub mod tests {
         >,
 
         /// Outgoing data connections. Lets us shovel data into our child nodes.
-        pub outputs: Vec<Box<dyn Pushable<DataType = usize, SignalType = usize>>>,
+        pub outputs: Vec<Box<dyn Closeable<DataType = usize, SignalType = usize>>>,
     }
 
     impl Node {
@@ -202,11 +215,18 @@ pub mod tests {
         }
     }
 
+    /// Get Closeable for input edge.
+    impl Get<dyn Closeable<DataType = usize, SignalType = usize>> for Node {
+        fn get(&self) -> Result<Box<dyn Closeable<DataType = usize, SignalType = usize>>, Error> {
+            Ok(Box::new(self.input.clone()))
+        }
+    }
+
     /// Method adding something to output.
-    impl Add<dyn Pushable<DataType = usize, SignalType = usize>> for Node {
+    impl Add<dyn Closeable<DataType = usize, SignalType = usize>> for Node {
         fn add(
             &mut self,
-            connection: Box<dyn Pushable<DataType = usize, SignalType = usize>>,
+            connection: Box<dyn Closeable<DataType = usize, SignalType = usize>>,
         ) -> Result<(), Error> {
             Ok(self.outputs.push(connection))
         }

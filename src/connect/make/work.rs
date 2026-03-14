@@ -1,6 +1,6 @@
 //! Utility functions for typed [make_bidi] and [make_push]
 use crate::{
-    Origin, Pushable, Trackable, Workable,
+    Closeable, Origin, Trackable, Workable,
     error::Error,
     graph::{Add, Get},
     make_bidi, make_push,
@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 /// [`Connect`] is a utility that serves no purpose beyond improving readability
 /// it provides no additional functionality beyond what [make_push] and [make_bidi] does.
 ///
-/// What it does provide is the ability to annotate the data that is [Pushable::push]ed through
+/// What it does provide is the ability to annotate the data that is [Closeable::push]ed through
 /// the connection. It has been deemed to reduce cognitive overhead when it comes to reading
 /// the graph declaration if typing is more visible.
 ///
@@ -68,8 +68,8 @@ where
     where
         ChildType: 'static
             + Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
-            + Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>,
-        ParentType: Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
+            + Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>,
+        ParentType: Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
             + Workable<ThreadId = ThreadIdType>
             + 'static,
     {
@@ -81,10 +81,10 @@ where
     /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
     pub fn push<AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
         parent: &mut impl Add<
-            dyn Pushable<DataType = DataType, SignalType = SignalType>,
+            dyn Closeable<DataType = DataType, SignalType = SignalType>,
             AddMultiplicity,
         >,
-        child: &impl Get<dyn Pushable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
+        child: &impl Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
     ) -> Result<(), Error> {
         make_push(parent, child)?;
 

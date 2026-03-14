@@ -1,12 +1,12 @@
 use crate::SyncEdge;
 use crate::biunion;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::node::biunion::routine::BiunionRoutine;
-use crate::{DefaultThread, ThreadId, marker::Connection};
 use crate::{
-    Message, Origin, Pushable, Workable,
+    Closeable, Message, Origin, Pushable, Workable,
     graph::{Add, Get},
 };
+use crate::{DefaultThread, ThreadId, marker::Connection};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
@@ -15,7 +15,7 @@ pub trait BiunionTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Pushable<DataType = Self::Out, SignalType = Self::Signal>>
+    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal>>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Left>
@@ -25,9 +25,9 @@ pub trait BiunionTrait:
     + Get<dyn Pushable<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
     + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
 
-    // We can retrieve Sources for closing the input edges.
-    + Get<dyn crate::GraphPushSource<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
-    + Get<dyn crate::GraphPushSource<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
+    // We can retrieve Closeable for closing the input edges.
+    + Get<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
+    + Get<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
 {
     // The input data going into the line.
     type Left:  Send + Sync + 'static;
@@ -68,8 +68,8 @@ where
     pub left_workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
     pub right_workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
-    // Output connection.
-    pub pushes: Vec<Box<dyn Pushable<DataType = Out, SignalType = SignalType>>>,
+    // Output connection. Uses Closeable to support shutdown propagation.
+    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType>>>,
 
     // Input queues.
     pub left_input: Arc<SyncEdge<Left, SignalType>>,
@@ -104,31 +104,37 @@ where
         // To produce output we work on all the input
         // or request more input by working.
         while !push_ok {
-            match self.left_input.poll()? {
+            let left_poll = self.left_input.poll();
+            match self.propagate_if_closed(left_poll)? {
                 Some(message) => push_ok = self.do_left_input(message)?,
-                None => match self.right_input.poll()? {
-                    Some(message) => push_ok = self.do_right_input(message)?,
-                    None => {
-                        // We always work left and right. This is problematic if
-                        // one workable is much more active than the other. If there is a use-case for this
-                        // we may need to make workables limited blocking.. or adaptive.. or throw more threads
-                        // at it.
-                        //
-                        // However the primary use-case for biunion now involves connecting one
-                        // input only as pushable to send reset signals. So won't fix now.
-                        //
-                        // Future me may complain.
-                        //
-                        // If Workables are emtpy we also do spinlocking for now. Need to think about that.
-                        for workable in self.left_workers.iter_mut() {
-                            workable.work()?;
-                        }
+                None => {
+                    let right_poll = self.right_input.poll();
+                    match self.propagate_if_closed(right_poll)? {
+                        Some(message) => push_ok = self.do_right_input(message)?,
+                        None => {
+                            // We always work left and right. This is problematic if
+                            // one workable is much more active than the other. If there is a use-case for this
+                            // we may need to make workables limited blocking.. or adaptive.. or throw more threads
+                            // at it.
+                            //
+                            // However the primary use-case for biunion now involves connecting one
+                            // input only as pushable to send reset signals. So won't fix now.
+                            //
+                            // Future me may complain.
+                            //
+                            // If Workables are emtpy we also do spinlocking for now. Need to think about that.
+                            for i in 0..self.left_workers.len() {
+                                let result = self.left_workers[i].work();
+                                self.propagate_if_closed(result)?;
+                            }
 
-                        for workable in self.right_workers.iter_mut() {
-                            workable.work()?;
+                            for i in 0..self.right_workers.len() {
+                                let result = self.right_workers[i].work();
+                                self.propagate_if_closed(result)?;
+                            }
                         }
                     }
-                },
+                }
             }
         }
 
@@ -247,6 +253,23 @@ where
 
         Ok(())
     }
+
+    /// Close all push outputs. Called on shutdown to propagate close through push connections.
+    fn close_pushes(&mut self) {
+        for pushable in self.pushes.iter_mut() {
+            let _ = pushable.close();
+        }
+    }
+
+    /// If result is a Closed error, close all pushes to propagate shutdown.
+    fn propagate_if_closed<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
+        result.map_err(|e| {
+            if matches!(e.kind, ErrorKind::Closed) {
+                self.close_pushes();
+            }
+            e
+        })
+    }
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> BiunionTrait
@@ -298,9 +321,9 @@ where
     }
 }
 
-/// Get a [crate::GraphPushSource] for the left input edge.
+/// Get a [Closeable] for the left input edge.
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn crate::GraphPushSource<DataType = Left, SignalType = SignalType>, biunion::Left>
+    Get<dyn Closeable<DataType = Left, SignalType = SignalType>, biunion::Left>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
@@ -310,17 +333,14 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn crate::GraphPushSource<DataType = Left, SignalType = SignalType>>, Error>
-    {
+    fn get(&self) -> Result<Box<dyn Closeable<DataType = Left, SignalType = SignalType>>, Error> {
         Get::get(&self.left_input)
     }
 }
 
-/// Get a [crate::GraphPushSource] for the right input edge.
+/// Get a [Closeable] for the right input edge.
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn crate::GraphPushSource<DataType = Right, SignalType = SignalType>, biunion::Right>
+    Get<dyn Closeable<DataType = Right, SignalType = SignalType>, biunion::Right>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
@@ -330,10 +350,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn crate::GraphPushSource<DataType = Right, SignalType = SignalType>>, Error>
-    {
+    fn get(&self) -> Result<Box<dyn Closeable<DataType = Right, SignalType = SignalType>>, Error> {
         Get::get(&self.right_input)
     }
 }
@@ -371,7 +388,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<DataType = Out, SignalType = SignalType>>
+    Add<dyn Closeable<DataType = Out, SignalType = SignalType>>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
@@ -383,9 +400,9 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<DataType = Out, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType>>,
     ) -> Result<(), Error> {
-        Ok(self.pushes.push(pushable))
+        Ok(self.pushes.push(closeable))
     }
 }
 
@@ -421,5 +438,94 @@ pub mod tests {
 
         assert_eq!(sink.read().unwrap(), Message::Data(4));
         assert_eq!(sink.read().unwrap(), Message::Data(4));
+    }
+
+    #[test]
+    fn close_propagates_through_push_when_left_input_closed() {
+        let mut biun = Biunion::new(MockBiunion::new());
+
+        // Add an output edge we can check for close
+        let output_edge = Arc::new(SyncEdge::<usize, &'static str>::new());
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>>::add(
+            &mut biun,
+            Box::new(output_edge.clone()),
+        )
+        .unwrap();
+
+        // Close the left input edge
+        biun.left_input.close().unwrap();
+
+        // Work should fail with Closed and propagate close to output
+        let result = biun.work();
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+
+        // Output edge should now be closed
+        let push_result = output_edge.clone().push(Message::Data(1));
+        assert!(matches!(push_result.unwrap_err().kind, ErrorKind::Closed));
+    }
+
+    #[test]
+    fn close_propagates_through_push_when_right_input_closed() {
+        let mut biun = Biunion::new(MockBiunion::new());
+
+        // Add an output edge we can check for close
+        let output_edge = Arc::new(SyncEdge::<usize, &'static str>::new());
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>>::add(
+            &mut biun,
+            Box::new(output_edge.clone()),
+        )
+        .unwrap();
+
+        // Close the right input edge (left is still open but empty)
+        biun.right_input.close().unwrap();
+
+        // Work should fail with Closed and propagate close to output
+        let result = biun.work();
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+
+        // Output edge should now be closed
+        let push_result = output_edge.clone().push(Message::Data(1));
+        assert!(matches!(push_result.unwrap_err().kind, ErrorKind::Closed));
+    }
+
+    #[test]
+    fn close_propagates_through_work_chain() {
+        use crate::closed;
+        use crate::marker::Connection;
+
+        // Create a mock workable that returns Closed error
+        struct ClosingWorkable;
+        impl Connection for ClosingWorkable {}
+        impl Workable for ClosingWorkable {
+            type ThreadId = DefaultThread;
+            fn work(&mut self) -> Result<(), Error> {
+                Err(closed!())
+            }
+        }
+
+        let mut biun = Biunion::new(MockBiunion::new());
+
+        // Add a workable that returns Closed
+        Add::<dyn Workable<ThreadId = DefaultThread>, biunion::Left>::add(
+            &mut biun,
+            Box::new(ClosingWorkable),
+        )
+        .unwrap();
+
+        // Add an output edge we can check for close
+        let output_edge = Arc::new(SyncEdge::<usize, &'static str>::new());
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>>::add(
+            &mut biun,
+            Box::new(output_edge.clone()),
+        )
+        .unwrap();
+
+        // Work should fail with Closed and propagate close to output
+        let result = biun.work();
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+
+        // Output edge should now be closed
+        let push_result = output_edge.clone().push(Message::Data(1));
+        assert!(matches!(push_result.unwrap_err().kind, ErrorKind::Closed));
     }
 }

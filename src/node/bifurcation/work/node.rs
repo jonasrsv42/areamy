@@ -1,13 +1,13 @@
 use crate::SyncEdge;
 use crate::bifurcation;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::node::bifurcation::routine::BifurcationRoutine;
-use crate::{DefaultThread, ThreadId};
 use crate::{
-    Message, Origin, Pushable, Workable,
+    Closeable, Message, Origin, Pushable, Workable,
     graph::{Add, Get},
     marker::Connection,
 };
+use crate::{DefaultThread, ThreadId};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a bifurcation.
@@ -16,8 +16,8 @@ pub trait BifurcationTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Pushable<DataType = Self::Left, SignalType = Self::Signal>, bifurcation::Left>
-    + Add<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, bifurcation::Right>
+    + Add<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal>, bifurcation::Left>
+    + Add<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal>, bifurcation::Right>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
@@ -25,8 +25,8 @@ pub trait BifurcationTrait:
     // We can retrieve pushable edges
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
 
-    // We can retrieve a Source for closing the input edge.
-    + Get<dyn crate::GraphPushSource<DataType = Self::In, SignalType = Self::Signal>>
+    // We can retrieve a Closeable for closing the input edge.
+    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal>>
 {
     // The input data entering it. 
     type In: Send + Sync + 'static;
@@ -61,8 +61,8 @@ where
 
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
-    pub left_pushes: Vec<Box<dyn Pushable<DataType = Left, SignalType = SignalType>>>,
-    pub right_pushes: Vec<Box<dyn Pushable<DataType = Right, SignalType = SignalType>>>,
+    pub left_pushes: Vec<Box<dyn Closeable<DataType = Left, SignalType = SignalType>>>,
+    pub right_pushes: Vec<Box<dyn Closeable<DataType = Right, SignalType = SignalType>>>,
     pub input: Arc<SyncEdge<In, SignalType>>,
 }
 
@@ -100,7 +100,8 @@ where
         // To produce output we work on all the input
         // or request more input by working.
         while !push_ok {
-            match self.input.poll()? {
+            let poll_result = self.input.poll();
+            match self.propagate_if_closed(poll_result)? {
                 Some(message) => match message {
                     Message::Data(data) => {
                         self.worker.send(data)?;
@@ -134,12 +135,14 @@ where
 
                 None => {
                     if self.workers.is_empty() {
-                        self.input.wait_front()?;
+                        let wait_result = self.input.wait_front();
+                        self.propagate_if_closed(wait_result)?;
                     }
 
                     // Then we work input from each source once.
-                    for workable in self.workers.iter_mut() {
-                        workable.work()?;
+                    for i in 0..self.workers.len() {
+                        let result = self.workers[i].work();
+                        self.propagate_if_closed(result)?;
                     }
                 }
             }
@@ -231,6 +234,26 @@ where
 
         Ok(())
     }
+
+    /// Close all push outputs. Called on shutdown to propagate close through push connections.
+    fn close_pushes(&mut self) {
+        for pushable in self.left_pushes.iter_mut() {
+            let _ = pushable.close();
+        }
+        for pushable in self.right_pushes.iter_mut() {
+            let _ = pushable.close();
+        }
+    }
+
+    /// If result is a Closed error, close all pushes to propagate shutdown.
+    fn propagate_if_closed<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
+        result.map_err(|e| {
+            if matches!(e.kind, ErrorKind::Closed) {
+                self.close_pushes();
+            }
+            e
+        })
+    }
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> BifurcationTrait
@@ -266,9 +289,9 @@ where
     }
 }
 
-/// Get a [crate::GraphPushSource] for this node's input edge.
+/// Get a [Closeable] for this node's input edge.
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Get<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>
+    Get<dyn Closeable<DataType = In, SignalType = SignalType>>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync + 'static,
@@ -278,16 +301,13 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>, Error>
-    {
+    fn get(&self) -> Result<Box<dyn Closeable<DataType = In, SignalType = SignalType>>, Error> {
         Get::get(&self.input)
     }
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<DataType = Left, SignalType = SignalType>, bifurcation::Left>
+    Add<dyn Closeable<DataType = Left, SignalType = SignalType>, bifurcation::Left>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync + 'static,
@@ -299,14 +319,14 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<DataType = Left, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Left, SignalType = SignalType>>,
     ) -> Result<(), Error> {
-        Ok(self.left_pushes.push(pushable))
+        Ok(self.left_pushes.push(closeable))
     }
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Pushable<DataType = Right, SignalType = SignalType>, bifurcation::Right>
+    Add<dyn Closeable<DataType = Right, SignalType = SignalType>, bifurcation::Right>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync + 'static,
@@ -318,9 +338,9 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<DataType = Right, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Right, SignalType = SignalType>>,
     ) -> Result<(), Error> {
-        Ok(self.right_pushes.push(pushable))
+        Ok(self.right_pushes.push(closeable))
     }
 }
 
@@ -343,6 +363,7 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::closed;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::{Pushable, sink::work::tee, work::Source, work::make_bifurcation};
 
@@ -389,5 +410,96 @@ pub mod tests {
 
         assert_eq!(left_sink.read().unwrap(), Message::Data(4));
         assert_eq!(right_sink.read().unwrap(), Message::Data(6));
+    }
+
+    #[test]
+    fn close_propagates_through_push_when_input_closed() {
+        let mut bifur = Bifurcation::new(MockBifurcation::new());
+
+        // Add output edges we can check for close
+        let left_output = Arc::new(SyncEdge::<usize, &'static str>::new());
+        let right_output = Arc::new(SyncEdge::<usize, &'static str>::new());
+
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Left>::add(
+            &mut bifur,
+            Box::new(left_output.clone()),
+        )
+        .unwrap();
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Right>::add(
+            &mut bifur,
+            Box::new(right_output.clone()),
+        )
+        .unwrap();
+
+        // Close the input edge
+        bifur.input.close().unwrap();
+
+        // Work should fail with Closed and propagate close to outputs
+        let result = bifur.work();
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+
+        // Both output edges should now be closed
+        let left_push_result = left_output.clone().push(Message::Data(1));
+        assert!(matches!(
+            left_push_result.unwrap_err().kind,
+            ErrorKind::Closed
+        ));
+
+        let right_push_result = right_output.clone().push(Message::Data(1));
+        assert!(matches!(
+            right_push_result.unwrap_err().kind,
+            ErrorKind::Closed
+        ));
+    }
+
+    #[test]
+    fn close_propagates_through_work_chain() {
+        // Create a mock workable that returns Closed error
+        struct ClosingWorkable;
+        impl Connection for ClosingWorkable {}
+        impl Workable for ClosingWorkable {
+            type ThreadId = DefaultThread;
+            fn work(&mut self) -> Result<(), Error> {
+                Err(closed!())
+            }
+        }
+
+        let mut bifur = Bifurcation::new(MockBifurcation::new());
+
+        // Add a workable that returns Closed
+        Add::<dyn Workable<ThreadId = DefaultThread>>::add(&mut bifur, Box::new(ClosingWorkable))
+            .unwrap();
+
+        // Add output edges we can check for close
+        let left_output = Arc::new(SyncEdge::<usize, &'static str>::new());
+        let right_output = Arc::new(SyncEdge::<usize, &'static str>::new());
+
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Left>::add(
+            &mut bifur,
+            Box::new(left_output.clone()),
+        )
+        .unwrap();
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Right>::add(
+            &mut bifur,
+            Box::new(right_output.clone()),
+        )
+        .unwrap();
+
+        // Work should fail with Closed and propagate close to outputs
+        let result = bifur.work();
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+
+        // Both output edges should now be closed
+        let left_push_result = left_output.clone().push(Message::Data(1));
+        assert!(matches!(
+            left_push_result.unwrap_err().kind,
+            ErrorKind::Closed
+        ));
+
+        let right_push_result = right_output.clone().push(Message::Data(1));
+        assert!(matches!(
+            right_push_result.unwrap_err().kind,
+            ErrorKind::Closed
+        ));
     }
 }

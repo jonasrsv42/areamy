@@ -198,7 +198,7 @@ where
     }
 }
 
-impl<DataType, SignalType> crate::GraphPushSource for Arc<SyncEdge<DataType, SignalType>>
+impl<DataType, SignalType> crate::graph::Closeable for Arc<SyncEdge<DataType, SignalType>>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -222,7 +222,7 @@ where
 }
 
 impl<DataType, SignalType>
-    Get<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>
+    Get<dyn crate::graph::Closeable<DataType = DataType, SignalType = SignalType>>
     for Arc<SyncEdge<DataType, SignalType>>
 where
     DataType: Send + Sync + 'static,
@@ -230,7 +230,7 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>, Error>
+    ) -> Result<Box<dyn crate::graph::Closeable<DataType = DataType, SignalType = SignalType>>, Error>
     {
         Ok(Box::new(self.clone()))
     }

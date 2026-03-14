@@ -1,13 +1,13 @@
 //! [LineTrait] and default implementation for running [LineRoutine].
 use crate::error::Error;
 use crate::node::line::LineRoutine;
+use crate::{Closeable, Pushable, Workable};
 use crate::{
     DefaultThread, SyncEdge, ThreadId,
     graph::{Add, Get},
     marker::Connection,
 };
 use crate::{Message, Origin};
-use crate::{Pushable, Workable};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a line.
@@ -31,11 +31,11 @@ pub trait LineTrait:
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
     // We can add edges it should push into.
-    + Add<dyn Pushable<DataType = Self::Out, SignalType = Self::Signal>>
+    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal>>
     // We can retrieve its edge for others to push into.
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
-    // We can retrieve a Source for closing the input edge.
-    + Get<dyn crate::GraphPushSource<DataType = Self::In, SignalType = Self::Signal>>
+    // We can retrieve a Closeable for closing the input edge.
+    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal>>
 {
     /// The input data going into the line.
     type In: Send + Sync + 'static;
@@ -76,8 +76,8 @@ where
     /// Parent nodes that we can schedule to work.
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
-    /// Edges that we can push data into.
-    pub pushes: Vec<Box<dyn Pushable<DataType = Out, SignalType = SignalType>>>,
+    /// Edges that we can push data into. Uses [Closeable] to support shutdown propagation.
+    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType>>>,
 
     /// Input to our current node that parents will push into.
     pub input: Arc<SyncEdge<In, SignalType>>,
@@ -125,8 +125,8 @@ where
 
         // Work until we have some output to push into children.
         while !push_ok {
-            // Poll for input.
-            match self.input.poll()? {
+            // Poll for input. Propagate close to push outputs if input is closed.
+            match self.propagate_if_closed(self.input.poll())? {
                 // If there's input forward to coroutine and output any new things.
                 Some(input) => match input {
                     Message::Data(data) => {
@@ -163,12 +163,15 @@ where
                 None => {
                     // If there's no parents we just wait forever hoping someone gives us smt.
                     if self.workers.is_empty() {
-                        self.input.wait_front()?;
+                        self.propagate_if_closed(self.input.wait_front())?;
                     }
 
                     // Then we work input from each source once.
-                    for workable in self.workers.iter_mut() {
-                        workable.work()?;
+                    // Propagate close to push outputs if parent work returns closed.
+                    // Use index-based loop to avoid borrow conflict with propagate_if_closed.
+                    for i in 0..self.workers.len() {
+                        let result = self.workers[i].work();
+                        self.propagate_if_closed(result)?;
                     }
                 }
             }
@@ -238,6 +241,24 @@ where
 
         Ok(())
     }
+
+    /// Close all push outputs. Called on shutdown to propagate close through push connections.
+    fn close_pushes(&mut self) {
+        for pushable in self.pushes.iter_mut() {
+            let _ = pushable.close();
+        }
+    }
+
+    /// If result is a Closed error, close all pushes to propagate shutdown.
+    /// Returns the original result unchanged.
+    fn propagate_if_closed<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
+        result.map_err(|e| {
+            if matches!(e.kind, crate::error::ErrorKind::Closed) {
+                self.close_pushes();
+            }
+            e
+        })
+    }
 }
 
 /// Implement [LineTrait] for [Line].
@@ -275,9 +296,9 @@ where
     }
 }
 
-/// Get a [crate::GraphPushSource] for this node's input edge.
+/// Get a [Closeable] for this node's input edge.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Get<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>
+    Get<dyn Closeable<DataType = In, SignalType = SignalType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync + 'static,
@@ -286,10 +307,7 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn crate::GraphPushSource<DataType = In, SignalType = SignalType>>, Error>
-    {
+    fn get(&self) -> Result<Box<dyn Closeable<DataType = In, SignalType = SignalType>>, Error> {
         Get::get(&self.input)
     }
 }
@@ -310,11 +328,11 @@ where
     }
 }
 
-/// Implement the [Add] constructor for output [Pushable] edge.
-/// This allows users to add [Pushable] edges to this node such that it can [Pushable::push] data
-/// into them when scheduled.
+/// Implement the [Add] constructor for output [Closeable] edge.
+/// This allows users to add [Closeable] edges to this node such that it can push data
+/// into them when scheduled, and close them on shutdown.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Add<dyn Pushable<DataType = Out, SignalType = SignalType>>
+    Add<dyn Closeable<DataType = Out, SignalType = SignalType>>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync,
@@ -325,9 +343,9 @@ where
 {
     fn add(
         &mut self,
-        pushable: Box<dyn Pushable<DataType = Out, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType>>,
     ) -> Result<(), Error> {
-        Ok(self.pushes.push(pushable))
+        Ok(self.pushes.push(closeable))
     }
 }
 
@@ -359,6 +377,7 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::error::ErrorKind;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::{make_bidi, work::make_line};
     use crate::{sink::work::tee, work::Connect, work::Sink, work::Source};
@@ -639,5 +658,48 @@ pub mod tests {
             assert_eq!(sink.read().unwrap(), Message::Flush("hi".into()));
         }
         println!("Elapsed time: {:.2?}", before.elapsed());
+    }
+
+    #[test]
+    fn close_propagates_through_push_when_input_closed() {
+        let line = make_line(MockLine::new());
+        let mut source = Source::new(&line).unwrap();
+        let mut sink = Sink::new(line).unwrap();
+
+        // Push some data
+        source.push(Message::Data(1)).unwrap();
+
+        // Read it
+        assert_eq!(sink.read().unwrap(), Message::Data(2));
+
+        // Close the source (input edge)
+        source.close().unwrap();
+
+        // Next read should return Closed because close propagated through the line
+        let result = sink.read();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+    }
+
+    #[test]
+    fn close_propagates_through_work_chain() {
+        let line_1 = make_line(MockLine::new());
+        let mut line_2 = make_line(MockLine::new());
+
+        let mut source = Source::new(&line_1).unwrap();
+        make_bidi(line_1, &mut line_2).unwrap();
+        let mut sink = Sink::new(line_2).unwrap();
+
+        // Push some data through the chain
+        source.push(Message::Data(1)).unwrap();
+        assert_eq!(sink.read().unwrap(), Message::Data(4)); // 1*2=2, 2*2=4
+
+        // Close the source (input to first line)
+        source.close().unwrap();
+
+        // Next read should return Closed because close propagated through both lines
+        let result = sink.read();
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
     }
 }

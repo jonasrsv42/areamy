@@ -23,8 +23,8 @@ pub use generates::Generates;
 
 pub use crate::connect::graph;
 pub use connect::{
-    PolicyEdge, Pullable, Pushable, SignalPolicy, SyncEdge, Workable, make_bidi, make_push,
-    make_work, marker::Connection,
+    Closeable, PolicyEdge, Pullable, Pushable, SignalPolicy, SyncEdge, Workable, make_bidi,
+    make_push, make_work, marker::Connection,
 };
 pub use message::Message;
 pub use node::{

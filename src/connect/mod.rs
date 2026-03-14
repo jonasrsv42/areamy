@@ -56,7 +56,7 @@ pub mod marker;
 pub mod signal_policy;
 pub mod sync_edge;
 
-pub use graph::{Pullable, Pushable, Workable};
+pub use graph::{Closeable, Pullable, Pushable, Workable};
 pub use make::work;
 pub use make::{make_bidi, make_push, make_work};
 pub use signal_policy::{PolicyEdge, SignalPolicy};

@@ -63,23 +63,10 @@
 //! are signaled to exit even if you forget to close explicitly.
 
 use crate::Pullable;
-use crate::Pushable;
 use crate::error::Error;
 
-/// A [GraphPushSource] can be used to [Pushable::push] data into the graph and is common where
-/// the source is some in-memory logic. It extends [Pushable] with a [GraphPushSource::close]
-/// method to signal that no more data will be produced, allowing the graph to shut down gracefully.
-///
-/// See the [module documentation](self) for details on shutdown flow.
-pub trait GraphPushSource: Pushable {
-    /// Close this source, signaling no more data will be produced.
-    ///
-    /// After closing:
-    /// - Further pushes will return [`crate::error::ErrorKind::Closed`]
-    /// - Reads will continue to succeed while buffered data remains
-    /// - Reads return `Closed` when the buffer is empty
-    fn close(&mut self) -> Result<(), Error>;
-}
+/// Alias for [`crate::Closeable`]. Prefer using `Closeable` directly.
+pub use crate::Closeable as GraphPushSource;
 
 /// A [GraphPullSource] is a data source that can be pulled from, typically implementing a Read
 /// interface. It implements [crate::Pullable] to be consumed by pullable components in a graph.

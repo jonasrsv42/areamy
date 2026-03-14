@@ -1,6 +1,6 @@
 use crate::SyncEdge;
 use crate::error::Error;
-use crate::{DefaultThread, Pushable, Trackable, graph::Add, marker::Multiplicity};
+use crate::{Closeable, DefaultThread, Trackable, graph::Add, marker::Multiplicity};
 use crate::{Message, Origin};
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ where
 {
     pub fn new<MultiplicityType>(
         workable: &mut (
-                 impl Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
+                 impl Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
                  + 'static
              ),
     ) -> Result<Self, Error>
@@ -63,12 +63,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DefaultThread, Pushable, Workable, graph::Get, marker::Connection};
+    use crate::{Closeable, DefaultThread, Workable, graph::Get, marker::Connection};
     use std::sync::Mutex;
 
     struct MockNode {
         output: Message<usize, &'static str>,
-        pushable: Vec<Box<dyn Pushable<DataType = usize, SignalType = &'static str>>>,
+        pushable: Vec<Box<dyn Closeable<DataType = usize, SignalType = &'static str>>>,
     }
 
     impl Connection for MockNode {}
@@ -89,10 +89,10 @@ mod tests {
         }
     }
 
-    impl Add<dyn Pushable<DataType = usize, SignalType = &'static str>> for MockNode {
+    impl Add<dyn Closeable<DataType = usize, SignalType = &'static str>> for MockNode {
         fn add(
             &mut self,
-            pushable: Box<dyn Pushable<DataType = usize, SignalType = &'static str>>,
+            pushable: Box<dyn Closeable<DataType = usize, SignalType = &'static str>>,
         ) -> Result<(), Error> {
             Ok(self.pushable.push(pushable))
         }

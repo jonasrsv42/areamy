@@ -1,7 +1,7 @@
 use crate::SyncEdge;
 use crate::error::Error;
 use crate::{
-    DefaultThread, Pushable, ThreadId, Trackable, Workable, graph::Add, marker::Multiplicity,
+    Closeable, DefaultThread, ThreadId, Trackable, Workable, graph::Add, marker::Multiplicity,
 };
 use crate::{Message, Origin};
 use std::sync::Arc;
@@ -24,7 +24,7 @@ where
     pub fn new<MultiplicityType>(
         mut workable: Box<
             impl Workable<ThreadId = DefaultThread>
-            + Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
+            + Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
             + 'static,
         >,
     ) -> Result<Self, Error>
@@ -52,7 +52,7 @@ where
     pub fn of<MultiplicityType>(
         mut workable: Box<
             impl Workable<ThreadId = ThreadIdType>
-            + Add<dyn Pushable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
+            + Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
             + 'static,
         >,
     ) -> Result<Self, Error>
@@ -106,12 +106,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Pushable, graph::Get, marker::Connection};
+    use crate::{graph::Get, marker::Connection};
     use std::sync::Mutex;
 
     struct MockNode {
         output: Message<usize, &'static str>,
-        pushable: Vec<Box<dyn Pushable<DataType = usize, SignalType = &'static str>>>,
+        pushable: Vec<Box<dyn Closeable<DataType = usize, SignalType = &'static str>>>,
     }
 
     impl Connection for MockNode {}
@@ -132,12 +132,12 @@ mod tests {
         }
     }
 
-    impl Add<dyn Pushable<DataType = usize, SignalType = &'static str>> for MockNode {
+    impl Add<dyn Closeable<DataType = usize, SignalType = &'static str>> for MockNode {
         fn add(
             &mut self,
-            pushable: Box<dyn Pushable<DataType = usize, SignalType = &'static str>>,
+            closeable: Box<dyn Closeable<DataType = usize, SignalType = &'static str>>,
         ) -> Result<(), Error> {
-            Ok(self.pushable.push(pushable))
+            Ok(self.pushable.push(closeable))
         }
     }
 

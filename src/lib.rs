@@ -16,7 +16,7 @@ mod generates;
 pub mod pull;
 
 pub use combine::Combine;
-pub use composable::Composable;
+pub use composable::{Composable, Decomposable};
 pub use connect::marker;
 pub use contains::Contains;
 pub use generates::Generates;

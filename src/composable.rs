@@ -45,3 +45,22 @@ pub trait Composable<With> {
     // move semantics.
     fn compose(self, argument: With) -> Result<Self::To, Error>;
 }
+
+/// [`Decomposable`] is the inverse of [`Composable`]. It splits `Self` into
+/// an extracted [`Item`](Decomposable::Item) and a [`Remainder`](Decomposable::Remainder).
+///
+/// Both halves are fully owned — no partial or invalid states.
+///
+/// This is useful when a node needs to extract data from a message
+/// (e.g. audio samples) for processing, and then compose the remainder
+/// with the result.
+pub trait Decomposable {
+    /// The item extracted from Self.
+    type Item;
+
+    /// What remains after extraction.
+    type Remainder;
+
+    /// Split self into the extracted item and the remainder.
+    fn decompose(self) -> Result<(Self::Item, Self::Remainder), Error>;
+}

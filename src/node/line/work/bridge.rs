@@ -34,7 +34,7 @@ impl<PullableType, PushableType> Workable for Bridge<PullableType, PushableType>
 where
     PullableType: Pullable,
     PushableType:
-        Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType>,
+        Pushable<DataType = PullableType::DataType, SignalType = PullableType::SignalType> + Send,
 {
     type ThreadId = PullableType::ThreadId;
 

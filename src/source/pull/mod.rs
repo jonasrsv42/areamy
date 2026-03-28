@@ -118,7 +118,7 @@ where
 
 /// [Get] the [crate::GraphPushSource] from [SourceBuffer] for closing.
 impl<DataType, SignalType, ThreadIdType>
-    Get<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>
+    Get<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType> + Send + Sync>
     for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
@@ -127,8 +127,10 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>, Error>
-    {
+    ) -> Result<
+        Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType> + Send + Sync>,
+        Error,
+    > {
         Get::get(&self.input)
     }
 }

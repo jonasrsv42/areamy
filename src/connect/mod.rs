@@ -53,11 +53,13 @@ mod default;
 pub mod graph;
 mod make;
 pub mod marker;
+pub mod poll;
 pub mod signal_policy;
 pub mod sync_edge;
 
-pub use graph::{Closeable, Pullable, Pushable, Workable};
+pub use graph::{Closeable, Linkable, Pollable, Pullable, Pushable, Receivable, Workable};
 pub use make::work;
 pub use make::{make_bidi, make_push, make_work};
+pub use poll::{AsyncEdge, SyncBridge};
 pub use signal_policy::{PolicyEdge, SignalPolicy};
 pub use sync_edge::SyncEdge;

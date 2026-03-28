@@ -222,7 +222,7 @@ where
 }
 
 impl<DataType, SignalType>
-    Get<dyn crate::graph::Closeable<DataType = DataType, SignalType = SignalType>>
+    Get<dyn crate::graph::Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>
     for Arc<SyncEdge<DataType, SignalType>>
 where
     DataType: Send + Sync + 'static,
@@ -230,8 +230,12 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn crate::graph::Closeable<DataType = DataType, SignalType = SignalType>>, Error>
-    {
+    ) -> Result<
+        Box<
+            dyn crate::graph::Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+        >,
+        Error,
+    > {
         Ok(Box::new(self.clone()))
     }
 }
@@ -349,7 +353,4 @@ mod tests {
         // poll on open empty edge returns None
         assert_eq!(edge.poll().unwrap(), None);
     }
-
-    // We're now using PolicyEdge wrapper instead of SyncEdge with policy
-    // These tests moved to signal_policy.rs
 }

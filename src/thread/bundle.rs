@@ -1,5 +1,6 @@
 //! Thread bundle for managing multiple heterogeneous threads as a unit.
 
+use super::poll::stream::{AsyncThread, AsyncThreadHandle};
 use super::{ThreadId, ThreadStream, ThreadStreamHandle};
 use crate::any_err;
 use crate::error::{AnyErr, Error};
@@ -25,16 +26,14 @@ impl From<BundlePanics> for Box<dyn AnyErr> {
     }
 }
 
-/// Internal trait for type-erased idle threads.
-trait TypeErasedInternalThreadStream: Send {
+/// Trait for type-erased idle threads that can be started and joined.
+pub trait TypeErasedInternalThreadStream: Send {
     fn start(self: Box<Self>) -> Box<dyn TypeErasedInternalThreadStreamHandle>;
 }
 
-/// Internal trait for type-erased running threads.
-trait TypeErasedInternalThreadStreamHandle: Send {
-    fn join(
-        self: Box<Self>,
-    ) -> Result<(Box<dyn TypeErasedInternalThreadStream>, Option<Error>), Error>;
+/// Trait for type-erased running thread handles.
+pub trait TypeErasedInternalThreadStreamHandle: Send {
+    fn join(self: Box<Self>) -> Result<Option<Error>, Error>;
 }
 
 impl<ThreadIdType: ThreadId + 'static> TypeErasedInternalThreadStream
@@ -48,11 +47,23 @@ impl<ThreadIdType: ThreadId + 'static> TypeErasedInternalThreadStream
 impl<ThreadIdType: ThreadId + 'static> TypeErasedInternalThreadStreamHandle
     for ThreadStreamHandle<ThreadIdType>
 {
-    fn join(
-        self: Box<Self>,
-    ) -> Result<(Box<dyn TypeErasedInternalThreadStream>, Option<Error>), Error> {
-        let (stream, err) = (*self).join()?;
-        Ok((Box::new(stream), err))
+    fn join(self: Box<Self>) -> Result<Option<Error>, Error> {
+        let (_, err) = (*self).join()?;
+        Ok(err)
+    }
+}
+
+impl<ThreadIdType: ThreadId + 'static> TypeErasedInternalThreadStream
+    for AsyncThread<ThreadIdType>
+{
+    fn start(self: Box<Self>) -> Box<dyn TypeErasedInternalThreadStreamHandle> {
+        Box::new((*self).start())
+    }
+}
+
+impl TypeErasedInternalThreadStreamHandle for AsyncThreadHandle {
+    fn join(self: Box<Self>) -> Result<Option<Error>, Error> {
+        (*self).join()
     }
 }
 
@@ -72,10 +83,7 @@ impl ThreadBundle {
         Self::default()
     }
 
-    pub fn add<ThreadIdType: ThreadId + 'static>(
-        &mut self,
-        thread: ThreadStream<ThreadIdType>,
-    ) -> &mut Self {
+    pub fn add(&mut self, thread: impl TypeErasedInternalThreadStream + 'static) -> &mut Self {
         self.threads.push(Box::new(thread));
         self
     }
@@ -92,29 +100,22 @@ impl ThreadBundleHandle {
     ///
     /// # Returns
     ///
-    /// - `Ok((bundle, errors))` - all threads joined, bundle is restartable
-    /// - `Err(panics)` - one or more threads panicked, bundle is lost
-    pub fn join(self) -> Result<(ThreadBundle, Vec<Error>), Error> {
-        let mut recovered = Vec::new();
+    /// - `Ok(errors)` - all threads joined, errors collected from failed threads
+    /// - `Err(panics)` - one or more threads panicked
+    pub fn join(self) -> Result<Vec<Error>, Error> {
         let mut errors = Vec::new();
         let mut panics = Vec::new();
 
         for thread in self.threads {
             match thread.join() {
-                Ok((idle, err)) => {
-                    recovered.push(idle);
-                    if let Some(err) = err {
-                        errors.push(err);
-                    }
-                }
-                Err(err) => {
-                    panics.push(err);
-                }
+                Ok(Some(err)) => errors.push(err),
+                Ok(None) => {}
+                Err(err) => panics.push(err),
             }
         }
 
         if panics.is_empty() {
-            Ok((ThreadBundle { threads: recovered }, errors))
+            Ok(errors)
         } else {
             Err(any_err!(BundlePanics(panics)))
         }
@@ -185,10 +186,8 @@ mod tests {
     fn bundle_start_and_join_empty() {
         let bundle = ThreadBundle::new();
         let handle = bundle.start();
-        let (recovered, errors) = handle.join().unwrap();
+        let errors = handle.join().unwrap();
         assert!(errors.is_empty());
-        // Can restart
-        let _handle2 = recovered.start();
     }
 
     #[test]
@@ -198,10 +197,8 @@ mod tests {
             .add(ThreadStream::<ThreadA>::new())
             .add(ThreadStream::<ThreadB>::new());
         let handle = bundle.start();
-        let (recovered, errors) = handle.join().unwrap();
+        let errors = handle.join().unwrap();
         assert!(errors.is_empty());
-        // Both threads recovered
-        assert_eq!(recovered.threads.len(), 2);
     }
 
     #[test]
@@ -215,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn bundle_work_error_is_recoverable() {
+    fn bundle_work_error_is_collected() {
         let mut thread_a = ThreadStream::<ThreadA>::new();
         thread_a.add(Box::new(WorkError::<ThreadA>::new())).unwrap();
 
@@ -228,16 +225,13 @@ mod tests {
         bundle.add(thread_a).add(thread_b);
 
         let handle = bundle.start();
-        let (recovered, errors) = handle.join().unwrap();
+        let errors = handle.join().unwrap();
 
-        // One work error collected
         assert_eq!(errors.len(), 1);
-        // Both threads recovered
-        assert_eq!(recovered.threads.len(), 2);
     }
 
     #[test]
-    fn bundle_panic_loses_bundle() {
+    fn bundle_panic_returns_error() {
         let mut thread_a = ThreadStream::<ThreadA>::new();
         thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
 
@@ -249,10 +243,8 @@ mod tests {
         let handle = bundle.start();
         let result = handle.join();
 
-        // Panic returns Err
         assert!(result.is_err());
         let err = result.err().unwrap();
-        // Can downcast to BundlePanics
         assert!(err.is::<BundlePanics>());
     }
 
@@ -272,25 +264,7 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.err().unwrap();
-        // Downcast to get panic count
         let panics = err.downcast_any::<BundlePanics>().unwrap();
         assert_eq!(panics.0.len(), 2);
-    }
-
-    #[test]
-    fn bundle_restart_after_success() {
-        let mut bundle = ThreadBundle::new();
-        bundle
-            .add(ThreadStream::<ThreadA>::new())
-            .add(ThreadStream::<ThreadB>::new());
-
-        // First run
-        let handle = bundle.start();
-        let (bundle, _) = handle.join().unwrap();
-
-        // Second run
-        let handle = bundle.start();
-        let (recovered, _) = handle.join().unwrap();
-        assert_eq!(recovered.threads.len(), 2);
     }
 }

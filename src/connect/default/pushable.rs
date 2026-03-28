@@ -2,25 +2,37 @@ use crate::Pushable;
 use crate::error::Error;
 use crate::message::Message;
 use crate::signal::Origin;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-impl<DataType, SignalType> Pushable
-    for Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+impl<T: Pushable> Pushable for Vec<T>
 where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
+    T::DataType: Clone,
+    T::SignalType: Origin + Clone,
 {
-    type DataType = DataType;
-    type SignalType = SignalType;
+    type DataType = T::DataType;
+    type SignalType = T::SignalType;
 
-    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        self.as_mut().push(object)
+    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
+        for edge in self.iter_mut() {
+            edge.push(msg.clone())?;
+        }
+        Ok(())
     }
 }
 
-impl<PushableType, DataType, SignalType> Pushable for Box<PushableType>
+impl<T: Pushable> Pushable for Rc<RefCell<T>> {
+    type DataType = T::DataType;
+    type SignalType = T::SignalType;
+
+    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
+        self.borrow_mut().push(msg)
+    }
+}
+
+impl<PushableType: ?Sized, DataType, SignalType> Pushable for Box<PushableType>
 where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
+    SignalType: Origin,
     PushableType: Pushable<DataType = DataType, SignalType = SignalType>,
 {
     type DataType = DataType;

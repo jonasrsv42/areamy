@@ -52,7 +52,7 @@ pub struct Connect<DataType, SignalType = Trackable<&'static str>> {
 impl<DataType, SignalType> Connect<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
-    SignalType: Origin + 'static,
+    SignalType: Origin + Send + Sync + 'static,
 {
     /// Exactly the same as [make_bidi] but with ability to ergonomically annotate the DataType.
     pub fn bidi<
@@ -68,9 +68,14 @@ where
     where
         ChildType: 'static
             + Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
-            + Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>,
-        ParentType: Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
-            + Workable<ThreadId = ThreadIdType>
+            + Get<
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                ChildMultiplicity,
+            >,
+        ParentType: Add<
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                ParentMultiplicity,
+            > + Workable<ThreadId = ThreadIdType>
             + 'static,
     {
         make_bidi(parent, child)?;
@@ -81,10 +86,13 @@ where
     /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
     pub fn push<AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
         parent: &mut impl Add<
-            dyn Closeable<DataType = DataType, SignalType = SignalType>,
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
             AddMultiplicity,
         >,
-        child: &impl Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
+        child: &impl Get<
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+            GetMultiplicity,
+        >,
     ) -> Result<(), Error> {
         make_push(parent, child)?;
 

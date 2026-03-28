@@ -17,8 +17,7 @@ use std::fmt::Debug;
 #[derive(Debug, PartialEq)]
 pub enum Message<DataType, SignalType>
 where
-    DataType: Sync + Send,
-    SignalType: Origin + Sync + Send,
+    SignalType: Origin,
 {
     /// [Message::Data] will be traversing through the graph and be transformed
     Data(DataType),
@@ -39,8 +38,8 @@ where
 // Implement Clone for Message conditionally based on whether DataType implements Clone
 impl<DataType, SignalType> Clone for Message<DataType, SignalType>
 where
-    DataType: Clone + Sync + Send,
-    SignalType: Origin + Clone + Sync + Send,
+    DataType: Clone,
+    SignalType: Origin + Clone,
 {
     fn clone(&self) -> Self {
         match self {
@@ -53,16 +52,13 @@ where
 
 impl<DataType, SignalType> Message<DataType, SignalType>
 where
-    DataType: Sync + Send,
-    SignalType: Origin + Sync + Send,
+    SignalType: Origin,
 {
     /// [Message::data_from_iter] provides a convenient method of
     /// extracting [Message::Data] content from an [Iterator] of
     /// [Message]
     pub fn data_from_iter<I>(messages: I) -> Vec<DataType>
     where
-        DataType: Sync + Send,
-        SignalType: Origin + Sync + Send,
         I: Iterator<Item = Message<DataType, SignalType>>,
     {
         let mut a: Vec<DataType> = Vec::new();

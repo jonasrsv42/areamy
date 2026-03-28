@@ -16,8 +16,8 @@ pub trait BifurcationTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal>, bifurcation::Left>
-    + Add<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal>, bifurcation::Right>
+    + Add<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync, bifurcation::Left>
+    + Add<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync, bifurcation::Right>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
@@ -26,7 +26,7 @@ pub trait BifurcationTrait:
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
 
     // We can retrieve a Closeable for closing the input edge.
-    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal>>
+    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal> + Send + Sync>
 {
     // The input data entering it. 
     type In: Send + Sync + 'static;
@@ -61,8 +61,10 @@ where
 
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
-    pub left_pushes: Vec<Box<dyn Closeable<DataType = Left, SignalType = SignalType>>>,
-    pub right_pushes: Vec<Box<dyn Closeable<DataType = Right, SignalType = SignalType>>>,
+    pub left_pushes:
+        Vec<Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync>>,
+    pub right_pushes:
+        Vec<Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync>>,
     pub input: Arc<SyncEdge<In, SignalType>>,
 }
 
@@ -291,7 +293,7 @@ where
 
 /// Get a [Closeable] for this node's input edge.
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Closeable<DataType = In, SignalType = SignalType>>
+    Get<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync + 'static,
@@ -301,13 +303,16 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right>,
 {
-    fn get(&self) -> Result<Box<dyn Closeable<DataType = In, SignalType = SignalType>>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync>, Error>
+    {
         Get::get(&self.input)
     }
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Closeable<DataType = Left, SignalType = SignalType>, bifurcation::Left>
+    Add<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync, bifurcation::Left>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync + 'static,
@@ -319,14 +324,14 @@ where
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Closeable<DataType = Left, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync>,
     ) -> Result<(), Error> {
         Ok(self.left_pushes.push(closeable))
     }
 }
 
 impl<In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Closeable<DataType = Right, SignalType = SignalType>, bifurcation::Right>
+    Add<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync, bifurcation::Right>
     for Bifurcation<In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync + 'static,
@@ -338,7 +343,7 @@ where
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Closeable<DataType = Right, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync>,
     ) -> Result<(), Error> {
         Ok(self.right_pushes.push(closeable))
     }
@@ -420,15 +425,15 @@ pub mod tests {
         let left_output = Arc::new(SyncEdge::<usize, &'static str>::new());
         let right_output = Arc::new(SyncEdge::<usize, &'static str>::new());
 
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Left>::add(
-            &mut bifur,
-            Box::new(left_output.clone()),
-        )
+        Add::<
+            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            bifurcation::Left,
+        >::add(&mut bifur, Box::new(left_output.clone()))
         .unwrap();
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Right>::add(
-            &mut bifur,
-            Box::new(right_output.clone()),
-        )
+        Add::<
+            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            bifurcation::Right,
+        >::add(&mut bifur, Box::new(right_output.clone()))
         .unwrap();
 
         // Close the input edge
@@ -474,15 +479,15 @@ pub mod tests {
         let left_output = Arc::new(SyncEdge::<usize, &'static str>::new());
         let right_output = Arc::new(SyncEdge::<usize, &'static str>::new());
 
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Left>::add(
-            &mut bifur,
-            Box::new(left_output.clone()),
-        )
+        Add::<
+            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            bifurcation::Left,
+        >::add(&mut bifur, Box::new(left_output.clone()))
         .unwrap();
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>, bifurcation::Right>::add(
-            &mut bifur,
-            Box::new(right_output.clone()),
-        )
+        Add::<
+            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            bifurcation::Right,
+        >::add(&mut bifur, Box::new(right_output.clone()))
         .unwrap();
 
         // Work should fail with Closed and propagate close to outputs

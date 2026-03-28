@@ -21,16 +21,15 @@ where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 {
-    pub fn new<MultiplicityType>(
+    pub fn new<MultiplicityType: Multiplicity>(
         mut workable: Box<
             impl Workable<ThreadId = DefaultThread>
-            + Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
-            + 'static,
+            + Add<
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                MultiplicityType,
+            > + 'static,
         >,
-    ) -> Result<Self, Error>
-    where
-        MultiplicityType: Multiplicity,
-    {
+    ) -> Result<Self, Error> {
         let shared_buffer = Arc::new(SyncEdge::new());
 
         Add::add(workable.as_mut(), Box::new(shared_buffer.clone()))?;
@@ -52,8 +51,10 @@ where
     pub fn of<MultiplicityType>(
         mut workable: Box<
             impl Workable<ThreadId = ThreadIdType>
-            + Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
-            + 'static,
+            + Add<
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                MultiplicityType,
+            > + 'static,
         >,
     ) -> Result<Self, Error>
     where
@@ -111,7 +112,8 @@ mod tests {
 
     struct MockNode {
         output: Message<usize, &'static str>,
-        pushable: Vec<Box<dyn Closeable<DataType = usize, SignalType = &'static str>>>,
+        pushable:
+            Vec<Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>>,
     }
 
     impl Connection for MockNode {}
@@ -132,10 +134,12 @@ mod tests {
         }
     }
 
-    impl Add<dyn Closeable<DataType = usize, SignalType = &'static str>> for MockNode {
+    impl Add<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> for MockNode {
         fn add(
             &mut self,
-            closeable: Box<dyn Closeable<DataType = usize, SignalType = &'static str>>,
+            closeable: Box<
+                dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            >,
         ) -> Result<(), Error> {
             Ok(self.pushable.push(closeable))
         }

@@ -13,7 +13,8 @@ where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
-    inner: Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>>,
+    inner:
+        Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType> + Send + Sync>,
 }
 
 impl<DataType, SignalType> Connection for Source<DataType, SignalType>
@@ -30,7 +31,8 @@ where
     pub fn new<MultiplicityType: Multiplicity>(
         input: &impl Get<
             dyn crate::GraphPushSource<DataType = DataType, SignalType = Trackable<&'static str>>
-                + 'static,
+                + Send
+                + Sync,
             MultiplicityType,
         >,
     ) -> Result<Self, Error> {
@@ -47,7 +49,9 @@ where
     pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
         Node: Get<
-                dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>,
+                dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>
+                    + Send
+                    + Sync,
                 MultiplicityType,
             >,
         MultiplicityType: Multiplicity,
@@ -99,13 +103,21 @@ mod tests {
         }
     }
 
-    impl Get<dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>>
-        for MockNode
+    impl
+        Get<
+            dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>
+                + Send
+                + Sync,
+        > for MockNode
     {
         fn get(
             &self,
         ) -> Result<
-            Box<dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>>,
+            Box<
+                dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>
+                    + Send
+                    + Sync,
+            >,
             Error,
         > {
             Get::get(&self.input)

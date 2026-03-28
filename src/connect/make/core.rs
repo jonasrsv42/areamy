@@ -46,12 +46,17 @@ pub fn make_bidi<
     mut parent: Box<ParentType>,
     child: &mut (
              impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
-             + Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, ChildMultiplicity>
+             + Get<
+        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+        ChildMultiplicity,
+    >
          ),
 ) -> Result<(), Error>
 where
-    ParentType: Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, ParentMultiplicity>
-        + Workable<ThreadId = ThreadIdType>
+    ParentType: Add<
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+            ParentMultiplicity,
+        > + Workable<ThreadId = ThreadIdType>
         + 'static,
 {
     // We need to get the pushable manually and apply Forward policy
@@ -96,8 +101,14 @@ pub fn make_push<
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 >(
-    parent: &mut impl Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, AddMultiplicity>,
-    child: &impl Get<dyn Closeable<DataType = DataType, SignalType = SignalType>, GetMultiplicity>,
+    parent: &mut impl Add<
+        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+        AddMultiplicity,
+    >,
+    child: &impl Get<
+        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+        GetMultiplicity,
+    >,
 ) -> Result<(), Error> {
     let pushable = child.get()?;
 

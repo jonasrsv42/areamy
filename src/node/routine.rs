@@ -46,6 +46,22 @@ pub trait Flush {
     fn flush(&mut self) -> Result<(), Error>;
 }
 
+/// [`Poll`] trait is the async component of async routines.
+///
+/// When a node is woken (by an edge push, I/O readiness, or a Future resolving),
+/// the framework calls [Poll::poll] with a [core::task::Context] carrying a
+/// [core::task::Waker]. The routine can clone the waker and hand it to I/O
+/// sources (sockets, timers, async libraries) so they can wake the node later.
+///
+/// Routines that do no I/O can provide a default implementation that returns
+/// [core::task::Poll::Pending].
+///
+/// This is compatible with [core::future::Future] — routines can internally
+/// poll Futures using the same [core::task::Context].
+pub trait Poll {
+    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error>;
+}
+
 /// [`Name`] trait is used to name routines for logging purposes.
 pub trait Name {
     fn name<'a>(&'a self) -> &'a str {

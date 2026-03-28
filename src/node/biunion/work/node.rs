@@ -15,7 +15,7 @@ pub trait BiunionTrait:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal>>
+    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Left>
@@ -26,8 +26,8 @@ pub trait BiunionTrait:
     + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
 
     // We can retrieve Closeable for closing the input edges.
-    + Get<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
-    + Get<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
+    + Get<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync, biunion::Left>
+    + Get<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync, biunion::Right>
 {
     // The input data going into the line.
     type Left:  Send + Sync + 'static;
@@ -69,7 +69,7 @@ where
     pub right_workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
     // Output connection. Uses Closeable to support shutdown propagation.
-    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType>>>,
+    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>>,
 
     // Input queues.
     pub left_input: Arc<SyncEdge<Left, SignalType>>,
@@ -323,34 +323,40 @@ where
 
 /// Get a [Closeable] for the left input edge.
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Closeable<DataType = Left, SignalType = SignalType>, biunion::Left>
+    Get<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync, biunion::Left>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + 'static,
+    SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    fn get(&self) -> Result<Box<dyn Closeable<DataType = Left, SignalType = SignalType>>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync>, Error>
+    {
         Get::get(&self.left_input)
     }
 }
 
 /// Get a [Closeable] for the right input edge.
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Closeable<DataType = Right, SignalType = SignalType>, biunion::Right>
+    Get<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync, biunion::Right>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + 'static,
+    SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
 {
-    fn get(&self) -> Result<Box<dyn Closeable<DataType = Right, SignalType = SignalType>>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync>, Error>
+    {
         Get::get(&self.right_input)
     }
 }
@@ -388,7 +394,7 @@ where
 }
 
 impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Closeable<DataType = Out, SignalType = SignalType>>
+    Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>
     for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
@@ -400,7 +406,7 @@ where
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>,
     ) -> Result<(), Error> {
         Ok(self.pushes.push(closeable))
     }
@@ -446,7 +452,7 @@ pub mod tests {
 
         // Add an output edge we can check for close
         let output_edge = Arc::new(SyncEdge::<usize, &'static str>::new());
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>>::add(
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.clone()),
         )
@@ -470,7 +476,7 @@ pub mod tests {
 
         // Add an output edge we can check for close
         let output_edge = Arc::new(SyncEdge::<usize, &'static str>::new());
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>>::add(
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.clone()),
         )
@@ -514,7 +520,7 @@ pub mod tests {
 
         // Add an output edge we can check for close
         let output_edge = Arc::new(SyncEdge::<usize, &'static str>::new());
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str>>::add(
+        Add::<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.clone()),
         )

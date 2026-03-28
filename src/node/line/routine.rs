@@ -48,6 +48,15 @@ pub trait LineRoutine<In, Out>:
 {
 }
 
+/// [`AsyncLineRoutine`] extends [LineRoutine] with a [crate::Poll] component
+/// for non-blocking I/O work.
+///
+/// The [crate::Send]/[crate::Next]/[crate::Flush] contract is the same as
+/// [LineRoutine]. The [crate::Poll::poll] method is called by the async node
+/// on each wake, receiving a [core::task::Context] with a [core::task::Waker]
+/// that the routine can hand to I/O sources for future wake-ups.
+pub trait AsyncLineRoutine<In, Out>: LineRoutine<In, Out> + crate::Poll {}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -218,5 +227,79 @@ pub mod tests {
         assert_eq!(line.next().unwrap(), Some(3));
         assert_eq!(line.next().unwrap(), Some(4));
         assert_eq!(line.next().unwrap(), Some(5));
+    }
+
+    /// Mock async line routine that processes input like MockLine
+    /// and tracks poll_count to verify waking behavior.
+    pub struct AsyncMockLine {
+        state: usize,
+        out: VecDeque<usize>,
+        pub poll_count: usize,
+    }
+
+    impl AsyncMockLine {
+        pub fn new() -> Self {
+            AsyncMockLine {
+                state: 0,
+                out: VecDeque::new(),
+                poll_count: 0,
+            }
+        }
+    }
+
+    impl crate::Send<usize> for AsyncMockLine {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
+            self.state += message;
+            self.out.push_back(self.state * 2);
+            Ok(())
+        }
+    }
+
+    impl crate::Next<usize> for AsyncMockLine {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            Ok(self.out.pop_front())
+        }
+    }
+
+    impl crate::Flush for AsyncMockLine {
+        fn flush(&mut self) -> Result<(), Error> {
+            self.state = 0;
+            Ok(())
+        }
+    }
+
+    impl crate::Poll for AsyncMockLine {
+        fn poll(
+            &mut self,
+            _cx: &mut core::task::Context<'_>,
+        ) -> Result<core::task::Poll<()>, Error> {
+            self.poll_count += 1;
+            Ok(core::task::Poll::Pending)
+        }
+    }
+
+    impl crate::node::Name for AsyncMockLine {}
+    impl LineRoutine<usize, usize> for AsyncMockLine {}
+    impl AsyncLineRoutine<usize, usize> for AsyncMockLine {}
+
+    #[test]
+    fn async_line_send_next_works() {
+        let mut line = AsyncMockLine::new();
+        line.send(2).unwrap();
+        assert_eq!(line.next().unwrap(), Some(4));
+    }
+
+    #[test]
+    fn async_line_poll_increments_count() {
+        let mut line = AsyncMockLine::new();
+        let waker = std::task::Waker::noop();
+        let mut cx = core::task::Context::from_waker(&waker);
+
+        assert_eq!(line.poll_count, 0);
+        assert!(matches!(
+            crate::Poll::poll(&mut line, &mut cx).unwrap(),
+            core::task::Poll::Pending
+        ));
+        assert_eq!(line.poll_count, 1);
     }
 }

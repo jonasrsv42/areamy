@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex};
 ///
 /// - The node is [Workable]
 /// - We can [Add] a [Workable] to it.
-/// - We can [Add] [Pushable] to it, outbound connections to send data.
-/// - We can [Get] a [Pushable] from it. Inbound connection to recieve data.
+/// - We can [Add] [Closeable] to it, outbound connections to send data.
+/// - We can [Get] a [Closeable] from it. Inbound connection to recieve data.
 ///
 /// It forms the basis if a node that recieves one input stream of data and
 /// produces one output stream of data using a [LineRoutine].
@@ -31,11 +31,9 @@ pub trait LineTrait:
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
     // We can add edges it should push into.
-    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal>>
+    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync>
     // We can retrieve its edge for others to push into.
-    + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal>>
-    // We can retrieve a Closeable for closing the input edge.
-    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal>>
+    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal> + Send + Sync>
 {
     /// The input data going into the line.
     type In: Send + Sync + 'static;
@@ -77,7 +75,7 @@ where
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
 
     /// Edges that we can push data into. Uses [Closeable] to support shutdown propagation.
-    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType>>>,
+    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>>,
 
     /// Input to our current node that parents will push into.
     pub input: Arc<SyncEdge<In, SignalType>>,
@@ -279,26 +277,9 @@ where
     type LineRoutine = LineRoutineType;
 }
 
-/// Implement the [Get] constructor for inbound [Pushable] edge.
-/// This allows users to get the input connection of this node.
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Get<dyn Pushable<DataType = In, SignalType = SignalType>>
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync + 'static,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
-{
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = In, SignalType = SignalType>>, Error> {
-        Get::get(&self.input)
-    }
-}
-
 /// Get a [Closeable] for this node's input edge.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Get<dyn Closeable<DataType = In, SignalType = SignalType>>
+    Get<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync + 'static,
@@ -307,7 +288,10 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out>,
 {
-    fn get(&self) -> Result<Box<dyn Closeable<DataType = In, SignalType = SignalType>>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync>, Error>
+    {
         Get::get(&self.input)
     }
 }
@@ -332,7 +316,7 @@ where
 /// This allows users to add [Closeable] edges to this node such that it can push data
 /// into them when scheduled, and close them on shutdown.
 impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Add<dyn Closeable<DataType = Out, SignalType = SignalType>>
+    Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>
     for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync,
@@ -343,7 +327,7 @@ where
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType>>,
+        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>,
     ) -> Result<(), Error> {
         Ok(self.pushes.push(closeable))
     }
@@ -354,19 +338,19 @@ where
 /// - [crate::make_bidi]
 /// - [crate::make_push]
 /// - [crate::make_work]
+///
+/// Returns a concrete `Box<Line<...>>` rather than `Box<impl LineTrait + ...>`.
+/// This is intentional — `impl Trait` return types prevent the compiler from
+/// resolving supertrait bounds involving `dyn Trait + Send + Sync`, which
+/// breaks type inference for `make_bidi`/`make_push` in downstream code.
 pub fn make_line<In, Out, SignalType, ThreadIdType, RoutineType>(
     worker: RoutineType,
-) -> Box<
-    impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
-    + Workable<ThreadId = ThreadIdType>
-    + Add<dyn Workable<ThreadId = ThreadIdType>>
-    + Send,
->
+) -> Box<Line<In, Out, SignalType, ThreadIdType, RoutineType>>
 where
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
+    ThreadIdType: ThreadId + 'static,
     RoutineType: LineRoutine<In, Out> + 'static,
 {
     Box::new(Line::<In, Out, SignalType, ThreadIdType, RoutineType>::of(
@@ -380,7 +364,7 @@ pub mod tests {
     use crate::error::ErrorKind;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::{make_bidi, work::make_line};
-    use crate::{sink::work::tee, work::Connect, work::Sink, work::Source};
+    use crate::{sink::work::tee, work::Sink, work::Source};
     use std::time::Instant;
 
     #[test]
@@ -529,9 +513,9 @@ pub mod tests {
         // This typehint is not needed as exemplified by other tests
         // but it helps readability to be explicit when building
         // the graph.
-        Connect::<usize>::bidi(line_1, &mut line_2).unwrap();
+        make_bidi(line_1, &mut line_2).unwrap();
 
-        let mut sink = Sink::new(line_2).unwrap();
+        let mut sink = Sink::<usize>::new(line_2).unwrap();
 
         // Add one flush
         source.push(Message::Data(1)).unwrap();
@@ -647,7 +631,7 @@ pub mod tests {
         make_bidi(line_8, &mut line_9).unwrap();
         make_bidi(line_9, &mut line_10).unwrap();
 
-        let mut sink = Sink::new(line_10).unwrap();
+        let mut sink = Sink::<usize>::new(line_10).unwrap();
 
         let before = Instant::now();
         for _ in 0..10000 {
@@ -688,7 +672,7 @@ pub mod tests {
 
         let mut source = Source::new(&line_1).unwrap();
         make_bidi(line_1, &mut line_2).unwrap();
-        let mut sink = Sink::new(line_2).unwrap();
+        let mut sink = Sink::<usize>::new(line_2).unwrap();
 
         // Push some data through the chain
         source.push(Message::Data(1)).unwrap();

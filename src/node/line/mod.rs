@@ -1,8 +1,9 @@
-//! A variant of [crate::Workable] and [crate::Pullable] nodes with one input and output.
+//! A variant of [crate::Workable], [crate::Pullable], and [crate::Pollable] nodes with one input and output.
+pub mod poll;
 pub mod pull;
 mod reader;
-mod routine;
+pub(crate) mod routine;
 pub mod work;
 
 pub use reader::LineReader;
-pub use routine::LineRoutine;
+pub use routine::{AsyncLineRoutine, LineRoutine};

@@ -1,37 +1,12 @@
+use crate::Closeable;
 use crate::error::Error;
-use crate::message::Message;
 use crate::signal::Origin;
-use crate::{Closeable, Pushable};
+use std::cell::RefCell;
+use std::rc::Rc;
 
-impl<DataType, SignalType> Pushable
-    for Box<dyn Closeable<DataType = DataType, SignalType = SignalType>>
+impl<CloseableType: ?Sized, DataType, SignalType> Closeable for Box<CloseableType>
 where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
-    type DataType = DataType;
-    type SignalType = SignalType;
-
-    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        self.as_mut().push(object)
-    }
-}
-
-impl<DataType, SignalType> Closeable
-    for Box<dyn Closeable<DataType = DataType, SignalType = SignalType>>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
-    fn close(&mut self) -> Result<(), Error> {
-        self.as_mut().close()
-    }
-}
-
-impl<CloseableType, DataType, SignalType> Closeable for Box<CloseableType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
+    SignalType: Origin,
     CloseableType: Closeable<DataType = DataType, SignalType = SignalType>,
 {
     fn close(&mut self) -> Result<(), Error> {
@@ -39,9 +14,29 @@ where
     }
 }
 
+impl<T: Closeable> Closeable for Vec<T>
+where
+    T::DataType: Clone,
+    T::SignalType: Clone,
+{
+    fn close(&mut self) -> Result<(), Error> {
+        for edge in self.iter_mut() {
+            edge.close()?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Closeable> Closeable for Rc<RefCell<T>> {
+    fn close(&mut self) -> Result<(), Error> {
+        self.borrow_mut().close()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Pushable;
     use crate::{Message, SyncEdge};
     use std::sync::Arc;
 

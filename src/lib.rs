@@ -23,20 +23,21 @@ pub use generates::Generates;
 
 pub use crate::connect::graph;
 pub use connect::{
-    Closeable, PolicyEdge, Pullable, Pushable, SignalPolicy, SyncEdge, Workable, make_bidi,
-    make_push, make_work, marker::Connection,
+    AsyncEdge, Closeable, Linkable, PolicyEdge, Pollable, Pullable, Pushable, Receivable,
+    SignalPolicy, SyncBridge, SyncEdge, Workable, make_bidi, make_push, make_work,
+    marker::Connection,
 };
 pub use message::Message;
 pub use node::{
-    BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, Flush, LineReader,
-    LineRoutine, Next, Send,
+    AsyncLineRoutine, BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, Flush,
+    LineReader, LineRoutine, Next, Poll, Send,
 };
 pub use node::{bifurcation, biunion};
 pub use signal::{Origin, Trackable};
 pub use sink::GraphSink;
 pub use thread::{
-    BundlePanics, DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream,
-    ThreadStreamHandle,
+    AsyncThread, AsyncThreadHandle, BundlePanics, DefaultThread, Spawnable, ThreadBundle,
+    ThreadBundleHandle, ThreadId, ThreadStream, ThreadStreamHandle,
 };
 
 #[cfg(test)]

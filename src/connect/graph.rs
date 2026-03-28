@@ -28,12 +28,12 @@ pub trait Workable: Send + Connection {
 /// easily leads to circualar references and memory leaks </div>
 ///
 /// Instead nodes hold a reference to something that is `Pushable` such as a Arc<SyncEdge<...>> Or Rc<RefCell<Vec<..>>>
-pub trait Pushable: Sync + Send + Connection {
+pub trait Pushable: Connection {
     /// The DataType used in [Message<DataType, SignalType>] for this [Pushable]
-    type DataType: Send + Sync;
+    type DataType;
 
     /// The SignalType used in [Message<DataType, SignalType>] for this [Pushable]
-    type SignalType: Origin + Send + Sync;
+    type SignalType: Origin;
 
     /// Pushes a message to this [Pushable]
     fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error>;
@@ -69,6 +69,62 @@ pub trait Pullable: Send + Connection {
     type SignalType: Origin + Send + Sync;
 
     fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error>;
+}
+
+/// [`Pollable`] is a [Connection] for event-driven async nodes.
+///
+/// Unlike [Workable] which blocks until work is done, [Pollable::poll] is non-blocking
+/// and receives a [core::task::Context] carrying a [core::task::Waker]. The waker
+/// can be cloned and handed to I/O sources (sockets, timers, edges) so they can
+/// wake the node when there's work to do.
+///
+/// Multiple [Pollable] nodes can share a single thread via an async executor that
+/// sleeps until a waker fires, then calls [Pollable::poll] on the woken node.
+///
+/// Like [Workable], [Pollable] has an associated [Pollable::ThreadId] to ensure
+/// nodes are only added to matching threads (compile-time safety).
+/// Move semantics prevent a node from being added to multiple threads.
+pub trait Pollable: Connection {
+    type ThreadId: ThreadId;
+    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error>;
+}
+
+/// [`Linkable`] is a [Connection] for two-stage graph construction.
+///
+/// Builders implement [Linkable] to support deferred construction — graph
+/// wiring happens on the main thread (stage 1), actual edge creation happens
+/// on the target thread (stage 2) via [Linkable::link].
+///
+/// Generic over [crate::marker::Linkage] to express the role:
+/// - [crate::marker::Parent]: being linked as a parent (receives output edge)
+/// - [crate::marker::Child]: being linked as a child (receives input edge)
+pub trait Linkable<Role: crate::marker::Linkage>: Send + Connection {
+    /// The edge received during linking (e.g. `Rc<RefCell<AsyncEdge>>`)
+    type Edge;
+    /// What linking produces (e.g. `Box<dyn Pollable>`)
+    type Node;
+
+    /// Consume this builder and produce running nodes.
+    /// The edge connects this node to whoever owns it.
+    fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node>;
+}
+
+/// [`Receivable`] is a non-blocking data source.
+///
+/// Unlike [Pullable] which couples scheduling and data flow, [Receivable]
+/// is pure data — no thread ownership, no blocking. It just checks if
+/// data is available and returns it.
+///
+/// Used by async nodes to drain input edges (both [SyncBridge] and [AsyncEdge]).
+pub trait Receivable {
+    type DataType;
+    type SignalType: Origin;
+
+    /// Non-blocking receive.
+    /// Returns `Ok(Some(msg))` if data is available.
+    /// Returns `Ok(None)` if open but empty.
+    /// Returns `Err(Closed)` if closed and empty.
+    fn try_recv(&mut self) -> Result<Option<Message<Self::DataType, Self::SignalType>>, Error>;
 }
 
 /// [`Add`] trait is used to create [Connection]s between our nodes.
@@ -158,7 +214,7 @@ pub mod tests {
         >,
 
         /// Outgoing data connections. Lets us shovel data into our child nodes.
-        pub outputs: Vec<Box<dyn Closeable<DataType = usize, SignalType = usize>>>,
+        pub outputs: Vec<Box<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync>>,
     }
 
     impl Node {
@@ -216,17 +272,20 @@ pub mod tests {
     }
 
     /// Get Closeable for input edge.
-    impl Get<dyn Closeable<DataType = usize, SignalType = usize>> for Node {
-        fn get(&self) -> Result<Box<dyn Closeable<DataType = usize, SignalType = usize>>, Error> {
+    impl Get<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync> for Node {
+        fn get(
+            &self,
+        ) -> Result<Box<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync>, Error>
+        {
             Ok(Box::new(self.input.clone()))
         }
     }
 
     /// Method adding something to output.
-    impl Add<dyn Closeable<DataType = usize, SignalType = usize>> for Node {
+    impl Add<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync> for Node {
         fn add(
             &mut self,
-            connection: Box<dyn Closeable<DataType = usize, SignalType = usize>>,
+            connection: Box<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync>,
         ) -> Result<(), Error> {
             Ok(self.outputs.push(connection))
         }
@@ -365,5 +424,115 @@ pub mod tests {
         assert_eq!(node_3.pull().unwrap(), Message::Data(7));
         assert_eq!(node_3.pull().unwrap(), Message::Data(22));
         assert_eq!(node_3.pull().unwrap(), Message::Data(37));
+    }
+
+    /// A simple async node that processes input via `Pollable`.
+    /// It polls its input edge non-blockingly and processes data.
+    struct AsyncNode {
+        input: Arc<SyncEdge<usize, usize>>,
+        routine: Routine,
+        outputs: Vec<usize>,
+    }
+
+    impl AsyncNode {
+        fn new() -> Self {
+            AsyncNode {
+                input: Arc::new(SyncEdge::new()),
+                routine: Routine { state: 0 },
+                outputs: Vec::new(),
+            }
+        }
+    }
+
+    impl Connection for AsyncNode {}
+
+    impl Pollable for AsyncNode {
+        type ThreadId = DefaultThread;
+        fn poll(
+            &mut self,
+            _cx: &mut core::task::Context<'_>,
+        ) -> Result<core::task::Poll<()>, Error> {
+            match self.input.poll()? {
+                Some(Message::Data(d)) => {
+                    self.outputs.push(self.routine.process(d));
+                    Ok(core::task::Poll::Pending)
+                }
+                Some(_) => Ok(core::task::Poll::Pending),
+                None => Ok(core::task::Poll::Pending),
+            }
+        }
+    }
+
+    /// A `Pollable` node that processes input non-blockingly.
+    #[test]
+    fn pollable_processes_available_input() {
+        let mut node = AsyncNode::new();
+        let mut input = node.input.clone();
+
+        input.push(Message::Data(0)).unwrap();
+        input.push(Message::Data(1)).unwrap();
+
+        // Create a no-op waker for testing
+        let waker = std::task::Waker::noop();
+        let mut cx = core::task::Context::from_waker(&waker);
+
+        // First poll processes first message
+        assert!(matches!(
+            node.poll(&mut cx).unwrap(),
+            core::task::Poll::Pending
+        ));
+        assert_eq!(node.outputs, vec![1]); // 0 * 2 + 1
+
+        // Second poll processes second message
+        assert!(matches!(
+            node.poll(&mut cx).unwrap(),
+            core::task::Poll::Pending
+        ));
+        assert_eq!(node.outputs, vec![1, 4]); // 1 * 2 + 2
+
+        // Third poll finds no input — still pending
+        assert!(matches!(
+            node.poll(&mut cx).unwrap(),
+            core::task::Poll::Pending
+        ));
+        assert_eq!(node.outputs, vec![1, 4]); // unchanged
+    }
+
+    /// A `Pollable` node that returns `Ready` when closed.
+    struct ClosingAsyncNode {
+        input: Arc<SyncEdge<usize, usize>>,
+    }
+
+    impl Connection for ClosingAsyncNode {}
+
+    impl Pollable for ClosingAsyncNode {
+        type ThreadId = DefaultThread;
+        fn poll(
+            &mut self,
+            _cx: &mut core::task::Context<'_>,
+        ) -> Result<core::task::Poll<()>, Error> {
+            match self.input.poll() {
+                Ok(Some(_)) => Ok(core::task::Poll::Pending),
+                Ok(None) => Ok(core::task::Poll::Pending),
+                Err(_) => Ok(core::task::Poll::Ready(())),
+            }
+        }
+    }
+
+    #[test]
+    fn pollable_returns_ready_on_close() {
+        let mut node = ClosingAsyncNode {
+            input: Arc::new(SyncEdge::new()),
+        };
+
+        node.input.close().unwrap();
+
+        let waker = std::task::Waker::noop();
+        let mut cx = core::task::Context::from_waker(&waker);
+
+        assert!(matches!(
+            node.poll(&mut cx).unwrap(),
+            core::task::Poll::Ready(())
+        ));
     }
 }

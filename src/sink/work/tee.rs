@@ -19,8 +19,10 @@ where
 {
     pub fn new<MultiplicityType>(
         workable: &mut (
-                 impl Add<dyn Closeable<DataType = DataType, SignalType = SignalType>, MultiplicityType>
-                 + 'static
+                 impl Add<
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+            MultiplicityType,
+        > + 'static
              ),
     ) -> Result<Self, Error>
     where
@@ -68,7 +70,8 @@ mod tests {
 
     struct MockNode {
         output: Message<usize, &'static str>,
-        pushable: Vec<Box<dyn Closeable<DataType = usize, SignalType = &'static str>>>,
+        pushable:
+            Vec<Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>>,
     }
 
     impl Connection for MockNode {}
@@ -89,10 +92,10 @@ mod tests {
         }
     }
 
-    impl Add<dyn Closeable<DataType = usize, SignalType = &'static str>> for MockNode {
+    impl Add<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> for MockNode {
         fn add(
             &mut self,
-            pushable: Box<dyn Closeable<DataType = usize, SignalType = &'static str>>,
+            pushable: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>,
         ) -> Result<(), Error> {
             Ok(self.pushable.push(pushable))
         }

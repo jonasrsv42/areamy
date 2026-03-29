@@ -15,11 +15,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::task::Waker;
 
-struct Inner<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
+struct Inner<DataType, SignalType: Origin> {
     buffer: VecDeque<Message<DataType, SignalType>>,
     waker: Waker,
     closed: bool,
@@ -30,11 +26,7 @@ where
 /// Implements [crate::Closeable] so sync nodes can push into it via
 /// [crate::make_push]. Fires a [Waker] on every push to wake the
 /// consuming async node.
-pub struct SyncBridge<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
+pub struct SyncBridge<DataType, SignalType: Origin> {
     inner: Mutex<Inner<DataType, SignalType>>,
 }
 

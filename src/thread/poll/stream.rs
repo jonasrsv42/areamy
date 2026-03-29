@@ -3,15 +3,9 @@
 use super::ready_queue::ReadyQueue;
 use super::spawn::{NodeId, Spawnable};
 use super::waker::NodeWaker;
-use crate::connect::poll::edge::AsyncEdge;
 use crate::error::{Error, ErrorKind};
-use crate::node::line::poll::builder::child::ChildNode;
-use crate::node::line::poll::builder::linked::LinkedNode;
-use crate::node::line::poll::builder::parent::ParentNode;
-use crate::node::line::poll::builder::terminal::TerminalNode;
-use crate::{AsyncLineRoutine, Linkable, Origin, Pollable, ThreadId, fatal};
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::node::line::poll::builder::node::Node;
+use crate::{AsyncLineRoutine, Origin, Pollable, ThreadId, fatal};
 use std::sync::Arc;
 use std::task::Context;
 use std::thread::{JoinHandle, spawn};
@@ -45,78 +39,31 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         (node_id, waker)
     }
 
-    /// Create a terminal node (sync in, sync out).
-    /// Wire it with [crate::make_push]/[crate::graph::Get] then call [Self::add].
-    pub fn terminal<In, Out, SignalType, RoutineType>(
+    /// Create a node with deferred edge kinds.
+    ///
+    /// Resolve input and output via wiring methods:
+    /// - `.typed::<OutEdge>()` → Sync input, explicit output kind
+    /// - `.parent(node)` → Async input (adds parent)
+    /// - `thread.add(node)` → Sync output (Spawnable)
+    /// - consumed by `.parent()` → Async output (Linkable<Parent>)
+    pub fn node<InType, OutType, SignalType, RoutineType>(
         &mut self,
         routine: RoutineType,
-    ) -> TerminalNode<In, Out, SignalType, ThreadIdType, RoutineType>
+    ) -> Node<
+        crate::poll::Deferred,
+        crate::poll::Deferred,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        RoutineType,
+    >
     where
-        In: Send + Sync + 'static,
-        Out: Clone + Send + Sync + 'static,
-        SignalType: Origin + Clone + Send + Sync + 'static,
-        RoutineType: AsyncLineRoutine<In, Out>,
+        SignalType: Origin,
+        RoutineType: AsyncLineRoutine<InType, OutType>,
     {
         let (node_id, waker) = self.next_node();
-        TerminalNode::new(node_id, routine, waker)
-    }
-
-    /// Create a parent node (sync in, async out).
-    /// Pass it to [Self::child] or [Self::linked].
-    pub fn parent<In, Out, SignalType, RoutineType>(
-        &mut self,
-        routine: RoutineType,
-    ) -> ParentNode<In, Out, SignalType, ThreadIdType, RoutineType>
-    where
-        In: Send + Sync + 'static,
-        Out: 'static,
-        SignalType: Origin + Clone + Send + Sync + 'static,
-        RoutineType: AsyncLineRoutine<In, Out>,
-    {
-        let (node_id, waker) = self.next_node();
-        ParentNode::new(node_id, routine, waker)
-    }
-
-    /// Create a child node (async in, sync out) that owns a parent.
-    /// Wire sync outputs, then call [Self::add].
-    pub fn child<In, Out, SignalType, RoutineType>(
-        &mut self,
-        routine: RoutineType,
-        parent: impl Linkable<
-            crate::marker::Parent,
-            Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
-            Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
-        > + 'static,
-    ) -> ChildNode<In, Out, SignalType, ThreadIdType, RoutineType>
-    where
-        In: 'static,
-        Out: Clone + Send + Sync + 'static,
-        SignalType: Origin + Clone + Send + Sync + 'static,
-        RoutineType: AsyncLineRoutine<In, Out>,
-    {
-        let (node_id, waker) = self.next_node();
-        ChildNode::new(node_id, routine, waker, Box::new(parent))
-    }
-
-    /// Create a linked node (async in, async out) that owns a parent.
-    /// Pass the result to [Self::child] or another [Self::linked].
-    pub fn linked<In, Out, SignalType, RoutineType>(
-        &mut self,
-        routine: RoutineType,
-        parent: impl Linkable<
-            crate::marker::Parent,
-            Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
-            Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
-        > + 'static,
-    ) -> LinkedNode<In, Out, SignalType, ThreadIdType, RoutineType>
-    where
-        In: 'static,
-        Out: 'static,
-        SignalType: Origin + Clone + Send + Sync + 'static,
-        RoutineType: AsyncLineRoutine<In, Out>,
-    {
-        let (node_id, waker) = self.next_node();
-        LinkedNode::new(node_id, routine, waker, Box::new(parent))
+        Node::deferred(node_id, routine, waker)
     }
 
     /// Add a node to the thread. It will be spawned when the thread starts.
@@ -249,7 +196,9 @@ mod tests {
     fn async_thread_starts_and_stops() {
         let mut thread = AsyncThread::<IoThread>::new();
 
-        let node = thread.terminal(AsyncMockLine::new());
+        let node = thread
+            .node(AsyncMockLine::new())
+            .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&node).unwrap();
@@ -268,7 +217,9 @@ mod tests {
     fn async_thread_processes_data() {
         let mut thread = AsyncThread::<IoThread>::new();
 
-        let mut node = thread.terminal(AsyncMockLine::new());
+        let mut node = thread
+            .node(AsyncMockLine::new())
+            .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&node).unwrap();
@@ -295,12 +246,17 @@ mod tests {
     fn close_propagates_through_chain() {
         let mut thread = AsyncThread::<IoThread>::new();
 
-        let parent = thread.parent(AsyncMockLine::new());
+        let parent = thread
+            .node(AsyncMockLine::new())
+            .typed::<crate::poll::Async>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&parent).unwrap();
 
-        let mut child = thread.child(AsyncMockLine::new(), parent);
+        let mut child = thread
+            .node(AsyncMockLine::new())
+            .parent(parent)
+            .typed::<crate::poll::Sync>();
 
         let output = Arc::new(SyncEdge::new());
         make_push(&mut child, &output).unwrap();

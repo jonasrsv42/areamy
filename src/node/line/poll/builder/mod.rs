@@ -1,12 +1,10 @@
-//! Builders for [super::node::AsyncLine].
+//! Unified async node builder parameterized by edge kind markers.
 //!
-//! Each builder corresponds to a linkage role:
-//! - [terminal]: No linkage. Sync input, sync output.
-//! - [parent]: Linkable<Parent>. Sync input, async output.
-//! - [child]: Linkable<Child> + Spawnable. Async input, sync output. Owns parent.
-//! - [linked]: Linkable<Parent> + Linkable<Child>. Async in + async out. Owns parent.
+//! Use [`Node`] via [`AsyncThread::node`](crate::AsyncThread):
+//!
+//! - `.typed::<OutEdge>()` → Sync input, explicit output
+//! - `.parent(node)` → Async input (adds parent)
+//! - `thread.add(node)` → Sync output (Spawnable)
+//! - consumed by `.parent()` → Async output (Linkable<Parent>)
 
-pub mod child;
-pub mod linked;
-pub mod parent;
-pub mod terminal;
+pub mod node;

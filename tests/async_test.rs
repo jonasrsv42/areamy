@@ -97,22 +97,24 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 struct IoThread;
 impl ThreadId for IoThread {}
 
-/// Sync source → async terminal (PollDouble) → sync output.
+/// Sync source → Node<Sync, Sync> (terminal) → sync output.
 /// Data only appears in output after poll() processes it.
 #[test]
 fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
+    use areamy::poll::Sync;
+
     let mut source_node = areamy::work::make_line(Double::new());
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 
     let mut async_thread = AsyncThread::<IoThread>::new();
-    let mut async_node = async_thread.terminal(PollDouble::new());
+    let mut node = async_thread.node(PollDouble::new()).typed::<Sync>();
 
-    make_push(&mut source_node, &async_node)?;
+    make_push(&mut source_node, &node)?;
 
     let output = Arc::new(SyncEdge::new());
-    make_push(&mut async_node, &output)?;
+    make_push(&mut node, &output)?;
 
-    async_thread.add(async_node);
+    async_thread.add(node);
 
     let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
@@ -131,19 +133,24 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
     Ok(())
 }
 
-/// Sync source → async parent (PollDouble) → async child (PollDouble) → sync output.
+/// Node<Sync, Async> → Node<Async, Sync> via merge.
 /// Both async nodes use poll() to process data.
 #[test]
 fn async_chain_with_local_edges() -> Result<(), Error> {
+    use areamy::poll::{Async, Sync};
+
     let mut source_node = areamy::work::make_line(Double::new());
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent = async_thread.parent(PollDouble::new());
+    let parent = async_thread.node(PollDouble::new()).typed::<Async>();
     make_push(&mut source_node, &parent)?;
 
-    let mut child = async_thread.child(PollDouble::new(), parent);
+    let mut child = async_thread
+        .node(PollDouble::new())
+        .parent(parent)
+        .typed::<Sync>();
 
     let output = Arc::new(SyncEdge::new());
     make_push(&mut child, &output)?;
@@ -157,7 +164,7 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
     bundle.add(sync_thread).add(async_thread);
     let handle = bundle.start();
 
-    // 3 → sync Double → 6 → async parent PollDouble → 12 → async child PollDouble → 24
+    // 3 → sync Double → 6 → async PollDouble → 12 → async PollDouble → 24
     source.push(Message::Data(3))?;
     assert_eq!(output.read_front()?, Message::Data(24));
 
@@ -167,22 +174,26 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
     Ok(())
 }
 
-/// Sync source → parent → linked → linked → linked → child → sync output.
-/// Five async nodes chained via local edges using linked().
+/// Five async nodes chained via merge: parent → linked → linked → linked → child.
 #[test]
 fn long_async_chain() -> Result<(), Error> {
+    use areamy::poll::{Async, Sync};
+
     let mut source_node = areamy::work::make_line(Double::new());
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let a = async_thread.parent(PollDouble::new());
+    let a = async_thread.node(PollDouble::new()).typed::<Async>();
     make_push(&mut source_node, &a)?;
 
-    let b = async_thread.linked(PollDouble::new(), a);
-    let c = async_thread.linked(PollDouble::new(), b);
-    let d = async_thread.linked(PollDouble::new(), c);
-    let mut e = async_thread.child(PollDouble::new(), d);
+    let b = async_thread.node(PollDouble::new()).parent(a);
+    let c = async_thread.node(PollDouble::new()).parent(b);
+    let d = async_thread.node(PollDouble::new()).parent(c);
+    let mut e = async_thread
+        .node(PollDouble::new())
+        .parent(d)
+        .typed::<Sync>();
 
     let output = Arc::new(SyncEdge::new());
     make_push(&mut e, &output)?;
@@ -211,7 +222,7 @@ fn long_async_chain() -> Result<(), Error> {
     Ok(())
 }
 
-/// One async terminal node pushing to two async terminal nodes via SyncBridge.
+/// Fan-out via SyncBridge (Mutex) between Node<Sync, Sync> terminals.
 ///
 /// ```text
 ///                  ┌→ node_b → output_b
@@ -220,18 +231,20 @@ fn long_async_chain() -> Result<(), Error> {
 /// ```
 ///
 /// Uses SyncBridge (Mutex) for push connections between async nodes.
-/// For zero-Mutex local edges, use parent/child/linked — but those
-/// enforce DAG. Push connections allow fan-out at the cost of Mutex.
+/// For zero-Mutex local edges, use merge — but that enforces DAG.
+/// Push connections allow fan-out at the cost of Mutex.
 #[test]
 fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
+    use areamy::poll::Sync;
+
     let mut source_node = areamy::work::make_line(Double::new());
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let mut node_a = async_thread.terminal(PollDouble::new());
-    let mut node_b = async_thread.terminal(PollDouble::new());
-    let mut node_c = async_thread.terminal(PollDouble::new());
+    let mut node_a = async_thread.node(PollDouble::new()).typed::<Sync>();
+    let mut node_b = async_thread.node(PollDouble::new()).typed::<Sync>();
+    let mut node_c = async_thread.node(PollDouble::new()).typed::<Sync>();
 
     make_push(&mut source_node, &node_a)?;
     make_push(&mut node_a, &node_b)?;
@@ -269,14 +282,16 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
 /// Two independent parent chains merged into one child.
 ///
 /// ```text
-/// source_a → parent_a (PollDouble) ─┐
-///                                    ├→ child (PollDouble) → output
-/// source_b → parent_b (PollDouble) ─┘
+/// source_a → Node<Sync,Async> ─┐
+///                                ├→ Node<Async,Sync> → output
+/// source_b → Node<Sync,Async> ─┘
 /// ```
 ///
 /// Child drains from both parents. Output receives doubled values from both.
 #[test]
 fn merge_two_parents_into_child() -> Result<(), Error> {
+    use areamy::poll::{Async, Sync};
+
     let mut source_a_node = areamy::work::make_line(Double::new());
     let mut source_a = areamy::work::Source::<usize>::of(&source_a_node)?;
 
@@ -285,16 +300,17 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent_a = async_thread.parent(PollDouble::new());
+    let parent_a = async_thread.node(PollDouble::new()).typed::<Async>();
     make_push(&mut source_a_node, &parent_a)?;
 
-    let parent_b = async_thread.parent(PollDouble::new());
+    let parent_b = async_thread.node(PollDouble::new()).typed::<Async>();
     make_push(&mut source_b_node, &parent_b)?;
 
-    // Merge: child owns both parents
     let mut child = async_thread
-        .child(PollDouble::new(), parent_a)
-        .merge(parent_b);
+        .node(PollDouble::new())
+        .parent(parent_a)
+        .parent(parent_b)
+        .typed::<Sync>();
 
     let output = Arc::new(SyncEdge::new());
     make_push(&mut child, &output)?;
@@ -313,11 +329,11 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
     bundle.add(sync_a).add(sync_b).add(async_thread);
     let handle = bundle.start();
 
-    // source_a: 5 → Double → 10 → parent_a PollDouble → 20 → child PollDouble → 40
+    // source_a: 5 → Double → 10 → PollDouble → 20 → PollDouble → 40
     source_a.push(Message::Data(5))?;
     assert_eq!(output.read_front()?, Message::Data(40));
 
-    // source_b: 3 → Double → 6 → parent_b PollDouble → 12 → child PollDouble → 24
+    // source_b: 3 → Double → 6 → PollDouble → 12 → PollDouble → 24
     source_b.push(Message::Data(3))?;
     assert_eq!(output.read_front()?, Message::Data(24));
 
@@ -328,17 +344,19 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
     Ok(())
 }
 
-/// Three parents merged into one linked node, then passed to child for sync output.
+/// Three parents merged into one linked node, then child for sync output.
 ///
 /// ```text
-/// source_a → parent_a ─┐
-///                       │
-/// source_b → parent_b ──┼→ linked (PollDouble) → child (PollDouble) → output
-///                       │
-/// source_c → parent_c ─┘
+/// source_a → Node<Sync,Async> ─┐
+///                                │
+/// source_b → Node<Sync,Async> ──┼→ Node<Async,Deferred> → Node<Async,Sync> → output
+///                                │
+/// source_c → Node<Sync,Async> ─┘
 /// ```
 #[test]
 fn merge_three_parents_via_linked() -> Result<(), Error> {
+    use areamy::poll::{Async, Sync};
+
     let mut source_a_node = areamy::work::make_line(Double::new());
     let mut source_a = areamy::work::Source::<usize>::of(&source_a_node)?;
 
@@ -350,22 +368,26 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent_a = async_thread.parent(PollDouble::new());
+    let parent_a = async_thread.node(PollDouble::new()).typed::<Async>();
     make_push(&mut source_a_node, &parent_a)?;
 
-    let parent_b = async_thread.parent(PollDouble::new());
+    let parent_b = async_thread.node(PollDouble::new()).typed::<Async>();
     make_push(&mut source_b_node, &parent_b)?;
 
-    let parent_c = async_thread.parent(PollDouble::new());
+    let parent_c = async_thread.node(PollDouble::new()).typed::<Async>();
     make_push(&mut source_c_node, &parent_c)?;
 
     // All three parents merged into one linked node
     let linked = async_thread
-        .linked(PollDouble::new(), parent_a)
-        .merge(parent_b)
-        .merge(parent_c);
+        .node(PollDouble::new())
+        .parent(parent_a)
+        .parent(parent_b)
+        .parent(parent_c);
 
-    let mut child = async_thread.child(PollDouble::new(), linked);
+    let mut child = async_thread
+        .node(PollDouble::new())
+        .parent(linked)
+        .typed::<Sync>();
 
     let output = Arc::new(SyncEdge::new());
     make_push(&mut child, &output)?;
@@ -384,12 +406,12 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     bundle.add(sync_a).add(sync_b).add(sync_c).add(async_thread);
     let handle = bundle.start();
 
-    // source_a: 1 → Double → 2 → parent_a PollDouble → 4
+    // source_a: 1 → Double → 2 → PollDouble → 4
     //   → linked PollDouble → 8 → child PollDouble → 16
     source_a.push(Message::Data(1))?;
     assert_eq!(output.read_front()?, Message::Data(16));
 
-    // source_c: 2 → Double → 4 → parent_c PollDouble → 8
+    // source_c: 2 → Double → 4 → PollDouble → 8
     //   → linked PollDouble → 16 → child PollDouble → 32
     source_c.push(Message::Data(2))?;
     assert_eq!(output.read_front()?, Message::Data(32));
@@ -397,6 +419,117 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     source_a.close()?;
     source_b.close()?;
     source_c.close()?;
+    let errors = handle.join()?;
+    assert!(errors.is_empty());
+    Ok(())
+}
+
+// ============================================================
+// Tests using unified Node with thread.node()
+// ============================================================
+
+/// Terminal via typed: Node<Sync, Sync>.
+#[test]
+fn node_terminal_via_typed() -> Result<(), Error> {
+    let mut source_node = areamy::work::make_line(Double::new());
+    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+
+    let mut async_thread = AsyncThread::<IoThread>::new();
+
+    let mut node = async_thread
+        .node(PollDouble::new())
+        .typed::<areamy::poll::Sync>();
+
+    make_push(&mut source_node, &node)?;
+
+    let output = Arc::new(SyncEdge::new());
+    make_push(&mut node, &output)?;
+
+    async_thread.add(node);
+
+    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    make_work(source_node, &mut sync_thread)?;
+
+    let mut bundle = ThreadBundle::new();
+    bundle.add(sync_thread).add(async_thread);
+    let handle = bundle.start();
+
+    // 5 → Double → 10 → PollDouble → 20
+    source.push(Message::Data(5))?;
+    assert_eq!(output.read_front()?, Message::Data(20));
+
+    source.close()?;
+    let errors = handle.join()?;
+    assert!(errors.is_empty());
+    Ok(())
+}
+
+/// Parent→child via typed + merge.
+#[test]
+fn node_parent_child_via_typed_and_merge() -> Result<(), Error> {
+    let mut source_node = areamy::work::make_line(Double::new());
+    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+
+    let mut async_thread = AsyncThread::<IoThread>::new();
+
+    let parent = async_thread
+        .node(PollDouble::new())
+        .typed::<areamy::poll::Async>();
+    make_push(&mut source_node, &parent)?;
+
+    let mut child = async_thread
+        .node(PollDouble::new())
+        .parent(parent)
+        .typed::<areamy::poll::Sync>();
+
+    let output = Arc::new(SyncEdge::new());
+    make_push(&mut child, &output)?;
+
+    async_thread.add(child);
+
+    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    make_work(source_node, &mut sync_thread)?;
+
+    let mut bundle = ThreadBundle::new();
+    bundle.add(sync_thread).add(async_thread);
+    let handle = bundle.start();
+
+    // 3 → Double → 6 → PollDouble → 12 → PollDouble → 24
+    source.push(Message::Data(3))?;
+    assert_eq!(output.read_front()?, Message::Data(24));
+
+    source.close()?;
+    let errors = handle.join()?;
+    assert!(errors.is_empty());
+    Ok(())
+}
+
+/// Sink: Deferred output, data discarded via Null.
+#[test]
+fn node_sink_deferred_output() -> Result<(), Error> {
+    let mut source_node = areamy::work::make_line(Double::new());
+    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+
+    let mut async_thread = AsyncThread::<IoThread>::new();
+
+    let parent = async_thread
+        .node(PollDouble::new())
+        .typed::<areamy::poll::Async>();
+    make_push(&mut source_node, &parent)?;
+
+    let sink = async_thread.node(PollDouble::new()).parent(parent);
+    async_thread.add(sink);
+
+    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    make_work(source_node, &mut sync_thread)?;
+
+    let mut bundle = ThreadBundle::new();
+    bundle.add(sync_thread).add(async_thread);
+    let handle = bundle.start();
+
+    source.push(Message::Data(5))?;
+
+    source.close()?;
     let errors = handle.join()?;
     assert!(errors.is_empty());
     Ok(())

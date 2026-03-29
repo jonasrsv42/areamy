@@ -12,8 +12,13 @@ use std::sync::{Arc, Mutex};
 /// Routine that queues input in send, then doubles it in poll.
 /// This proves poll is actually being called by the async runtime —
 /// without poll, no data reaches the output.
+enum Pending {
+    Data(usize),
+    Flush,
+}
+
 struct PollDouble {
-    pending: VecDeque<usize>,
+    pending: VecDeque<Pending>,
     output: VecDeque<usize>,
 }
 
@@ -28,7 +33,7 @@ impl PollDouble {
 
 impl areamy::Send<usize> for PollDouble {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        self.pending.push_back(message);
+        self.pending.push_back(Pending::Data(message));
         Ok(())
     }
 }
@@ -41,14 +46,18 @@ impl areamy::Next<usize> for PollDouble {
 
 impl areamy::Flush for PollDouble {
     fn flush(&mut self) -> Result<(), Error> {
+        self.pending.push_back(Pending::Flush);
         Ok(())
     }
 }
 
 impl areamy::Poll for PollDouble {
     fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        while let Some(value) = self.pending.pop_front() {
-            self.output.push_back(value * 2);
+        while let Some(item) = self.pending.pop_front() {
+            match item {
+                Pending::Data(value) => self.output.push_back(value * 2),
+                Pending::Flush => return Ok(core::task::Poll::Ready(())),
+            }
         }
         Ok(core::task::Poll::Pending)
     }
@@ -62,11 +71,15 @@ impl areamy::AsyncLineRoutine<usize, usize> for PollDouble {}
 /// actually receive and process data.
 struct PollAccumulator {
     collected: Arc<Mutex<Vec<usize>>>,
+    flushed: bool,
 }
 
 impl PollAccumulator {
     fn new(collected: Arc<Mutex<Vec<usize>>>) -> Self {
-        Self { collected }
+        Self {
+            collected,
+            flushed: false,
+        }
     }
 }
 
@@ -85,12 +98,17 @@ impl areamy::Next<usize> for PollAccumulator {
 
 impl areamy::Flush for PollAccumulator {
     fn flush(&mut self) -> Result<(), Error> {
+        self.flushed = true;
         Ok(())
     }
 }
 
 impl areamy::Poll for PollAccumulator {
     fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+        if self.flushed {
+            self.flushed = false;
+            return Ok(core::task::Poll::Ready(()));
+        }
         Ok(core::task::Poll::Pending)
     }
 }
@@ -660,5 +678,143 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
     let vals_2 = collected_2.lock().unwrap().clone();
     assert_eq!(vals_2, vec![12]);
 
+    Ok(())
+}
+
+// ============================================================
+// Half-close flush test
+// ============================================================
+
+/// Simulates an I/O routine with a half-close handshake on flush.
+///
+/// - send() buffers data
+/// - flush() marks "flush requested", moves buffered data to output (doubled)
+/// - poll() simulates I/O handshake: counts down `flush_cycles`.
+///   Returns Ready when countdown reaches 0 (handshake complete).
+/// - The node only forwards the Flush signal after poll returns Ready.
+struct HalfCloseRoutine {
+    pending: VecDeque<usize>,
+    output: VecDeque<usize>,
+    flush_requested: bool,
+    flush_cycles: usize,
+    flush_cycles_remaining: usize,
+    flush_count: Arc<Mutex<usize>>,
+}
+
+impl HalfCloseRoutine {
+    fn new(flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
+        Self {
+            pending: VecDeque::new(),
+            output: VecDeque::new(),
+            flush_requested: false,
+            flush_cycles,
+            flush_cycles_remaining: 0,
+            flush_count,
+        }
+    }
+}
+
+impl areamy::Send<usize> for HalfCloseRoutine {
+    fn send(&mut self, message: usize) -> Result<(), Error> {
+        self.pending.push_back(message);
+        Ok(())
+    }
+}
+
+impl areamy::Next<usize> for HalfCloseRoutine {
+    fn next(&mut self) -> Result<Option<usize>, Error> {
+        Ok(self.output.pop_front())
+    }
+}
+
+impl areamy::Flush for HalfCloseRoutine {
+    fn flush(&mut self) -> Result<(), Error> {
+        while let Some(val) = self.pending.pop_front() {
+            self.output.push_back(val * 2);
+        }
+        self.flush_requested = true;
+        self.flush_cycles_remaining = self.flush_cycles;
+        Ok(())
+    }
+}
+
+impl areamy::Poll for HalfCloseRoutine {
+    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+        if self.flush_requested {
+            if self.flush_cycles_remaining == 0 {
+                self.flush_requested = false;
+                *self.flush_count.lock().unwrap() += 1;
+                return Ok(core::task::Poll::Ready(()));
+            }
+            self.flush_cycles_remaining -= 1;
+            cx.waker().wake_by_ref();
+        }
+        Ok(core::task::Poll::Pending)
+    }
+}
+
+impl Name for HalfCloseRoutine {}
+impl areamy::LineRoutine<usize, usize> for HalfCloseRoutine {}
+impl areamy::AsyncLineRoutine<usize, usize> for HalfCloseRoutine {}
+
+/// Flush signal is held until the routine's poll() returns Ready.
+///
+/// HalfCloseRoutine takes 3 poll cycles to complete the "handshake".
+/// The Flush signal only reaches the output after those 3 cycles.
+/// Data sent before the flush is doubled and forwarded.
+#[test]
+fn flush_waits_for_routine_ready() -> Result<(), Error> {
+    use areamy::poll::{Async, Sync};
+
+    let mut source_node = areamy::work::make_line(Double::new());
+    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+
+    let flush_count = Arc::new(Mutex::new(0));
+    let mut async_thread = AsyncThread::<IoThread>::new();
+
+    // HalfCloseRoutine needs 3 poll cycles to complete flush handshake
+    let parent = async_thread
+        .node(HalfCloseRoutine::new(3, flush_count.clone()))
+        .typed::<Async>();
+    make_push(&mut source_node, &parent)?;
+
+    // Child collects output to verify flush ordering
+    let mut child = async_thread
+        .node(PollDouble::new())
+        .parent(parent)
+        .typed::<Sync>();
+
+    let output = Arc::new(SyncEdge::new());
+    make_push(&mut child, &output)?;
+
+    async_thread.add(child);
+
+    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    make_work(source_node, &mut sync_thread)?;
+
+    let mut bundle = ThreadBundle::new();
+    bundle.add(sync_thread).add(async_thread);
+    let handle = bundle.start();
+
+    // Send data then flush
+    // 5 → Double → 10 → HalfCloseRoutine.send(10) → pending=[10]
+    source.push(Message::Data(5))?;
+
+    // Flush: HalfCloseRoutine.flush() → output=[20], starts 3-cycle handshake
+    // After 3 poll cycles: Ready → Flush signal forwarded → child receives it
+    source.push(Message::Flush("segment-1".into()))?;
+
+    // Data(20) arrives at child (PollDouble) → 40
+    assert_eq!(output.read_front()?, Message::Data(40));
+
+    // Flush signal arrives at child after handshake completes
+    assert_eq!(output.read_front()?, Message::Flush("segment-1".into()));
+
+    // Verify handshake completed exactly once
+    assert_eq!(*flush_count.lock().unwrap(), 1);
+
+    source.close()?;
+    let errors = handle.join()?;
+    assert!(errors.is_empty());
     Ok(())
 }

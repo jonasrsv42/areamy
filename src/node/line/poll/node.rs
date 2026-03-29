@@ -1,11 +1,33 @@
 //! Async line node that runs an [AsyncLineRoutine] driven by wakers.
+//!
+//! The node orchestrates the routine through a state machine:
+//!
+//! - **Running**: drain input → poll routine → drain output
+//! - **Flushing**: poll routine until Ready → forward Flush signal → Running
+//! - **Closing**: poll routine until Ready → close output → Closed
+//! - **Closed**: return Ready immediately
+//!
+//! This guarantees the routine gets poll() cycles to complete async work
+//! (e.g. I/O flush, half-close handshake) before signals are propagated.
 
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
-use crate::{Closeable, Pollable, Receivable, ThreadId};
+use crate::{Closeable, Pollable, Receivable, ThreadId, fatal};
+
+/// Node state machine for managing flush and close lifecycle.
+enum NodeState<SignalType> {
+    /// Normal operation: drain input, poll, drain output.
+    Running,
+    /// Flush requested. Poll routine until Ready, then forward Flush signal.
+    Flushing(SignalType),
+    /// Input closed. Poll routine until Ready (cleanup), then close output.
+    Closing,
+    /// Terminal. Return Ready immediately on any subsequent poll.
+    Closed,
+}
 
 /// Async line node. Generic over input ([Receivable]) and output ([Closeable]).
 ///
@@ -25,6 +47,7 @@ where
     pub worker: RoutineType,
     pub input: InputType,
     pub output: OutputType,
+    state: NodeState<SignalType>,
     _thread_id: std::marker::PhantomData<ThreadIdType>,
 }
 
@@ -42,12 +65,25 @@ where
             worker,
             input,
             output,
+            state: NodeState::Running,
             _thread_id: std::marker::PhantomData,
         }
     }
 
     fn push_output(&mut self, msg: Message<Out, SignalType>) -> Result<(), Error> {
         self.output.push(msg)
+    }
+
+    /// Poll routine, drain output, return the poll result.
+    fn poll_and_drain(
+        &mut self,
+        cx: &mut core::task::Context<'_>,
+    ) -> Result<core::task::Poll<()>, Error> {
+        let result = crate::Poll::poll(&mut self.worker, cx)?;
+        while let Some(out) = self.worker.next()? {
+            self.push_output(Message::Data(out))?;
+        }
+        Ok(result)
     }
 }
 
@@ -74,53 +110,79 @@ where
     type ThreadId = ThreadIdType;
 
     fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        // 1. Drain input — break on empty or closed, don't return early.
-        let mut input_closed = false;
-        loop {
-            match self.input.try_recv() {
-                Ok(Some(Message::Data(data))) => {
-                    self.worker.send(data)?;
-                    while let Some(out) = self.worker.next()? {
-                        self.push_output(Message::Data(out))?;
+        // Only drain input in Running state. Flushing/Closing skip input.
+        if matches!(self.state, NodeState::Running) {
+            loop {
+                match self.input.try_recv() {
+                    Ok(Some(Message::Data(data))) => {
+                        self.worker.send(data)?;
+                        while let Some(out) = self.worker.next()? {
+                            self.push_output(Message::Data(out))?;
+                        }
                     }
-                }
-                Ok(Some(Message::Flush(signal))) => {
-                    self.worker.flush()?;
-                    while let Some(out) = self.worker.next()? {
-                        self.push_output(Message::Data(out))?;
-                    }
-                    self.push_output(Message::Flush(signal))?;
-                }
-                Ok(Some(Message::Marker(signal))) => {
-                    self.push_output(Message::Marker(signal))?;
-                }
-                Ok(None) => break,
-                Err(e) => {
-                    if matches!(e.kind, crate::error::ErrorKind::Closed) {
-                        input_closed = true;
+                    Ok(Some(Message::Flush(signal))) => {
+                        self.worker.flush()?;
+                        while let Some(out) = self.worker.next()? {
+                            self.push_output(Message::Data(out))?;
+                        }
+                        self.state = NodeState::Flushing(signal);
                         break;
                     }
-                    return Err(e);
+                    Ok(Some(Message::Marker(signal))) => {
+                        self.push_output(Message::Marker(signal))?;
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        if matches!(e.kind, crate::error::ErrorKind::Closed) {
+                            self.worker.flush()?;
+                            while let Some(out) = self.worker.next()? {
+                                self.push_output(Message::Data(out))?;
+                            }
+                            self.state = NodeState::Closing;
+                            break;
+                        }
+                        return Err(e);
+                    }
                 }
             }
         }
 
-        // 2. Let routine do async work. Guaranteed to run even on close,
-        //    so routines can flush internal buffers (e.g. PollDouble's pending → output).
-        let result = crate::Poll::poll(&mut self.worker, cx)?;
+        // Poll routine + drain output. Runs in every state except Closed.
+        match &self.state {
+            NodeState::Closed => return Err(crate::closed!()),
 
-        // 3. Drain output from async work
-        while let Some(out) = self.worker.next()? {
-            self.push_output(Message::Data(out))?;
+            NodeState::Closing => {
+                let result = self.poll_and_drain(cx)?;
+                if matches!(result, core::task::Poll::Ready(())) {
+                    self.output.close()?;
+                    self.state = NodeState::Closed;
+                    return Err(crate::closed!());
+                }
+                Ok(core::task::Poll::Pending)
+            }
+
+            NodeState::Flushing(_) => {
+                let result = self.poll_and_drain(cx)?;
+                if matches!(result, core::task::Poll::Ready(())) {
+                    let signal = match std::mem::replace(&mut self.state, NodeState::Running) {
+                        NodeState::Flushing(s) => s,
+                        _ => return Err(fatal!("expected Flushing state")),
+                    };
+                    self.push_output(Message::Flush(signal))?;
+                }
+                Ok(core::task::Poll::Pending)
+            }
+
+            NodeState::Running => {
+                let result = self.poll_and_drain(cx)?;
+                if matches!(result, core::task::Poll::Ready(())) {
+                    return Err(fatal!(
+                        "routine returned Ready without pending flush or close"
+                    ));
+                }
+                Ok(core::task::Poll::Pending)
+            }
         }
-
-        // 4. Close output after routine has flushed.
-        if input_closed {
-            self.output.close()?;
-            return Ok(core::task::Poll::Ready(()));
-        }
-
-        Ok(result)
     }
 }
 
@@ -174,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn poll_returns_ready_on_closed_input() {
+    fn poll_returns_closed_on_closed_input() {
         let (waker, _) = test_waker();
         let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
         let output = Arc::new(SyncEdge::new());
@@ -190,9 +252,10 @@ mod tests {
         let cx_waker = std::task::Waker::noop();
         let mut cx = core::task::Context::from_waker(&cx_waker);
 
+        let result = node.poll(&mut cx);
         assert!(matches!(
-            node.poll(&mut cx).unwrap(),
-            core::task::Poll::Ready(())
+            result.unwrap_err().kind,
+            crate::error::ErrorKind::Closed
         ));
     }
 

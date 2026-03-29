@@ -17,14 +17,23 @@ struct JoinError<ThreadIdType: ThreadId> {
     workables: Workables<ThreadIdType>,
 }
 
-/// Run loop that works all workables until one returns an error.
-/// Returns Ok(()) on [ErrorKind::Closed], propagates other errors.
+/// Run loop that works all workables until all return [ErrorKind::Closed].
+/// Closed workables are skipped. Any other error stops the loop immediately.
 fn work_loop<ThreadIdType: ThreadId>(workables: &mut Workables<ThreadIdType>) -> Result<(), Error> {
-    loop {
-        for workable in workables.iter_mut() {
+    let mut closed = vec![false; workables.len()];
+    let mut closed_count = 0;
+
+    while closed_count < workables.len() {
+        for (i, workable) in workables.iter_mut().enumerate() {
+            if closed[i] {
+                continue;
+            }
             if let Err(error) = workable.work() {
                 match error.kind {
-                    ErrorKind::Closed => return Ok(()),
+                    ErrorKind::Closed => {
+                        closed[i] = true;
+                        closed_count += 1;
+                    }
                     _ => {
                         #[cfg(not(feature = "silent"))]
                         eprintln!(
@@ -39,6 +48,7 @@ fn work_loop<ThreadIdType: ThreadId>(workables: &mut Workables<ThreadIdType>) ->
             }
         }
     }
+    Ok(())
 }
 
 /// Runs the work loop and returns workables (for restart) or error with workables.

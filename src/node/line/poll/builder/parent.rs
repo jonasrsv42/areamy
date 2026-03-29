@@ -11,6 +11,7 @@ use crate::marker::{Connection, Parent};
 use crate::node::line::poll::node::AsyncLine;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
+use crate::thread::poll::spawn::NodeId;
 use crate::{Closeable, Linkable, Pollable, ThreadId};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -30,6 +31,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: AsyncLineRoutine<In, Out>,
 {
+    node_id: NodeId,
     routine: RoutineType,
     input: Arc<SyncBridge<In, SignalType>>,
     _phantom: std::marker::PhantomData<(fn() -> Out, ThreadIdType)>,
@@ -44,9 +46,10 @@ where
     ThreadIdType: ThreadId,
     RoutineType: AsyncLineRoutine<In, Out>,
 {
-    pub fn new(routine: RoutineType, waker: Waker) -> Self {
+    pub fn new(node_id: NodeId, routine: RoutineType, waker: Waker) -> Self {
         let input = Arc::new(SyncBridge::new(waker));
         Self {
+            node_id,
             routine,
             input,
             _phantom: std::marker::PhantomData,
@@ -65,8 +68,6 @@ where
 {
 }
 
-// === Linkable<Parent>: child owns us, gives us output edge ===
-
 impl<In, Out, SignalType, ThreadIdType, RoutineType> Linkable<Parent>
     for ParentNode<In, Out, SignalType, ThreadIdType, RoutineType>
 where
@@ -77,15 +78,14 @@ where
     RoutineType: AsyncLineRoutine<In, Out> + 'static,
 {
     type Edge = Rc<RefCell<AsyncEdge<Out, SignalType>>>;
-    type Node = Box<dyn Pollable<ThreadId = ThreadIdType>>;
+    type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node> {
+        let node_id = self.node_id;
         let node = AsyncLine::new(self.routine, self.input, edge);
-        vec![Box::new(node)]
+        vec![(node_id, Box::new(node))]
     }
 }
-
-// === Sync graph connections (Get for SyncBridge input) ===
 
 impl<In, Out, SignalType, ThreadIdType, RoutineType>
     Get<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync>

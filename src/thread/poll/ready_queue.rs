@@ -50,6 +50,8 @@ impl ReadyQueue {
     }
 
     /// Enqueue multiple node IDs at once.
+    /// Uses notify_one() — correct because there is exactly one consumer
+    /// (the AsyncThread's poll loop). It will drain all IDs after waking.
     pub fn enqueue_all(&self, ids: impl Iterator<Item = usize>) -> Result<(), Error> {
         let mut queue = self.inner.lock().map_err(|e| fatal!(e))?;
         for id in ids {

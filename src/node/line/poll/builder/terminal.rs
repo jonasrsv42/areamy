@@ -12,7 +12,7 @@ use crate::marker::Connection;
 use crate::node::line::poll::node::AsyncLine;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
-use crate::thread::poll::spawn::Spawnable;
+use crate::thread::poll::spawn::{NodeId, Spawnable};
 use crate::{Closeable, Linkable, ThreadId};
 use std::sync::Arc;
 use std::task::Waker;
@@ -30,6 +30,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: AsyncLineRoutine<In, Out>,
 {
+    node_id: NodeId,
     routine: RoutineType,
     input: Arc<SyncBridge<In, SignalType>>,
     outputs: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>>,
@@ -45,9 +46,10 @@ where
     ThreadIdType: ThreadId,
     RoutineType: AsyncLineRoutine<In, Out>,
 {
-    pub fn new(routine: RoutineType, waker: Waker) -> Self {
+    pub fn new(node_id: NodeId, routine: RoutineType, waker: Waker) -> Self {
         let input = Arc::new(SyncBridge::new(waker));
         Self {
+            node_id,
             routine,
             input,
             outputs: Vec::new(),
@@ -94,10 +96,11 @@ where
     RoutineType: AsyncLineRoutine<In, Out> + 'static,
 {
     type Edge = ();
-    type Node = Box<dyn crate::Pollable<ThreadId = ThreadIdType>>;
+    type Node = (NodeId, Box<dyn crate::Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, _edge: ()) -> Vec<Self::Node> {
-        vec![Box::new(self.build())]
+        let node_id = self.node_id;
+        vec![(node_id, Box::new(self.build()))]
     }
 }
 
@@ -112,7 +115,7 @@ where
     ThreadIdType: ThreadId + 'static,
     RoutineType: AsyncLineRoutine<In, Out> + 'static,
 {
-    fn spawn(self: Box<Self>) -> Vec<Box<dyn crate::Pollable<ThreadId = ThreadIdType>>> {
+    fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn crate::Pollable<ThreadId = ThreadIdType>>)> {
         self.link(())
     }
 }
@@ -175,6 +178,7 @@ mod tests {
     #[test]
     fn build_produces_pollable_node() {
         let builder = TerminalNode::<usize, usize, &str, DefaultThread, _>::new(
+            0,
             AsyncMockLine::new(),
             noop_waker(),
         );
@@ -191,6 +195,7 @@ mod tests {
     #[test]
     fn sync_input_output_works() {
         let builder = TerminalNode::<usize, usize, &str, DefaultThread, _>::new(
+            0,
             AsyncMockLine::new(),
             noop_waker(),
         );
@@ -216,6 +221,7 @@ mod tests {
         let output = Arc::new(SyncEdge::<usize, &str>::new());
 
         let mut builder = TerminalNode::<usize, usize, &str, DefaultThread, _>::new(
+            0,
             AsyncMockLine::new(),
             noop_waker(),
         );

@@ -1,7 +1,7 @@
 //! Async thread that runs [Pollable] nodes driven by wakers.
 
 use super::ready_queue::ReadyQueue;
-use super::spawn::Spawnable;
+use super::spawn::{NodeId, Spawnable};
 use super::waker::NodeWaker;
 use crate::connect::poll::edge::AsyncEdge;
 use crate::error::{Error, ErrorKind};
@@ -38,10 +38,11 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         }
     }
 
-    fn next_waker(&mut self) -> std::task::Waker {
+    fn next_node(&mut self) -> (NodeId, std::task::Waker) {
         let node_id = self.node_count;
         self.node_count += 1;
-        NodeWaker::new(node_id, self.ready_queue.clone())
+        let waker = NodeWaker::new(node_id, self.ready_queue.clone());
+        (node_id, waker)
     }
 
     /// Create a terminal node (sync in, sync out).
@@ -56,7 +57,8 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         SignalType: Origin + Clone + Send + Sync + 'static,
         RoutineType: AsyncLineRoutine<In, Out>,
     {
-        TerminalNode::new(routine, self.next_waker())
+        let (node_id, waker) = self.next_node();
+        TerminalNode::new(node_id, routine, waker)
     }
 
     /// Create a parent node (sync in, async out).
@@ -71,7 +73,8 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         SignalType: Origin + Clone + Send + Sync + 'static,
         RoutineType: AsyncLineRoutine<In, Out>,
     {
-        ParentNode::new(routine, self.next_waker())
+        let (node_id, waker) = self.next_node();
+        ParentNode::new(node_id, routine, waker)
     }
 
     /// Create a child node (async in, sync out) that owns a parent.
@@ -82,7 +85,7 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         parent: impl Linkable<
             crate::marker::Parent,
             Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
-            Node = Box<dyn Pollable<ThreadId = ThreadIdType>>,
+            Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
         > + 'static,
     ) -> ChildNode<In, Out, SignalType, ThreadIdType, RoutineType>
     where
@@ -91,7 +94,8 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         SignalType: Origin + Clone + Send + Sync + 'static,
         RoutineType: AsyncLineRoutine<In, Out>,
     {
-        ChildNode::new(routine, self.next_waker(), Box::new(parent))
+        let (node_id, waker) = self.next_node();
+        ChildNode::new(node_id, routine, waker, Box::new(parent))
     }
 
     /// Create a linked node (async in, async out) that owns a parent.
@@ -102,7 +106,7 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         parent: impl Linkable<
             crate::marker::Parent,
             Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
-            Node = Box<dyn Pollable<ThreadId = ThreadIdType>>,
+            Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
         > + 'static,
     ) -> LinkedNode<In, Out, SignalType, ThreadIdType, RoutineType>
     where
@@ -111,7 +115,8 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         SignalType: Origin + Clone + Send + Sync + 'static,
         RoutineType: AsyncLineRoutine<In, Out>,
     {
-        LinkedNode::new(routine, self.next_waker(), Box::new(parent))
+        let (node_id, waker) = self.next_node();
+        LinkedNode::new(node_id, routine, waker, Box::new(parent))
     }
 
     /// Add a node to the thread. It will be spawned when the thread starts.
@@ -127,26 +132,50 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
 
         AsyncThreadHandle {
             thread: spawn(move || {
-                let mut nodes: Vec<Box<dyn Pollable<ThreadId = ThreadIdType>>> = Vec::new();
-                for builder in builders {
-                    nodes.extend(builder.spawn());
-                }
-
-                if nodes.len() != expected_nodes {
-                    return Err(fatal!(
-                        "AsyncThread: expected {} nodes but got {}. \
-                         Did you forget to add() a node?",
-                        expected_nodes,
-                        nodes.len()
-                    ));
-                }
-
+                let mut nodes = build_nodes(builders, expected_nodes)?;
                 ready_queue.enqueue_all(0..nodes.len())?;
-
                 poll_loop(&mut nodes, &ready_queue)
             }),
         }
     }
+}
+
+/// Spawn all builders and place nodes at indices matching their waker IDs.
+fn build_nodes<ThreadIdType: ThreadId>(
+    builders: Vec<Box<dyn Spawnable<ThreadIdType>>>,
+    expected: usize,
+) -> Result<Vec<Box<dyn Pollable<ThreadId = ThreadIdType>>>, Error> {
+    let mut pairs = Vec::new();
+    for builder in builders {
+        pairs.extend(builder.spawn());
+    }
+
+    if pairs.len() != expected {
+        return Err(fatal!(
+            "AsyncThread: expected {} nodes but got {}. Did you forget to add() a node?",
+            expected,
+            pairs.len()
+        ));
+    }
+
+    let mut slots: Vec<Option<Box<dyn Pollable<ThreadId = ThreadIdType>>>> =
+        (0..expected).map(|_| None).collect();
+
+    for (node_id, node) in pairs {
+        if node_id >= expected {
+            return Err(fatal!("AsyncThread: node_id {} out of range", node_id));
+        }
+        if slots[node_id].is_some() {
+            return Err(fatal!("AsyncThread: duplicate node_id {}", node_id));
+        }
+        slots[node_id] = Some(node);
+    }
+
+    slots
+        .into_iter()
+        .enumerate()
+        .map(|(i, slot)| slot.ok_or_else(|| fatal!("AsyncThread: missing node at index {}", i)))
+        .collect()
 }
 
 impl AsyncThreadHandle {
@@ -161,39 +190,47 @@ impl AsyncThreadHandle {
 }
 
 /// Waker-driven poll loop. Blocks on ready queue, polls only woken nodes.
+/// Runs until all nodes are closed.
 fn poll_loop<ThreadIdType: ThreadId>(
     nodes: &mut [Box<dyn Pollable<ThreadId = ThreadIdType>>],
     ready_queue: &Arc<ReadyQueue>,
 ) -> Result<(), Error> {
-    loop {
+    // Cache wakers — one per node, created once.
+    let wakers: Vec<std::task::Waker> = (0..nodes.len())
+        .map(|id| NodeWaker::new(id, ready_queue.clone()))
+        .collect();
+
+    let mut closed = vec![false; nodes.len()];
+    let mut closed_count = 0;
+
+    while closed_count < nodes.len() {
         let node_id = ready_queue.blocking_dequeue()?;
 
-        if node_id >= nodes.len() {
-            #[cfg(not(feature = "silent"))]
-            eprintln!(
-                "AsyncThread: invalid node_id {} (have {} nodes)",
-                node_id,
-                nodes.len()
-            );
+        if closed[node_id] {
             continue;
         }
 
-        let waker = NodeWaker::new(node_id, ready_queue.clone());
-        let mut cx = Context::from_waker(&waker);
+        let mut cx = Context::from_waker(&wakers[node_id]);
 
         match nodes[node_id].poll(&mut cx) {
             Ok(core::task::Poll::Pending) => {}
-            Ok(core::task::Poll::Ready(())) => return Ok(()),
-            Err(e) => match e.kind {
-                ErrorKind::Closed => return Ok(()),
-                _ => {
-                    #[cfg(not(feature = "silent"))]
-                    eprintln!("AsyncThread node {} error: {}", node_id, e);
-                    return Err(e);
-                }
-            },
+            Ok(core::task::Poll::Ready(()))
+            | Err(Error {
+                kind: ErrorKind::Closed,
+                ..
+            }) => {
+                closed[node_id] = true;
+                closed_count += 1;
+            }
+            Err(e) => {
+                #[cfg(not(feature = "silent"))]
+                eprintln!("AsyncThread node {} error: {}", node_id, e);
+                return Err(e);
+            }
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -250,5 +287,43 @@ mod tests {
         input.close().unwrap();
         let result = handle.join().unwrap();
         assert!(result.is_none());
+    }
+
+    /// Close propagation: closing the source should propagate through
+    /// the async chain and close the output edge.
+    #[test]
+    fn close_propagates_through_chain() {
+        let mut thread = AsyncThread::<IoThread>::new();
+
+        let parent = thread.parent(AsyncMockLine::new());
+
+        let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
+            Get::get(&parent).unwrap();
+
+        let mut child = thread.child(AsyncMockLine::new(), parent);
+
+        let output = Arc::new(SyncEdge::new());
+        make_push(&mut child, &output).unwrap();
+
+        thread.add(child);
+        let handle = thread.start();
+
+        // Send some data first
+        input.push(Message::Data(1)).unwrap();
+        assert_eq!(output.read_front().unwrap(), Message::Data(4));
+
+        // Close input — should propagate: parent closes → child closes → output closes
+        input.close().unwrap();
+
+        // Output should be closed — reading should eventually return Closed
+        let result = output.read_front();
+        assert!(
+            result.is_err(),
+            "Expected Closed error after close propagation, got {:?}",
+            result
+        );
+
+        let join_result = handle.join().unwrap();
+        assert!(join_result.is_none());
     }
 }

@@ -1,16 +1,18 @@
 //! Child async line builder. Async input, sync output.
 //!
-//! Owns a parent builder and links it during [Spawnable::spawn],
-//! creating the local [AsyncEdge] on the async thread.
+//! Owns one or more parent builders and links them during [Spawnable::spawn],
+//! creating a local [AsyncEdge] per parent on the async thread.
+//!
+//! Use [ChildNode::merge] to add additional parents for fan-in.
 
 use crate::connect::poll::edge::AsyncEdge;
 use crate::error::Error;
 use crate::graph::Add;
-use crate::marker::{Child, Connection, Parent};
+use crate::marker::{Connection, Parent};
 use crate::node::line::poll::node::AsyncLine;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
-use crate::thread::poll::spawn::Spawnable;
+use crate::thread::poll::spawn::{NodeId, Spawnable};
 use crate::{Closeable, Linkable, Pollable, ThreadId};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,8 +20,16 @@ use std::task::Waker;
 
 /// Builder for an [AsyncLine] with async input and sync output.
 ///
-/// Always owns a parent builder. During [Spawnable::spawn], creates
-/// the local [AsyncEdge] on the async thread and links the parent.
+/// Always owns at least one parent builder. During [Spawnable::spawn],
+/// creates one local [AsyncEdge] per parent on the async thread.
+///
+/// Use [Self::merge] to add additional parents for fan-in:
+///
+/// ```text
+/// parent_a ─┐
+///            ├→ child → sync output
+/// parent_b ─┘
+/// ```
 #[must_use = "node must be added to AsyncThread via add()"]
 pub struct ChildNode<In, Out, SignalType, ThreadIdType, RoutineType>
 where
@@ -29,15 +39,18 @@ where
     ThreadIdType: ThreadId,
     RoutineType: AsyncLineRoutine<In, Out>,
 {
+    node_id: NodeId,
     routine: RoutineType,
     waker: Waker,
     outputs: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>>,
-    parent: Box<
-        dyn Linkable<
-                Parent,
-                Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
-                Node = Box<dyn Pollable<ThreadId = ThreadIdType>>,
-            >,
+    parents: Vec<
+        Box<
+            dyn Linkable<
+                    Parent,
+                    Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
+                    Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
+                >,
+        >,
     >,
 }
 
@@ -51,22 +64,42 @@ where
     RoutineType: AsyncLineRoutine<In, Out>,
 {
     pub fn new(
+        node_id: NodeId,
         routine: RoutineType,
         waker: Waker,
         parent: Box<
             dyn Linkable<
                     Parent,
                     Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
-                    Node = Box<dyn Pollable<ThreadId = ThreadIdType>>,
+                    Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
                 >,
         >,
     ) -> Self {
         Self {
+            node_id,
             routine,
             waker,
             outputs: Vec::new(),
-            parent,
+            parents: vec![parent],
         }
+    }
+
+    /// Add an additional parent for fan-in. The parent can be any node type
+    /// (ParentNode, LinkedNode, etc.) as long as it produces the same data type.
+    ///
+    /// All parents are linked during spawn, each getting its own local
+    /// [AsyncEdge]. The child drains from all edges, closing only when
+    /// all parents have closed.
+    pub fn merge(
+        mut self,
+        parent: impl Linkable<
+            Parent,
+            Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>,
+            Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
+        > + 'static,
+    ) -> Self {
+        self.parents.push(Box::new(parent));
+        self
     }
 }
 
@@ -81,28 +114,6 @@ where
 {
 }
 
-// === Linkable<Child>: a parent owns us, gives us input edge ===
-
-impl<In, Out, SignalType, ThreadIdType, RoutineType> Linkable<Child>
-    for ChildNode<In, Out, SignalType, ThreadIdType, RoutineType>
-where
-    In: 'static,
-    Out: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<In, Out> + 'static,
-{
-    type Edge = Rc<RefCell<AsyncEdge<In, SignalType>>>;
-    type Node = Box<dyn Pollable<ThreadId = ThreadIdType>>;
-
-    fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node> {
-        let node = AsyncLine::new(self.routine, edge, self.outputs);
-        vec![Box::new(node)]
-    }
-}
-
-// === Spawnable: terminal node, owns parent, added to AsyncThread ===
-
 impl<In, Out, SignalType, ThreadIdType, RoutineType> Spawnable<ThreadIdType>
     for ChildNode<In, Out, SignalType, ThreadIdType, RoutineType>
 where
@@ -112,16 +123,24 @@ where
     ThreadIdType: ThreadId + 'static,
     RoutineType: AsyncLineRoutine<In, Out> + 'static,
 {
-    fn spawn(self: Box<Self>) -> Vec<Box<dyn Pollable<ThreadId = ThreadIdType>>> {
-        let edge = Rc::new(RefCell::new(AsyncEdge::new(self.waker.clone())));
-        let mut nodes = self.parent.link(edge.clone());
-        let node = AsyncLine::new(self.routine, edge, self.outputs);
-        nodes.push(Box::new(node));
-        nodes
+    fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
+        let node_id = self.node_id;
+        let waker = self.waker;
+        let mut all_nodes = Vec::new();
+        let mut edges = Vec::new();
+
+        for parent in self.parents {
+            let edge = Rc::new(RefCell::new(AsyncEdge::new(waker.clone())));
+            let parent_nodes = parent.link(edge.clone());
+            all_nodes.extend(parent_nodes);
+            edges.push(edge);
+        }
+
+        let node = AsyncLine::new(self.routine, edges, self.outputs);
+        all_nodes.push((node_id, Box::new(node)));
+        all_nodes
     }
 }
-
-// === Sync output connections ===
 
 impl<In, Out, SignalType, ThreadIdType, RoutineType>
     Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>

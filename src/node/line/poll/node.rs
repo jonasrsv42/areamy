@@ -74,7 +74,8 @@ where
     type ThreadId = ThreadIdType;
 
     fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        // 1. Drain input
+        // 1. Drain input — break on empty or closed, don't return early.
+        let mut input_closed = false;
         loop {
             match self.input.try_recv() {
                 Ok(Some(Message::Data(data))) => {
@@ -96,20 +97,27 @@ where
                 Ok(None) => break,
                 Err(e) => {
                     if matches!(e.kind, crate::error::ErrorKind::Closed) {
-                        self.output.close()?;
-                        return Ok(core::task::Poll::Ready(()));
+                        input_closed = true;
+                        break;
                     }
                     return Err(e);
                 }
             }
         }
 
-        // 2. Let routine do async work.
+        // 2. Let routine do async work. Guaranteed to run even on close,
+        //    so routines can flush internal buffers (e.g. PollDouble's pending → output).
         let result = crate::Poll::poll(&mut self.worker, cx)?;
 
         // 3. Drain output from async work
         while let Some(out) = self.worker.next()? {
             self.push_output(Message::Data(out))?;
+        }
+
+        // 4. Close output after routine has flushed.
+        if input_closed {
+            self.output.close()?;
+            return Ok(core::task::Poll::Ready(()));
         }
 
         Ok(result)

@@ -22,7 +22,7 @@ use crate::connect::poll::marker::{Async, AsyncIn, Deferred, EdgeKind, Null, Syn
 use crate::connect::poll::sync_bridge::SyncBridge;
 use crate::error::Error;
 use crate::graph::{Add, Get};
-use crate::marker::{Connection, Parent, Terminal};
+use crate::marker::{Connection, Parent};
 use crate::node::line::poll::node::AsyncLine;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
@@ -175,10 +175,10 @@ where
 }
 
 // ============================================================
-// merge() — Deferred→Async transition + Async→Async
+// parent() — Deferred→Async transition + Async→Async
 // ============================================================
 
-/// First merge on Deferred input: transitions to Async.
+/// First parent on Deferred input: transitions to Async.
 impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
     Node<Deferred, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
 where
@@ -234,7 +234,7 @@ where
     }
 }
 
-/// Additional merge on Async input: adds parent, stays Async.
+/// Additional parent on Async input: adds parent, stays Async.
 impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
     Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
 where
@@ -511,4 +511,3 @@ where
         all_nodes
     }
 }
-

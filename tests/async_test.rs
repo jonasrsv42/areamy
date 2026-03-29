@@ -7,7 +7,7 @@ use areamy::{
     make_push, make_work,
 };
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Routine that queues input in send, then doubles it in poll.
 /// This proves poll is actually being called by the async runtime —
@@ -57,6 +57,47 @@ impl areamy::Poll for PollDouble {
 impl Name for PollDouble {}
 impl areamy::LineRoutine<usize, usize> for PollDouble {}
 impl areamy::AsyncLineRoutine<usize, usize> for PollDouble {}
+
+/// Accumulates input values into a shared Vec. Used to verify sink nodes
+/// actually receive and process data.
+struct PollAccumulator {
+    collected: Arc<Mutex<Vec<usize>>>,
+}
+
+impl PollAccumulator {
+    fn new(collected: Arc<Mutex<Vec<usize>>>) -> Self {
+        Self { collected }
+    }
+}
+
+impl areamy::Send<usize> for PollAccumulator {
+    fn send(&mut self, message: usize) -> Result<(), Error> {
+        self.collected.lock().unwrap().push(message);
+        Ok(())
+    }
+}
+
+impl areamy::Next<usize> for PollAccumulator {
+    fn next(&mut self) -> Result<Option<usize>, Error> {
+        Ok(None)
+    }
+}
+
+impl areamy::Flush for PollAccumulator {
+    fn flush(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+impl areamy::Poll for PollAccumulator {
+    fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+        Ok(core::task::Poll::Pending)
+    }
+}
+
+impl Name for PollAccumulator {}
+impl areamy::LineRoutine<usize, usize> for PollAccumulator {}
+impl areamy::AsyncLineRoutine<usize, usize> for PollAccumulator {}
 
 /// Sync Double — used for the sync part of the graph.
 struct Double {
@@ -532,5 +573,92 @@ fn node_sink_deferred_output() -> Result<(), Error> {
     source.close()?;
     let errors = handle.join()?;
     assert!(errors.is_empty());
+    Ok(())
+}
+
+/// Multiple async sink nodes with PollAccumulator to verify data arrives.
+///
+/// ```text
+/// source_a → Node<Sync,Async> (PollDouble) ─┐
+///                                             ├→ Node<Async,Deferred> (sink_1, PollAccumulator)
+/// source_b → Node<Sync,Async> (PollDouble) ─┘
+///
+/// source_c → Node<Sync,Async> (PollDouble) ──→ Node<Async,Deferred> (sink_2, PollAccumulator)
+/// ```
+///
+/// Both sinks accumulate values. Test verifies correct values arrive.
+#[test]
+fn async_only_multiple_sinks() -> Result<(), Error> {
+    use areamy::poll::Async;
+
+    let mut source_a_node = areamy::work::make_line(Double::new());
+    let mut source_a = areamy::work::Source::<usize>::of(&source_a_node)?;
+
+    let mut source_b_node = areamy::work::make_line(Double::new());
+    let mut source_b = areamy::work::Source::<usize>::of(&source_b_node)?;
+
+    let mut source_c_node = areamy::work::make_line(Double::new());
+    let mut source_c = areamy::work::Source::<usize>::of(&source_c_node)?;
+
+    let mut async_thread = AsyncThread::<IoThread>::new();
+
+    let parent_a = async_thread.node(PollDouble::new()).typed::<Async>();
+    make_push(&mut source_a_node, &parent_a)?;
+
+    let parent_b = async_thread.node(PollDouble::new()).typed::<Async>();
+    make_push(&mut source_b_node, &parent_b)?;
+
+    let parent_c = async_thread.node(PollDouble::new()).typed::<Async>();
+    make_push(&mut source_c_node, &parent_c)?;
+
+    let collected_1 = Arc::new(Mutex::new(Vec::new()));
+    let collected_2 = Arc::new(Mutex::new(Vec::new()));
+
+    // Sink 1: merges a + b, accumulates doubled values
+    // source_a: 1 → Double → 2 → PollDouble → 4 → sink_1 accumulates 4
+    // source_b: 2 → Double → 4 → PollDouble → 8 → sink_1 accumulates 8
+    let sink_1 = async_thread
+        .node(PollAccumulator::new(collected_1.clone()))
+        .parent(parent_a)
+        .parent(parent_b);
+    async_thread.add(sink_1);
+
+    // Sink 2: owns c, accumulates doubled values
+    // source_c: 3 → Double → 6 → PollDouble → 12 → sink_2 accumulates 12
+    let sink_2 = async_thread
+        .node(PollAccumulator::new(collected_2.clone()))
+        .parent(parent_c);
+    async_thread.add(sink_2);
+
+    let mut sync_a = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_b = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_c = ThreadStream::<areamy::DefaultThread>::new();
+    make_work(source_a_node, &mut sync_a)?;
+    make_work(source_b_node, &mut sync_b)?;
+    make_work(source_c_node, &mut sync_c)?;
+
+    let mut bundle = ThreadBundle::new();
+    bundle.add(sync_a).add(sync_b).add(sync_c).add(async_thread);
+    let handle = bundle.start();
+
+    source_a.push(Message::Data(1))?;
+    source_b.push(Message::Data(2))?;
+    source_c.push(Message::Data(3))?;
+
+    source_a.close()?;
+    source_b.close()?;
+    source_c.close()?;
+    let errors = handle.join()?;
+    assert!(errors.is_empty());
+
+    // Verify sink_1 received doubled values from a and b
+    let mut vals_1 = collected_1.lock().unwrap().clone();
+    vals_1.sort();
+    assert_eq!(vals_1, vec![4, 8]);
+
+    // Verify sink_2 received doubled value from c
+    let vals_2 = collected_2.lock().unwrap().clone();
+    assert_eq!(vals_2, vec![12]);
+
     Ok(())
 }

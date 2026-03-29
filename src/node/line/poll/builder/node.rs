@@ -1,11 +1,21 @@
 //! Unified async node builder parameterized by edge kind markers.
 //!
-//! `Node<InEdge, OutEdge, ...>` replaces the four separate builder types:
-//! - `Node<Sync, Sync>` — terminal (sync in, sync out)
-//! - `Node<Sync, Async>` — parent (sync in, async out)
-//! - `Node<Async, Sync>` — child (async in, sync out)
-//! - `Node<Async, Async>` — linked (async in, async out)
-//! - `Node<Deferred, Deferred>` — unresolved, transitions via wiring methods
+//! Created via [`AsyncThread::node`](crate::AsyncThread). Edge kinds
+//! are resolved via typestate transitions:
+//!
+//! - `.typed::<OutEdge>()` — resolves input to Sync, output to turbofish
+//! - `.parent(node)` — resolves input to Async (adds parent)
+//! - `thread.add(node)` — requires resolved input, Sync or Deferred output
+//! - consumed by `.parent()` — requires resolved input, Async or Deferred output
+//!
+//! Marker combinations:
+//! - `Node<Sync, Sync>` — sync in, sync out
+//! - `Node<Sync, Async>` — sync in, async out (consumed by downstream `.parent()`)
+//! - `Node<Async, Sync>` — async in, sync out (owns parents)
+//! - `Node<Async, Async>` — async in, async out (owns parents, consumed by downstream)
+//! - `Node<Sync, Deferred>` — sync in, output inferred from usage
+//! - `Node<Async, Deferred>` — async in, output inferred (sink if added directly)
+//! - `Node<Deferred, Deferred>` — fully unresolved, returned by `thread.node()`
 
 use crate::connect::poll::edge::AsyncEdge;
 use crate::connect::poll::marker::{Async, AsyncIn, Deferred, EdgeKind, Null, Sync};
@@ -502,25 +512,3 @@ where
     }
 }
 
-// ============================================================
-// Linkable<Terminal> — Node<Sync, Sync> only
-// ============================================================
-
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Linkable<Terminal>
-    for Node<Sync, Sync, InType, OutType, SignalType, ThreadIdType, RoutineType>
-where
-    InType: Send + std::marker::Sync + 'static,
-    OutType: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
-{
-    type Edge = ();
-    type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
-
-    fn link(self: Box<Self>, _edge: ()) -> Vec<Self::Node> {
-        let node_id = self.node_id;
-        let node = AsyncLine::new(self.routine, self.input, self.output);
-        vec![(node_id, Box::new(node))]
-    }
-}

@@ -692,10 +692,14 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
 /// - poll() simulates I/O handshake: counts down `flush_cycles`.
 ///   Returns Ready when countdown reaches 0 (handshake complete).
 /// - The node only forwards the Flush signal after poll returns Ready.
+enum HalfClosePending {
+    Data(usize),
+    Flush,
+}
+
 struct HalfCloseRoutine {
-    pending: VecDeque<usize>,
+    pending: VecDeque<HalfClosePending>,
     output: VecDeque<usize>,
-    flush_requested: bool,
     flush_cycles: usize,
     flush_cycles_remaining: usize,
     flush_count: Arc<Mutex<usize>>,
@@ -706,7 +710,6 @@ impl HalfCloseRoutine {
         Self {
             pending: VecDeque::new(),
             output: VecDeque::new(),
-            flush_requested: false,
             flush_cycles,
             flush_cycles_remaining: 0,
             flush_count,
@@ -716,7 +719,7 @@ impl HalfCloseRoutine {
 
 impl areamy::Send<usize> for HalfCloseRoutine {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        self.pending.push_back(message);
+        self.pending.push_back(HalfClosePending::Data(message));
         Ok(())
     }
 }
@@ -729,26 +732,37 @@ impl areamy::Next<usize> for HalfCloseRoutine {
 
 impl areamy::Flush for HalfCloseRoutine {
     fn flush(&mut self) -> Result<(), Error> {
-        while let Some(val) = self.pending.pop_front() {
-            self.output.push_back(val * 2);
-        }
-        self.flush_requested = true;
-        self.flush_cycles_remaining = self.flush_cycles;
+        self.pending.push_back(HalfClosePending::Flush);
         Ok(())
     }
 }
 
 impl areamy::Poll for HalfCloseRoutine {
     fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        if self.flush_requested {
-            if self.flush_cycles_remaining == 0 {
-                self.flush_requested = false;
-                *self.flush_count.lock().unwrap() += 1;
-                return Ok(core::task::Poll::Ready(()));
-            }
+        // If mid-handshake, count down
+        if self.flush_cycles_remaining > 0 {
             self.flush_cycles_remaining -= 1;
-            cx.waker().wake_by_ref();
+            if self.flush_cycles_remaining > 0 {
+                cx.waker().wake_by_ref();
+                return Ok(core::task::Poll::Pending);
+            }
+            // Handshake complete
+            *self.flush_count.lock().unwrap() += 1;
+            return Ok(core::task::Poll::Ready(()));
         }
+
+        // Process pending items until flush or empty
+        while let Some(item) = self.pending.pop_front() {
+            match item {
+                HalfClosePending::Data(val) => self.output.push_back(val * 2),
+                HalfClosePending::Flush => {
+                    self.flush_cycles_remaining = self.flush_cycles;
+                    cx.waker().wake_by_ref();
+                    return Ok(core::task::Poll::Pending);
+                }
+            }
+        }
+
         Ok(core::task::Poll::Pending)
     }
 }
@@ -813,6 +827,141 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
     // Verify handshake completed exactly once
     assert_eq!(*flush_count.lock().unwrap(), 1);
 
+    source.close()?;
+    let errors = handle.join()?;
+    assert!(errors.is_empty());
+    Ok(())
+}
+
+/// Accumulates data until flush, then outputs the sum. Simulates a
+/// routine that batches work and only emits results on flush boundaries.
+/// Takes `flush_cycles` poll cycles to complete each flush (I/O simulation).
+struct BatchRoutine {
+    accumulator: usize,
+    output: VecDeque<usize>,
+    flush_requested: bool,
+    flush_cycles: usize,
+    flush_cycles_remaining: usize,
+}
+
+impl BatchRoutine {
+    fn new(flush_cycles: usize) -> Self {
+        Self {
+            accumulator: 0,
+            output: VecDeque::new(),
+            flush_requested: false,
+            flush_cycles,
+            flush_cycles_remaining: 0,
+        }
+    }
+}
+
+impl areamy::Send<usize> for BatchRoutine {
+    fn send(&mut self, message: usize) -> Result<(), Error> {
+        self.accumulator += message;
+        Ok(())
+    }
+}
+
+impl areamy::Next<usize> for BatchRoutine {
+    fn next(&mut self) -> Result<Option<usize>, Error> {
+        Ok(self.output.pop_front())
+    }
+}
+
+impl areamy::Flush for BatchRoutine {
+    fn flush(&mut self) -> Result<(), Error> {
+        if self.accumulator > 0 {
+            self.output.push_back(self.accumulator);
+        }
+        self.accumulator = 0;
+        self.flush_requested = true;
+        self.flush_cycles_remaining = self.flush_cycles;
+        Ok(())
+    }
+}
+
+impl areamy::Poll for BatchRoutine {
+    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+        if self.flush_requested {
+            if self.flush_cycles_remaining == 0 {
+                self.flush_requested = false;
+                return Ok(core::task::Poll::Ready(()));
+            }
+            self.flush_cycles_remaining -= 1;
+            cx.waker().wake_by_ref();
+        }
+        Ok(core::task::Poll::Pending)
+    }
+}
+
+impl Name for BatchRoutine {}
+impl areamy::LineRoutine<usize, usize> for BatchRoutine {}
+impl areamy::AsyncLineRoutine<usize, usize> for BatchRoutine {}
+
+/// Multiple flushes then close. BatchRoutine accumulates data between
+/// flushes and emits the sum on each flush boundary.
+///
+/// ```text
+/// source → Double → BatchRoutine(2 cycles) → PollDouble → output
+/// ```
+///
+/// Sequence:
+///   Data(1), Data(2), Flush("s1")  → batch emits 6 (2+4), PollDouble → 12
+///   Data(3), Flush("s2")           → batch emits 6, PollDouble → 12
+///   Close                          → empty flush, close propagates
+#[test]
+fn multi_flush_then_close() -> Result<(), Error> {
+    use areamy::poll::{Async, Sync};
+
+    let mut source_node = areamy::work::make_line(Double::new());
+    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+
+    let mut async_thread = AsyncThread::<IoThread>::new();
+
+    let parent = async_thread.node(BatchRoutine::new(2)).typed::<Async>();
+    make_push(&mut source_node, &parent)?;
+
+    let mut child = async_thread
+        .node(PollDouble::new())
+        .parent(parent)
+        .typed::<Sync>();
+
+    let output = Arc::new(SyncEdge::new());
+    make_push(&mut child, &output)?;
+
+    async_thread.add(child);
+
+    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    make_work(source_node, &mut sync_thread)?;
+
+    let mut bundle = ThreadBundle::new();
+    bundle.add(sync_thread).add(async_thread);
+    let handle = bundle.start();
+
+    // Segment 1: Data(1), Data(2), Flush
+    // Double: 1→2, 2→4. Batch accumulates 2+4=6.
+    // Flush: emits 6, 2-cycle handshake, Flush("s1") forwarded.
+    // PollDouble: 6→12
+    source.push(Message::Data(1))?;
+    source.push(Message::Data(2))?;
+    source.push(Message::Flush("s1".into()))?;
+
+    assert_eq!(output.read_front()?, Message::Data(12));
+    assert_eq!(output.read_front()?, Message::Flush("s1".into()));
+
+    // Segment 2: Data(3), Flush
+    // Double: 3→6. Batch accumulates 6.
+    // Flush: emits 6, 2-cycle handshake, Flush("s2") forwarded.
+    // PollDouble: 6→12
+    source.push(Message::Data(3))?;
+    source.push(Message::Flush("s2".into()))?;
+
+    assert_eq!(output.read_front()?, Message::Data(12));
+    assert_eq!(output.read_front()?, Message::Flush("s2".into()));
+
+    // Close: flush() called (accumulator=0, nothing emitted).
+    // poll() returns Ready → close propagates.
     source.close()?;
     let errors = handle.join()?;
     assert!(errors.is_empty());

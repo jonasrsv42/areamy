@@ -16,10 +16,10 @@ type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 /// Remaining futures are dropped with the Select.
 ///
 /// ```ignore
-/// let idx = Select::pair(
+/// let idx = Select::select([
 ///     Box::pin(async { /* task a */ Ok(()) }),
 ///     Box::pin(async { /* task b */ Ok(()) }),
-/// ).await?;
+/// ]).await?;
 /// // idx == 0 or 1
 /// ```
 pub struct Select {
@@ -27,12 +27,10 @@ pub struct Select {
 }
 
 impl Select {
-    pub fn new(futures: Vec<BoxFut>) -> Self {
-        Self { futures }
-    }
-
-    pub fn pair(a: BoxFut, b: BoxFut) -> Self {
-        Self::new(vec![a, b])
+    pub fn select(futures: impl IntoIterator<Item = BoxFut>) -> Self {
+        Self {
+            futures: futures.into_iter().collect(),
+        }
     }
 }
 
@@ -82,7 +80,7 @@ mod tests {
     fn select_returns_first_ready() {
         let a: BoxFut = Box::pin(PendingForever);
         let b: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
-        let mut select = Select::pair(a, b);
+        let mut select = Select::select([a, b]);
 
         let mut cx = noop_cx();
         match Pin::new(&mut select).poll(&mut cx) {
@@ -95,7 +93,7 @@ mod tests {
     fn select_returns_first_in_order() {
         let a: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
         let b: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
-        let mut select = Select::pair(a, b);
+        let mut select = Select::select([a, b]);
 
         let mut cx = noop_cx();
         match Pin::new(&mut select).poll(&mut cx) {
@@ -108,7 +106,7 @@ mod tests {
     fn select_propagates_error() {
         let a: BoxFut = Box::pin(ReadyFut(Some(Err(crate::fatal!("boom")))));
         let b: BoxFut = Box::pin(PendingForever);
-        let mut select = Select::pair(a, b);
+        let mut select = Select::select([a, b]);
 
         let mut cx = noop_cx();
         match Pin::new(&mut select).poll(&mut cx) {
@@ -121,7 +119,7 @@ mod tests {
     fn select_pending_when_all_pending() {
         let a: BoxFut = Box::pin(PendingForever);
         let b: BoxFut = Box::pin(PendingForever);
-        let mut select = Select::pair(a, b);
+        let mut select = Select::select([a, b]);
 
         let mut cx = noop_cx();
         assert!(matches!(Pin::new(&mut select).poll(&mut cx), Poll::Pending));
@@ -148,7 +146,7 @@ mod tests {
         let b: BoxFut = Box::pin(DropCounter(dropped.clone()));
         let c: BoxFut = Box::pin(DropCounter(dropped.clone()));
 
-        let mut select = Select::new(vec![a, b, c]);
+        let mut select = Select::select([a, b, c]);
         let mut cx = noop_cx();
         let _ = Pin::new(&mut select).poll(&mut cx);
 

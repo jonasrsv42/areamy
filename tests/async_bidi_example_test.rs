@@ -1,12 +1,12 @@
-//! Proof-of-concept: bidi streaming with async/await.
+//! Bidi streaming integration test using [areamy::poll::FutureRoutine].
 //!
-//! FutureRoutine wraps a user-provided async fn. The async fn handles
-//! socket setup, reader + writer (via Join), and flush/close lifecycle.
-//! Each node runs one future. Concurrency within the future uses
-//! [areamy::poll::Join].
+//! Demonstrates async connect → concurrent writer + reader via
+//! [areamy::poll::Join], with flush triggering half-close and
+//! reconnect per segment.
 
 use areamy::error::Error;
-use areamy::node::Name;
+use areamy::poll::Join;
+use areamy::poll::future::{FutureRoutine, Input, Queue};
 use areamy::{
     AsyncThread, Closeable, Message, Pushable, SyncEdge, ThreadBundle, ThreadId, ThreadStream,
     make_push, make_work,
@@ -23,50 +23,11 @@ struct IoThread;
 impl ThreadId for IoThread {}
 
 // ============================================================
-// Async primitives — Rc<RefCell> (zero-cost, single-threaded)
+// Fake I/O primitives
 // ============================================================
 
-/// Shared queue using Rc<RefCell>. No locks, no atomics.
-/// Safe because routine is created on the async thread via factory
-/// pattern and never crosses threads.
-struct AsyncQueue<T>(Rc<RefCell<VecDeque<T>>>);
-
-impl<T> Clone for AsyncQueue<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<T> AsyncQueue<T> {
-    fn new() -> Self {
-        Self(Rc::new(RefCell::new(VecDeque::new())))
-    }
-
-    fn push(&self, item: T) {
-        self.0.borrow_mut().push_back(item);
-    }
-
-    fn pop(&self) -> Option<T> {
-        self.0.borrow_mut().pop_front()
-    }
-}
-
-struct RecvFut<T>(AsyncQueue<T>);
-
-impl<T: Unpin> Future for RecvFut<T> {
-    type Output = T;
-
-    fn poll(self: Pin<&mut Self>, _cx: &mut core::task::Context<'_>) -> core::task::Poll<T> {
-        match self.0.pop() {
-            Some(item) => core::task::Poll::Ready(item),
-            None => core::task::Poll::Pending,
-        }
-    }
-}
-
 /// Simulates a real I/O operation: first poll returns Pending and fires
-/// the waker (like OS registering interest), second poll returns Ready
-/// with the value. Reusable for any fake async I/O.
+/// the waker (like OS registering interest), second poll returns Ready.
 struct ImmediateFut<T> {
     value: Option<T>,
     polled_once: bool,
@@ -86,21 +47,18 @@ impl<T: Unpin> Future for ImmediateFut<T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> core::task::Poll<T> {
         if !self.polled_once {
-            // First poll: register interest, fire waker (like OS/epoll would)
             self.polled_once = true;
             cx.waker().wake_by_ref();
             core::task::Poll::Pending
         } else {
-            // Second poll: I/O complete
             core::task::Poll::Ready(self.value.take().unwrap())
         }
     }
 }
 
 /// Fake socket with async API mimicking real network I/O.
-/// Each operation takes one Pending + waker round-trip via ImmediateFut.
 struct FakeSocket {
-    buffer: AsyncQueue<usize>,
+    buffer: Queue<usize>,
     closed: Rc<RefCell<bool>>,
 }
 
@@ -116,7 +74,7 @@ impl Clone for FakeSocket {
 impl FakeSocket {
     fn connect(_addr: &str) -> ImmediateFut<Self> {
         ImmediateFut::new(Self {
-            buffer: AsyncQueue::new(),
+            buffer: Queue::new(),
             closed: Rc::new(RefCell::new(false)),
         })
     }
@@ -165,13 +123,6 @@ impl Future for SocketReadFut {
     }
 }
 
-use areamy::poll::Join;
-
-enum InputItem {
-    Data(usize),
-    Flush,
-}
-
 // ============================================================
 // Sync Double
 // ============================================================
@@ -207,139 +158,16 @@ impl areamy::Flush for Double {
     }
 }
 
-impl Name for Double {}
+impl areamy::node::Name for Double {}
 impl areamy::LineRoutine<usize, usize> for Double {}
 
 // ============================================================
-// Pattern 1: FutureRoutine — user handles everything
+// Test
 // ============================================================
 
-/// User provides one async fn. Framework wraps it and manages reset.
-/// When the future completes → Ready. Next poll → factory creates new future.
-struct FutureRoutine<F>
-where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send,
-{
-    input: AsyncQueue<InputItem>,
-    output: AsyncQueue<usize>,
-    factory: F,
-    future: Option<Pin<Box<dyn Future<Output = Result<(), Error>>>>>,
-}
-
-impl<F> FutureRoutine<F>
-where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send,
-{
-    fn new(factory: F) -> Self {
-        let input = AsyncQueue::new();
-        let output = AsyncQueue::new();
-        let future = (factory)(input.clone(), output.clone());
-        Self {
-            input,
-            output,
-            factory,
-            future: Some(future),
-        }
-    }
-}
-
-impl<F> areamy::Send<usize> for FutureRoutine<F>
-where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send,
-{
-    fn send(&mut self, message: usize) -> Result<(), Error> {
-        self.input.push(InputItem::Data(message));
-        Ok(())
-    }
-}
-
-impl<F> areamy::Next<usize> for FutureRoutine<F>
-where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send,
-{
-    fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.pop())
-    }
-}
-
-impl<F> areamy::Flush for FutureRoutine<F>
-where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send,
-{
-    fn flush(&mut self) -> Result<(), Error> {
-        self.input.push(InputItem::Flush);
-        Ok(())
-    }
-}
-
-impl<F> areamy::Poll for FutureRoutine<F>
-where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send,
-{
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        let future = self
-            .future
-            .get_or_insert_with(|| (self.factory)(self.input.clone(), self.output.clone()));
-
-        match future.as_mut().poll(cx) {
-            core::task::Poll::Ready(result) => {
-                result?;
-                self.future = None;
-                Ok(core::task::Poll::Ready(()))
-            }
-            core::task::Poll::Pending => Ok(core::task::Poll::Pending),
-        }
-    }
-}
-
-impl<F> Name for FutureRoutine<F> where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send
-{
-}
-impl<F> areamy::AsyncLineRoutine<usize, usize> for FutureRoutine<F> where
-    F: Fn(
-            AsyncQueue<InputItem>,
-            AsyncQueue<usize>,
-        ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>
-        + Send
-{
-}
-
-// ============================================================
-// Tests
-// ============================================================
-
-/// Bidi streaming via FutureRoutine + Join.
-/// User's async fn connects, spawns writer + reader, joins them.
-/// No framework-managed state machine — Join handles concurrent polling.
+/// Bidi streaming: connect → writer + reader via Join → half-close on flush.
+/// Uses areamy::poll::FutureRoutine with RoutineFactory (|| closure).
+/// Multi-segment: flush resets the future, reconnects.
 #[test]
 fn bidi_with_join() -> Result<(), Error> {
     let mut source_node = areamy::work::make_line(Double::new());
@@ -348,7 +176,7 @@ fn bidi_with_join() -> Result<(), Error> {
     let mut async_thread = AsyncThread::<IoThread>::new();
 
     let routine = || {
-        FutureRoutine::new(|input, output| {
+        FutureRoutine::new(|input: Queue<Input<usize>>, output: Queue<usize>| {
             Box::pin(async move {
                 let socket = FakeSocket::connect("fake://server").await;
 
@@ -357,10 +185,9 @@ fn bidi_with_join() -> Result<(), Error> {
                 let writer: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
                         loop {
-                            let item = RecvFut(writer_input.clone()).await;
-                            match item {
-                                InputItem::Data(val) => writer_socket.write(val * 3).await,
-                                InputItem::Flush => {
+                            match writer_input.recv().await {
+                                Input::Data(val) => writer_socket.write(val * 3).await,
+                                Input::Flush => {
                                     writer_socket.half_close().await;
                                     break;
                                 }
@@ -379,7 +206,7 @@ fn bidi_with_join() -> Result<(), Error> {
                         Ok(())
                     });
 
-                Join::pair(writer, reader).await
+                Join::join([writer, reader]).await
             })
         })
     };

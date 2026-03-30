@@ -91,7 +91,7 @@ pub trait Pollable: Connection {
 
 /// Factory for creating node routines on a target thread.
 ///
-/// Builders store a [NodeFactory] instead of the routine itself. The
+/// Builders store a [RoutineFactory] instead of the routine itself. The
 /// factory is [Send] (crosses from main thread to target thread during
 /// spawn). The routine is created on the target thread and does NOT
 /// need to be [Send].

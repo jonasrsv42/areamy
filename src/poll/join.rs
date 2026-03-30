@@ -26,15 +26,10 @@ pub struct Join {
 }
 
 impl Join {
-    pub fn new(futures: Vec<BoxFut>) -> Self {
+    pub fn join(futures: impl IntoIterator<Item = BoxFut>) -> Self {
         Self {
             futures: futures.into_iter().map(Some).collect(),
         }
-    }
-
-    /// Join exactly two futures.
-    pub fn pair(a: BoxFut, b: BoxFut) -> Self {
-        Self::new(vec![a, b])
     }
 }
 
@@ -93,7 +88,7 @@ mod tests {
     fn join_completes_when_all_ready() {
         let a: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
         let b: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
-        let mut join = Join::pair(a, b);
+        let mut join = Join::join(vec![a, b]);
 
         let mut cx = noop_cx();
         assert!(matches!(
@@ -106,7 +101,7 @@ mod tests {
     fn join_pending_when_one_pending() {
         let a: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
         let b: BoxFut = Box::pin(PendingForever);
-        let mut join = Join::pair(a, b);
+        let mut join = Join::join(vec![a, b]);
 
         let mut cx = noop_cx();
         assert!(matches!(Pin::new(&mut join).poll(&mut cx), Poll::Pending));
@@ -116,7 +111,7 @@ mod tests {
     fn join_propagates_first_error() {
         let a: BoxFut = Box::pin(ReadyFut(Some(Err(crate::fatal!("boom")))));
         let b: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
-        let mut join = Join::pair(a, b);
+        let mut join = Join::join(vec![a, b]);
 
         let mut cx = noop_cx();
         match Pin::new(&mut join).poll(&mut cx) {
@@ -155,7 +150,7 @@ mod tests {
             count: count_clone,
             ready: false,
         });
-        let mut join = Join::pair(a, b);
+        let mut join = Join::join(vec![a, b]);
 
         let mut cx = noop_cx();
         // First poll: a completes (set to None), b pending

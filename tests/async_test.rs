@@ -523,9 +523,9 @@ fn node_terminal_via_typed() -> Result<(), Error> {
     Ok(())
 }
 
-/// Parent→child via typed + merge.
+/// Parent→child via typed + parent.
 #[test]
-fn node_parent_child_via_typed_and_merge() -> Result<(), Error> {
+fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
     let mut source_node = areamy::work::make_line(Double::new());
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 

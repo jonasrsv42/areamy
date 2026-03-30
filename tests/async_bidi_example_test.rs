@@ -1,13 +1,9 @@
-//! Proof-of-concept: bidi streaming routines using async/await.
+//! Proof-of-concept: bidi streaming with async/await.
 //!
-//! Two patterns:
-//!
-//! 1. **SingleFnRoutine** — user provides one async fn. Handles socket setup,
-//!    reader, writer, everything. Framework just wraps the future.
-//!
-//! 2. **BidiRoutine** — framework manages socket lifecycle. Connects on first
-//!    poll, passes socket to user-provided writer + reader fns.
-//!    Handles Running → HalfFlush → Flushed → reconnect.
+//! SingleFnRoutine wraps a user-provided async fn. The async fn handles
+//! socket setup, reader + writer (via Join), and flush/close lifecycle.
+//! Each node runs one future. Concurrency within the future uses
+//! [areamy::poll::Join].
 
 use areamy::error::Error;
 use areamy::node::Name;

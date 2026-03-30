@@ -216,7 +216,10 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 /// When the future completes → Ready. Next poll → factory creates new future.
 struct SingleFnRoutine<F>
 where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send,
 {
     input: AsyncQueue<InputItem>,
@@ -227,7 +230,10 @@ where
 
 impl<F> SingleFnRoutine<F>
 where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send,
 {
     fn new(factory: F) -> Self {
@@ -245,7 +251,10 @@ where
 
 impl<F> areamy::Send<usize> for SingleFnRoutine<F>
 where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send,
 {
     fn send(&mut self, message: usize) -> Result<(), Error> {
@@ -256,7 +265,10 @@ where
 
 impl<F> areamy::Next<usize> for SingleFnRoutine<F>
 where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send,
 {
     fn next(&mut self) -> Result<Option<usize>, Error> {
@@ -266,7 +278,10 @@ where
 
 impl<F> areamy::Flush for SingleFnRoutine<F>
 where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send,
 {
     fn flush(&mut self) -> Result<(), Error> {
@@ -277,13 +292,16 @@ where
 
 impl<F> areamy::Poll for SingleFnRoutine<F>
 where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send,
 {
     fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        let future = self.future.get_or_insert_with(|| {
-            (self.factory)(self.input.clone(), self.output.clone())
-        });
+        let future = self
+            .future
+            .get_or_insert_with(|| (self.factory)(self.input.clone(), self.output.clone()));
 
         match future.as_mut().poll(cx) {
             core::task::Poll::Ready(result) => {
@@ -297,17 +315,26 @@ where
 }
 
 impl<F> Name for SingleFnRoutine<F> where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send
 {
 }
 impl<F> areamy::LineRoutine<usize, usize> for SingleFnRoutine<F> where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send
 {
 }
 impl<F> areamy::AsyncLineRoutine<usize, usize> for SingleFnRoutine<F> where
-    F: Fn(AsyncQueue<InputItem>, AsyncQueue<usize>) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
+    F: Fn(
+            AsyncQueue<InputItem>,
+            AsyncQueue<usize>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>
         + Send
 {
 }
@@ -326,38 +353,40 @@ fn bidi_with_join() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let routine = SingleFnRoutine::new(|input, output| Box::pin(async move {
-        let socket = FakeSocket::connect("fake://server").await;
+    let routine = SingleFnRoutine::new(|input, output| {
+        Box::pin(async move {
+            let socket = FakeSocket::connect("fake://server").await;
 
-        let writer_input = input.clone();
-        let writer_socket = socket.clone();
-        let writer: Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> =
-            Box::pin(async move {
-                loop {
-                    let item = RecvFut(writer_input.clone()).await;
-                    match item {
-                        InputItem::Data(val) => writer_socket.write(val * 3).await,
-                        InputItem::Flush => {
-                            writer_socket.half_close().await;
-                            break;
+            let writer_input = input.clone();
+            let writer_socket = socket.clone();
+            let writer: Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> =
+                Box::pin(async move {
+                    loop {
+                        let item = RecvFut(writer_input.clone()).await;
+                        match item {
+                            InputItem::Data(val) => writer_socket.write(val * 3).await,
+                            InputItem::Flush => {
+                                writer_socket.half_close().await;
+                                break;
+                            }
                         }
                     }
-                }
-                Ok(())
-            });
+                    Ok(())
+                });
 
-        let reader_socket = socket;
-        let reader_output = output.clone();
-        let reader: Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> =
-            Box::pin(async move {
-                while let Some(val) = reader_socket.read().await {
-                    reader_output.push(val + 1);
-                }
-                Ok(())
-            });
+            let reader_socket = socket;
+            let reader_output = output.clone();
+            let reader: Pin<Box<dyn Future<Output = Result<(), Error>> + Send>> =
+                Box::pin(async move {
+                    while let Some(val) = reader_socket.read().await {
+                        reader_output.push(val + 1);
+                    }
+                    Ok(())
+                });
 
-        Join::pair(writer, reader).await
-    }));
+            Join::pair(writer, reader).await
+        })
+    });
 
     let mut node = async_thread.node(routine).typed::<areamy::poll::Sync>();
     make_push(&mut source_node, &node)?;

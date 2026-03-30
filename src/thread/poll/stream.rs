@@ -5,9 +5,9 @@ use super::spawn::{NodeId, Spawnable};
 use super::waker::NodeWaker;
 use crate::error::{Error, ErrorKind};
 use crate::node::line::poll::builder::node::Node;
-use std::task::Context;
 use crate::{AsyncLineRoutine, Origin, Pollable, ThreadId, fatal};
 use std::sync::Arc;
+use std::task::Context;
 use std::thread::{JoinHandle, spawn};
 
 /// An idle async thread. Add builders via [AsyncThread::add], then

@@ -86,10 +86,7 @@ pub trait Pullable: Send + Connection {
 /// nodes are only added to matching threads (compile-time safety).
 pub trait Pollable: Connection {
     type ThreadId: ThreadId;
-    fn poll(
-        &mut self,
-        cx: &mut core::task::Context<'_>,
-    ) -> Result<core::task::Poll<()>, Error>;
+    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error>;
 }
 
 /// [`Linkable`] is a [Connection] for two-stage graph construction.

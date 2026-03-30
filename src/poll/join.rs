@@ -63,3 +63,109 @@ impl Future for Join {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ReadyFut(Option<Result<(), Error>>);
+
+    impl Future for ReadyFut {
+        type Output = Result<(), Error>;
+        fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+            Poll::Ready(self.0.take().unwrap())
+        }
+    }
+
+    struct PendingForever;
+    impl Future for PendingForever {
+        type Output = Result<(), Error>;
+        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+            Poll::Pending
+        }
+    }
+
+    fn noop_cx() -> Context<'static> {
+        Context::from_waker(std::task::Waker::noop())
+    }
+
+    #[test]
+    fn join_completes_when_all_ready() {
+        let a: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
+        let b: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
+        let mut join = Join::pair(a, b);
+
+        let mut cx = noop_cx();
+        assert!(matches!(
+            Pin::new(&mut join).poll(&mut cx),
+            Poll::Ready(Ok(()))
+        ));
+    }
+
+    #[test]
+    fn join_pending_when_one_pending() {
+        let a: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
+        let b: BoxFut = Box::pin(PendingForever);
+        let mut join = Join::pair(a, b);
+
+        let mut cx = noop_cx();
+        assert!(matches!(Pin::new(&mut join).poll(&mut cx), Poll::Pending));
+    }
+
+    #[test]
+    fn join_propagates_first_error() {
+        let a: BoxFut = Box::pin(ReadyFut(Some(Err(crate::fatal!("boom")))));
+        let b: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
+        let mut join = Join::pair(a, b);
+
+        let mut cx = noop_cx();
+        match Pin::new(&mut join).poll(&mut cx) {
+            Poll::Ready(Err(e)) => assert!(e.to_string().contains("boom")),
+            other => panic!("expected error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn join_does_not_repoll_completed() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_clone = count.clone();
+
+        struct CountingFut {
+            count: Arc<AtomicUsize>,
+            ready: bool,
+        }
+        impl Future for CountingFut {
+            type Output = Result<(), Error>;
+            fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+                self.count.fetch_add(1, Ordering::SeqCst);
+                if self.ready {
+                    Poll::Ready(Ok(()))
+                } else {
+                    self.ready = true;
+                    Poll::Pending
+                }
+            }
+        }
+
+        let a: BoxFut = Box::pin(ReadyFut(Some(Ok(()))));
+        let b: BoxFut = Box::pin(CountingFut {
+            count: count_clone,
+            ready: false,
+        });
+        let mut join = Join::pair(a, b);
+
+        let mut cx = noop_cx();
+        // First poll: a completes (set to None), b pending
+        assert!(matches!(Pin::new(&mut join).poll(&mut cx), Poll::Pending));
+        // Second poll: only b polled (a is None), b completes
+        assert!(matches!(
+            Pin::new(&mut join).poll(&mut cx),
+            Poll::Ready(Ok(()))
+        ));
+        // b was polled exactly 2 times
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+}

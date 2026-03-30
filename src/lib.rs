@@ -35,12 +35,7 @@ pub use node::{
 pub use node::{bifurcation, biunion};
 pub use signal::{Origin, Trackable};
 
-/// Re-export poll markers for `areamy::poll::{Sync, Async, Deferred}`.
-pub mod poll {
-    pub use crate::connect::poll::marker::{
-        Async, AsyncIn, Deferred, EdgeKind, Linktime, Null, Sync,
-    };
-}
+pub mod poll;
 pub use sink::GraphSink;
 pub use thread::{
     AsyncThread, AsyncThreadHandle, BundlePanics, DefaultThread, Spawnable, ThreadBundle,

@@ -109,7 +109,10 @@ where
 {
     type ThreadId = ThreadIdType;
 
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(
+        &mut self,
+        cx: &mut core::task::Context<'_>,
+    ) -> Result<core::task::Poll<()>, Error> {
         // Only drain input in Running state. Flushing/Closing skip input.
         if matches!(self.state, NodeState::Running) {
             loop {

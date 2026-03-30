@@ -75,18 +75,21 @@ pub trait Pullable: Send + Connection {
 ///
 /// Unlike [Workable] which blocks until work is done, [Pollable::poll] is non-blocking
 /// and receives a [core::task::Context] carrying a [core::task::Waker]. The waker
-/// can be cloned and handed to I/O sources (sockets, timers, edges) so they can
+/// can be cloned and handed to I/O sources (sockets, timers, futures) so they can
 /// wake the node when there's work to do.
 ///
-/// Multiple [Pollable] nodes can share a single thread via an async executor that
-/// sleeps until a waker fires, then calls [Pollable::poll] on the woken node.
+/// Each node runs a single future. For concurrent sub-tasks within a node
+/// (e.g. bidi streaming writer + reader), use a Join combinator inside the
+/// future rather than spawning multiple futures per node.
 ///
 /// Like [Workable], [Pollable] has an associated [Pollable::ThreadId] to ensure
 /// nodes are only added to matching threads (compile-time safety).
-/// Move semantics prevent a node from being added to multiple threads.
 pub trait Pollable: Connection {
     type ThreadId: ThreadId;
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error>;
+    fn poll(
+        &mut self,
+        cx: &mut core::task::Context<'_>,
+    ) -> Result<core::task::Poll<()>, Error>;
 }
 
 /// [`Linkable`] is a [Connection] for two-stage graph construction.

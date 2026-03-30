@@ -48,46 +48,38 @@ pub trait LineRoutine<In, Out>:
 {
 }
 
-/// [`AsyncLineRoutine`] extends [LineRoutine] with a [crate::Poll] component
-/// for non-blocking I/O work.
+/// [`AsyncLineRoutine`] is the async counterpart of [LineRoutine].
+///
+/// Same method traits ([crate::Send], [crate::Next], [crate::Flush],
+/// [crate::node::Name]) plus [crate::Poll] for async I/O work.
+///
+/// Unlike [LineRoutine], does NOT require [std::marker::Send]. Async
+/// routines are created on the async thread via factory pattern and
+/// never cross threads. This allows routines to hold non-Send types
+/// like `Rc<RefCell<_>>` for zero-cost shared state with their futures.
 ///
 /// ## [crate::Poll] contract
 ///
-/// [crate::Poll::poll] is called on each wake cycle after input is drained.
-/// It receives a [core::task::Context] with a [core::task::Waker] that the
-/// routine can clone and hand to I/O sources for future wake-ups.
+/// Called on each wake cycle after input is drained. Receives a
+/// [core::task::Context] with a [core::task::Waker] for I/O registration.
 ///
-/// **Return values:**
-/// - [`core::task::Poll::Pending`] — routine is still active. Node stays alive.
-/// - [`core::task::Poll::Ready`] — routine finished a requested task (flush
-///   or close). The node interprets Ready based on its state:
-///   - **Flushing**: Flush signal forwarded downstream. Routine returns to
-///     Pending on next cycle and continues processing new data.
+/// - [core::task::Poll::Pending] — routine is active. Node stays alive.
+/// - [core::task::Poll::Ready] — routine finished a requested task:
+///   - **Flushing**: Flush signal forwarded downstream, back to Pending.
 ///   - **Closing**: output closed, node done.
-///   - **Running** (no pending flush/close): unexpected → treated as error.
+///   - **Running**: unexpected → error.
 ///
-/// ## [crate::Flush] contract for async routines
+/// ## Flush contract
 ///
-/// [crate::Flush] signals the routine to complete all pending work and
-/// prepare for a boundary. The node does NOT forward the Flush signal
-/// downstream until [crate::Poll::poll] returns [core::task::Poll::Ready].
-///
-/// This enables I/O routines to perform multi-cycle async work on flush
-/// (e.g. half-close handshakes, socket buffer drains). The routine:
-/// 1. Receives [crate::Flush] — queues cleanup work
-/// 2. Returns [core::task::Poll::Pending] from poll while working
-/// 3. Returns [core::task::Poll::Ready] when flush is complete
-/// 4. Node forwards the Flush signal downstream
-/// 5. Routine returns to [core::task::Poll::Pending] on next cycle
-///
-/// Simple routines that don't need async flush work should return
-/// [core::task::Poll::Ready] on the first poll after flush.
+/// Node holds the Flush signal until [crate::Poll::poll] returns Ready.
+/// This enables multi-cycle I/O flush (half-close handshakes).
+/// Simple routines return Ready on the first poll after flush.
 ///
 /// ## Close contract
 ///
-/// On input close, the node calls [crate::Flush] then polls until Ready.
-/// This gives the routine a chance to flush buffers and complete I/O
-/// cleanup before the node closes its output and shuts down.
+/// On input close, [crate::Flush] is called, then poll until Ready.
+/// The routine MUST respond by completing within a reasonable time.
+/// Socket timeouts are the routine's responsibility.
 ///
 /// ## Node state machine
 ///
@@ -95,24 +87,10 @@ pub trait LineRoutine<In, Out>:
 /// Running → Flushing (on Flush signal) → poll until Ready → Running
 /// Running → Closing  (on input close)  → poll until Ready → Closed
 /// ```
-///
-/// ## Example: buffered I/O routine
-///
-/// ```ignore
-/// impl Poll for MyRoutine {
-///     fn poll(&mut self, cx: &mut Context<'_>) -> Result<Poll<()>, Error> {
-///         // Do non-blocking I/O with cx.waker()
-///         self.socket.flush(cx.waker())?;
-///
-///         if self.flush_complete() {
-///             Ok(Poll::Ready(()))  // flush done, signal will be forwarded
-///         } else {
-///             Ok(Poll::Pending)    // still flushing, wake me later
-///         }
-///     }
-/// }
-/// ```
-pub trait AsyncLineRoutine<In, Out>: LineRoutine<In, Out> + crate::Poll {}
+pub trait AsyncLineRoutine<In, Out>:
+    crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + crate::node::Name
+{
+}
 
 #[cfg(test)]
 pub mod tests {

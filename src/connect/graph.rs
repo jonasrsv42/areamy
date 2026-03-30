@@ -89,6 +89,33 @@ pub trait Pollable: Connection {
     fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error>;
 }
 
+/// Factory for creating node routines on a target thread.
+///
+/// Builders store a [NodeFactory] instead of the routine itself. The
+/// factory is [Send] (crosses from main thread to target thread during
+/// spawn). The routine is created on the target thread and does NOT
+/// need to be [Send].
+///
+/// This works around Rust's [Send] requirement: the factory crosses
+/// threads, the routine it produces stays on the target thread. Enables
+/// routines to hold non-Send types like `Rc<RefCell<_>>` for zero-cost
+/// shared state.
+pub trait RoutineFactory: Send {
+    type Routine;
+    fn create(self) -> Self::Routine;
+}
+
+/// Blanket impl: any `FnOnce() -> R + Send` is a [RoutineFactory].
+impl<F, R> RoutineFactory for F
+where
+    F: FnOnce() -> R + Send,
+{
+    type Routine = R;
+    fn create(self) -> R {
+        self()
+    }
+}
+
 /// [`Linkable`] is a [Connection] for two-stage graph construction.
 ///
 /// Builders implement [Linkable] to support deferred construction — graph

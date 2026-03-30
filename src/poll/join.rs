@@ -9,7 +9,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
+type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 
 /// Join multiple futures concurrently. Completes when all finish.
 /// Propagates the first error encountered.

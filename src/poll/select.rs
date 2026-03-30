@@ -8,7 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
+type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 
 /// Select from multiple futures. Completes when the first one finishes.
 /// Returns the index of the completed future. Propagates errors.

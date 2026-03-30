@@ -46,9 +46,9 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
     /// - `.parent(node)` → Async input (adds parent)
     /// - `thread.add(node)` → Sync output (Spawnable)
     /// - consumed by `.parent()` → Async output (Linkable<Parent>)
-    pub fn node<InType, OutType, SignalType, RoutineType>(
+    pub fn node<InType, OutType, SignalType, FactoryType>(
         &mut self,
-        routine: RoutineType,
+        factory: FactoryType,
     ) -> Node<
         crate::poll::Deferred,
         crate::poll::Deferred,
@@ -56,14 +56,15 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         OutType,
         SignalType,
         ThreadIdType,
-        RoutineType,
+        FactoryType,
     >
     where
         SignalType: Origin,
-        RoutineType: AsyncLineRoutine<InType, OutType>,
+        FactoryType: crate::RoutineFactory,
+        FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
     {
         let (node_id, waker) = self.next_node();
-        Node::deferred(node_id, routine, waker)
+        Node::deferred(node_id, factory, waker)
     }
 
     /// Add a node to the thread. It will be spawned when the thread starts.
@@ -197,7 +198,7 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let node = thread
-            .node(AsyncMockLine::new())
+            .node(|| AsyncMockLine::new())
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -218,7 +219,7 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let mut node = thread
-            .node(AsyncMockLine::new())
+            .node(|| AsyncMockLine::new())
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -247,14 +248,14 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let parent = thread
-            .node(AsyncMockLine::new())
+            .node(|| AsyncMockLine::new())
             .typed::<crate::poll::Async>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&parent).unwrap();
 
         let mut child = thread
-            .node(AsyncMockLine::new())
+            .node(|| AsyncMockLine::new())
             .parent(parent)
             .typed::<crate::poll::Sync>();
 

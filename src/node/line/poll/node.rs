@@ -166,7 +166,7 @@ where
                 if matches!(result, core::task::Poll::Ready(())) {
                     let signal = match std::mem::replace(&mut self.state, NodeState::Running) {
                         NodeState::Flushing(s) => s,
-                        _ => return Err(fatal!("expected Flushing state")),
+                        _ => return Err(fatal!("polling node expected Flushing state")),
                     };
                     self.push_output(Message::Flush(signal))?;
                 }

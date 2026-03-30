@@ -16,6 +16,10 @@
 //! - `Node<Sync, Deferred>` — sync in, output inferred from usage
 //! - `Node<Async, Deferred>` — async in, output inferred (sink if added directly)
 //! - `Node<Deferred, Deferred>` — fully unresolved, returned by `thread.node()`
+//!
+//! Stores a [RoutineFactory] instead of the routine. The factory is [Send]
+//! (crosses threads during spawn). The routine is created on the async
+//! thread and does NOT need to be [Send].
 
 use crate::connect::poll::edge::AsyncEdge;
 use crate::connect::poll::marker::{Async, AsyncIn, Deferred, EdgeKind, Null, Sync};
@@ -27,44 +31,43 @@ use crate::node::line::poll::node::AsyncLine;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
 use crate::thread::poll::spawn::{NodeId, Spawnable};
-use crate::{Closeable, Linkable, Pollable, ThreadId};
+use crate::{Closeable, Linkable, Pollable, RoutineFactory, ThreadId};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::Waker;
 
-/// Unified async node builder. Edge kind markers select storage and
-/// control which wiring methods are available.
-///
-/// Created via [`AsyncThread::node`](crate::AsyncThread).
+/// Unified async node builder.
 #[must_use = "node must be consumed (add to thread or pass to another builder)"]
-pub struct Node<InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+pub struct Node<InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InEdgeType: EdgeKind,
     OutEdgeType: EdgeKind,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     node_id: NodeId,
-    routine: RoutineType,
+    factory: FactoryType,
     input: InEdgeType::Input<InType, SignalType, ThreadIdType>,
     output: OutEdgeType::Output<OutType, SignalType>,
-    _phantom: std::marker::PhantomData<(fn() -> OutType, ThreadIdType)>,
+    _phantom: std::marker::PhantomData<(fn() -> OutType, fn() -> InType, ThreadIdType)>,
 }
 
 // ============================================================
 // Connection — all variants
 // ============================================================
 
-impl<InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType> Connection
-    for Node<InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType> Connection
+    for Node<InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InEdgeType: EdgeKind,
     OutEdgeType: EdgeKind,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
 }
 
@@ -73,20 +76,21 @@ where
 // ============================================================
 
 /// Node<Sync, _> — sync input, creates SyncBridge from waker.
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
-    Node<Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     OutEdgeType: EdgeKind,
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
     OutEdgeType::Output<OutType, SignalType>: Default,
 {
-    pub fn new(node_id: NodeId, routine: RoutineType, waker: Waker) -> Self {
+    pub fn new(node_id: NodeId, factory: FactoryType, waker: Waker) -> Self {
         Self {
             node_id,
-            routine,
+            factory,
             input: Arc::new(SyncBridge::new(waker)),
             output: Default::default(),
             _phantom: std::marker::PhantomData,
@@ -95,19 +99,20 @@ where
 }
 
 /// Node<Async, _> — async input, takes first parent.
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
-    Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     OutEdgeType: EdgeKind,
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
     OutEdgeType::Output<OutType, SignalType>: Default,
 {
     pub fn new(
         node_id: NodeId,
-        routine: RoutineType,
+        factory: FactoryType,
         waker: Waker,
         parent: Box<
             dyn Linkable<
@@ -119,7 +124,7 @@ where
     ) -> Self {
         Self {
             node_id,
-            routine,
+            factory,
             input: AsyncIn {
                 parents: vec![parent],
                 waker,
@@ -131,17 +136,18 @@ where
 }
 
 /// Node<Deferred, Deferred> — unresolved, holds only waker.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType>
-    Node<Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
-    pub fn deferred(node_id: NodeId, routine: RoutineType, waker: Waker) -> Self {
+    pub fn deferred(node_id: NodeId, factory: FactoryType, waker: Waker) -> Self {
         Self {
             node_id,
-            routine,
+            factory,
             input: waker,
             output: Null::new(),
             _phantom: std::marker::PhantomData,
@@ -151,14 +157,9 @@ where
     /// Resolve to Sync input with explicit output kind.
     ///
     /// Async input requires [Self::parent] instead — parents must be provided.
-    ///
-    /// ```ignore
-    /// thread.node(routine).typed::<Async>()  // → Node<Sync, Async>
-    /// thread.node(routine).typed::<Sync>()   // → Node<Sync, Sync>
-    /// ```
     pub fn typed<OutEdgeType: EdgeKind>(
         self,
-    ) -> Node<Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+    ) -> Node<Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
     where
         InType: Send + std::marker::Sync + 'static,
         SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
@@ -166,7 +167,7 @@ where
     {
         Node {
             node_id: self.node_id,
-            routine: self.routine,
+            factory: self.factory,
             input: Arc::new(SyncBridge::new(self.input)),
             output: Default::default(),
             _phantom: std::marker::PhantomData,
@@ -179,14 +180,15 @@ where
 // ============================================================
 
 /// First parent on Deferred input: transitions to Async.
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
-    Node<Deferred, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<Deferred, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     OutEdgeType: EdgeKind,
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     pub fn parent(
         self,
@@ -195,13 +197,13 @@ where
             Edge = Rc<RefCell<AsyncEdge<InType, SignalType>>>,
             Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
         > + 'static,
-    ) -> Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType> {
+    ) -> Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType> {
         Node {
             node_id: self.node_id,
-            routine: self.routine,
+            factory: self.factory,
             input: AsyncIn {
                 parents: vec![Box::new(parent)],
-                waker: self.input, // Deferred input IS the waker
+                waker: self.input,
             },
             output: self.output,
             _phantom: std::marker::PhantomData,
@@ -210,23 +212,24 @@ where
 }
 
 /// Resolve output kind on Node<Async, Deferred>. Input stays Async.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType>
-    Node<Async, Deferred, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     pub fn typed<OutEdgeType: EdgeKind>(
         self,
-    ) -> Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+    ) -> Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
     where
         OutEdgeType::Output<OutType, SignalType>: Default,
     {
         Node {
             node_id: self.node_id,
-            routine: self.routine,
+            factory: self.factory,
             input: self.input,
             output: Default::default(),
             _phantom: std::marker::PhantomData,
@@ -235,14 +238,15 @@ where
 }
 
 /// Additional parent on Async input: adds parent, stays Async.
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
-    Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     OutEdgeType: EdgeKind,
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     pub fn parent(
         mut self,
@@ -261,15 +265,16 @@ where
 // Get<dyn Closeable + Send + Sync> — Sync input only
 // ============================================================
 
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
     Get<dyn Closeable<DataType = InType, SignalType = SignalType> + Send + std::marker::Sync>
-    for Node<Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+    for Node<Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     OutEdgeType: EdgeKind,
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     fn get(
         &self,
@@ -285,15 +290,16 @@ where
 // Add<dyn Closeable + Send + Sync> — Sync output only
 // ============================================================
 
-impl<InEdgeType, InType, OutType, SignalType, ThreadIdType, RoutineType>
+impl<InEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
     Add<dyn Closeable<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync>
-    for Node<InEdgeType, Sync, InType, OutType, SignalType, ThreadIdType, RoutineType>
+    for Node<InEdgeType, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InEdgeType: EdgeKind,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<InType, OutType>,
+    FactoryType: RoutineFactory,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     fn add(
         &mut self,
@@ -307,35 +313,38 @@ where
 }
 
 // ============================================================
-// Spawnable — Sync output (Node<Sync, Sync> and Node<Async, Sync>)
+// Spawnable — calls factory.create() on async thread
 // ============================================================
 
-/// Terminal: Node<Sync, Sync> — sync in, sync out.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Spawnable<ThreadIdType>
-    for Node<Sync, Sync, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Terminal: Node<Sync, Sync>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Spawnable<ThreadIdType>
+    for Node<Sync, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
         let node_id = self.node_id;
-        let node = AsyncLine::new(self.routine, self.input, self.output);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, self.input, self.output);
         vec![(node_id, Box::new(node))]
     }
 }
 
-/// Child: Node<Async, Sync> — async in, sync out. Owns parents.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Spawnable<ThreadIdType>
-    for Node<Async, Sync, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Child: Node<Async, Sync>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Spawnable<ThreadIdType>
+    for Node<Async, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
         let node_id = self.node_id;
@@ -350,38 +359,42 @@ where
             edges.push(edge);
         }
 
-        let node = AsyncLine::new(self.routine, edges, self.output);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, edges, self.output);
         all_nodes.push((node_id, Box::new(node)));
         all_nodes
     }
 }
 
-/// Sink: Node<Sync, Deferred> — sync in, no output (sink).
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Spawnable<ThreadIdType>
-    for Node<Sync, Deferred, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Sink: Node<Sync, Deferred>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Spawnable<ThreadIdType>
+    for Node<Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
         let node_id = self.node_id;
-        let node = AsyncLine::new(self.routine, self.input, self.output);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, self.input, self.output);
         vec![(node_id, Box::new(node))]
     }
 }
 
-/// Sink: Node<Async, Deferred> — async in, no output (sink). Owns parents.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Spawnable<ThreadIdType>
-    for Node<Async, Deferred, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Sink: Node<Async, Deferred>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Spawnable<ThreadIdType>
+    for Node<Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
         let node_id = self.node_id;
@@ -396,67 +409,71 @@ where
             edges.push(edge);
         }
 
-        let node = AsyncLine::new(self.routine, edges, self.output);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, edges, self.output);
         all_nodes.push((node_id, Box::new(node)));
         all_nodes
     }
 }
 
 // ============================================================
-// Linkable<Parent> — Async or Deferred output
-// Sync input: Node<Sync, Async>, Node<Sync, Deferred>
-// Async input: Node<Async, Async>, Node<Async, Deferred>
+// Linkable<Parent> — calls factory.create() on async thread
 // ============================================================
 
-/// Node<Sync, Async> — sync in, async out.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Linkable<Parent>
-    for Node<Sync, Async, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Node<Sync, Async>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Linkable<Parent>
+    for Node<Sync, Async, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     type Edge = Rc<RefCell<AsyncEdge<OutType, SignalType>>>;
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node> {
         let node_id = self.node_id;
-        let node = AsyncLine::new(self.routine, self.input, edge);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, self.input, edge);
         vec![(node_id, Box::new(node))]
     }
 }
 
-/// Node<Sync, Deferred> — sync in, output resolved as async by being linked.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Linkable<Parent>
-    for Node<Sync, Deferred, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Node<Sync, Deferred>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Linkable<Parent>
+    for Node<Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     type Edge = Rc<RefCell<AsyncEdge<OutType, SignalType>>>;
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node> {
         let node_id = self.node_id;
-        let node = AsyncLine::new(self.routine, self.input, edge);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, self.input, edge);
         vec![(node_id, Box::new(node))]
     }
 }
 
-/// Node<Async, Async> — async in, async out. Owns parents.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Linkable<Parent>
-    for Node<Async, Async, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Node<Async, Async>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Linkable<Parent>
+    for Node<Async, Async, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     type Edge = Rc<RefCell<AsyncEdge<OutType, SignalType>>>;
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
@@ -474,21 +491,23 @@ where
             input_edges.push(edge);
         }
 
-        let node = AsyncLine::new(self.routine, input_edges, output_edge);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, input_edges, output_edge);
         all_nodes.push((node_id, Box::new(node)));
         all_nodes
     }
 }
 
-/// Node<Async, Deferred> — async in, output resolved as async by being linked.
-impl<InType, OutType, SignalType, ThreadIdType, RoutineType> Linkable<Parent>
-    for Node<Async, Deferred, InType, OutType, SignalType, ThreadIdType, RoutineType>
+/// Node<Async, Deferred>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> Linkable<Parent>
+    for Node<Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: RoutineFactory + 'static,
+    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     type Edge = Rc<RefCell<AsyncEdge<OutType, SignalType>>>;
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
@@ -506,7 +525,8 @@ where
             input_edges.push(edge);
         }
 
-        let node = AsyncLine::new(self.routine, input_edges, output_edge);
+        let routine = self.factory.create();
+        let node = AsyncLine::new(routine, input_edges, output_edge);
         all_nodes.push((node_id, Box::new(node)));
         all_nodes
     }

@@ -57,7 +57,9 @@ pub mod poll;
 pub mod signal_policy;
 pub mod sync_edge;
 
-pub use graph::{Closeable, Linkable, Pollable, Pullable, Pushable, Receivable, Workable};
+pub use graph::{
+    Closeable, Linkable, Pollable, Pullable, Pushable, Receivable, RoutineFactory, Workable,
+};
 pub use make::work;
 pub use make::{make_bidi, make_push, make_work};
 pub use poll::{AsyncEdge, SyncBridge};

@@ -27,6 +27,7 @@ enum NodeState<SignalType> {
     Running,
     Flushing(SignalType),
     FlushReady(SignalType),
+    MarkerReady(SignalType),
     Closing,
     CloseReady,
     Closed,
@@ -44,6 +45,7 @@ where
     input: InputType,
     output: OutputType,
     state: NodeState<SignalType>,
+    input_waker: std::task::Waker,
     work_waker: std::task::Waker,
     output_waker: std::task::Waker,
 }
@@ -68,8 +70,8 @@ where
         Ok(())
     }
 
-    /// Drain input edge. Forwards data via [crate::Send], signals via
-    /// [crate::Flush]. May transition state to Flushing or Closing.
+    /// Drain input edge. Forwards data via [crate::Send].
+    /// May transition state to Flushing, Closing, or MarkerReady.
     fn drain_input(&mut self) -> Result<(), Error> {
         loop {
             match self.input.try_recv() {
@@ -83,7 +85,8 @@ where
                     break;
                 }
                 Ok(Some(Message::Marker(signal))) => {
-                    self.push_output(Message::Marker(signal))?;
+                    self.state = NodeState::MarkerReady(signal);
+                    break;
                 }
                 Ok(None) => break,
                 Err(e) => {
@@ -167,8 +170,10 @@ where
                 }
                 Ok(core::task::Poll::Pending)
             }
-            // Flushing/FlushReady — Input waits for Output to transition back to Running
-            NodeState::Flushing(_) | NodeState::FlushReady(_) => Ok(core::task::Poll::Pending),
+            // Flushing/FlushReady/MarkerReady — Input waits for Output to transition back to Running
+            NodeState::Flushing(_) | NodeState::FlushReady(_) | NodeState::MarkerReady(_) => {
+                Ok(core::task::Poll::Pending)
+            }
         }
     }
 }
@@ -238,7 +243,7 @@ where
                 }
                 Ok(core::task::Poll::Pending)
             }
-            NodeState::Running => {
+            NodeState::Running | NodeState::MarkerReady(_) => {
                 let result = s.poll_routine(cx)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     return Err(fatal!(
@@ -306,6 +311,16 @@ where
                 s.push_output(Message::Flush(signal))?;
                 Ok(core::task::Poll::Pending)
             }
+            NodeState::MarkerReady(_) => {
+                s.drain_output()?;
+                let signal = match std::mem::replace(&mut s.state, NodeState::Running) {
+                    NodeState::MarkerReady(sig) => sig,
+                    _ => return Err(fatal!("expected MarkerReady state")),
+                };
+                s.push_output(Message::Marker(signal))?;
+                s.input_waker.wake_by_ref();
+                Ok(core::task::Poll::Pending)
+            }
             NodeState::CloseReady => {
                 s.drain_output()?;
                 s.output.close()?;
@@ -326,6 +341,7 @@ pub fn new_phases<In, Out, SignalType, ThreadIdType, RoutineType, InputType, Out
     worker: RoutineType,
     input: InputType,
     output: OutputType,
+    input_waker: std::task::Waker,
     work_waker: std::task::Waker,
     output_waker: std::task::Waker,
 ) -> (
@@ -345,6 +361,7 @@ where
         input,
         output,
         state: NodeState::Running,
+        input_waker,
         work_waker,
         output_waker,
     }));
@@ -401,6 +418,7 @@ mod tests {
                 output.clone(),
                 std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
             );
 
         input.push_back(Message::Data(2)).unwrap();
@@ -442,6 +460,7 @@ mod tests {
                 output,
                 std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
             );
 
         SyncBridge::close(&input).unwrap();
@@ -474,6 +493,7 @@ mod tests {
                 AsyncMockLine::new(),
                 input,
                 output,
+                std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
             );
@@ -533,6 +553,7 @@ mod tests {
                 output,
                 std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
             );
 
         let cx_waker = std::task::Waker::noop();
@@ -557,6 +578,7 @@ mod tests {
                 ClosedErrorRoutine,
                 input.clone(),
                 output,
+                std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
             );
@@ -589,6 +611,7 @@ mod tests {
                 output.clone(),
                 std::task::Waker::noop().clone(),
                 std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
             );
 
         input.push_back(Message::Data(1)).unwrap();
@@ -603,5 +626,55 @@ mod tests {
 
         assert_eq!(output.poll().unwrap(), Some(Message::Data(2)));
         assert_eq!(output.poll().unwrap(), Some(Message::Data(6)));
+    }
+
+    #[test]
+    fn marker_preserves_ordering_with_data() {
+        let (waker, _) = test_waker();
+        let input = Arc::new(SyncBridge::new(waker));
+        let output = Arc::new(SyncEdge::new());
+
+        let (mut input_phase, mut work_phase, mut output_phase) =
+            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+                AsyncMockLine::new(),
+                input.clone(),
+                output.clone(),
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
+
+        // Data then Marker then more Data
+        input.push_back(Message::Data(1)).unwrap();
+        input.push_back(Message::Marker("m1")).unwrap();
+        input.push_back(Message::Data(2)).unwrap();
+
+        let cx_waker = std::task::Waker::noop();
+        let mut cx = core::task::Context::from_waker(&cx_waker);
+
+        // First Input poll: drains Data(1), hits Marker → MarkerReady, stops
+        let _ = input_phase.poll(&mut cx).unwrap();
+
+        // Poll Input again — should be blocked in MarkerReady, Data(2) stays in edge
+        let _ = input_phase.poll(&mut cx).unwrap();
+        let _ = input_phase.poll(&mut cx).unwrap();
+
+        let _ = work_phase.poll(&mut cx).unwrap();
+
+        // Output drains data before marker, then forwards marker → Running
+        let _ = output_phase.poll(&mut cx).unwrap();
+
+        // Data(1) output arrives before Marker — ordering preserved
+        assert_eq!(output.poll().unwrap(), Some(Message::Data(2))); // 1*2=2
+        assert_eq!(output.poll().unwrap(), Some(Message::Marker("m1")));
+        // Data(2) must NOT have leaked through during the extra Input polls
+        assert_eq!(output.poll().unwrap(), None);
+
+        // Now Input resumes, drains Data(2)
+        let _ = input_phase.poll(&mut cx).unwrap();
+        let _ = work_phase.poll(&mut cx).unwrap();
+        let _ = output_phase.poll(&mut cx).unwrap();
+
+        assert_eq!(output.poll().unwrap(), Some(Message::Data(6))); // (1+2)*2=6
     }
 }

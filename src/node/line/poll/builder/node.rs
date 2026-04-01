@@ -287,6 +287,7 @@ where
             routine,
             self.input,
             self.output,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );
@@ -326,6 +327,7 @@ where
             routine,
             edges,
             self.output,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );
@@ -353,6 +355,7 @@ where
             routine,
             self.input,
             self.output,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );
@@ -392,6 +395,7 @@ where
             routine,
             edges,
             self.output,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );
@@ -426,6 +430,7 @@ where
             routine,
             self.input,
             edge,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );
@@ -457,6 +462,7 @@ where
             routine,
             self.input,
             edge,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );
@@ -499,6 +505,7 @@ where
             routine,
             input_edges,
             output_edge,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );
@@ -540,6 +547,7 @@ where
             routine,
             input_edges,
             output_edge,
+            self.wakers.input.1.clone(),
             self.wakers.work.1,
             self.wakers.output.1,
         );

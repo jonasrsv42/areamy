@@ -10,5 +10,5 @@
 pub mod queue;
 pub mod routine;
 
-pub use queue::{Queue, RecvFut};
-pub use routine::{FutureRoutine, Input};
+pub use queue::{Input, Queue, RecvFut};
+pub use routine::FutureRoutine;

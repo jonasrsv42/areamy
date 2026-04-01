@@ -95,7 +95,7 @@ impl EdgeKind for Async {
 }
 
 impl EdgeKind for Deferred {
-    type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> = Waker;
+    type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> = Null<InType, SignalType>;
     type Output<OutType, SignalType: Origin> = Null<OutType, SignalType>;
 }
 

@@ -1,7 +1,7 @@
 //! Async thread that runs [Pollable] nodes driven by wakers.
 
 use super::ready_queue::ReadyQueue;
-use super::spawn::{NodeId, Spawnable};
+use super::spawn::Spawnable;
 use super::waker::NodeWaker;
 use crate::error::{Error, ErrorKind};
 use crate::node::line::poll::builder::node::Node;
@@ -32,13 +32,6 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         }
     }
 
-    fn next_node(&mut self) -> (NodeId, std::task::Waker) {
-        let node_id = self.node_count;
-        self.node_count += 1;
-        let waker = NodeWaker::new(node_id, self.ready_queue.clone());
-        (node_id, waker)
-    }
-
     /// Create a node with deferred edge kinds.
     ///
     /// Resolve input and output via wiring methods:
@@ -63,8 +56,14 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         FactoryType: crate::RoutineFactory,
         FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
     {
-        let (node_id, waker) = self.next_node();
-        Node::deferred(node_id, factory, waker)
+        let count = &mut self.node_count;
+        let queue = &self.ready_queue;
+        let mut alloc = || {
+            let id = *count;
+            *count += 1;
+            (id, NodeWaker::new(id, queue.clone()))
+        };
+        Node::deferred(factory, &mut alloc)
     }
 
     /// Add a node to the thread. It will be spawned when the thread starts.

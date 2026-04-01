@@ -27,7 +27,6 @@ use crate::connect::poll::sync_bridge::SyncBridge;
 use crate::error::Error;
 use crate::graph::{Add, Get};
 use crate::marker::{Connection, Parent};
-use crate::node::line::poll::node::AsyncLine;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
 use crate::thread::poll::spawn::{NodeId, Spawnable};
@@ -35,7 +34,13 @@ use crate::{Closeable, Linkable, Pollable, RoutineFactory, ThreadId};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::task::Waker;
+
+/// Wakers for the three phases of an async line node.
+pub(crate) struct Wakers {
+    pub input: (NodeId, std::task::Waker),
+    pub work: (NodeId, std::task::Waker),
+    pub output: (NodeId, std::task::Waker),
+}
 
 /// Unified async node builder.
 #[must_use = "node must be consumed (add to thread or pass to another builder)"]
@@ -48,7 +53,7 @@ where
     FactoryType: RoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
-    node_id: NodeId,
+    wakers: Wakers,
     factory: FactoryType,
     input: InEdgeType::Input<InType, SignalType, ThreadIdType>,
     output: OutEdgeType::Output<OutType, SignalType>,
@@ -75,67 +80,7 @@ where
 // Constructors
 // ============================================================
 
-/// Node<Sync, _> — sync input, creates SyncBridge from waker.
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-where
-    OutEdgeType: EdgeKind,
-    InType: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
-    OutEdgeType::Output<OutType, SignalType>: Default,
-{
-    pub fn new(node_id: NodeId, factory: FactoryType, waker: Waker) -> Self {
-        Self {
-            node_id,
-            factory,
-            input: Arc::new(SyncBridge::new(waker)),
-            output: Default::default(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-/// Node<Async, _> — async input, takes first parent.
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-where
-    OutEdgeType: EdgeKind,
-    InType: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
-    OutEdgeType::Output<OutType, SignalType>: Default,
-{
-    pub fn new(
-        node_id: NodeId,
-        factory: FactoryType,
-        waker: Waker,
-        parent: Box<
-            dyn Linkable<
-                    Parent,
-                    Edge = Rc<RefCell<AsyncEdge<InType, SignalType>>>,
-                    Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
-                >,
-        >,
-    ) -> Self {
-        Self {
-            node_id,
-            factory,
-            input: AsyncIn {
-                parents: vec![parent],
-                waker,
-            },
-            output: Default::default(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-/// Node<Deferred, Deferred> — unresolved, holds only waker.
+/// Node<Deferred, Deferred> — unresolved, allocates 2 wakers.
 impl<InType, OutType, SignalType, ThreadIdType, FactoryType>
     Node<Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
@@ -144,11 +89,18 @@ where
     FactoryType: RoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
-    pub fn deferred(node_id: NodeId, factory: FactoryType, waker: Waker) -> Self {
+    pub fn deferred(
+        factory: FactoryType,
+        alloc: &mut impl FnMut() -> (NodeId, std::task::Waker),
+    ) -> Self {
         Self {
-            node_id,
+            wakers: Wakers {
+                input: alloc(),
+                work: alloc(),
+                output: alloc(),
+            },
             factory,
-            input: waker,
+            input: Default::default(),
             output: Null::new(),
             _phantom: std::marker::PhantomData,
         }
@@ -165,10 +117,11 @@ where
         SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
         OutEdgeType::Output<OutType, SignalType>: Default,
     {
+        let input_waker = self.wakers.input.1.clone();
         Node {
-            node_id: self.node_id,
+            wakers: self.wakers,
             factory: self.factory,
-            input: Arc::new(SyncBridge::new(self.input)),
+            input: Arc::new(SyncBridge::new(input_waker)),
             output: Default::default(),
             _phantom: std::marker::PhantomData,
         }
@@ -198,12 +151,13 @@ where
             Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>),
         > + 'static,
     ) -> Node<Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType> {
+        let input_waker = self.wakers.input.1.clone();
         Node {
-            node_id: self.node_id,
+            wakers: self.wakers,
             factory: self.factory,
             input: AsyncIn {
                 parents: vec![Box::new(parent)],
-                waker: self.input,
+                waker: input_waker,
             },
             output: self.output,
             _phantom: std::marker::PhantomData,
@@ -228,7 +182,7 @@ where
         OutEdgeType::Output<OutType, SignalType>: Default,
     {
         Node {
-            node_id: self.node_id,
+            wakers: self.wakers,
             factory: self.factory,
             input: self.input,
             output: Default::default(),
@@ -328,10 +282,19 @@ where
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
-        let node_id = self.node_id;
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, self.input, self.output);
-        vec![(node_id, Box::new(node))]
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            self.input,
+            self.output,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        vec![
+            (self.wakers.input.0, Box::new(input_phase)),
+            (self.wakers.work.0, Box::new(work_phase)),
+            (self.wakers.output.0, Box::new(output_phase)),
+        ]
     }
 }
 
@@ -347,21 +310,28 @@ where
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
-        let node_id = self.node_id;
-        let waker = self.input.waker;
+        let edge_waker = self.input.waker;
         let mut all_nodes = Vec::new();
         let mut edges = Vec::new();
 
         for parent in self.input.parents {
-            let edge = Rc::new(RefCell::new(AsyncEdge::new(waker.clone())));
+            let edge = Rc::new(RefCell::new(AsyncEdge::new(edge_waker.clone())));
             let parent_nodes = parent.link(edge.clone());
             all_nodes.extend(parent_nodes);
             edges.push(edge);
         }
 
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, edges, self.output);
-        all_nodes.push((node_id, Box::new(node)));
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            edges,
+            self.output,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        all_nodes.push((self.wakers.input.0, Box::new(input_phase)));
+        all_nodes.push((self.wakers.work.0, Box::new(work_phase)));
+        all_nodes.push((self.wakers.output.0, Box::new(output_phase)));
         all_nodes
     }
 }
@@ -378,10 +348,19 @@ where
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
-        let node_id = self.node_id;
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, self.input, self.output);
-        vec![(node_id, Box::new(node))]
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            self.input,
+            self.output,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        vec![
+            (self.wakers.input.0, Box::new(input_phase)),
+            (self.wakers.work.0, Box::new(work_phase)),
+            (self.wakers.output.0, Box::new(output_phase)),
+        ]
     }
 }
 
@@ -397,21 +376,28 @@ where
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn spawn(self: Box<Self>) -> Vec<(NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>)> {
-        let node_id = self.node_id;
-        let waker = self.input.waker;
+        let edge_waker = self.input.waker;
         let mut all_nodes = Vec::new();
         let mut edges = Vec::new();
 
         for parent in self.input.parents {
-            let edge = Rc::new(RefCell::new(AsyncEdge::new(waker.clone())));
+            let edge = Rc::new(RefCell::new(AsyncEdge::new(edge_waker.clone())));
             let parent_nodes = parent.link(edge.clone());
             all_nodes.extend(parent_nodes);
             edges.push(edge);
         }
 
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, edges, self.output);
-        all_nodes.push((node_id, Box::new(node)));
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            edges,
+            self.output,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        all_nodes.push((self.wakers.input.0, Box::new(input_phase)));
+        all_nodes.push((self.wakers.work.0, Box::new(work_phase)));
+        all_nodes.push((self.wakers.output.0, Box::new(output_phase)));
         all_nodes
     }
 }
@@ -435,10 +421,19 @@ where
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node> {
-        let node_id = self.node_id;
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, self.input, edge);
-        vec![(node_id, Box::new(node))]
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            self.input,
+            edge,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        vec![
+            (self.wakers.input.0, Box::new(input_phase)),
+            (self.wakers.work.0, Box::new(work_phase)),
+            (self.wakers.output.0, Box::new(output_phase)),
+        ]
     }
 }
 
@@ -457,10 +452,19 @@ where
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node> {
-        let node_id = self.node_id;
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, self.input, edge);
-        vec![(node_id, Box::new(node))]
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            self.input,
+            edge,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        vec![
+            (self.wakers.input.0, Box::new(input_phase)),
+            (self.wakers.work.0, Box::new(work_phase)),
+            (self.wakers.output.0, Box::new(output_phase)),
+        ]
     }
 }
 
@@ -479,21 +483,28 @@ where
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, output_edge: Self::Edge) -> Vec<Self::Node> {
-        let node_id = self.node_id;
-        let waker = self.input.waker;
+        let edge_waker = self.input.waker;
         let mut all_nodes = Vec::new();
         let mut input_edges = Vec::new();
 
         for parent in self.input.parents {
-            let edge = Rc::new(RefCell::new(AsyncEdge::new(waker.clone())));
+            let edge = Rc::new(RefCell::new(AsyncEdge::new(edge_waker.clone())));
             let parent_nodes = parent.link(edge.clone());
             all_nodes.extend(parent_nodes);
             input_edges.push(edge);
         }
 
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, input_edges, output_edge);
-        all_nodes.push((node_id, Box::new(node)));
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            input_edges,
+            output_edge,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        all_nodes.push((self.wakers.input.0, Box::new(input_phase)));
+        all_nodes.push((self.wakers.work.0, Box::new(work_phase)));
+        all_nodes.push((self.wakers.output.0, Box::new(output_phase)));
         all_nodes
     }
 }
@@ -513,21 +524,28 @@ where
     type Node = (NodeId, Box<dyn Pollable<ThreadId = ThreadIdType>>);
 
     fn link(self: Box<Self>, output_edge: Self::Edge) -> Vec<Self::Node> {
-        let node_id = self.node_id;
-        let waker = self.input.waker;
+        let edge_waker = self.input.waker;
         let mut all_nodes = Vec::new();
         let mut input_edges = Vec::new();
 
         for parent in self.input.parents {
-            let edge = Rc::new(RefCell::new(AsyncEdge::new(waker.clone())));
+            let edge = Rc::new(RefCell::new(AsyncEdge::new(edge_waker.clone())));
             let parent_nodes = parent.link(edge.clone());
             all_nodes.extend(parent_nodes);
             input_edges.push(edge);
         }
 
         let routine = self.factory.create();
-        let node = AsyncLine::new(routine, input_edges, output_edge);
-        all_nodes.push((node_id, Box::new(node)));
+        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+            routine,
+            input_edges,
+            output_edge,
+            self.wakers.work.1,
+            self.wakers.output.1,
+        );
+        all_nodes.push((self.wakers.input.0, Box::new(input_phase)));
+        all_nodes.push((self.wakers.work.0, Box::new(work_phase)));
+        all_nodes.push((self.wakers.output.0, Box::new(output_phase)));
         all_nodes
     }
 }

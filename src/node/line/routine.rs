@@ -50,43 +50,60 @@ pub trait LineRoutine<In, Out>:
 
 /// [`AsyncLineRoutine`] is the async counterpart of [LineRoutine].
 ///
-/// Same method traits ([crate::Send], [crate::Next], [crate::Flush],
-/// [crate::node::Name]) plus [crate::Poll] for async I/O work.
+/// Prefer [FutureRoutine](crate::poll::FutureRoutine) over raw impls —
+/// it enforces all contracts below by construction via its waker-aware
+/// [Queue](crate::poll::Queue).
 ///
 /// Unlike [LineRoutine], does NOT require [std::marker::Send]. Async
 /// routines are created on the async thread via factory pattern and
 /// never cross threads. This allows routines to hold non-Send types
 /// like `Rc<RefCell<_>>` for zero-cost shared state with their futures.
 ///
+/// ## [crate::Send] contract
+///
+/// If the routine needs async processing to handle data received
+/// via [crate::Send], it MUST arrange for [crate::Poll] to be woken
+/// (e.g. via a waker stored during a previous [crate::Poll] call).
+/// Failing to do so will deadlock — [crate::Poll] is not automatically
+/// invoked after [crate::Send].
+///
+/// Routines that produce output synchronously in [crate::Send]
+/// do not need to wake [crate::Poll].
+///
+/// [FutureRoutine](crate::poll::FutureRoutine) handles this via its
+/// waker-aware [Queue](crate::poll::Queue) — push wakes Poll automatically.
+///
 /// ## [crate::Poll] contract
 ///
-/// Called on each wake cycle after input is drained. Receives a
-/// [core::task::Context] with a [core::task::Waker] for I/O registration.
+/// - [core::task::Poll::Pending] — async work in progress.
+/// - [core::task::Poll::Ready] — routine finished processing after
+///   [crate::Flush].
 ///
-/// - [core::task::Poll::Pending] — routine is active. Node stays alive.
-/// - [core::task::Poll::Ready] — routine finished a requested task:
-///   - **Flushing**: Flush signal forwarded downstream, back to Pending.
-///   - **Closing**: output closed, node done.
-///   - **Running**: unexpected → error.
+/// After [crate::Flush], [crate::Poll] is invoked once. The routine
+/// MUST either return Ready immediately, or return Pending and arrange
+/// to be woken and return Ready on a subsequent invocation. Failing
+/// to eventually return Ready will deadlock.
+///
+/// Returning Ready outside of a flush/close is a fatal error.
+///
+/// Returning [crate::error::ErrorKind::Closed] is a fatal error.
 ///
 /// ## Flush contract
 ///
-/// Node holds the Flush signal until [crate::Poll::poll] returns Ready.
-/// This enables multi-cycle I/O flush (half-close handshakes).
-/// Simple routines return Ready on the first poll after flush.
+/// After [crate::Flush] is called, [crate::Poll] is invoked. The
+/// routine should output any remaining data via [crate::Next] and
+/// reset its state for subsequent [crate::Send] invocations.
+///
+/// If using [Queue](crate::poll::Queue) directly, call
+/// [Queue::reset](crate::poll::Queue::reset) after receiving
+/// [Input::Flush](crate::poll::Input::Flush) to clear the closed
+/// state for the next segment.
 ///
 /// ## Close contract
 ///
-/// On input close, [crate::Flush] is called, then poll until Ready.
-/// The routine MUST respond by completing within a reasonable time.
-/// Socket timeouts are the routine's responsibility.
-///
-/// ## Node state machine
-///
-/// ```text
-/// Running → Flushing (on Flush signal) → poll until Ready → Running
-/// Running → Closing  (on input close)  → poll until Ready → Closed
-/// ```
+/// Close is delivered as a [crate::Flush]. The routine does not
+/// distinguish between flush and close — both require returning
+/// Ready from [crate::Poll].
 pub trait AsyncLineRoutine<In, Out>:
     crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + crate::node::Name
 {

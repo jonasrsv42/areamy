@@ -28,7 +28,7 @@
 //!
 //!         let writer = Box::pin(async {
 //!             loop {
-//!                 match input.recv().await {
+//!                 match input.recv().await? {
 //!                     Input::Data(val) => socket.write(val).await,
 //!                     Input::Flush => { socket.half_close().await; break; }
 //!                 }
@@ -50,19 +50,13 @@
 //! let node = thread.node(routine).typed::<Sync>();
 //! ```
 
-use super::queue::Queue;
+use super::queue::{Input, Queue};
 use crate::error::Error;
 use crate::node::Name;
 use std::future::Future;
 use std::pin::Pin;
 
 type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
-
-/// Input item received by the future via [Queue::recv].
-pub enum Input<T> {
-    Data(T),
-    Flush,
-}
 
 /// Async routine wrapping a user-provided future factory.
 ///
@@ -136,6 +130,7 @@ where
             core::task::Poll::Ready(result) => {
                 result?;
                 self.future = None;
+                self.input.reset()?;
                 Ok(core::task::Poll::Ready(()))
             }
             core::task::Poll::Pending => Ok(core::task::Poll::Pending),

@@ -1,14 +1,17 @@
-//! Async line node that runs an [AsyncLineRoutine] driven by wakers.
+//! Async line node split into three phase pollables sharing state via
+//! `Rc<RefCell<SharedState>>`:
 //!
-//! The node orchestrates the routine through a state machine:
+//! - **Input**: drain edge → Send to routine → wake Output
+//! - **Work**: poll routine async work (woken by queue/IO)
+//! - **Output**: drain Next → push downstream, forward flush/close signals
 //!
-//! - **Running**: drain input → poll routine → drain output
-//! - **Flushing**: poll routine until Ready → forward Flush signal → Running
-//! - **Closing**: poll routine until Ready → close output → Closed
-//! - **Closed**: return Ready immediately
-//!
-//! This guarantees the routine gets poll() cycles to complete async work
-//! (e.g. I/O flush, half-close handshake) before signals are propagated.
+//! State machine:
+//! - **Running**: Input drains, Work polls, Output drains
+//! - **Flushing**: Work polls routine until Ready → FlushReady
+//! - **FlushReady**: Output drains remaining output, forwards Flush → Running
+//! - **Closing**: Work polls routine until Ready → CloseReady
+//! - **CloseReady**: Output drains remaining output, closes → Closed
+//! - **Closed**: all phases return Closed
 
 use crate::error::Error;
 use crate::marker::Connection;
@@ -16,60 +19,43 @@ use crate::message::Message;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
 use crate::{Closeable, Pollable, Receivable, ThreadId, fatal};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// Node state machine for managing flush and close lifecycle.
 enum NodeState<SignalType> {
-    /// Normal operation: drain input, poll, drain output.
     Running,
-    /// Flush requested. Poll routine until Ready, then forward Flush signal.
     Flushing(SignalType),
-    /// Input closed. Poll routine until Ready (cleanup), then close output.
+    FlushReady(SignalType),
     Closing,
-    /// Terminal. Return Ready immediately on any subsequent poll.
+    CloseReady,
     Closed,
 }
 
-/// Async line node. Generic over input ([Receivable]) and output ([Closeable]).
-///
-/// Variants by edge type:
-/// - Sync→Sync: `Input = Arc<SyncBridge>`, `Output = Vec<Box<dyn Closeable + Send + Sync>>`
-/// - Sync→Async: `Input = Arc<SyncBridge>`, `Output = Rc<RefCell<AsyncEdge>>`
-/// - Async→Sync: `Input = Rc<RefCell<AsyncEdge>>`, `Output = Vec<Box<dyn Closeable + Send + Sync>>`
-/// - Async→Async: `Input = Rc<RefCell<AsyncEdge>>`, `Output = Rc<RefCell<AsyncEdge>>`
-pub struct AsyncLine<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+/// Shared state between Input, Work, and Output phases.
+pub(crate) struct SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>
 where
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
     RoutineType: AsyncLineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
-    pub worker: RoutineType,
-    pub input: InputType,
-    pub output: OutputType,
+    pub(crate) worker: RoutineType,
+    input: InputType,
+    output: OutputType,
     state: NodeState<SignalType>,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    work_waker: std::task::Waker,
+    output_waker: std::task::Waker,
 }
 
-impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
-    AsyncLine<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+impl<In, Out, SignalType, RoutineType, InputType, OutputType>
+    SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>
 where
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
     RoutineType: AsyncLineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
-    pub fn new(worker: RoutineType, input: InputType, output: OutputType) -> Self {
-        Self {
-            worker,
-            input,
-            output,
-            state: NodeState::Running,
-            _thread_id: std::marker::PhantomData,
-        }
-    }
-
     fn push_output(&mut self, msg: Message<Out, SignalType>) -> Result<(), Error> {
         self.output.push(msg)
     }
@@ -84,7 +70,6 @@ where
 
     /// Drain input edge. Forwards data via [crate::Send], signals via
     /// [crate::Flush]. May transition state to Flushing or Closing.
-    /// Output is NOT drained here — poll_and_drain handles that.
     fn drain_input(&mut self) -> Result<(), Error> {
         loop {
             match self.input.try_recv() {
@@ -94,6 +79,7 @@ where
                 Ok(Some(Message::Flush(signal))) => {
                     self.worker.flush()?;
                     self.state = NodeState::Flushing(signal);
+                    self.work_waker.wake_by_ref();
                     break;
                 }
                 Ok(Some(Message::Marker(signal))) => {
@@ -104,6 +90,7 @@ where
                     if matches!(e.kind, crate::error::ErrorKind::Closed) {
                         self.worker.flush()?;
                         self.state = NodeState::Closing;
+                        self.work_waker.wake_by_ref();
                         break;
                     }
                     return Err(e);
@@ -113,19 +100,41 @@ where
         Ok(())
     }
 
-    /// Poll routine and drain any output it produced.
-    fn poll_and_drain(
+    /// Poll routine. Closed error from routine → fatal.
+    fn poll_routine(
         &mut self,
         cx: &mut core::task::Context<'_>,
     ) -> Result<core::task::Poll<()>, Error> {
-        let result = crate::Poll::poll(&mut self.worker, cx)?;
-        self.drain_output()?;
-        Ok(result)
+        match crate::Poll::poll(&mut self.worker, cx) {
+            Ok(poll) => Ok(poll),
+            Err(e) if matches!(e.kind, crate::error::ErrorKind::Closed) => Err(fatal!(
+                "routine returned Closed error — routines must handle close, not propagate it"
+            )),
+            Err(e) => Err(e),
+        }
     }
 }
 
+// ============================================================
+// Input phase
+// ============================================================
+
+/// Input phase: drains edge into routine, wakes Output.
+pub struct Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+    pub(crate) shared:
+        Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
+    _thread_id: std::marker::PhantomData<ThreadIdType>,
+}
+
 impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Connection
-    for AsyncLine<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+    for Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
@@ -136,7 +145,65 @@ where
 }
 
 impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Pollable
-    for AsyncLine<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+    for Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+    type ThreadId = ThreadIdType;
+
+    fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+        let mut s = self.shared.borrow_mut();
+        match &s.state {
+            NodeState::Closed | NodeState::Closing | NodeState::CloseReady => Err(crate::closed!()),
+            NodeState::Running => {
+                s.drain_input()?;
+                s.output_waker.wake_by_ref();
+                if matches!(s.state, NodeState::Closing) {
+                    return Err(crate::closed!());
+                }
+                Ok(core::task::Poll::Pending)
+            }
+            // Flushing/FlushReady — Input waits for Output to transition back to Running
+            NodeState::Flushing(_) | NodeState::FlushReady(_) => Ok(core::task::Poll::Pending),
+        }
+    }
+}
+
+// ============================================================
+// Work phase
+// ============================================================
+
+/// Work phase: polls routine async work, transitions flush/close states.
+pub struct Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+    pub(crate) shared:
+        Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
+    _thread_id: std::marker::PhantomData<ThreadIdType>,
+}
+
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Connection
+    for Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+}
+
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Pollable
+    for Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
@@ -147,45 +214,32 @@ where
     type ThreadId = ThreadIdType;
 
     fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        if matches!(self.state, NodeState::Running) {
-            self.drain_input()?;
-        }
-
-        match &self.state {
-            // Terminal. Node is done, reject further polls.
-            NodeState::Closed => Err(crate::closed!()),
-
-            // Input closed. Poll routine until Ready (cleanup), then
-            // close output and transition to Closed.
-            NodeState::Closing => {
-                let result = self.poll_and_drain(cx)?;
+        let mut s = self.shared.borrow_mut();
+        match &s.state {
+            NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
+            NodeState::Flushing(_) => {
+                let result = s.poll_routine(cx)?;
                 if matches!(result, core::task::Poll::Ready(())) {
-                    self.output.close()?;
-                    self.state = NodeState::Closed;
+                    let signal = match std::mem::replace(&mut s.state, NodeState::Running) {
+                        NodeState::Flushing(sig) => sig,
+                        _ => return Err(fatal!("expected Flushing state")),
+                    };
+                    s.state = NodeState::FlushReady(signal);
+                    s.output_waker.wake_by_ref();
+                }
+                Ok(core::task::Poll::Pending)
+            }
+            NodeState::Closing => {
+                let result = s.poll_routine(cx)?;
+                if matches!(result, core::task::Poll::Ready(())) {
+                    s.state = NodeState::CloseReady;
+                    s.output_waker.wake_by_ref();
                     return Err(crate::closed!());
                 }
                 Ok(core::task::Poll::Pending)
             }
-
-            // Flush requested. Poll routine until Ready, then forward
-            // the Flush signal downstream and return to Running.
-            NodeState::Flushing(_) => {
-                let result = self.poll_and_drain(cx)?;
-                if matches!(result, core::task::Poll::Ready(())) {
-                    let signal = match std::mem::replace(&mut self.state, NodeState::Running) {
-                        NodeState::Flushing(s) => s,
-                        _ => return Err(fatal!("expected Flushing state")),
-                    };
-                    self.push_output(Message::Flush(signal))?;
-                }
-                Ok(core::task::Poll::Pending)
-            }
-
-            // Normal operation. Poll routine for async work, drain output.
-            // Ready here is unexpected — routine should only return Ready
-            // in response to flush or close.
             NodeState::Running => {
-                let result = self.poll_and_drain(cx)?;
+                let result = s.poll_routine(cx)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     return Err(fatal!(
                         "routine returned Ready without pending flush or close"
@@ -193,8 +247,121 @@ where
                 }
                 Ok(core::task::Poll::Pending)
             }
+            // FlushReady — Work is done, Output handles it
+            NodeState::FlushReady(_) => Ok(core::task::Poll::Pending),
         }
     }
+}
+
+// ============================================================
+// Output phase
+// ============================================================
+
+/// Output phase: drains routine output, forwards flush/close signals.
+pub struct Output<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+    pub(crate) shared:
+        Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
+    _thread_id: std::marker::PhantomData<ThreadIdType>,
+}
+
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Connection
+    for Output<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+}
+
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Pollable
+    for Output<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+    type ThreadId = ThreadIdType;
+
+    fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+        let mut s = self.shared.borrow_mut();
+        match &s.state {
+            NodeState::Closed => Err(crate::closed!()),
+            NodeState::FlushReady(_) => {
+                s.drain_output()?;
+                let signal = match std::mem::replace(&mut s.state, NodeState::Running) {
+                    NodeState::FlushReady(sig) => sig,
+                    _ => return Err(fatal!("expected FlushReady state")),
+                };
+                s.push_output(Message::Flush(signal))?;
+                Ok(core::task::Poll::Pending)
+            }
+            NodeState::CloseReady => {
+                s.drain_output()?;
+                s.output.close()?;
+                s.state = NodeState::Closed;
+                Err(crate::closed!())
+            }
+            // Running, Flushing, Closing — drain any available output
+            _ => {
+                s.drain_output()?;
+                Ok(core::task::Poll::Pending)
+            }
+        }
+    }
+}
+
+/// Create Input, Work, and Output phase pollables sharing state.
+pub fn new_phases<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>(
+    worker: RoutineType,
+    input: InputType,
+    output: OutputType,
+    work_waker: std::task::Waker,
+    output_waker: std::task::Waker,
+) -> (
+    Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
+    Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
+    Output<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
+)
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: AsyncLineRoutine<In, Out>,
+    InputType: Receivable<DataType = In, SignalType = SignalType>,
+    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+{
+    let shared = Rc::new(RefCell::new(SharedState {
+        worker,
+        input,
+        output,
+        state: NodeState::Running,
+        work_waker,
+        output_waker,
+    }));
+    (
+        Input {
+            shared: shared.clone(),
+            _thread_id: std::marker::PhantomData,
+        },
+        Work {
+            shared: shared.clone(),
+            _thread_id: std::marker::PhantomData,
+        },
+        Output {
+            shared,
+            _thread_id: std::marker::PhantomData,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -227,19 +394,35 @@ mod tests {
         let input = Arc::new(SyncBridge::new(waker));
         let output = Arc::new(SyncEdge::new());
 
-        let mut node = AsyncLine::<usize, usize, &str, DefaultThread, _, _, _>::new(
-            AsyncMockLine::new(),
-            input.clone(),
-            output.clone(),
-        );
+        let (mut input_phase, mut work_phase, mut output_phase) =
+            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+                AsyncMockLine::new(),
+                input.clone(),
+                output.clone(),
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
 
         input.push_back(Message::Data(2)).unwrap();
 
         let cx_waker = std::task::Waker::noop();
         let mut cx = core::task::Context::from_waker(&cx_waker);
 
+        // Input drains edge → Send to routine
         assert!(matches!(
-            node.poll(&mut cx).unwrap(),
+            input_phase.poll(&mut cx).unwrap(),
+            core::task::Poll::Pending
+        ));
+
+        // Work polls routine (sync mock — no-op here)
+        assert!(matches!(
+            work_phase.poll(&mut cx).unwrap(),
+            core::task::Poll::Pending
+        ));
+
+        // Output drains Next → pushes downstream
+        assert!(matches!(
+            output_phase.poll(&mut cx).unwrap(),
             core::task::Poll::Pending
         ));
 
@@ -252,18 +435,28 @@ mod tests {
         let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
         let output = Arc::new(SyncEdge::new());
 
-        let mut node = AsyncLine::<usize, usize, &str, DefaultThread, _, _, _>::new(
-            AsyncMockLine::new(),
-            input.clone(),
-            output,
-        );
+        let (mut input_phase, mut work_phase, mut output_phase) =
+            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+                AsyncMockLine::new(),
+                input.clone(),
+                output,
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
 
         SyncBridge::close(&input).unwrap();
 
         let cx_waker = std::task::Waker::noop();
         let mut cx = core::task::Context::from_waker(&cx_waker);
 
-        let result = node.poll(&mut cx);
+        // Input detects closed → Closing
+        let _ = input_phase.poll(&mut cx);
+
+        // Work polls routine → Ready → CloseReady
+        let _ = work_phase.poll(&mut cx);
+
+        // Output drains, closes output → Closed
+        let result = output_phase.poll(&mut cx);
         assert!(matches!(
             result.unwrap_err().kind,
             crate::error::ErrorKind::Closed
@@ -276,20 +469,111 @@ mod tests {
         let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
         let output = Arc::new(SyncEdge::new());
 
-        let mut node = AsyncLine::<usize, usize, &str, DefaultThread, _, _, _>::new(
-            AsyncMockLine::new(),
-            input,
-            output,
-        );
+        let (_input_phase, mut work_phase, _output_phase) =
+            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+                AsyncMockLine::new(),
+                input,
+                output,
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
 
         let cx_waker = std::task::Waker::noop();
         let mut cx = core::task::Context::from_waker(&cx_waker);
 
-        let _ = node.poll(&mut cx).unwrap();
-        assert_eq!(node.worker.poll_count, 1);
+        let _ = work_phase.poll(&mut cx).unwrap();
+        assert_eq!(work_phase.shared.borrow().worker.poll_count, 1);
 
-        let _ = node.poll(&mut cx).unwrap();
-        assert_eq!(node.worker.poll_count, 2);
+        let _ = work_phase.poll(&mut cx).unwrap();
+        assert_eq!(work_phase.shared.borrow().worker.poll_count, 2);
+    }
+
+    struct ClosedErrorRoutine;
+
+    impl crate::Send<usize> for ClosedErrorRoutine {
+        fn send(&mut self, _: usize) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    impl crate::Next<usize> for ClosedErrorRoutine {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            Ok(None)
+        }
+    }
+
+    impl crate::Flush for ClosedErrorRoutine {
+        fn flush(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    impl crate::Poll for ClosedErrorRoutine {
+        fn poll(
+            &mut self,
+            _cx: &mut core::task::Context<'_>,
+        ) -> Result<core::task::Poll<()>, Error> {
+            Err(crate::closed!())
+        }
+    }
+
+    impl crate::node::Name for ClosedErrorRoutine {}
+    impl crate::AsyncLineRoutine<usize, usize> for ClosedErrorRoutine {}
+
+    #[test]
+    fn routine_returning_closed_becomes_fatal() {
+        let (waker, _) = test_waker();
+        let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
+        let output = Arc::new(SyncEdge::new());
+
+        let (_input_phase, mut work_phase, _output_phase) =
+            new_phases::<_, _, _, DefaultThread, _, _, _>(
+                ClosedErrorRoutine,
+                input,
+                output,
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
+
+        let cx_waker = std::task::Waker::noop();
+        let mut cx = core::task::Context::from_waker(&cx_waker);
+
+        let err = work_phase.poll(&mut cx).unwrap_err();
+        assert!(
+            matches!(err.kind, crate::error::ErrorKind::Fatal(_)),
+            "expected Fatal, got {:?}",
+            err.kind
+        );
+    }
+
+    #[test]
+    fn routine_returning_closed_during_flush_becomes_fatal() {
+        let (waker, _) = test_waker();
+        let input = Arc::new(SyncBridge::new(waker));
+        let output = Arc::new(SyncEdge::new());
+
+        let (mut input_phase, mut work_phase, _output_phase) =
+            new_phases::<_, _, _, DefaultThread, _, _, _>(
+                ClosedErrorRoutine,
+                input.clone(),
+                output,
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
+
+        input.push_back(Message::Flush("s1")).unwrap();
+
+        let cx_waker = std::task::Waker::noop();
+        let mut cx = core::task::Context::from_waker(&cx_waker);
+
+        let _ = input_phase.poll(&mut cx);
+
+        let err = work_phase.poll(&mut cx).unwrap_err();
+        assert!(
+            matches!(err.kind, crate::error::ErrorKind::Fatal(_)),
+            "expected Fatal, got {:?}",
+            err.kind
+        );
     }
 
     #[test]
@@ -298,11 +582,14 @@ mod tests {
         let input = Arc::new(SyncBridge::new(waker));
         let output = Arc::new(SyncEdge::new());
 
-        let mut node = AsyncLine::<usize, usize, &str, DefaultThread, _, _, _>::new(
-            AsyncMockLine::new(),
-            input.clone(),
-            output.clone(),
-        );
+        let (mut input_phase, mut work_phase, mut output_phase) =
+            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+                AsyncMockLine::new(),
+                input.clone(),
+                output.clone(),
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
 
         input.push_back(Message::Data(1)).unwrap();
         input.push_back(Message::Data(2)).unwrap();
@@ -310,7 +597,9 @@ mod tests {
         let cx_waker = std::task::Waker::noop();
         let mut cx = core::task::Context::from_waker(&cx_waker);
 
-        let _ = node.poll(&mut cx).unwrap();
+        let _ = input_phase.poll(&mut cx).unwrap();
+        let _ = work_phase.poll(&mut cx).unwrap();
+        let _ = output_phase.poll(&mut cx).unwrap();
 
         assert_eq!(output.poll().unwrap(), Some(Message::Data(2)));
         assert_eq!(output.poll().unwrap(), Some(Message::Data(6)));

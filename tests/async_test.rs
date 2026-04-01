@@ -9,23 +9,19 @@ use areamy::{
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-/// Routine that queues input in send, then doubles it in poll.
-/// This proves poll is actually being called by the async runtime —
-/// without poll, no data reaches the output.
-enum Pending {
-    Data(usize),
-    Flush,
-}
+/// Routine that queues input in send via waker-aware Queue, then
+/// doubles it in poll. Send wakes Work via the queue's waker.
+use areamy::poll::future::queue::{Input, Queue};
 
 struct PollDouble {
-    pending: VecDeque<Pending>,
+    pending: Queue<Input<usize>>,
     output: VecDeque<usize>,
 }
 
 impl PollDouble {
     fn new() -> Self {
         Self {
-            pending: VecDeque::new(),
+            pending: Queue::new(),
             output: VecDeque::new(),
         }
     }
@@ -33,7 +29,7 @@ impl PollDouble {
 
 impl areamy::Send<usize> for PollDouble {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        self.pending.push_back(Pending::Data(message));
+        self.pending.push(Input::Data(message));
         Ok(())
     }
 }
@@ -46,25 +42,34 @@ impl areamy::Next<usize> for PollDouble {
 
 impl areamy::Flush for PollDouble {
     fn flush(&mut self) -> Result<(), Error> {
-        self.pending.push_back(Pending::Flush);
+        self.pending.push(Input::Flush);
         Ok(())
     }
 }
 
 impl areamy::Poll for PollDouble {
-    fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
-        while let Some(item) = self.pending.pop_front() {
-            match item {
-                Pending::Data(value) => self.output.push_back(value * 2),
-                Pending::Flush => return Ok(core::task::Poll::Ready(())),
+    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+        loop {
+            match std::pin::Pin::new(&mut self.pending.recv()).poll(cx) {
+                core::task::Poll::Ready(Ok(Input::Data(value))) => {
+                    self.output.push_back(value * 2);
+                }
+                core::task::Poll::Ready(Ok(Input::Flush)) => {
+                    self.pending.reset().ok();
+                    return Ok(core::task::Poll::Ready(()));
+                }
+                core::task::Poll::Ready(Err(_)) => {
+                    return Ok(core::task::Poll::Ready(()));
+                }
+                core::task::Poll::Pending => {
+                    return Ok(core::task::Poll::Pending);
+                }
             }
         }
-        Ok(core::task::Poll::Pending)
     }
 }
 
 impl Name for PollDouble {}
-impl areamy::LineRoutine<usize, usize> for PollDouble {}
 impl areamy::AsyncLineRoutine<usize, usize> for PollDouble {}
 
 /// Accumulates input values into a shared Vec. Used to verify sink nodes
@@ -692,19 +697,13 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
 // ============================================================
 
 /// Simulates an I/O routine with a half-close handshake on flush.
+/// Uses waker-aware Queue to wake Work on Send/Flush.
 ///
-/// - send() buffers data
-/// - flush() marks "flush requested", moves buffered data to output (doubled)
-/// - poll() simulates I/O handshake: counts down `flush_cycles`.
-///   Returns Ready when countdown reaches 0 (handshake complete).
-/// - The node only forwards the Flush signal after poll returns Ready.
-enum HalfClosePending {
-    Data(usize),
-    Flush,
-}
-
+/// - send() pushes data to queue (wakes Work)
+/// - flush() pushes flush marker to queue (wakes Work)
+/// - poll() drains queue, doubles data, simulates multi-cycle handshake on flush
 struct HalfCloseRoutine {
-    pending: VecDeque<HalfClosePending>,
+    pending: Queue<Input<usize>>,
     output: VecDeque<usize>,
     flush_cycles: usize,
     flush_cycles_remaining: usize,
@@ -714,7 +713,7 @@ struct HalfCloseRoutine {
 impl HalfCloseRoutine {
     fn new(flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
         Self {
-            pending: VecDeque::new(),
+            pending: Queue::new(),
             output: VecDeque::new(),
             flush_cycles,
             flush_cycles_remaining: 0,
@@ -725,7 +724,7 @@ impl HalfCloseRoutine {
 
 impl areamy::Send<usize> for HalfCloseRoutine {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        self.pending.push_back(HalfClosePending::Data(message));
+        self.pending.push(Input::Data(message));
         Ok(())
     }
 }
@@ -738,7 +737,7 @@ impl areamy::Next<usize> for HalfCloseRoutine {
 
 impl areamy::Flush for HalfCloseRoutine {
     fn flush(&mut self) -> Result<(), Error> {
-        self.pending.push_back(HalfClosePending::Flush);
+        self.pending.push(Input::Flush);
         Ok(())
     }
 }
@@ -752,29 +751,34 @@ impl areamy::Poll for HalfCloseRoutine {
                 cx.waker().wake_by_ref();
                 return Ok(core::task::Poll::Pending);
             }
-            // Handshake complete
             *self.flush_count.lock().unwrap() += 1;
             return Ok(core::task::Poll::Ready(()));
         }
 
-        // Process pending items until flush or empty
-        while let Some(item) = self.pending.pop_front() {
-            match item {
-                HalfClosePending::Data(val) => self.output.push_back(val * 2),
-                HalfClosePending::Flush => {
+        // Drain queue until flush or empty
+        loop {
+            match std::pin::Pin::new(&mut self.pending.recv()).poll(cx) {
+                core::task::Poll::Ready(Ok(Input::Data(val))) => {
+                    self.output.push_back(val * 2);
+                }
+                core::task::Poll::Ready(Ok(Input::Flush)) => {
+                    self.pending.reset().ok();
                     self.flush_cycles_remaining = self.flush_cycles;
                     cx.waker().wake_by_ref();
                     return Ok(core::task::Poll::Pending);
                 }
+                core::task::Poll::Ready(Err(_)) => {
+                    return Ok(core::task::Poll::Ready(()));
+                }
+                core::task::Poll::Pending => {
+                    return Ok(core::task::Poll::Pending);
+                }
             }
         }
-
-        Ok(core::task::Poll::Pending)
     }
 }
 
 impl Name for HalfCloseRoutine {}
-impl areamy::LineRoutine<usize, usize> for HalfCloseRoutine {}
 impl areamy::AsyncLineRoutine<usize, usize> for HalfCloseRoutine {}
 
 /// Flush signal is held until the routine's poll() returns Ready.
@@ -905,7 +909,6 @@ impl areamy::Poll for BatchRoutine {
 }
 
 impl Name for BatchRoutine {}
-impl areamy::LineRoutine<usize, usize> for BatchRoutine {}
 impl areamy::AsyncLineRoutine<usize, usize> for BatchRoutine {}
 
 /// Multiple flushes then close. BatchRoutine accumulates data between

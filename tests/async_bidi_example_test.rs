@@ -185,7 +185,7 @@ fn bidi_with_join() -> Result<(), Error> {
                 let writer: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
                         loop {
-                            match writer_input.recv().await {
+                            match writer_input.recv().await? {
                                 Input::Data(val) => writer_socket.write(val * 3).await,
                                 Input::Flush => {
                                     writer_socket.half_close().await;

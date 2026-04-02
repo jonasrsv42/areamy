@@ -309,6 +309,7 @@ where
                     _ => return Err(fatal!("expected FlushReady state")),
                 };
                 s.push_output(Message::Flush(signal))?;
+                s.input_waker.wake_by_ref();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::MarkerReady(_) => {
@@ -676,5 +677,46 @@ mod tests {
         let _ = output_phase.poll(&mut cx).unwrap();
 
         assert_eq!(output.poll().unwrap(), Some(Message::Data(6))); // (1+2)*2=6
+    }
+
+    #[test]
+    fn flush_wakes_input_for_remaining_data() {
+        let (bridge_waker, _) = test_waker();
+        let input = Arc::new(SyncBridge::new(bridge_waker));
+        let output = Arc::new(SyncEdge::new());
+
+        let (input_waker, input_woken) = test_waker();
+
+        let (mut input_phase, mut work_phase, mut output_phase) =
+            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+                AsyncMockLine::new(),
+                input.clone(),
+                output.clone(),
+                input_waker,
+                std::task::Waker::noop().clone(),
+                std::task::Waker::noop().clone(),
+            );
+
+        input.push_back(Message::Data(1)).unwrap();
+        input.push_back(Message::Flush("s1")).unwrap();
+        input.push_back(Message::Data(2)).unwrap();
+
+        let cx_waker = std::task::Waker::noop();
+        let mut cx = core::task::Context::from_waker(&cx_waker);
+
+        // Input drains Data(1), hits Flush → Flushing. Data(2) still in SyncBridge.
+        let _ = input_phase.poll(&mut cx).unwrap();
+        // Work → Ready → FlushReady
+        let _ = work_phase.poll(&mut cx).unwrap();
+
+        assert!(!input_woken.load(Ordering::SeqCst));
+
+        // Output forwards Flush → Running. Must wake Input.
+        let _ = output_phase.poll(&mut cx).unwrap();
+
+        assert!(
+            input_woken.load(Ordering::SeqCst),
+            "Output must wake Input after flush so remaining data is drained"
+        );
     }
 }

@@ -218,6 +218,12 @@ where
 {
     type ThreadId = ThreadIdType;
 
+    // NOTE: Work wakes Output after every poll_routine call to ensure
+    // async-produced output is drained promptly. This is a cheap but
+    // potentially redundant wake. Ideally the routine's output queue
+    // would hold Output's waker and wake it only on actual push —
+    // but passing per-phase wakers to routines requires GATs for
+    // custom Poll contexts, which Rust doesn't support yet.
     fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
@@ -230,8 +236,8 @@ where
                         _ => return Err(fatal!("expected Flushing state")),
                     };
                     s.state = NodeState::FlushReady(signal);
-                    s.output_waker.wake_by_ref();
                 }
+                s.output_waker.wake_by_ref();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Closing => {
@@ -241,9 +247,21 @@ where
                     s.output_waker.wake_by_ref();
                     return Err(crate::closed!());
                 }
+                s.output_waker.wake_by_ref();
                 Ok(core::task::Poll::Pending)
             }
-            NodeState::Running | NodeState::MarkerReady(_) => {
+            NodeState::Running => {
+                let result = s.poll_routine(cx)?;
+                if matches!(result, core::task::Poll::Ready(())) {
+                    return Err(fatal!(
+                        "routine returned Ready without pending flush or close"
+                    ));
+                }
+                s.output_waker.wake_by_ref();
+                Ok(core::task::Poll::Pending)
+            }
+            // MarkerReady — Input already woke Output
+            NodeState::MarkerReady(_) => {
                 let result = s.poll_routine(cx)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     return Err(fatal!(

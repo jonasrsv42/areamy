@@ -7,3 +7,4 @@ Cargo.lock
 *.pdb
 .venv
 .claude
+plan.md

@@ -13,6 +13,7 @@
 //! - **CloseReady**: Output drains remaining output, closes → Closed
 //! - **Closed**: all phases return Closed
 
+use crate::connect::waker::Waker;
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
@@ -103,12 +104,11 @@ where
         Ok(())
     }
 
-    /// Poll routine. Closed error from routine → fatal.
-    fn poll_routine(
-        &mut self,
-        cx: &mut core::task::Context<'_>,
-    ) -> Result<core::task::Poll<()>, Error> {
-        match crate::Poll::poll(&mut self.worker, cx) {
+    /// Poll routine. Builds std Context from sync waker for the routine.
+    /// Closed error from routine �� fatal.
+    fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+        let mut cx = core::task::Context::from_waker(&waker.sync);
+        match crate::Poll::poll(&mut self.worker, &mut cx) {
             Ok(poll) => Ok(poll),
             Err(e) if matches!(e.kind, crate::error::ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"
@@ -158,7 +158,7 @@ where
 {
     type ThreadId = ThreadIdType;
 
-    fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
             NodeState::Closed | NodeState::Closing | NodeState::CloseReady => Err(crate::closed!()),
@@ -224,12 +224,12 @@ where
     // would hold Output's waker and wake it only on actual push —
     // but passing per-phase wakers to routines requires GATs for
     // custom Poll contexts, which Rust doesn't support yet.
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
             NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Flushing(_) => {
-                let result = s.poll_routine(cx)?;
+                let result = s.poll_routine(waker)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     let signal = match std::mem::replace(&mut s.state, NodeState::Running) {
                         NodeState::Flushing(sig) => sig,
@@ -241,7 +241,7 @@ where
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Closing => {
-                let result = s.poll_routine(cx)?;
+                let result = s.poll_routine(waker)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     s.state = NodeState::CloseReady;
                     s.output_waker.wake_by_ref();
@@ -251,7 +251,7 @@ where
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Running => {
-                let result = s.poll_routine(cx)?;
+                let result = s.poll_routine(waker)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     return Err(fatal!(
                         "routine returned Ready without pending flush or close"
@@ -262,7 +262,7 @@ where
             }
             // MarkerReady — Input already woke Output
             NodeState::MarkerReady(_) => {
-                let result = s.poll_routine(cx)?;
+                let result = s.poll_routine(waker)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     return Err(fatal!(
                         "routine returned Ready without pending flush or close"
@@ -316,7 +316,7 @@ where
 {
     type ThreadId = ThreadIdType;
 
-    fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
             NodeState::Closed => Err(crate::closed!()),
@@ -404,11 +404,11 @@ where
 mod tests {
     use super::*;
     use crate::connect::poll::sync_bridge::SyncBridge;
+    use crate::connect::waker::{self, ThreadLocalWake, ThreadLocalWaker};
     use crate::node::line::routine::tests::AsyncMockLine;
     use crate::{DefaultThread, SyncEdge};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::task::Waker;
 
     struct TestWaker(Arc<AtomicBool>);
 
@@ -418,10 +418,22 @@ mod tests {
         }
     }
 
-    fn test_waker() -> (Waker, Arc<AtomicBool>) {
+    struct NoopLocalWake;
+    impl ThreadLocalWake for NoopLocalWake {
+        fn wake(&self) {}
+    }
+
+    fn test_waker() -> (std::task::Waker, Arc<AtomicBool>) {
         let woken = Arc::new(AtomicBool::new(false));
-        let waker = Waker::from(Arc::new(TestWaker(woken.clone())));
+        let waker = std::task::Waker::from(Arc::new(TestWaker(woken.clone())));
         (waker, woken)
+    }
+
+    fn noop_waker() -> waker::Waker {
+        waker::Waker {
+            sync: std::task::Waker::noop().clone(),
+            local: ThreadLocalWaker::new(NoopLocalWake),
+        }
     }
 
     #[test]
@@ -442,24 +454,23 @@ mod tests {
 
         input.push_back(Message::Data(2)).unwrap();
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
         // Input drains edge → Send to routine
         assert!(matches!(
-            input_phase.poll(&mut cx).unwrap(),
+            input_phase.poll(&mut wkr).unwrap(),
             core::task::Poll::Pending
         ));
 
         // Work polls routine (sync mock — no-op here)
         assert!(matches!(
-            work_phase.poll(&mut cx).unwrap(),
+            work_phase.poll(&mut wkr).unwrap(),
             core::task::Poll::Pending
         ));
 
         // Output drains Next → pushes downstream
         assert!(matches!(
-            output_phase.poll(&mut cx).unwrap(),
+            output_phase.poll(&mut wkr).unwrap(),
             core::task::Poll::Pending
         ));
 
@@ -484,17 +495,16 @@ mod tests {
 
         SyncBridge::close(&input).unwrap();
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
         // Input detects closed → Closing
-        let _ = input_phase.poll(&mut cx);
+        let _ = input_phase.poll(&mut wkr);
 
         // Work polls routine → Ready → CloseReady
-        let _ = work_phase.poll(&mut cx);
+        let _ = work_phase.poll(&mut wkr);
 
         // Output drains, closes output → Closed
-        let result = output_phase.poll(&mut cx);
+        let result = output_phase.poll(&mut wkr);
         assert!(matches!(
             result.unwrap_err().kind,
             crate::error::ErrorKind::Closed
@@ -517,13 +527,12 @@ mod tests {
                 std::task::Waker::noop().clone(),
             );
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
-        let _ = work_phase.poll(&mut cx).unwrap();
+        let _ = work_phase.poll(&mut wkr).unwrap();
         assert_eq!(work_phase.shared.borrow().worker.poll_count, 1);
 
-        let _ = work_phase.poll(&mut cx).unwrap();
+        let _ = work_phase.poll(&mut wkr).unwrap();
         assert_eq!(work_phase.shared.borrow().worker.poll_count, 2);
     }
 
@@ -575,10 +584,9 @@ mod tests {
                 std::task::Waker::noop().clone(),
             );
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
-        let err = work_phase.poll(&mut cx).unwrap_err();
+        let err = work_phase.poll(&mut wkr).unwrap_err();
         assert!(
             matches!(err.kind, crate::error::ErrorKind::Fatal(_)),
             "expected Fatal, got {:?}",
@@ -604,12 +612,11 @@ mod tests {
 
         input.push_back(Message::Flush("s1")).unwrap();
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
-        let _ = input_phase.poll(&mut cx);
+        let _ = input_phase.poll(&mut wkr);
 
-        let err = work_phase.poll(&mut cx).unwrap_err();
+        let err = work_phase.poll(&mut wkr).unwrap_err();
         assert!(
             matches!(err.kind, crate::error::ErrorKind::Fatal(_)),
             "expected Fatal, got {:?}",
@@ -636,12 +643,11 @@ mod tests {
         input.push_back(Message::Data(1)).unwrap();
         input.push_back(Message::Data(2)).unwrap();
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
-        let _ = input_phase.poll(&mut cx).unwrap();
-        let _ = work_phase.poll(&mut cx).unwrap();
-        let _ = output_phase.poll(&mut cx).unwrap();
+        let _ = input_phase.poll(&mut wkr).unwrap();
+        let _ = work_phase.poll(&mut wkr).unwrap();
+        let _ = output_phase.poll(&mut wkr).unwrap();
 
         assert_eq!(output.poll().unwrap(), Some(Message::Data(2)));
         assert_eq!(output.poll().unwrap(), Some(Message::Data(6)));
@@ -668,20 +674,19 @@ mod tests {
         input.push_back(Message::Marker("m1")).unwrap();
         input.push_back(Message::Data(2)).unwrap();
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
         // First Input poll: drains Data(1), hits Marker → MarkerReady, stops
-        let _ = input_phase.poll(&mut cx).unwrap();
+        let _ = input_phase.poll(&mut wkr).unwrap();
 
         // Poll Input again — should be blocked in MarkerReady, Data(2) stays in edge
-        let _ = input_phase.poll(&mut cx).unwrap();
-        let _ = input_phase.poll(&mut cx).unwrap();
+        let _ = input_phase.poll(&mut wkr).unwrap();
+        let _ = input_phase.poll(&mut wkr).unwrap();
 
-        let _ = work_phase.poll(&mut cx).unwrap();
+        let _ = work_phase.poll(&mut wkr).unwrap();
 
         // Output drains data before marker, then forwards marker → Running
-        let _ = output_phase.poll(&mut cx).unwrap();
+        let _ = output_phase.poll(&mut wkr).unwrap();
 
         // Data(1) output arrives before Marker — ordering preserved
         assert_eq!(output.poll().unwrap(), Some(Message::Data(2))); // 1*2=2
@@ -690,9 +695,9 @@ mod tests {
         assert_eq!(output.poll().unwrap(), None);
 
         // Now Input resumes, drains Data(2)
-        let _ = input_phase.poll(&mut cx).unwrap();
-        let _ = work_phase.poll(&mut cx).unwrap();
-        let _ = output_phase.poll(&mut cx).unwrap();
+        let _ = input_phase.poll(&mut wkr).unwrap();
+        let _ = work_phase.poll(&mut wkr).unwrap();
+        let _ = output_phase.poll(&mut wkr).unwrap();
 
         assert_eq!(output.poll().unwrap(), Some(Message::Data(6))); // (1+2)*2=6
     }
@@ -719,18 +724,17 @@ mod tests {
         input.push_back(Message::Flush("s1")).unwrap();
         input.push_back(Message::Data(2)).unwrap();
 
-        let cx_waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&cx_waker);
+        let mut wkr = noop_waker();
 
         // Input drains Data(1), hits Flush → Flushing. Data(2) still in SyncBridge.
-        let _ = input_phase.poll(&mut cx).unwrap();
+        let _ = input_phase.poll(&mut wkr).unwrap();
         // Work → Ready → FlushReady
-        let _ = work_phase.poll(&mut cx).unwrap();
+        let _ = work_phase.poll(&mut wkr).unwrap();
 
         assert!(!input_woken.load(Ordering::SeqCst));
 
         // Output forwards Flush → Running. Must wake Input.
-        let _ = output_phase.poll(&mut cx).unwrap();
+        let _ = output_phase.poll(&mut wkr).unwrap();
 
         assert!(
             input_woken.load(Ordering::SeqCst),

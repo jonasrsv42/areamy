@@ -24,6 +24,6 @@ mod stream;
 mod thread_id;
 
 pub use bundle::{BundlePanics, ThreadBundle, ThreadBundleHandle};
-pub use poll::{AsyncThread, AsyncThreadHandle, Spawnable};
+pub use poll::{AsyncThread, AsyncThreadHandle};
 pub use stream::{ThreadStream, ThreadStreamHandle};
 pub use thread_id::{DefaultThread, ThreadId};

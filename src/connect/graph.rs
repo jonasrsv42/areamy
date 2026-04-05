@@ -74,19 +74,18 @@ pub trait Pullable: Send + Connection {
 /// [`Pollable`] is a [Connection] for event-driven async nodes.
 ///
 /// Unlike [Workable] which blocks until work is done, [Pollable::poll] is non-blocking
-/// and receives a [core::task::Context] carrying a [core::task::Waker]. The waker
-/// can be cloned and handed to I/O sources (sockets, timers, futures) so they can
-/// wake the node when there's work to do.
-///
-/// Each node runs a single future. For concurrent sub-tasks within a node
-/// (e.g. bidi streaming writer + reader), use a Join combinator inside the
-/// future rather than spawning multiple futures per node.
+/// and receives a [Waker](crate::connect::waker::Waker) carrying both a sync waker
+/// (for I/O registration / standard futures) and a thread-local waker (for cheap
+/// same-thread wake).
 ///
 /// Like [Workable], [Pollable] has an associated [Pollable::ThreadId] to ensure
 /// nodes are only added to matching threads (compile-time safety).
 pub trait Pollable: Connection {
     type ThreadId: ThreadId;
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error>;
+    fn poll(
+        &mut self,
+        waker: &mut crate::connect::waker::Waker,
+    ) -> Result<core::task::Poll<()>, Error>;
 }
 
 /// Factory for creating node routines on a target thread.
@@ -114,26 +113,6 @@ where
     fn create(self) -> R {
         self()
     }
-}
-
-/// [`Linkable`] is a [Connection] for two-stage graph construction.
-///
-/// Builders implement [Linkable] to support deferred construction — graph
-/// wiring happens on the main thread (stage 1), actual edge creation happens
-/// on the target thread (stage 2) via [Linkable::link].
-///
-/// Generic over [crate::marker::Linkage] to express the role:
-/// - [crate::marker::Parent]: being linked as a parent (receives output edge)
-/// - [crate::marker::Child]: being linked as a child (receives input edge)
-pub trait Linkable<Role: crate::marker::Linkage>: Send + Connection {
-    /// The edge received during linking (e.g. `Rc<RefCell<AsyncEdge>>`)
-    type Edge;
-    /// What linking produces (e.g. `Box<dyn Pollable>`)
-    type Node;
-
-    /// Consume this builder and produce running nodes.
-    /// The edge connects this node to whoever owns it.
-    fn link(self: Box<Self>, edge: Self::Edge) -> Vec<Self::Node>;
 }
 
 /// [`Receivable`] is a non-blocking data source.
@@ -477,7 +456,7 @@ pub mod tests {
         type ThreadId = DefaultThread;
         fn poll(
             &mut self,
-            _cx: &mut core::task::Context<'_>,
+            _waker: &mut crate::connect::waker::Waker,
         ) -> Result<core::task::Poll<()>, Error> {
             match self.input.poll()? {
                 Some(Message::Data(d)) => {
@@ -493,33 +472,41 @@ pub mod tests {
     /// A `Pollable` node that processes input non-blockingly.
     #[test]
     fn pollable_processes_available_input() {
+        use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
+
+        struct NoopWake;
+        impl ThreadLocalWake for NoopWake {
+            fn wake(&self) {}
+        }
+
         let mut node = AsyncNode::new();
         let mut input = node.input.clone();
 
         input.push(Message::Data(0)).unwrap();
         input.push(Message::Data(1)).unwrap();
 
-        // Create a no-op waker for testing
-        let waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&waker);
+        let mut waker = Waker {
+            sync: std::task::Waker::noop().clone(),
+            local: ThreadLocalWaker::new(NoopWake),
+        };
 
         // First poll processes first message
         assert!(matches!(
-            node.poll(&mut cx).unwrap(),
+            node.poll(&mut waker).unwrap(),
             core::task::Poll::Pending
         ));
         assert_eq!(node.outputs, vec![1]); // 0 * 2 + 1
 
         // Second poll processes second message
         assert!(matches!(
-            node.poll(&mut cx).unwrap(),
+            node.poll(&mut waker).unwrap(),
             core::task::Poll::Pending
         ));
         assert_eq!(node.outputs, vec![1, 4]); // 1 * 2 + 2
 
         // Third poll finds no input — still pending
         assert!(matches!(
-            node.poll(&mut cx).unwrap(),
+            node.poll(&mut waker).unwrap(),
             core::task::Poll::Pending
         ));
         assert_eq!(node.outputs, vec![1, 4]); // unchanged
@@ -536,7 +523,7 @@ pub mod tests {
         type ThreadId = DefaultThread;
         fn poll(
             &mut self,
-            _cx: &mut core::task::Context<'_>,
+            _waker: &mut crate::connect::waker::Waker,
         ) -> Result<core::task::Poll<()>, Error> {
             match self.input.poll() {
                 Ok(Some(_)) => Ok(core::task::Poll::Pending),
@@ -548,17 +535,26 @@ pub mod tests {
 
     #[test]
     fn pollable_returns_ready_on_close() {
+        use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
+
+        struct NoopWake;
+        impl ThreadLocalWake for NoopWake {
+            fn wake(&self) {}
+        }
+
         let mut node = ClosingAsyncNode {
             input: Arc::new(SyncEdge::new()),
         };
 
         node.input.close().unwrap();
 
-        let waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&waker);
+        let mut waker = Waker {
+            sync: std::task::Waker::noop().clone(),
+            local: ThreadLocalWaker::new(NoopWake),
+        };
 
         assert!(matches!(
-            node.poll(&mut cx).unwrap(),
+            node.poll(&mut waker).unwrap(),
             core::task::Poll::Ready(())
         ));
     }

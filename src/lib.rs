@@ -1,3 +1,5 @@
+extern crate alloc;
+
 mod combine;
 pub mod composable;
 pub mod connect;
@@ -23,8 +25,8 @@ pub use generates::Generates;
 
 pub use crate::connect::graph;
 pub use connect::{
-    AsyncEdge, Closeable, Linkable, PolicyEdge, Pollable, Pullable, Pushable, Receivable,
-    RoutineFactory, SignalPolicy, SyncBridge, SyncEdge, Workable, make_bidi, make_push, make_work,
+    AsyncEdge, Closeable, PolicyEdge, Pollable, Pullable, Pushable, Receivable, RoutineFactory,
+    SignalPolicy, SyncBridge, SyncEdge, Workable, make_bidi, make_push, make_work,
     marker::Connection,
 };
 pub use message::Message;
@@ -38,8 +40,8 @@ pub use signal::{Origin, Trackable};
 pub mod poll;
 pub use sink::GraphSink;
 pub use thread::{
-    AsyncThread, AsyncThreadHandle, BundlePanics, DefaultThread, Spawnable, ThreadBundle,
-    ThreadBundleHandle, ThreadId, ThreadStream, ThreadStreamHandle,
+    AsyncThread, AsyncThreadHandle, BundlePanics, DefaultThread, ThreadBundle, ThreadBundleHandle,
+    ThreadId, ThreadStream, ThreadStreamHandle,
 };
 
 #[cfg(test)]

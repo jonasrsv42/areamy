@@ -47,7 +47,7 @@
 //!     })
 //! });
 //!
-//! let node = thread.node(routine).typed::<Sync>();
+//! let node = thread.line(routine).typed::<Sync>();
 //! ```
 
 use super::queue::{Input, Queue};

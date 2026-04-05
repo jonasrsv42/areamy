@@ -44,6 +44,7 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
         &mut self,
         factory: FactoryType,
     ) -> Node<
+        '_,
         crate::poll::Deferred,
         crate::poll::Deferred,
         InType,

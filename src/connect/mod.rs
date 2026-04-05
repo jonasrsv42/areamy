@@ -61,6 +61,6 @@ pub mod waker;
 pub use graph::{Closeable, Pollable, Pullable, Pushable, Receivable, RoutineFactory, Workable};
 pub use make::work;
 pub use make::{make_bidi, make_push, make_work};
-pub use poll::{AsyncEdge, SyncBridge};
+pub use poll::{PollEdge, SyncBridge};
 pub use signal_policy::{PolicyEdge, SignalPolicy};
 pub use sync_edge::SyncEdge;

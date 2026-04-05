@@ -403,7 +403,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::poll::sync_bridge::SyncBridge;
+    use crate::connect::poll::edge::SyncBridge;
     use crate::connect::waker::{self, ThreadLocalWake, ThreadLocalWaker};
     use crate::node::line::routine::tests::AsyncMockLine;
     use crate::{DefaultThread, SyncEdge};

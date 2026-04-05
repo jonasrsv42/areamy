@@ -5,7 +5,7 @@
 //! construct their parents during [PollGraphBuilder::build](crate::connect::poll::graph::PollGraphBuilder::build).
 
 use crate::ThreadId;
-use crate::connect::poll::edge::AsyncEdge;
+use crate::connect::poll::edge::PollEdge;
 use crate::connect::poll::graph::Graph;
 use crate::connect::poll::wakers::ThreadLocalWakerAllocator;
 use crate::error::Error;
@@ -22,7 +22,7 @@ use core::cell::RefCell;
 pub trait AsyncParent<OutType, SignalType: Origin, ThreadIdType: ThreadId>: Send {
     fn build(
         self: Box<Self>,
-        edge: Rc<RefCell<AsyncEdge<OutType, SignalType>>>,
+        edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<ThreadIdType>, Error>;
 }

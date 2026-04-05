@@ -4,7 +4,7 @@
 //! pushes data into an async node (on a [crate::thread::AsyncThread]).
 //! It uses a [Mutex] for thread-safety and fires a [Waker] on push.
 //!
-//! For same-thread async→async connections, use [super::edge::AsyncEdge] instead.
+//! For same-thread async→async connections, use [super::poll::PollEdge] instead.
 
 use crate::error::Error;
 use crate::marker::Connection;

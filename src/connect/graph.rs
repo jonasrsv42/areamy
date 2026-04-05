@@ -121,7 +121,7 @@ where
 /// is pure data — no thread ownership, no blocking. It just checks if
 /// data is available and returns it.
 ///
-/// Used by async nodes to drain input edges (both [SyncBridge] and [AsyncEdge]).
+/// Used by async nodes to drain input edges (both [SyncBridge] and [PollEdge]).
 pub trait Receivable {
     type DataType;
     type SignalType: Origin;

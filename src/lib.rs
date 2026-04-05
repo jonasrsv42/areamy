@@ -25,7 +25,7 @@ pub use generates::Generates;
 
 pub use crate::connect::graph;
 pub use connect::{
-    AsyncEdge, Closeable, PolicyEdge, Pollable, Pullable, Pushable, Receivable, RoutineFactory,
+    Closeable, PolicyEdge, PollEdge, Pollable, Pullable, Pushable, Receivable, RoutineFactory,
     SignalPolicy, SyncBridge, SyncEdge, Workable, make_bidi, make_push, make_work,
     marker::Connection,
 };

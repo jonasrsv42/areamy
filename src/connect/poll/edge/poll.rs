@@ -21,7 +21,7 @@ use std::task::Waker;
 ///
 /// # Safety
 ///
-/// `AsyncEdge` is marked `Send` so it can be moved from the main thread
+/// `PollEdge` is marked `Send` so it can be moved from the main thread
 /// (during graph construction) to the [crate::thread::AsyncThread]. After
 /// the move, all access is single-threaded. This is safe because:
 /// - Move semantics prevent the edge from being used on the main thread
@@ -30,8 +30,8 @@ use std::task::Waker;
 ///   only be added to the correct thread
 /// - The [crate::thread::AsyncThread] runs all its nodes on a single OS thread
 ///
-/// `AsyncEdge` is NOT Sync — it must never be shared across threads.
-pub struct AsyncEdge<DataType, SignalType>
+/// `PollEdge` is NOT Sync — it must never be shared across threads.
+pub struct PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
@@ -40,9 +40,9 @@ where
     closed: bool,
 }
 
-impl<DataType, SignalType> Connection for AsyncEdge<DataType, SignalType> where SignalType: Origin {}
+impl<DataType, SignalType> Connection for PollEdge<DataType, SignalType> where SignalType: Origin {}
 
-impl<DataType, SignalType> Pushable for AsyncEdge<DataType, SignalType>
+impl<DataType, SignalType> Pushable for PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
@@ -50,20 +50,20 @@ where
     type SignalType = SignalType;
 
     fn push(&mut self, msg: Message<DataType, SignalType>) -> Result<(), Error> {
-        AsyncEdge::push(self, msg)
+        PollEdge::push(self, msg)
     }
 }
 
-impl<DataType, SignalType> Closeable for AsyncEdge<DataType, SignalType>
+impl<DataType, SignalType> Closeable for PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
     fn close(&mut self) -> Result<(), Error> {
-        AsyncEdge::close(self)
+        PollEdge::close(self)
     }
 }
 
-impl<DataType, SignalType> Receivable for AsyncEdge<DataType, SignalType>
+impl<DataType, SignalType> Receivable for PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
@@ -71,11 +71,11 @@ where
     type SignalType = SignalType;
 
     fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
-        AsyncEdge::try_recv(self)
+        PollEdge::try_recv(self)
     }
 }
 
-impl<DataType, SignalType> AsyncEdge<DataType, SignalType>
+impl<DataType, SignalType> PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn push_and_try_recv() {
-        let mut edge = AsyncEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
 
         edge.push(Message::Data(42)).unwrap();
         assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(42)));
@@ -152,13 +152,13 @@ mod tests {
 
     #[test]
     fn try_recv_empty_returns_none() {
-        let mut edge = AsyncEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
         assert_eq!(edge.try_recv().unwrap(), None);
     }
 
     #[test]
     fn closed_try_recv_returns_error() {
-        let mut edge = AsyncEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
         edge.close().unwrap();
 
         assert!(matches!(
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn closed_push_returns_error() {
-        let mut edge = AsyncEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
         edge.close().unwrap();
 
         assert!(matches!(
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn buffered_data_readable_after_close() {
-        let mut edge = AsyncEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
         edge.push(Message::Data(1)).unwrap();
         edge.push(Message::Data(2)).unwrap();
 
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn push_fires_waker() {
         let (waker, woken) = test_waker();
-        let mut edge = AsyncEdge::<usize, &str>::new(waker);
+        let mut edge = PollEdge::<usize, &str>::new(waker);
 
         assert!(!woken.load(Ordering::SeqCst));
         edge.push(Message::Data(1)).unwrap();
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn close_fires_waker() {
         let (waker, woken) = test_waker();
-        let mut edge = AsyncEdge::<usize, &str>::new(waker);
+        let mut edge = PollEdge::<usize, &str>::new(waker);
 
         edge.close().unwrap();
         assert!(woken.load(Ordering::SeqCst));

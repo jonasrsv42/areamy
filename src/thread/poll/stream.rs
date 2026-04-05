@@ -55,7 +55,7 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
     >
     where
         SignalType: Origin,
-        FactoryType: crate::RoutineFactory,
+        FactoryType: crate::node::line::poll::factory::PollLineRoutineFactory,
         FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
     {
         Node::deferred(factory, &mut self.waker_allocator)
@@ -183,7 +183,7 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let node = thread
-            .line(|| AsyncMockLine::new())
+            .line(|_| AsyncMockLine::new())
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -204,7 +204,7 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let mut node = thread
-            .line(|| AsyncMockLine::new())
+            .line(|_| AsyncMockLine::new())
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -233,14 +233,14 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let parent = thread
-            .line(|| AsyncMockLine::new())
+            .line(|_| AsyncMockLine::new())
             .typed::<crate::poll::Async>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&parent).unwrap();
 
         let mut child = thread
-            .line(|| AsyncMockLine::new())
+            .line(|_| AsyncMockLine::new())
             .parent(parent)
             .typed::<crate::poll::Sync>();
 

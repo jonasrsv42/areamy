@@ -17,7 +17,7 @@
 //! - `Node<Async, Deferred>` — async in, output inferred (sink if added directly)
 //! - `Node<Deferred, Deferred>` — fully unresolved, returned by `thread.line()`
 //!
-//! Stores a [RoutineFactory] instead of the routine. The factory is [Send]
+//! Stores a [PollLineRoutineFactory] instead of the routine. The factory is [Send]
 //! (crosses threads during spawn). The routine is created on the async
 //! thread and does NOT need to be [Send].
 
@@ -30,9 +30,10 @@ use crate::connect::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::error::Error;
 use crate::graph::{Add, Get};
 use crate::marker::Connection;
+use crate::node::line::poll::factory::PollLineRoutineFactory;
 use crate::node::line::routine::AsyncLineRoutine;
 use crate::signal::Origin;
-use crate::{Closeable, RoutineFactory, ThreadId};
+use crate::{Closeable, ThreadId};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -45,7 +46,7 @@ where
     OutEdgeType: Edge,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     alloc: InEdgeType::Alloc<'a>,
@@ -66,7 +67,7 @@ where
     OutEdgeType: Edge,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
 }
@@ -81,7 +82,7 @@ impl<'a, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     pub fn deferred(factory: FactoryType, alloc: &'a mut WakerAllocator) -> Self {
@@ -130,7 +131,7 @@ where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     pub fn parent(
@@ -157,7 +158,7 @@ where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     pub fn typed<OutEdgeType: Edge>(
@@ -184,7 +185,7 @@ where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     pub fn parent(
@@ -208,7 +209,7 @@ where
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     fn get(
@@ -233,7 +234,7 @@ where
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: RoutineFactory,
+    FactoryType: PollLineRoutineFactory,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
 {
     fn add(
@@ -259,7 +260,7 @@ where
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -268,14 +269,14 @@ where
     ) -> Result<Graph<ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             self.input,
             self.output,
-            self.alloc.value.clone(),
-            work.value.sync,
-            output.value.sync,
+            allocator.local_waker(self.alloc.id),
+            work.value.local,
+            output.value.local,
         );
         let nodes = vec![
             PollGraphNode {
@@ -303,7 +304,7 @@ where
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -311,7 +312,7 @@ where
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<ThreadIdType>, Error> {
         let input = allocator.next();
-        let edge_waker = input.value.sync.clone();
+        let edge_waker = input.value.local.clone();
         let mut edges = Vec::new();
         let mut nodes = Vec::new();
 
@@ -325,14 +326,14 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             edges,
             self.output,
-            input.value.sync,
-            work.value.sync,
-            output.value.sync,
+            input.value.local,
+            work.value.local,
+            output.value.local,
         );
         nodes.push(PollGraphNode {
             id: input.id,
@@ -358,7 +359,7 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -367,14 +368,14 @@ where
     ) -> Result<Graph<ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             self.input,
             self.output,
-            self.alloc.value.clone(),
-            work.value.sync,
-            output.value.sync,
+            allocator.local_waker(self.alloc.id),
+            work.value.local,
+            output.value.local,
         );
         let nodes = vec![
             PollGraphNode {
@@ -402,7 +403,7 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -410,7 +411,7 @@ where
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<ThreadIdType>, Error> {
         let input = allocator.next();
-        let edge_waker = input.value.sync.clone();
+        let edge_waker = input.value.local.clone();
         let mut edges = Vec::new();
         let mut nodes = Vec::new();
 
@@ -424,14 +425,14 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             edges,
             self.output,
-            input.value.sync,
-            work.value.sync,
-            output.value.sync,
+            input.value.local,
+            work.value.local,
+            output.value.local,
         );
         nodes.push(PollGraphNode {
             id: input.id,
@@ -462,7 +463,7 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -472,14 +473,14 @@ where
     ) -> Result<Graph<ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             self.input,
             edge,
-            self.alloc.value.clone(),
-            work.value.sync,
-            output.value.sync,
+            allocator.local_waker(self.alloc.id),
+            work.value.local,
+            output.value.local,
         );
         let nodes = vec![
             PollGraphNode {
@@ -508,7 +509,7 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -518,14 +519,14 @@ where
     ) -> Result<Graph<ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             self.input,
             edge,
-            self.alloc.value.clone(),
-            work.value.sync,
-            output.value.sync,
+            allocator.local_waker(self.alloc.id),
+            work.value.local,
+            output.value.local,
         );
         let nodes = vec![
             PollGraphNode {
@@ -554,7 +555,7 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -563,7 +564,7 @@ where
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<ThreadIdType>, Error> {
         let input = allocator.next();
-        let edge_waker = input.value.sync.clone();
+        let edge_waker = input.value.local.clone();
         let mut input_edges = Vec::new();
         let mut nodes = Vec::new();
 
@@ -577,14 +578,14 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             input_edges,
             output_edge,
-            input.value.sync,
-            work.value.sync,
-            output.value.sync,
+            input.value.local,
+            work.value.local,
+            output.value.local,
         );
         nodes.push(PollGraphNode {
             id: input.id,
@@ -611,7 +612,7 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: RoutineFactory + 'static,
+    FactoryType: PollLineRoutineFactory + 'static,
     FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
 {
     fn build(
@@ -620,7 +621,7 @@ where
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<ThreadIdType>, Error> {
         let input = allocator.next();
-        let edge_waker = input.value.sync.clone();
+        let edge_waker = input.value.local.clone();
         let mut input_edges = Vec::new();
         let mut nodes = Vec::new();
 
@@ -634,14 +635,14 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create();
+        let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             input_edges,
             output_edge,
-            input.value.sync,
-            work.value.sync,
-            output.value.sync,
+            input.value.local,
+            work.value.local,
+            output.value.local,
         );
         nodes.push(PollGraphNode {
             id: input.id,

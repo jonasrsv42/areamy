@@ -79,6 +79,12 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         }
     }
 
+    /// Create a [ThreadLocalWaker] for an existing node ID.
+    /// Does not allocate a new slot.
+    pub fn local_waker(&self, id: NodeId) -> ThreadLocalWaker {
+        ThreadLocalWaker::from_producer(id, &self.local_producer)
+    }
+
     /// Finalize allocation and build the [Runtime].
     ///
     /// Each [PollGraphNode] is placed at its ID index. Every allocated slot

@@ -6,7 +6,7 @@
 
 use areamy::error::Error;
 use areamy::poll::Join;
-use areamy::poll::future::{FutureRoutine, Input, Queue};
+use areamy::poll::future::{FutureRoutine, Input, InputConsumer, OutputProducer};
 use areamy::{
     AsyncThread, Closeable, Message, Pushable, SyncEdge, ThreadBundle, ThreadId, ThreadStream,
     make_push, make_work,
@@ -57,30 +57,22 @@ impl<T: Unpin> Future for ImmediateFut<T> {
 }
 
 /// Fake socket with async API mimicking real network I/O.
+#[derive(Clone)]
 struct FakeSocket {
-    buffer: Queue<usize>,
+    buffer: Rc<RefCell<VecDeque<usize>>>,
     closed: Rc<RefCell<bool>>,
-}
-
-impl Clone for FakeSocket {
-    fn clone(&self) -> Self {
-        Self {
-            buffer: self.buffer.clone(),
-            closed: self.closed.clone(),
-        }
-    }
 }
 
 impl FakeSocket {
     fn connect(_addr: &str) -> ImmediateFut<Self> {
         ImmediateFut::new(Self {
-            buffer: Queue::new(),
+            buffer: Rc::new(RefCell::new(VecDeque::new())),
             closed: Rc::new(RefCell::new(false)),
         })
     }
 
     fn write(&self, val: usize) -> ImmediateFut<()> {
-        self.buffer.push(val);
+        self.buffer.borrow_mut().push_back(val);
         ImmediateFut::new(())
     }
 
@@ -115,7 +107,7 @@ impl Future for SocketReadFut {
             return core::task::Poll::Pending;
         }
 
-        match self.socket.buffer.pop() {
+        match self.socket.buffer.borrow_mut().pop_front() {
             Some(item) => core::task::Poll::Ready(Some(item)),
             None if *self.socket.closed.borrow() => core::task::Poll::Ready(None),
             None => core::task::Poll::Pending,
@@ -175,40 +167,43 @@ fn bidi_with_join() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let routine = || {
-        FutureRoutine::new(|input: Queue<Input<usize>>, output: Queue<usize>| {
-            Box::pin(async move {
-                let socket = FakeSocket::connect("fake://server").await;
+    let routine = |output_waker| {
+        FutureRoutine::new(
+            output_waker,
+            |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+                Box::pin(async move {
+                    let socket = FakeSocket::connect("fake://server").await;
 
-                let writer_input = input.clone();
-                let writer_socket = socket.clone();
-                let writer: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
-                    Box::pin(async move {
-                        loop {
-                            match writer_input.recv().await? {
-                                Input::Data(val) => writer_socket.write(val * 3).await,
-                                Input::Flush => {
-                                    writer_socket.half_close().await;
-                                    break;
+                    let writer_input = input.clone();
+                    let writer_socket = socket.clone();
+                    let writer: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
+                        Box::pin(async move {
+                            loop {
+                                match writer_input.recv().await? {
+                                    Input::Data(val) => writer_socket.write(val * 3).await,
+                                    Input::Flush => {
+                                        writer_socket.half_close().await;
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        Ok(())
-                    });
+                            Ok(())
+                        });
 
-                let reader_socket = socket;
-                let reader_output = output.clone();
-                let reader: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
-                    Box::pin(async move {
-                        while let Some(val) = reader_socket.read().await {
-                            reader_output.push(val + 1);
-                        }
-                        Ok(())
-                    });
+                    let reader_socket = socket;
+                    let reader_output = output.clone();
+                    let reader: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
+                        Box::pin(async move {
+                            while let Some(val) = reader_socket.read().await {
+                                reader_output.push(val + 1);
+                            }
+                            Ok(())
+                        });
 
-                Join::join([writer, reader]).await
-            })
-        })
+                    Join::join([writer, reader]).await
+                })
+            },
+        )
     };
 
     let mut node = async_thread.line(routine).typed::<areamy::poll::Sync>();

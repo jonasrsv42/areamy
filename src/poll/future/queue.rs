@@ -1,16 +1,18 @@
-//! Async queue for communication between a [FutureRoutine](super::FutureRoutine)
-//! and its future. Zero-cost via `Rc<RefCell>` — single-threaded, no locks.
+//! Producer/consumer queues for [FutureRoutine](super::FutureRoutine).
 //!
-//! Created on the async thread via [RoutineFactory](crate::RoutineFactory).
-//! Never crosses threads.
+//! Two queue types, each split into producer + consumer:
 //!
-//! The input queue is closeable: after [Input::Flush] is delivered,
-//! subsequent [Queue::recv] calls return [Err(Closed)](crate::error::ErrorKind::Closed),
-//! enforcing the contract that the future must return after flush.
+//! - **Input**: [InputProducer] / [InputConsumer] — node pushes data in,
+//!   future awaits via [InputConsumer::recv]. Uses `std::task::Waker`
+//!   (standard futures contract).
 //!
-//! Waker-aware: [RecvFut] stores the waker from Work's `cx`,
-//! [Queue::push] wakes it. This triggers only the Work phase.
+//! - **Output**: [OutputProducer] / [OutputConsumer] — future pushes data out,
+//!   node drains via [OutputConsumer::pop]. Uses [ThreadLocalWaker] to wake
+//!   the Output phase (same thread, no atomics).
+//!
+//! All types are `!Send` — they live on the async thread.
 
+use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -19,62 +21,59 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::Waker;
 
-/// Input item received by the future via [Queue::recv].
-///
-/// The user awaits [Queue::recv] which returns `Result<Input<T>, Error>`.
-/// After [Input::Flush] is delivered the queue is closed — subsequent
-/// recv calls return [Err(Closed)](crate::error::ErrorKind::Closed).
+// ============================================================
+// Input queue
+// ============================================================
+
+/// Input item received by the future via [InputConsumer::recv].
 pub enum Input<T> {
     Data(T),
     Flush,
 }
 
-struct Inner<T> {
-    buffer: VecDeque<T>,
+struct InputInner<T> {
+    buffer: VecDeque<Input<T>>,
     closed: bool,
     waker: Waker,
 }
 
-/// Shared single-threaded queue. Clone shares the same backing store.
-///
-/// Closeable: once [Input::Flush] is popped via [Queue::recv],
-/// the queue transitions to closed and subsequent recv calls
-/// return [Err(Closed)](crate::error::ErrorKind::Closed).
-///
-/// Waker-aware: [Queue::push] wakes the stored waker.
-pub struct Queue<T>(Rc<RefCell<Inner<T>>>);
+/// Pushes input data into the queue. Held by the node's Input phase.
+pub struct InputProducer<T>(Rc<RefCell<InputInner<T>>>);
 
-impl<T> Clone for Queue<T> {
+/// Consumes input data from the queue. Held by the future.
+pub struct InputConsumer<T>(Rc<RefCell<InputInner<T>>>);
+
+impl<T> Clone for InputProducer<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<T> Queue<T> {
-    pub fn new() -> Self {
-        Self(Rc::new(RefCell::new(Inner {
-            buffer: VecDeque::new(),
-            closed: false,
-            waker: Waker::noop().clone(),
-        })))
+impl<T> Clone for InputConsumer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
+}
 
-    pub fn push(&self, item: T) {
+/// Create an input producer/consumer pair.
+pub fn input_queue<T>() -> (InputProducer<T>, InputConsumer<T>) {
+    let inner = Rc::new(RefCell::new(InputInner {
+        buffer: VecDeque::new(),
+        closed: false,
+        waker: Waker::noop().clone(),
+    }));
+    (InputProducer(inner.clone()), InputConsumer(inner))
+}
+
+impl<T> InputProducer<T> {
+    pub fn push(&self, item: Input<T>) {
         let mut inner = self.0.borrow_mut();
         inner.buffer.push_back(item);
         inner.waker.wake_by_ref();
     }
 
-    pub fn pop(&self) -> Option<T> {
-        self.0.borrow_mut().buffer.pop_front()
-    }
-
     /// Reset closed state for a new segment.
-    ///
-    /// Returns an error if the queue is not empty or not closed —
-    /// the future should have consumed all data and received Flush
-    /// before returning Ready.
-    pub fn reset(&self) -> Result<(), crate::error::Error> {
+    pub fn reset(&self) -> Result<(), Error> {
         let mut inner = self.0.borrow_mut();
         if !inner.buffer.is_empty() {
             return Err(crate::fatal!(
@@ -91,23 +90,20 @@ impl<T> Queue<T> {
     }
 }
 
-impl<T> Queue<Input<T>> {
+impl<T> InputConsumer<T> {
     /// Await the next input item.
     ///
     /// Returns `Ok(Input::Data(T))` for data, `Ok(Input::Flush)` when
-    /// the stream is flushed. After [Input::Flush] has been delivered,
-    /// the queue is closed and all subsequent calls return `Err(Closed)`.
+    /// flushed. After Flush, subsequent calls return `Err(Closed)`.
     pub fn recv(&self) -> RecvFut<T> {
         RecvFut(self.clone())
     }
 }
 
-/// Future that resolves to the next [Input] item, or errors with
-/// [Closed](crate::error::ErrorKind::Closed) if the queue is closed.
+/// Future that resolves to the next [Input] item.
 ///
-/// Stores the waker from Work's `cx` — [Queue::push] wakes it,
-/// triggering only the Work phase pollable.
-pub struct RecvFut<T>(Queue<Input<T>>);
+/// Stores the waker from Work's `cx` — [InputProducer::push] wakes it.
+pub struct RecvFut<T>(InputConsumer<T>);
 
 impl<T: Unpin> Future for RecvFut<T> {
     type Output = Result<Input<T>, Error>;
@@ -133,5 +129,56 @@ impl<T: Unpin> Future for RecvFut<T> {
             }
             None => core::task::Poll::Pending,
         }
+    }
+}
+
+// ============================================================
+// Output queue
+// ============================================================
+
+struct OutputInner<T> {
+    buffer: VecDeque<T>,
+    waker: ThreadLocalWaker,
+}
+
+/// Pushes output data into the queue. Held by the future.
+/// Wakes the Output phase on push via [ThreadLocalWaker].
+pub struct OutputProducer<T>(Rc<RefCell<OutputInner<T>>>);
+
+/// Consumes output data from the queue. Held by the node's Output phase.
+pub struct OutputConsumer<T>(Rc<RefCell<OutputInner<T>>>);
+
+impl<T> Clone for OutputProducer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Clone for OutputConsumer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+/// Create an output producer/consumer pair.
+pub fn output_queue<T>(waker: ThreadLocalWaker) -> (OutputProducer<T>, OutputConsumer<T>) {
+    let inner = Rc::new(RefCell::new(OutputInner {
+        buffer: VecDeque::new(),
+        waker,
+    }));
+    (OutputProducer(inner.clone()), OutputConsumer(inner))
+}
+
+impl<T> OutputProducer<T> {
+    pub fn push(&self, item: T) {
+        let mut inner = self.0.borrow_mut();
+        inner.buffer.push_back(item);
+        inner.waker.wake();
+    }
+}
+
+impl<T> OutputConsumer<T> {
+    pub fn pop(&self) -> Option<T> {
+        self.0.borrow_mut().buffer.pop_front()
     }
 }

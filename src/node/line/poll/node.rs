@@ -13,7 +13,7 @@
 //! - **CloseReady**: Output drains remaining output, closes → Closed
 //! - **Closed**: all phases return Closed
 
-use crate::connect::waker::Waker;
+use crate::connect::waker::{ThreadLocalWaker, Waker};
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
@@ -46,9 +46,9 @@ where
     input: InputType,
     output: OutputType,
     state: NodeState<SignalType>,
-    input_waker: std::task::Waker,
-    work_waker: std::task::Waker,
-    output_waker: std::task::Waker,
+    input_waker: ThreadLocalWaker,
+    work_waker: ThreadLocalWaker,
+    output_waker: ThreadLocalWaker,
 }
 
 impl<In, Out, SignalType, RoutineType, InputType, OutputType>
@@ -82,7 +82,7 @@ where
                 Ok(Some(Message::Flush(signal))) => {
                     self.worker.flush()?;
                     self.state = NodeState::Flushing(signal);
-                    self.work_waker.wake_by_ref();
+                    self.work_waker.wake();
                     break;
                 }
                 Ok(Some(Message::Marker(signal))) => {
@@ -94,7 +94,7 @@ where
                     if matches!(e.kind, crate::error::ErrorKind::Closed) {
                         self.worker.flush()?;
                         self.state = NodeState::Closing;
-                        self.work_waker.wake_by_ref();
+                        self.work_waker.wake();
                         break;
                     }
                     return Err(e);
@@ -164,7 +164,7 @@ where
             NodeState::Closed | NodeState::Closing | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Running => {
                 s.drain_input()?;
-                s.output_waker.wake_by_ref();
+                s.output_waker.wake();
                 if matches!(s.state, NodeState::Closing) {
                     return Err(crate::closed!());
                 }
@@ -237,17 +237,17 @@ where
                     };
                     s.state = NodeState::FlushReady(signal);
                 }
-                s.output_waker.wake_by_ref();
+                s.output_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Closing => {
                 let result = s.poll_routine(waker)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     s.state = NodeState::CloseReady;
-                    s.output_waker.wake_by_ref();
+                    s.output_waker.wake();
                     return Err(crate::closed!());
                 }
-                s.output_waker.wake_by_ref();
+                s.output_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Running => {
@@ -257,7 +257,7 @@ where
                         "routine returned Ready without pending flush or close"
                     ));
                 }
-                s.output_waker.wake_by_ref();
+                s.output_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             // MarkerReady — Input already woke Output
@@ -327,7 +327,7 @@ where
                     _ => return Err(fatal!("expected FlushReady state")),
                 };
                 s.push_output(Message::Flush(signal))?;
-                s.input_waker.wake_by_ref();
+                s.input_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::MarkerReady(_) => {
@@ -337,7 +337,7 @@ where
                     _ => return Err(fatal!("expected MarkerReady state")),
                 };
                 s.push_output(Message::Marker(signal))?;
-                s.input_waker.wake_by_ref();
+                s.input_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::CloseReady => {
@@ -360,9 +360,9 @@ pub fn new_phases<In, Out, SignalType, ThreadIdType, RoutineType, InputType, Out
     worker: RoutineType,
     input: InputType,
     output: OutputType,
-    input_waker: std::task::Waker,
-    work_waker: std::task::Waker,
-    output_waker: std::task::Waker,
+    input_waker: ThreadLocalWaker,
+    work_waker: ThreadLocalWaker,
+    output_waker: ThreadLocalWaker,
 ) -> (
     Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
     Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
@@ -407,6 +407,8 @@ mod tests {
     use crate::connect::waker::{self, ThreadLocalWake, ThreadLocalWaker};
     use crate::node::line::routine::tests::AsyncMockLine;
     use crate::{DefaultThread, SyncEdge};
+    use std::cell::Cell;
+    use std::rc::Rc;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -429,10 +431,14 @@ mod tests {
         (waker, woken)
     }
 
+    fn noop_local_waker() -> ThreadLocalWaker {
+        ThreadLocalWaker::new(NoopLocalWake)
+    }
+
     fn noop_waker() -> waker::Waker {
         waker::Waker {
             sync: std::task::Waker::noop().clone(),
-            local: ThreadLocalWaker::new(NoopLocalWake),
+            local: noop_local_waker(),
         }
     }
 
@@ -447,9 +453,9 @@ mod tests {
                 AsyncMockLine::new(),
                 input.clone(),
                 output.clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         input.push_back(Message::Data(2)).unwrap();
@@ -488,9 +494,9 @@ mod tests {
                 AsyncMockLine::new(),
                 input.clone(),
                 output,
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         SyncBridge::close(&input).unwrap();
@@ -522,9 +528,9 @@ mod tests {
                 AsyncMockLine::new(),
                 input,
                 output,
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         let mut wkr = noop_waker();
@@ -579,9 +585,9 @@ mod tests {
                 ClosedErrorRoutine,
                 input,
                 output,
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         let mut wkr = noop_waker();
@@ -605,9 +611,9 @@ mod tests {
                 ClosedErrorRoutine,
                 input.clone(),
                 output,
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         input.push_back(Message::Flush("s1")).unwrap();
@@ -635,9 +641,9 @@ mod tests {
                 AsyncMockLine::new(),
                 input.clone(),
                 output.clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         input.push_back(Message::Data(1)).unwrap();
@@ -664,9 +670,9 @@ mod tests {
                 AsyncMockLine::new(),
                 input.clone(),
                 output.clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         // Data then Marker then more Data
@@ -708,7 +714,16 @@ mod tests {
         let input = Arc::new(SyncBridge::new(bridge_waker));
         let output = Arc::new(SyncEdge::new());
 
-        let (input_waker, input_woken) = test_waker();
+        let input_woken = Rc::new(Cell::new(false));
+        let input_waker = ThreadLocalWaker::new({
+            struct Wake(Rc<Cell<bool>>);
+            impl crate::connect::waker::ThreadLocalWake for Wake {
+                fn wake(&self) {
+                    self.0.set(true);
+                }
+            }
+            Wake(input_woken.clone())
+        });
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
@@ -716,8 +731,8 @@ mod tests {
                 input.clone(),
                 output.clone(),
                 input_waker,
-                std::task::Waker::noop().clone(),
-                std::task::Waker::noop().clone(),
+                noop_local_waker(),
+                noop_local_waker(),
             );
 
         input.push_back(Message::Data(1)).unwrap();
@@ -731,13 +746,13 @@ mod tests {
         // Work → Ready → FlushReady
         let _ = work_phase.poll(&mut wkr).unwrap();
 
-        assert!(!input_woken.load(Ordering::SeqCst));
+        assert!(!input_woken.get());
 
         // Output forwards Flush → Running. Must wake Input.
         let _ = output_phase.poll(&mut wkr).unwrap();
 
         assert!(
-            input_woken.load(Ordering::SeqCst),
+            input_woken.get(),
             "Output must wake Input after flush so remaining data is drained"
         );
     }

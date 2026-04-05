@@ -5,38 +5,27 @@
 //!
 //! For cross-thread connections (sync → async), use [SyncBridge] instead.
 
+use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{Closeable, Pushable, Receivable, closed};
 use std::collections::VecDeque;
-use std::task::Waker;
 
 /// A same-thread async edge. No synchronization overhead.
 ///
 /// Uses a plain [VecDeque] with no Mutex — all access happens on a single
-/// [crate::thread::AsyncThread]. Fires a [Waker] on push to enqueue the
-/// consuming node in the ready queue.
+/// [crate::thread::AsyncThread]. Fires a [ThreadLocalWaker] on push to
+/// enqueue the consuming node in the ready queue.
 ///
-/// # Safety
-///
-/// `PollEdge` is marked `Send` so it can be moved from the main thread
-/// (during graph construction) to the [crate::thread::AsyncThread]. After
-/// the move, all access is single-threaded. This is safe because:
-/// - Move semantics prevent the edge from being used on the main thread
-///   after it's moved into the async thread
-/// - [crate::Pollable::ThreadId] ensures the node (and its edges) can
-///   only be added to the correct thread
-/// - The [crate::thread::AsyncThread] runs all its nodes on a single OS thread
-///
-/// `PollEdge` is NOT Sync — it must never be shared across threads.
+/// `PollEdge` is `!Send`, `!Sync` — it must stay on the async thread.
 pub struct PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
     buffer: VecDeque<Message<DataType, SignalType>>,
-    waker: Waker,
+    waker: ThreadLocalWaker,
     closed: bool,
 }
 
@@ -79,7 +68,7 @@ impl<DataType, SignalType> PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
-    pub fn new(waker: Waker) -> Self {
+    pub fn new(waker: ThreadLocalWaker) -> Self {
         Self {
             buffer: VecDeque::new(),
             waker,
@@ -103,14 +92,14 @@ where
         }
 
         self.buffer.push_back(message);
-        self.waker.wake_by_ref();
+        self.waker.wake();
         Ok(())
     }
 
     /// Close the edge and wake the consumer.
     pub fn close(&mut self) -> Result<(), Error> {
         self.closed = true;
-        self.waker.wake_by_ref();
+        self.waker.wake();
         Ok(())
     }
 }
@@ -118,27 +107,31 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connect::waker::ThreadLocalWake;
     use crate::error::ErrorKind;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::task::Waker;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
-    struct TestWaker(Arc<AtomicBool>);
+    struct TestWake(Rc<Cell<bool>>);
 
-    impl std::task::Wake for TestWaker {
-        fn wake(self: Arc<Self>) {
-            self.0.store(true, Ordering::SeqCst);
+    impl ThreadLocalWake for TestWake {
+        fn wake(&self) {
+            self.0.set(true);
         }
     }
 
-    fn test_waker() -> (Waker, Arc<AtomicBool>) {
-        let woken = Arc::new(AtomicBool::new(false));
-        let waker = Waker::from(Arc::new(TestWaker(woken.clone())));
+    fn test_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {
+        let woken = Rc::new(Cell::new(false));
+        let waker = ThreadLocalWaker::new(TestWake(woken.clone()));
         (waker, woken)
     }
 
-    fn noop_waker() -> Waker {
-        std::task::Waker::noop().clone()
+    fn noop_waker() -> ThreadLocalWaker {
+        struct NoopWake;
+        impl ThreadLocalWake for NoopWake {
+            fn wake(&self) {}
+        }
+        ThreadLocalWaker::new(NoopWake)
     }
 
     #[test]
@@ -196,9 +189,9 @@ mod tests {
         let (waker, woken) = test_waker();
         let mut edge = PollEdge::<usize, &str>::new(waker);
 
-        assert!(!woken.load(Ordering::SeqCst));
+        assert!(!woken.get());
         edge.push(Message::Data(1)).unwrap();
-        assert!(woken.load(Ordering::SeqCst));
+        assert!(woken.get());
     }
 
     #[test]
@@ -207,6 +200,6 @@ mod tests {
         let mut edge = PollEdge::<usize, &str>::new(waker);
 
         edge.close().unwrap();
-        assert!(woken.load(Ordering::SeqCst));
+        assert!(woken.get());
     }
 }

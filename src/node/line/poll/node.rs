@@ -1,17 +1,31 @@
 //! Async line node split into three phase pollables sharing state via
 //! `Rc<RefCell<SharedState>>`:
 //!
-//! - **Input**: drain edge → Send to routine → wake Output
-//! - **Work**: poll routine async work (woken by queue/IO)
-//! - **Output**: drain Next → push downstream, forward flush/close signals
+//! - **Input**: drain edge → Send to routine. Routine wakes Output via OutputProducer.
+//! - **Work**: poll routine async work (woken by InputQueue/IO)
+//! - **Output**: drain Next → push downstream, forward flush/close/marker signals
 //!
 //! State machine:
 //! - **Running**: Input drains, Work polls, Output drains
 //! - **Flushing**: Work polls routine until Ready → FlushReady
 //! - **FlushReady**: Output drains remaining output, forwards Flush → Running
+//! - **MarkerReady**: Work polls routine once (best-effort drain), Output forwards Marker → Running
 //! - **Closing**: Work polls routine until Ready → CloseReady
 //! - **CloseReady**: Output drains remaining output, closes → Closed
 //! - **Closed**: all phases return Closed
+//!
+//! # Marker ordering
+//!
+//! Markers are synchronization primitives — all data naturally produced
+//! before the marker should arrive downstream before it. For sync routines
+//! this is guaranteed: Send produces output immediately, Output drains it,
+//! then forwards the marker.
+//!
+//! For async routines (e.g. FutureRoutine), the guarantee is **best-effort**.
+//! Work gets one poll cycle to let the routine emit pending output before
+//! Output forwards the marker. Data produced by the routine *after* that
+//! poll cycle (e.g. from an in-flight future) may arrive after the marker.
+//! If strict ordering is required with async routines, use Flush instead.
 
 use crate::connect::waker::{ThreadLocalWaker, Waker};
 use crate::error::Error;

@@ -86,6 +86,22 @@ where
             future: Some(future),
         }
     }
+
+    /// Create a [PollLineRoutineFactory](crate::node::line::poll::factory::PollLineRoutineFactory)
+    /// from an async closure. The closure receives input/output queues —
+    /// the output waker is wired automatically.
+    ///
+    /// ```ignore
+    /// let node = thread.line(FutureRoutine::factory(|input, output| {
+    ///     Box::pin(async move { /* ... */ })
+    /// })).typed::<Sync>();
+    /// ```
+    pub fn factory(f: F) -> impl FnOnce(ThreadLocalWaker) -> Self + Send
+    where
+        F: Send,
+    {
+        move |output_waker| Self::new(output_waker, f)
+    }
 }
 
 impl<InType, OutType, F> crate::Send<InType> for FutureRoutine<InType, OutType, F>

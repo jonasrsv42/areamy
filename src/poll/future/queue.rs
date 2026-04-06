@@ -193,6 +193,14 @@ impl<T> OutputProducer<T> {
         inner.buffer.push_back(item);
         inner.waker.wake();
     }
+
+    /// Push multiple items, wake once. Use when producing a batch
+    /// to avoid redundant Output phase wakes.
+    pub fn extend(&self, items: impl IntoIterator<Item = T>) {
+        let mut inner = self.0.borrow_mut();
+        inner.buffer.extend(items);
+        inner.waker.wake();
+    }
 }
 
 impl<T> OutputConsumer<T> {

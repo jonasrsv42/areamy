@@ -167,44 +167,41 @@ fn bidi_with_join() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let routine = |output_waker| {
-        FutureRoutine::new(
-            output_waker,
-            |input: InputConsumer<usize>, output: OutputProducer<usize>| {
-                Box::pin(async move {
-                    let socket = FakeSocket::connect("fake://server").await;
+    let routine = FutureRoutine::factory(
+        |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+            Box::pin(async move {
+                let socket = FakeSocket::connect("fake://server").await;
 
-                    let writer_input = input.clone();
-                    let writer_socket = socket.clone();
-                    let writer: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
-                        Box::pin(async move {
-                            loop {
-                                match writer_input.recv().await? {
-                                    Input::Data(val) => writer_socket.write(val * 3).await,
-                                    Input::Flush => {
-                                        writer_socket.half_close().await;
-                                        break;
-                                    }
+                let writer_input = input.clone();
+                let writer_socket = socket.clone();
+                let writer: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
+                    Box::pin(async move {
+                        loop {
+                            match writer_input.recv().await? {
+                                Input::Data(val) => writer_socket.write(val * 3).await,
+                                Input::Flush => {
+                                    writer_socket.half_close().await;
+                                    break;
                                 }
                             }
-                            Ok(())
-                        });
+                        }
+                        Ok(())
+                    });
 
-                    let reader_socket = socket;
-                    let reader_output = output.clone();
-                    let reader: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
-                        Box::pin(async move {
-                            while let Some(val) = reader_socket.read().await {
-                                reader_output.push(val + 1);
-                            }
-                            Ok(())
-                        });
+                let reader_socket = socket;
+                let reader_output = output.clone();
+                let reader: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
+                    Box::pin(async move {
+                        while let Some(val) = reader_socket.read().await {
+                            reader_output.push(val + 1);
+                        }
+                        Ok(())
+                    });
 
-                    Join::join([writer, reader]).await
-                })
-            },
-        )
-    };
+                Join::join([writer, reader]).await
+            })
+        },
+    );
 
     let mut node = async_thread.line(routine).typed::<areamy::poll::Sync>();
     make_push(&mut source_node, &node)?;

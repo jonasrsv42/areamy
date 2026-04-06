@@ -22,7 +22,7 @@
 //! thread and does NOT need to be [Send].
 
 use crate::connect::poll::edge::{
-    Async, AsyncIn, Deferred, Edge, Null, PollEdge, Sync, SyncBridge,
+    Async, AsyncIn, Deferred, Edge, Null, PollEdge, Sync, SyncBridge, SyncInput,
 };
 use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::connect::poll::traits::AsyncParent;
@@ -107,12 +107,15 @@ where
         SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
         OutEdgeType::Output<OutType, SignalType>: Default,
     {
-        let input_slot = self.alloc.next();
-        let input_waker = input_slot.value.clone();
+        let slot = self.alloc.next();
+        let waker = slot.value.clone();
         Node {
-            alloc: input_slot,
+            alloc: (),
             factory: self.factory,
-            input: Arc::new(SyncBridge::new(input_waker)),
+            input: SyncInput {
+                edge: Arc::new(SyncBridge::new(waker)),
+                slot,
+            },
             output: Default::default(),
             _phantom: std::marker::PhantomData,
         }
@@ -218,7 +221,7 @@ where
         Box<dyn Closeable<DataType = InType, SignalType = SignalType> + Send + std::marker::Sync>,
         Error,
     > {
-        Ok(Box::new(self.input.clone()))
+        Ok(Box::new(self.input.edge.clone()))
     }
 }
 
@@ -272,15 +275,15 @@ where
         let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
-            self.input,
+            self.input.edge,
             self.output,
-            allocator.local_waker(self.alloc.id),
+            allocator.local_waker(self.input.slot.id),
             work.value.local,
             output.value.local,
         );
         let nodes = vec![
             GraphNode {
-                id: self.alloc.id,
+                id: self.input.slot.id,
                 pollable: Box::new(input_phase),
             },
             GraphNode {
@@ -371,15 +374,15 @@ where
         let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
-            self.input,
+            self.input.edge,
             self.output,
-            allocator.local_waker(self.alloc.id),
+            allocator.local_waker(self.input.slot.id),
             work.value.local,
             output.value.local,
         );
         let nodes = vec![
             GraphNode {
-                id: self.alloc.id,
+                id: self.input.slot.id,
                 pollable: Box::new(input_phase),
             },
             GraphNode {
@@ -476,15 +479,15 @@ where
         let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
-            self.input,
+            self.input.edge,
             edge,
-            allocator.local_waker(self.alloc.id),
+            allocator.local_waker(self.input.slot.id),
             work.value.local,
             output.value.local,
         );
         let nodes = vec![
             GraphNode {
-                id: self.alloc.id,
+                id: self.input.slot.id,
                 pollable: Box::new(input_phase),
             },
             GraphNode {
@@ -522,15 +525,15 @@ where
         let routine = self.factory.create(output.value.local.clone());
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
-            self.input,
+            self.input.edge,
             edge,
-            allocator.local_waker(self.alloc.id),
+            allocator.local_waker(self.input.slot.id),
             work.value.local,
             output.value.local,
         );
         let nodes = vec![
             GraphNode {
-                id: self.alloc.id,
+                id: self.input.slot.id,
                 pollable: Box::new(input_phase),
             },
             GraphNode {

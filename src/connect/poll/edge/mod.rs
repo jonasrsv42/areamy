@@ -7,5 +7,5 @@ pub mod traits;
 pub use async_in::AsyncIn;
 pub use null::Null;
 pub use poll::PollEdge;
-pub use sync::SyncBridge;
+pub use sync::{SyncBridge, SyncInput};
 pub use traits::{Async, Deferred, Edge, Linktime, Sync};

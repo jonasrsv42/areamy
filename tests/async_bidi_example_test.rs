@@ -159,7 +159,7 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 // ============================================================
 
 /// Bidi streaming: connect → writer + reader via Join → half-close on flush.
-/// Uses areamy::poll::FutureRoutine with RoutineFactory (|| closure).
+/// Uses areamy::poll::FutureRoutine with FutureRoutine::factory().
 /// Multi-segment: flush resets the future, reconnects.
 #[test]
 fn bidi_with_join() -> Result<(), Error> {

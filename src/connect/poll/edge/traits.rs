@@ -8,14 +8,10 @@
 
 use super::async_in::AsyncIn;
 use super::null::Null;
-use super::sync::SyncBridge;
 use crate::connect::poll::wakers::WakerAllocator;
-use crate::connect::poll::wakers::allocator::Slot;
 use crate::marker::Connection;
 use crate::signal::Origin;
 use crate::{Closeable, ThreadId};
-
-use std::sync::Arc;
 
 /// Trait for edge markers. Uses GATs to resolve storage types.
 pub trait Edge: Connection {
@@ -47,11 +43,11 @@ impl Connection for Deferred {}
 
 impl Edge for Sync {
     type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> =
-        Arc<SyncBridge<InType, SignalType>>;
+        super::sync::SyncInput<InType, SignalType>;
     type Output<OutType, SignalType: Origin> = Vec<
         Box<dyn Closeable<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync>,
     >;
-    type Alloc<'a> = Slot<std::task::Waker>;
+    type Alloc<'a> = ();
 }
 
 impl Edge for Async {

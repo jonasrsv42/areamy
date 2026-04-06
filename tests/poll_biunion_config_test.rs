@@ -94,8 +94,13 @@ fn biunion_audio_with_config() {
         .push(Message::Data(Config { multiplier: 3 }))
         .unwrap();
 
-    // Give a moment for config to be processed
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Send marker on config to synchronize — when it arrives on output,
+    // we know the config update was processed.
+    config_source.push(Message::Marker("sync".into())).unwrap();
+    assert!(matches!(
+        output_edge.read_front().unwrap(),
+        Message::Marker(_)
+    ));
 
     // Send more audio with new multiplier
     audio_source.push(Message::Data(10)).unwrap();

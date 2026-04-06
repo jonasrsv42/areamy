@@ -1,7 +1,7 @@
 //! Future-based async routine primitives.
 //!
 //! [FutureRoutine] wraps a user-provided async fn into an
-//! [PollLineRoutine](crate::PollLineRoutine). The async fn receives
+//! [LineRoutine](crate::poll::LineRoutine). The async fn receives
 //! an [InputConsumer] and [OutputProducer] and drives I/O via async/await.
 //!
 //! For concurrent sub-tasks (bidi writer + reader), use

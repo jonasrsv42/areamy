@@ -1,6 +1,6 @@
 //! A same-thread async edge. No Mutex, no Send+Sync overhead.
 //!
-//! Used for connections between async nodes on the same [crate::thread::PollThread].
+//! Used for connections between async nodes on the same [crate::thread::poll::stream::Thread].
 //! Fires a [Waker] on push to wake the consuming node.
 //!
 //! For cross-thread connections (sync → async), use [SyncBridge] instead.
@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 /// A same-thread async edge. No synchronization overhead.
 ///
 /// Uses a plain [VecDeque] with no Mutex — all access happens on a single
-/// [crate::thread::PollThread]. Fires a [ThreadLocalWaker] on push to
+/// [crate::thread::poll::stream::Thread]. Fires a [ThreadLocalWaker] on push to
 /// enqueue the consuming node in the ready queue.
 ///
 /// `PollEdge` is `!Send`, `!Sync` — it must stay on the async thread.

@@ -1,6 +1,6 @@
 //! Unified async node builder parameterized by edge kind markers.
 //!
-//! Created via [`PollThread::line`](crate::PollThread). Edge kinds
+//! Created via [`Thread::line`](crate::poll::Thread). Edge kinds
 //! are resolved via typestate transitions:
 //!
 //! - `.typed::<OutEdge>()` — resolves input to Sync, output to turbofish

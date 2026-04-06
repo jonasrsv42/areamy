@@ -1,7 +1,7 @@
 //! A thread-safe bridge from sync nodes to async nodes.
 //!
 //! [SyncBridge] is used when a sync node (on a [crate::thread::ThreadStream])
-//! pushes data into an async node (on a [crate::thread::PollThread]).
+//! pushes data into an async node (on a [crate::thread::poll::stream::Thread]).
 //! It uses a [Mutex] for thread-safety and fires a [Waker] on push.
 //!
 //! For same-thread async→async connections, use [super::poll::PollEdge] instead.

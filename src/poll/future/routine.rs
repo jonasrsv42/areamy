@@ -1,11 +1,11 @@
 //! [FutureRoutine] — wraps a user-provided async fn into an
-//! [AsyncLineRoutine](crate::AsyncLineRoutine).
+//! [PollLineRoutine](LineRoutine).
 //!
 //! The user's async fn receives an [InputConsumer] and [OutputProducer].
 //! Data arrives as [Input::Data], flush as [Input::Flush].
 //! The future drives I/O, reads from input, writes to output.
 //!
-//! Created via [PollLineRoutineFactory](crate::node::line::poll::factory::PollLineRoutineFactory)
+//! Created via [LineRoutineFactory](crate::node::line::poll::factory::LineRoutineFactory)
 //! — the routine is born on the async thread and can hold non-Send types.
 //!
 //! # Lifecycle
@@ -53,6 +53,7 @@ use super::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue
 use crate::connect::waker::{self, ThreadLocalWaker};
 use crate::error::Error;
 use crate::node::Name;
+use crate::node::line::poll::routine::LineRoutine;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -87,7 +88,7 @@ where
         }
     }
 
-    /// Create a [PollLineRoutineFactory](crate::node::line::poll::factory::PollLineRoutineFactory)
+    /// Create a [LineRoutineFactory](crate::node::line::poll::factory::LineRoutineFactory)
     /// from an async closure. The closure receives input/output queues —
     /// the output waker is wired automatically.
     ///
@@ -160,9 +161,7 @@ impl<InType, OutType, F> Name for FutureRoutine<InType, OutType, F> where
 {
 }
 
-impl<InType, OutType, F> crate::AsyncLineRoutine<InType, OutType>
-    for FutureRoutine<InType, OutType, F>
-where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut,
+impl<InType, OutType, F> LineRoutine<InType, OutType> for FutureRoutine<InType, OutType, F> where
+    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut
 {
 }

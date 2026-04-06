@@ -7,5 +7,5 @@ pub mod traits;
 pub mod wakers;
 
 pub use edge::{Async, AsyncIn, Deferred, Edge, Linktime, Null, PollEdge, Sync, SyncBridge};
-pub use graph::{PollGraphBuilder, PollGraphNode};
+pub use graph::{GraphBuilder, GraphNode};
 pub use marker::NodeId;

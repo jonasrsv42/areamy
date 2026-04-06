@@ -5,11 +5,12 @@
 //! reconnect per segment.
 
 use areamy::error::Error;
+use areamy::poll;
 use areamy::poll::Join;
 use areamy::poll::future::{FutureRoutine, Input, InputConsumer, OutputProducer};
 use areamy::{
-    AsyncThread, Closeable, Message, Pushable, SyncEdge, ThreadBundle, ThreadId, ThreadStream,
-    make_push, make_work,
+    Closeable, Message, Pushable, SyncEdge, ThreadBundle, ThreadId, ThreadStream, make_push,
+    make_work,
 };
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -165,7 +166,7 @@ fn bidi_with_join() -> Result<(), Error> {
     let mut source_node = areamy::work::make_line(Double::new());
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = AsyncThread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
     let routine = FutureRoutine::factory(
         |input: InputConsumer<usize>, output: OutputProducer<usize>| {

@@ -1,6 +1,6 @@
 //! Unified async node builder parameterized by edge kind markers.
 //!
-//! Use [`Node`] via [`AsyncThread::line`](crate::AsyncThread):
+//! Use [`Node`] via [`PollThread::line`](crate::PollThread):
 //!
 //! - `.typed::<OutEdge>()` → Sync input, explicit output
 //! - `.parent(node)` → Async input (adds parent)

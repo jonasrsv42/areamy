@@ -1,28 +1,29 @@
 //! Async thread that runs [Pollable] nodes driven by wakers.
 
-use crate::connect::poll::graph::PollGraphBuilder;
+use crate::connect::poll::graph::GraphBuilder;
 use crate::connect::poll::queue::{Consumer, PollQueue};
 use crate::connect::poll::runtime::{self, Runtime};
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::{Error, ErrorKind};
 use crate::node::line::poll::builder::node::Node;
-use crate::{AsyncLineRoutine, Origin, ThreadId, fatal};
+use crate::node::line::poll::routine::LineRoutine;
+use crate::{Origin, ThreadId, fatal};
 use std::thread::{JoinHandle, spawn};
 
-/// An idle async thread. Add builders via [AsyncThread::add], then
-/// call [AsyncThread::start] to spawn the OS thread.
-pub struct AsyncThread<ThreadIdType: ThreadId + 'static> {
-    builders: Vec<Box<dyn PollGraphBuilder<ThreadIdType>>>,
+/// An idle async thread. Add builders via [Thread::add], then
+/// call [Thread::start] to spawn the OS thread.
+pub struct Thread<ThreadIdType: ThreadId + 'static> {
+    builders: Vec<Box<dyn GraphBuilder<ThreadIdType>>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,
 }
 
 /// Handle to a running async thread.
-pub struct AsyncThreadHandle {
+pub struct ThreadHandle {
     thread: JoinHandle<Result<(), Error>>,
 }
 
-impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
+impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
     pub fn new() -> Self {
         let queue = PollQueue::new();
         let producer = queue.producer();
@@ -55,30 +56,30 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
     >
     where
         SignalType: Origin,
-        FactoryType: crate::node::line::poll::factory::PollLineRoutineFactory,
-        FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+        FactoryType: crate::node::line::poll::factory::LineRoutineFactory,
+        FactoryType::Routine: LineRoutine<InType, OutType>,
     {
         Node::deferred(factory, &mut self.waker_allocator)
     }
 
     /// Add a node to the thread. It will be built when the thread starts.
-    pub fn add(&mut self, builder: impl PollGraphBuilder<ThreadIdType> + 'static) {
+    pub fn add(&mut self, builder: impl GraphBuilder<ThreadIdType> + 'static) {
         self.builders.push(Box::new(builder));
     }
 
     /// Start the async thread. Consumes self, returns a handle.
-    pub fn start(self) -> AsyncThreadHandle {
+    pub fn start(self) -> ThreadHandle {
         let builders = self.builders;
         let waker_allocator = self.waker_allocator;
         let queue = self.queue;
 
-        AsyncThreadHandle {
+        ThreadHandle {
             thread: spawn(move || {
                 let (mut runtime, consumer) = match prepare(builders, waker_allocator, queue) {
                     Ok(r) => r,
                     Err(e) => {
                         #[cfg(not(feature = "silent"))]
-                        eprintln!("AsyncThread prepare: {}", e);
+                        eprintln!("Thread prepare: {}", e);
                         return Err(e);
                     }
                 };
@@ -90,7 +91,7 @@ impl<ThreadIdType: ThreadId + 'static> AsyncThread<ThreadIdType> {
 
 /// Build the runtime and return it with the consumer for the poll loop.
 fn prepare<ThreadIdType: ThreadId>(
-    builders: Vec<Box<dyn PollGraphBuilder<ThreadIdType>>>,
+    builders: Vec<Box<dyn GraphBuilder<ThreadIdType>>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,
 ) -> Result<(Runtime<ThreadIdType>, Consumer), Error> {
@@ -108,13 +109,13 @@ fn prepare<ThreadIdType: ThreadId>(
     Ok((runtime, consumer))
 }
 
-impl AsyncThreadHandle {
+impl ThreadHandle {
     /// Join the async thread.
     pub fn join(self) -> Result<Option<Error>, Error> {
         match self.thread.join() {
             Ok(Ok(())) => Ok(None),
             Ok(Err(e)) => Ok(Some(e)),
-            Err(panic_err) => Err(fatal!("AsyncThread panicked: {:?}", panic_err)),
+            Err(panic_err) => Err(fatal!("Thread panicked: {:?}", panic_err)),
         }
     }
 }
@@ -133,7 +134,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
             Ok(id) => id,
             Err(e) => {
                 #[cfg(not(feature = "silent"))]
-                eprintln!("AsyncThread dequeue error: {}", e);
+                eprintln!("Thread dequeue error: {}", e);
                 return Err(e);
             }
         };
@@ -157,7 +158,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
             }
             Err(e) => {
                 #[cfg(not(feature = "silent"))]
-                eprintln!("AsyncThread node {} error: {}", node_id, e);
+                eprintln!("Thread node {} error: {}", node_id, e);
                 return Err(e);
             }
         }
@@ -170,7 +171,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
 mod tests {
     use super::*;
     use crate::graph::Get;
-    use crate::node::line::routine::tests::AsyncMockLine;
+    use crate::node::line::poll::routine::tests::MockLine;
     use crate::{Closeable, Message, SyncEdge, make_push};
     use std::sync::Arc;
 
@@ -180,10 +181,10 @@ mod tests {
 
     #[test]
     fn async_thread_starts_and_stops() {
-        let mut thread = AsyncThread::<IoThread>::new();
+        let mut thread = Thread::<IoThread>::new();
 
         let node = thread
-            .line(|w| AsyncMockLine::new(w))
+            .line(|w| MockLine::new(w))
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -201,10 +202,10 @@ mod tests {
 
     #[test]
     fn async_thread_processes_data() {
-        let mut thread = AsyncThread::<IoThread>::new();
+        let mut thread = Thread::<IoThread>::new();
 
         let mut node = thread
-            .line(|w| AsyncMockLine::new(w))
+            .line(|w| MockLine::new(w))
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -230,17 +231,17 @@ mod tests {
     /// the async chain and close the output edge.
     #[test]
     fn close_propagates_through_chain() {
-        let mut thread = AsyncThread::<IoThread>::new();
+        let mut thread = Thread::<IoThread>::new();
 
         let parent = thread
-            .line(|w| AsyncMockLine::new(w))
+            .line(|w| MockLine::new(w))
             .typed::<crate::poll::Async>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&parent).unwrap();
 
         let mut child = thread
-            .line(|w| AsyncMockLine::new(w))
+            .line(|w| MockLine::new(w))
             .parent(parent)
             .typed::<crate::poll::Sync>();
 

@@ -1,6 +1,6 @@
 //! Thread bundle for managing multiple heterogeneous threads as a unit.
 
-use super::poll::stream::{AsyncThread, AsyncThreadHandle};
+use super::poll::stream as poll;
 use super::{ThreadId, ThreadStream, ThreadStreamHandle};
 use crate::any_err;
 use crate::error::{AnyErr, Error};
@@ -54,14 +54,14 @@ impl<ThreadIdType: ThreadId + 'static> TypeErasedInternalThreadStreamHandle
 }
 
 impl<ThreadIdType: ThreadId + 'static> TypeErasedInternalThreadStream
-    for AsyncThread<ThreadIdType>
+    for poll::Thread<ThreadIdType>
 {
     fn start(self: Box<Self>) -> Box<dyn TypeErasedInternalThreadStreamHandle> {
         Box::new((*self).start())
     }
 }
 
-impl TypeErasedInternalThreadStreamHandle for AsyncThreadHandle {
+impl TypeErasedInternalThreadStreamHandle for poll::ThreadHandle {
     fn join(self: Box<Self>) -> Result<Option<Error>, Error> {
         (*self).join()
     }

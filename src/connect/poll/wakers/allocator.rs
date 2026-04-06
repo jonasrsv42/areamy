@@ -7,7 +7,7 @@
 //! Allocates both sync + local wakers. `!Send`. Consumed by
 //! [ThreadLocalWakerAllocator::build] to produce a [Runtime].
 
-use crate::connect::poll::graph::PollGraphNode;
+use crate::connect::poll::graph::GraphNode;
 use crate::connect::poll::marker::NodeId;
 use crate::connect::poll::queue::{Producer, ThreadLocalProducer};
 use crate::connect::poll::runtime::{Node, Runtime};
@@ -87,12 +87,12 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
 
     /// Finalize allocation and build the [Runtime].
     ///
-    /// Each [PollGraphNode] is placed at its ID index. Every allocated slot
+    /// Each [GraphNode] is placed at its ID index. Every allocated slot
     /// must be filled exactly once. Creates wakers and enqueues all nodes
     /// for initial poll.
     pub fn build(
         self,
-        nodes: Vec<PollGraphNode<ThreadIdType>>,
+        nodes: Vec<GraphNode<ThreadIdType>>,
     ) -> Result<Runtime<ThreadIdType>, Error> {
         let count = self.count;
         let mut slots: Vec<Option<Box<dyn Pollable<ThreadId = ThreadIdType>>>> =

@@ -31,7 +31,7 @@ use crate::connect::waker::{ThreadLocalWaker, Waker};
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
-use crate::node::line::routine::AsyncLineRoutine;
+use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
 use crate::{Closeable, Pollable, Receivable, ThreadId, fatal};
 use std::cell::RefCell;
@@ -52,7 +52,7 @@ enum NodeState<SignalType> {
 pub(crate) struct SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>
 where
     SignalType: Origin + Clone,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -69,7 +69,7 @@ impl<In, Out, SignalType, RoutineType, InputType, OutputType>
     SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>
 where
     SignalType: Origin + Clone,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -145,7 +145,7 @@ pub struct Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, Outp
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -159,7 +159,7 @@ impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Conn
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -170,7 +170,7 @@ impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Poll
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -204,7 +204,7 @@ pub struct Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, Outpu
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -218,7 +218,7 @@ impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Conn
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -229,7 +229,7 @@ impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Poll
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -306,7 +306,7 @@ pub struct Output<In, Out, SignalType, ThreadIdType, RoutineType, InputType, Out
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -320,7 +320,7 @@ impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Conn
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -331,7 +331,7 @@ impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Poll
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -394,7 +394,7 @@ pub fn new_phases<In, Out, SignalType, ThreadIdType, RoutineType, InputType, Out
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
-    RoutineType: AsyncLineRoutine<In, Out>,
+    RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Closeable<DataType = Out, SignalType = SignalType>,
 {
@@ -428,7 +428,7 @@ mod tests {
     use super::*;
     use crate::connect::poll::edge::SyncBridge;
     use crate::connect::waker::{self, ThreadLocalWake, ThreadLocalWaker};
-    use crate::node::line::routine::tests::AsyncMockLine;
+    use crate::node::line::poll::routine::tests::MockLine;
     use crate::{DefaultThread, SyncEdge};
     use std::cell::Cell;
     use std::rc::Rc;
@@ -473,7 +473,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(noop_local_waker()),
+                MockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 noop_local_waker(),
@@ -514,7 +514,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(noop_local_waker()),
+                MockLine::new(noop_local_waker()),
                 input.clone(),
                 output,
                 noop_local_waker(),
@@ -548,7 +548,7 @@ mod tests {
 
         let (_input_phase, mut work_phase, _output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(noop_local_waker()),
+                MockLine::new(noop_local_waker()),
                 input,
                 output,
                 noop_local_waker(),
@@ -592,7 +592,7 @@ mod tests {
     }
 
     impl crate::node::Name for ClosedErrorRoutine {}
-    impl crate::AsyncLineRoutine<usize, usize> for ClosedErrorRoutine {}
+    impl LineRoutine<usize, usize> for ClosedErrorRoutine {}
 
     #[test]
     fn routine_returning_closed_becomes_fatal() {
@@ -658,7 +658,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(noop_local_waker()),
+                MockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 noop_local_waker(),
@@ -687,7 +687,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(noop_local_waker()),
+                MockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 noop_local_waker(),
@@ -747,7 +747,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(noop_local_waker()),
+                MockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 input_waker,

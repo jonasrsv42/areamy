@@ -30,8 +30,8 @@ pub use connect::{
 };
 pub use message::Message;
 pub use node::{
-    AsyncLineRoutine, BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, Flush,
-    LineReader, LineRoutine, Next, Poll, Send,
+    BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, Flush, LineReader,
+    LineRoutine, Next, Poll, Send,
 };
 pub use node::{bifurcation, biunion};
 pub use signal::{Origin, Trackable};
@@ -39,8 +39,8 @@ pub use signal::{Origin, Trackable};
 pub mod poll;
 pub use sink::GraphSink;
 pub use thread::{
-    AsyncThread, AsyncThreadHandle, BundlePanics, DefaultThread, ThreadBundle, ThreadBundleHandle,
-    ThreadId, ThreadStream, ThreadStreamHandle,
+    BundlePanics, DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream,
+    ThreadStreamHandle,
 };
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! Unified async node builder parameterized by edge kind markers.
 //!
-//! Created via [`AsyncThread::line`](crate::AsyncThread). Edge kinds
+//! Created via [`PollThread::line`](crate::PollThread). Edge kinds
 //! are resolved via typestate transitions:
 //!
 //! - `.typed::<OutEdge>()` — resolves input to Sync, output to turbofish
@@ -17,21 +17,21 @@
 //! - `Node<Async, Deferred>` — async in, output inferred (sink if added directly)
 //! - `Node<Deferred, Deferred>` — fully unresolved, returned by `thread.line()`
 //!
-//! Stores a [PollLineRoutineFactory] instead of the routine. The factory is [Send]
+//! Stores a [LineRoutineFactory] instead of the routine. The factory is [Send]
 //! (crosses threads during spawn). The routine is created on the async
 //! thread and does NOT need to be [Send].
 
 use crate::connect::poll::edge::{
     Async, AsyncIn, Deferred, Edge, Null, PollEdge, Sync, SyncBridge,
 };
-use crate::connect::poll::graph::{Graph, PollGraphBuilder, PollGraphNode};
+use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::connect::poll::traits::AsyncParent;
 use crate::connect::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::error::Error;
 use crate::graph::{Add, Get};
 use crate::marker::Connection;
-use crate::node::line::poll::factory::PollLineRoutineFactory;
-use crate::node::line::routine::AsyncLineRoutine;
+use crate::node::line::poll::factory::LineRoutineFactory;
+use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
 use crate::{Closeable, ThreadId};
 use std::cell::RefCell;
@@ -46,8 +46,8 @@ where
     OutEdgeType: Edge,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     alloc: InEdgeType::Alloc<'a>,
     factory: FactoryType,
@@ -67,8 +67,8 @@ where
     OutEdgeType: Edge,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
 }
 
@@ -82,8 +82,8 @@ impl<'a, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     pub fn deferred(factory: FactoryType, alloc: &'a mut WakerAllocator) -> Self {
         Self {
@@ -131,8 +131,8 @@ where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     pub fn parent(
         self,
@@ -158,8 +158,8 @@ where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     pub fn typed<OutEdgeType: Edge>(
         self,
@@ -185,8 +185,8 @@ where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     pub fn parent(
         mut self,
@@ -209,8 +209,8 @@ where
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     fn get(
         &self,
@@ -234,8 +234,8 @@ where
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: PollLineRoutineFactory,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType>,
+    FactoryType: LineRoutineFactory,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     fn add(
         &mut self,
@@ -253,15 +253,15 @@ where
 // ============================================================
 
 /// Terminal: Node<Sync, Sync>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> PollGraphBuilder<ThreadIdType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
     for Node<'static, Sync, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -279,15 +279,15 @@ where
             output.value.local,
         );
         let nodes = vec![
-            PollGraphNode {
+            GraphNode {
                 id: self.alloc.id,
                 pollable: Box::new(input_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: work.id,
                 pollable: Box::new(work_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: output.id,
                 pollable: Box::new(output_phase),
             },
@@ -297,15 +297,15 @@ where
 }
 
 /// Child: Node<Async, Sync>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> PollGraphBuilder<ThreadIdType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
     for Node<'static, Async, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -335,15 +335,15 @@ where
             work.value.local,
             output.value.local,
         );
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: input.id,
             pollable: Box::new(input_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: work.id,
             pollable: Box::new(work_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: output.id,
             pollable: Box::new(output_phase),
         });
@@ -352,15 +352,15 @@ where
 }
 
 /// Sink: Node<Sync, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> PollGraphBuilder<ThreadIdType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
     for Node<'static, Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -378,15 +378,15 @@ where
             output.value.local,
         );
         let nodes = vec![
-            PollGraphNode {
+            GraphNode {
                 id: self.alloc.id,
                 pollable: Box::new(input_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: work.id,
                 pollable: Box::new(work_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: output.id,
                 pollable: Box::new(output_phase),
             },
@@ -396,15 +396,15 @@ where
 }
 
 /// Sink: Node<Async, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> PollGraphBuilder<ThreadIdType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
     for Node<'static, Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -434,15 +434,15 @@ where
             work.value.local,
             output.value.local,
         );
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: input.id,
             pollable: Box::new(input_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: work.id,
             pollable: Box::new(work_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: output.id,
             pollable: Box::new(output_phase),
         });
@@ -463,8 +463,8 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -483,15 +483,15 @@ where
             output.value.local,
         );
         let nodes = vec![
-            PollGraphNode {
+            GraphNode {
                 id: self.alloc.id,
                 pollable: Box::new(input_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: work.id,
                 pollable: Box::new(work_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: output.id,
                 pollable: Box::new(output_phase),
             },
@@ -509,8 +509,8 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -529,15 +529,15 @@ where
             output.value.local,
         );
         let nodes = vec![
-            PollGraphNode {
+            GraphNode {
                 id: self.alloc.id,
                 pollable: Box::new(input_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: work.id,
                 pollable: Box::new(work_phase),
             },
-            PollGraphNode {
+            GraphNode {
                 id: output.id,
                 pollable: Box::new(output_phase),
             },
@@ -555,8 +555,8 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -587,15 +587,15 @@ where
             work.value.local,
             output.value.local,
         );
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: input.id,
             pollable: Box::new(input_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: work.id,
             pollable: Box::new(work_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: output.id,
             pollable: Box::new(output_phase),
         });
@@ -612,8 +612,8 @@ where
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: PollLineRoutineFactory + 'static,
-    FactoryType::Routine: AsyncLineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory + 'static,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
     fn build(
         self: Box<Self>,
@@ -644,15 +644,15 @@ where
             work.value.local,
             output.value.local,
         );
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: input.id,
             pollable: Box::new(input_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: work.id,
             pollable: Box::new(work_phase),
         });
-        nodes.push(PollGraphNode {
+        nodes.push(GraphNode {
             id: output.id,
             pollable: Box::new(output_phase),
         });

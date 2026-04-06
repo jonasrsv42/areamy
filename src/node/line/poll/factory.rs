@@ -3,23 +3,23 @@
 //! The factory is [Send] (crosses threads). The routine it produces
 //! stays on the async thread and does NOT need to be [Send].
 //!
-//! [PollLineRoutineFactory::create] receives a [ThreadLocalWaker] for the output
+//! [LineRoutineFactory::create] receives a [ThreadLocalWaker] for the output
 //! phase so the routine can wake Output when it produces data.
 
 use crate::connect::waker::ThreadLocalWaker;
 
 /// Factory for poll line routines. [Send] — crosses threads.
 ///
-/// [PollLineRoutineFactory::create] is called on the async thread with
+/// [LineRoutineFactory::create] is called on the async thread with
 /// the output phase waker. The routine stores it and wakes Output
 /// when it sends data, avoiding unnecessary output polls.
-pub trait PollLineRoutineFactory: Send {
+pub trait LineRoutineFactory: Send {
     type Routine;
     fn create(self, output_waker: ThreadLocalWaker) -> Self::Routine;
 }
 
-/// Blanket impl: any `FnOnce(ThreadLocalWaker) -> R + Send` is a [PollLineRoutineFactory].
-impl<F, R> PollLineRoutineFactory for F
+/// Blanket impl: any `FnOnce(ThreadLocalWaker) -> R + Send` is a [LineRoutineFactory].
+impl<F, R> LineRoutineFactory for F
 where
     F: FnOnce(ThreadLocalWaker) -> R + Send,
 {

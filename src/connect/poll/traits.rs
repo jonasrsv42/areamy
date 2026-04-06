@@ -2,7 +2,7 @@
 //!
 //! [AsyncParent] is a parent node config that can receive an output edge
 //! and be constructed with an allocator. Used by child nodes to link and
-//! construct their parents during [PollGraphBuilder::build](crate::connect::poll::graph::PollGraphBuilder::build).
+//! construct their parents during [GraphBuilder::build](crate::connect::poll::graph::GraphBuilder::build).
 
 use crate::ThreadId;
 use crate::connect::poll::edge::PollEdge;
@@ -18,7 +18,7 @@ use core::cell::RefCell;
 ///
 /// Receives an output edge and the allocator, produces a [Graph],
 /// and returns the allocator inside it. The child creates the edge and calls
-/// [AsyncParent::build] during its own [PollGraphBuilder::build](crate::connect::poll::graph::PollGraphBuilder::build).
+/// [AsyncParent::build] during its own [GraphBuilder::build](crate::connect::poll::graph::GraphBuilder::build).
 pub trait AsyncParent<OutType, SignalType: Origin, ThreadIdType: ThreadId>: Send {
     fn build(
         self: Box<Self>,

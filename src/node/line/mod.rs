@@ -6,4 +6,4 @@ pub(crate) mod routine;
 pub mod work;
 
 pub use reader::LineReader;
-pub use routine::{AsyncLineRoutine, LineRoutine};
+pub use routine::LineRoutine;

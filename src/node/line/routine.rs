@@ -51,13 +51,17 @@ pub trait LineRoutine<In, Out>:
 /// [`AsyncLineRoutine`] is the async counterpart of [LineRoutine].
 ///
 /// Prefer [FutureRoutine](crate::poll::FutureRoutine) over raw impls —
-/// it enforces all contracts below by construction via its waker-aware
-/// [Queue](crate::poll::Queue).
+/// it enforces all contracts below by construction.
 ///
 /// Unlike [LineRoutine], does NOT require [std::marker::Send]. Async
-/// routines are created on the async thread via factory pattern and
-/// never cross threads. This allows routines to hold non-Send types
+/// routines are created on the async thread via
+/// [PollLineRoutineFactory](crate::node::line::poll::factory::PollLineRoutineFactory)
+/// and never cross threads. This allows routines to hold non-Send types
 /// like `Rc<RefCell<_>>` for zero-cost shared state with their futures.
+///
+/// The factory receives a [ThreadLocalWaker](crate::connect::waker::ThreadLocalWaker)
+/// for the Output phase. Routines MUST use this to wake Output when they
+/// produce data (e.g. via [OutputProducer](crate::poll::future::queue::OutputProducer)).
 ///
 /// ## [crate::Send] contract
 ///
@@ -71,9 +75,21 @@ pub trait LineRoutine<In, Out>:
 /// do not need to wake [crate::Poll].
 ///
 /// [FutureRoutine](crate::poll::FutureRoutine) handles this via its
-/// waker-aware [Queue](crate::poll::Queue) — push wakes Poll automatically.
+/// waker-aware [InputQueue](crate::poll::future::queue::InputQueue) —
+/// push wakes Poll automatically.
+///
+/// ## [crate::Next] contract
+///
+/// The node's Output phase calls [crate::Next] to drain output. Output
+/// is NOT polled automatically — the routine MUST wake the Output phase
+/// when it produces data. Use [OutputProducer::push](crate::poll::future::queue::OutputProducer::push)
+/// which wakes Output via [ThreadLocalWaker](crate::connect::waker::ThreadLocalWaker).
 ///
 /// ## [crate::Poll] contract
+///
+/// [crate::Poll::poll] receives a [Waker](crate::connect::waker::Waker)
+/// carrying both a sync waker (for I/O / standard futures) and a
+/// thread-local waker (for cheap same-thread wake).
 ///
 /// - [core::task::Poll::Pending] — async work in progress.
 /// - [core::task::Poll::Ready] — routine finished processing after
@@ -88,22 +104,29 @@ pub trait LineRoutine<In, Out>:
 ///
 /// Returning [crate::error::ErrorKind::Closed] is a fatal error.
 ///
-/// ## Flush contract
+/// ## [crate::Flush] contract
 ///
-/// After [crate::Flush] is called, [crate::Poll] is invoked. The
-/// routine should output any remaining data via [crate::Next] and
+/// [crate::Flush] signals the routine to finalize its current segment.
+/// The routine should output any remaining data via [crate::Next] and
 /// reset its state for subsequent [crate::Send] invocations.
 ///
-/// If using [Queue](crate::poll::Queue) directly, call
-/// [Queue::reset](crate::poll::Queue::reset) after receiving
-/// [Input::Flush](crate::poll::Input::Flush) to clear the closed
-/// state for the next segment.
+/// After [crate::Flush], [crate::Poll] is invoked once. If the routine
+/// returns Ready, the flush is complete. If it returns Pending, the
+/// runtime will NOT wake the routine again — the routine must arrange
+/// for itself to be woken (e.g. by handing its waker to an I/O source,
+/// timer, or interrupt that will fire). The node will be waiting for
+/// a Ready signal to eventually arrive. Failure to wake itself leads
+/// to deadlock.
 ///
-/// ## Close contract
+/// ## TL;DR
 ///
-/// Close is delivered as a [crate::Flush]. The routine does not
-/// distinguish between flush and close — both require returning
-/// Ready from [crate::Poll].
+/// - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [ThreadLocalWaker](crate::connect::waker::ThreadLocalWaker). Output is NOT polled automatically.
+/// - Need async work after [crate::Send]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
+/// - After [crate::Flush], return [core::task::Poll::Ready] from [crate::Poll] (immediately or eventually). Deadlock otherwise.
+/// - Never return [core::task::Poll::Ready] outside flush. Fatal error.
+/// - Never return [crate::error::ErrorKind::Closed] from [crate::Poll]. Fatal error — the routine does not manage its own lifecycle.
+///
+/// Think this is too many rules? Just use a premade wrapper like [FutureRoutine](crate::poll::FutureRoutine) it will handle all of it for you.
 pub trait AsyncLineRoutine<In, Out>:
     crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + crate::node::Name
 {
@@ -112,7 +135,9 @@ pub trait AsyncLineRoutine<In, Out>:
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
     use crate::error::Error;
+    use crate::poll::future::queue::OutputQueue;
     use crate::{Next, Send};
     use std::collections::VecDeque;
 
@@ -285,16 +310,16 @@ pub mod tests {
     /// and tracks poll_count to verify waking behavior.
     pub struct AsyncMockLine {
         state: usize,
-        out: VecDeque<usize>,
+        output: OutputQueue<usize>,
         pub poll_count: usize,
         flushed: bool,
     }
 
     impl AsyncMockLine {
-        pub fn new() -> Self {
+        pub fn new(output_waker: ThreadLocalWaker) -> Self {
             AsyncMockLine {
                 state: 0,
-                out: VecDeque::new(),
+                output: OutputQueue::new(output_waker),
                 poll_count: 0,
                 flushed: false,
             }
@@ -304,14 +329,14 @@ pub mod tests {
     impl crate::Send<usize> for AsyncMockLine {
         fn send(&mut self, message: usize) -> Result<(), Error> {
             self.state += message;
-            self.out.push_back(self.state * 2);
+            self.output.producer.push(self.state * 2);
             Ok(())
         }
     }
 
     impl crate::Next<usize> for AsyncMockLine {
         fn next(&mut self) -> Result<Option<usize>, Error> {
-            Ok(self.out.pop_front())
+            Ok(self.output.consumer.pop())
         }
     }
 
@@ -324,10 +349,7 @@ pub mod tests {
     }
 
     impl crate::Poll for AsyncMockLine {
-        fn poll(
-            &mut self,
-            _cx: &mut core::task::Context<'_>,
-        ) -> Result<core::task::Poll<()>, Error> {
+        fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
             self.poll_count += 1;
             if self.flushed {
                 self.flushed = false;
@@ -338,25 +360,39 @@ pub mod tests {
     }
 
     impl crate::node::Name for AsyncMockLine {}
-    impl LineRoutine<usize, usize> for AsyncMockLine {}
     impl AsyncLineRoutine<usize, usize> for AsyncMockLine {}
 
     #[test]
     fn async_line_send_next_works() {
-        let mut line = AsyncMockLine::new();
+        let mut line = AsyncMockLine::new(noop_local_waker());
         line.send(2).unwrap();
         assert_eq!(line.next().unwrap(), Some(4));
     }
 
+    struct NoopWake;
+    impl ThreadLocalWake for NoopWake {
+        fn wake(&self) {}
+    }
+
+    fn noop_local_waker() -> ThreadLocalWaker {
+        ThreadLocalWaker::new(NoopWake)
+    }
+
+    fn noop_waker() -> Waker {
+        Waker {
+            sync: std::task::Waker::noop().clone(),
+            local: ThreadLocalWaker::new(NoopWake),
+        }
+    }
+
     #[test]
     fn async_line_poll_increments_count() {
-        let mut line = AsyncMockLine::new();
-        let waker = std::task::Waker::noop();
-        let mut cx = core::task::Context::from_waker(&waker);
+        let mut line = AsyncMockLine::new(noop_local_waker());
+        let mut waker = noop_waker();
 
         assert_eq!(line.poll_count, 0);
         assert!(matches!(
-            crate::Poll::poll(&mut line, &mut cx).unwrap(),
+            crate::Poll::poll(&mut line, &mut waker).unwrap(),
             core::task::Poll::Pending
         ));
         assert_eq!(line.poll_count, 1);

@@ -2,13 +2,11 @@
 //!
 //! Two queue types, each split into producer + consumer:
 //!
-//! - **Input**: [InputProducer] / [InputConsumer] — node pushes data in,
-//!   future awaits via [InputConsumer::recv]. Uses `std::task::Waker`
-//!   (standard futures contract).
+//! - [InputQueue]: node pushes data in, future awaits via [InputConsumer::recv].
+//!   Uses `std::task::Waker` (standard futures contract).
 //!
-//! - **Output**: [OutputProducer] / [OutputConsumer] — future pushes data out,
-//!   node drains via [OutputConsumer::pop]. Uses [ThreadLocalWaker] to wake
-//!   the Output phase (same thread, no atomics).
+//! - [OutputQueue]: future pushes data out, node drains via [OutputConsumer::pop].
+//!   Uses [ThreadLocalWaker] to wake the Output phase (same thread, no atomics).
 //!
 //! All types are `!Send` — they live on the async thread.
 
@@ -55,14 +53,24 @@ impl<T> Clone for InputConsumer<T> {
     }
 }
 
-/// Create an input producer/consumer pair.
-pub fn input_queue<T>() -> (InputProducer<T>, InputConsumer<T>) {
-    let inner = Rc::new(RefCell::new(InputInner {
-        buffer: VecDeque::new(),
-        closed: false,
-        waker: Waker::noop().clone(),
-    }));
-    (InputProducer(inner.clone()), InputConsumer(inner))
+/// Input producer/consumer pair.
+pub struct InputQueue<T> {
+    pub producer: InputProducer<T>,
+    pub consumer: InputConsumer<T>,
+}
+
+impl<T> InputQueue<T> {
+    pub fn new() -> Self {
+        let inner = Rc::new(RefCell::new(InputInner {
+            buffer: VecDeque::new(),
+            closed: false,
+            waker: Waker::noop().clone(),
+        }));
+        Self {
+            producer: InputProducer(inner.clone()),
+            consumer: InputConsumer(inner),
+        }
+    }
 }
 
 impl<T> InputProducer<T> {
@@ -160,13 +168,23 @@ impl<T> Clone for OutputConsumer<T> {
     }
 }
 
-/// Create an output producer/consumer pair.
-pub fn output_queue<T>(waker: ThreadLocalWaker) -> (OutputProducer<T>, OutputConsumer<T>) {
-    let inner = Rc::new(RefCell::new(OutputInner {
-        buffer: VecDeque::new(),
-        waker,
-    }));
-    (OutputProducer(inner.clone()), OutputConsumer(inner))
+/// Output producer/consumer pair.
+pub struct OutputQueue<T> {
+    pub producer: OutputProducer<T>,
+    pub consumer: OutputConsumer<T>,
+}
+
+impl<T> OutputQueue<T> {
+    pub fn new(waker: ThreadLocalWaker) -> Self {
+        let inner = Rc::new(RefCell::new(OutputInner {
+            buffer: VecDeque::new(),
+            waker,
+        }));
+        Self {
+            producer: OutputProducer(inner.clone()),
+            consumer: OutputConsumer(inner),
+        }
+    }
 }
 
 impl<T> OutputProducer<T> {

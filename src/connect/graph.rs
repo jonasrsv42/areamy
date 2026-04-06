@@ -1,5 +1,6 @@
 //! Graph connections and building blocks.
 use crate::ThreadId;
+use crate::connect::waker::Waker;
 use crate::error::Error;
 use crate::marker::{Connection, Multiplicity, Unary};
 use crate::message::Message;
@@ -71,7 +72,7 @@ pub trait Pullable: Send + Connection {
     fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error>;
 }
 
-/// [`Pollable`] is a [Connection] for event-driven async nodes.
+/// [`Pollable`] is a [Connection] for event-driven nodes.
 ///
 /// Unlike [Workable] which blocks until work is done, [Pollable::poll] is non-blocking
 /// and receives a [Waker](crate::connect::waker::Waker) carrying both a sync waker
@@ -82,20 +83,18 @@ pub trait Pullable: Send + Connection {
 /// nodes are only added to matching threads (compile-time safety).
 pub trait Pollable: Connection {
     type ThreadId: ThreadId;
-    fn poll(
-        &mut self,
-        waker: &mut crate::connect::waker::Waker,
-    ) -> Result<core::task::Poll<()>, Error>;
+    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error>;
 }
 
-/// [`Receivable`] is a non-blocking data source.
+/// [`Receivable`] is a non-blocking connection.
+///  
+/// This [`Connection`] checks if data is available, without blocking,
+/// and return is there is or [`None`] if there's none
 ///
-/// Unlike [Pullable] which couples scheduling and data flow, [Receivable]
-/// is pure data — no thread ownership, no blocking. It just checks if
-/// data is available and returns it.
+/// In [`Pollable`] graphs we do not couple edges with scheduling any
+/// non-awaitable edge is therefore [`Receivable`]
 ///
-/// Used by async nodes to drain input edges (both [SyncBridge] and [PollEdge]).
-pub trait Receivable {
+pub trait Receivable: Connection {
     type DataType;
     type SignalType: Origin;
 

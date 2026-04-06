@@ -183,7 +183,7 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let node = thread
-            .line(|_| AsyncMockLine::new())
+            .line(|w| AsyncMockLine::new(w))
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -204,7 +204,7 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let mut node = thread
-            .line(|_| AsyncMockLine::new())
+            .line(|w| AsyncMockLine::new(w))
             .typed::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
@@ -233,14 +233,14 @@ mod tests {
         let mut thread = AsyncThread::<IoThread>::new();
 
         let parent = thread
-            .line(|_| AsyncMockLine::new())
+            .line(|w| AsyncMockLine::new(w))
             .typed::<crate::poll::Async>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&parent).unwrap();
 
         let mut child = thread
-            .line(|_| AsyncMockLine::new())
+            .line(|w| AsyncMockLine::new(w))
             .parent(parent)
             .typed::<crate::poll::Sync>();
 

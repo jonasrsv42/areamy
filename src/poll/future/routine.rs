@@ -49,10 +49,8 @@
 //! let node = thread.line(routine).typed::<Sync>();
 //! ```
 
-use super::queue::{
-    Input, InputConsumer, InputProducer, OutputConsumer, OutputProducer, input_queue, output_queue,
-};
-use crate::connect::waker::ThreadLocalWaker;
+use super::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
+use crate::connect::waker::{self, ThreadLocalWaker};
 use crate::error::Error;
 use crate::node::Name;
 use std::future::Future;
@@ -67,10 +65,8 @@ pub struct FutureRoutine<InType, OutType, F>
 where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut,
 {
-    input_producer: InputProducer<InType>,
-    input_consumer: InputConsumer<InType>,
-    output_producer: OutputProducer<OutType>,
-    output_consumer: OutputConsumer<OutType>,
+    input: InputQueue<InType>,
+    output: OutputQueue<OutType>,
     factory: F,
     future: Option<BoxFut>,
 }
@@ -80,14 +76,12 @@ where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut,
 {
     pub fn new(output_waker: ThreadLocalWaker, factory: F) -> Self {
-        let (input_producer, input_consumer) = input_queue();
-        let (output_producer, output_consumer) = output_queue(output_waker.clone());
-        let future = (factory)(input_consumer.clone(), output_producer.clone());
+        let input = InputQueue::new();
+        let output = OutputQueue::new(output_waker);
+        let future = (factory)(input.consumer.clone(), output.producer.clone());
         Self {
-            input_producer,
-            input_consumer,
-            output_producer,
-            output_consumer,
+            input,
+            output,
             factory,
             future: Some(future),
         }
@@ -99,7 +93,7 @@ where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut,
 {
     fn send(&mut self, message: InType) -> Result<(), Error> {
-        self.input_producer.push(Input::Data(message));
+        self.input.producer.push(Input::Data(message));
         Ok(())
     }
 }
@@ -109,7 +103,7 @@ where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut,
 {
     fn next(&mut self) -> Result<Option<OutType>, Error> {
-        Ok(self.output_consumer.pop())
+        Ok(self.output.consumer.pop())
     }
 }
 
@@ -118,7 +112,7 @@ where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut,
 {
     fn flush(&mut self) -> Result<(), Error> {
-        self.input_producer.push(Input::Flush);
+        self.input.producer.push(Input::Flush);
         Ok(())
     }
 }
@@ -127,16 +121,17 @@ impl<InType, OutType, F> crate::Poll for FutureRoutine<InType, OutType, F>
 where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut,
 {
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         let future = self.future.get_or_insert_with(|| {
-            (self.factory)(self.input_consumer.clone(), self.output_producer.clone())
+            (self.factory)(self.input.consumer.clone(), self.output.producer.clone())
         });
 
-        match future.as_mut().poll(cx) {
+        let mut cx = core::task::Context::from_waker(&waker.sync);
+        match future.as_mut().poll(&mut cx) {
             core::task::Poll::Ready(result) => {
                 result?;
                 self.future = None;
-                self.input_producer.reset()?;
+                self.input.producer.reset()?;
                 Ok(core::task::Poll::Ready(()))
             }
             core::task::Poll::Pending => Ok(core::task::Poll::Pending),

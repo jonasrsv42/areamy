@@ -11,54 +11,53 @@ use std::sync::{Arc, Mutex};
 
 /// Routine that queues input in send via waker-aware Queue, then
 /// doubles it in poll. Send wakes Work via the queue's waker.
-use areamy::poll::future::queue::{Input, InputConsumer, InputProducer, input_queue};
+use areamy::connect::waker::{self as waker, ThreadLocalWaker};
+use areamy::poll::future::queue::{Input, InputQueue, OutputQueue};
 
 struct PollDouble {
-    producer: InputProducer<usize>,
-    consumer: InputConsumer<usize>,
-    output: VecDeque<usize>,
+    input: InputQueue<usize>,
+    output: OutputQueue<usize>,
 }
 
 impl PollDouble {
-    fn new() -> Self {
-        let (producer, consumer) = input_queue();
+    fn new(output_waker: ThreadLocalWaker) -> Self {
         Self {
-            producer,
-            consumer,
-            output: VecDeque::new(),
+            input: InputQueue::new(),
+            output: OutputQueue::new(output_waker),
         }
     }
 }
 
 impl areamy::Send<usize> for PollDouble {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        self.producer.push(Input::Data(message));
+        self.input.producer.push(Input::Data(message));
         Ok(())
     }
 }
 
 impl areamy::Next<usize> for PollDouble {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.pop_front())
+        Ok(self.output.consumer.pop())
     }
 }
 
 impl areamy::Flush for PollDouble {
     fn flush(&mut self) -> Result<(), Error> {
-        self.producer.push(Input::Flush);
+        self.input.producer.push(Input::Flush);
         Ok(())
     }
 }
 
 impl areamy::Poll for PollDouble {
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+        let mut cx = core::task::Context::from_waker(&waker.sync);
         loop {
-            match std::pin::Pin::new(&mut self.consumer.recv()).poll(cx) {
+            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut cx) {
                 core::task::Poll::Ready(Ok(Input::Data(value))) => {
-                    self.output.push_back(value * 2);
+                    self.output.producer.push(value * 2);
                 }
                 core::task::Poll::Ready(Ok(Input::Flush)) => {
-                    self.producer.reset().ok();
+                    self.input.producer.reset().ok();
                     return Ok(core::task::Poll::Ready(()));
                 }
                 core::task::Poll::Ready(Err(_)) => {
@@ -112,7 +111,7 @@ impl areamy::Flush for PollAccumulator {
 }
 
 impl areamy::Poll for PollAccumulator {
-    fn poll(&mut self, _cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         if self.flushed {
             self.flushed = false;
             return Ok(core::task::Poll::Ready(()));
@@ -174,7 +173,7 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 
     let mut async_thread = AsyncThread::<IoThread>::new();
-    let mut node = async_thread.line(|_| PollDouble::new()).typed::<Sync>();
+    let mut node = async_thread.line(|w| PollDouble::new(w)).typed::<Sync>();
 
     make_push(&mut source_node, &node)?;
 
@@ -211,11 +210,11 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_node, &parent)?;
 
     let mut child = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(parent)
         .typed::<Sync>();
 
@@ -251,14 +250,14 @@ fn long_async_chain() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let a = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let a = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_node, &a)?;
 
-    let b = async_thread.line(|_| PollDouble::new()).parent(a);
-    let c = async_thread.line(|_| PollDouble::new()).parent(b);
-    let d = async_thread.line(|_| PollDouble::new()).parent(c);
+    let b = async_thread.line(|w| PollDouble::new(w)).parent(a);
+    let c = async_thread.line(|w| PollDouble::new(w)).parent(b);
+    let d = async_thread.line(|w| PollDouble::new(w)).parent(c);
     let mut e = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(d)
         .typed::<Sync>();
 
@@ -309,9 +308,9 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let mut node_a = async_thread.line(|_| PollDouble::new()).typed::<Sync>();
-    let mut node_b = async_thread.line(|_| PollDouble::new()).typed::<Sync>();
-    let mut node_c = async_thread.line(|_| PollDouble::new()).typed::<Sync>();
+    let mut node_a = async_thread.line(|w| PollDouble::new(w)).typed::<Sync>();
+    let mut node_b = async_thread.line(|w| PollDouble::new(w)).typed::<Sync>();
+    let mut node_c = async_thread.line(|w| PollDouble::new(w)).typed::<Sync>();
 
     make_push(&mut source_node, &node_a)?;
     make_push(&mut node_a, &node_b)?;
@@ -367,14 +366,14 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent_a = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_a = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_a_node, &parent_a)?;
 
-    let parent_b = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_b = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_b_node, &parent_b)?;
 
     let mut child = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(parent_a)
         .parent(parent_b)
         .typed::<Sync>();
@@ -435,24 +434,24 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent_a = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_a = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_a_node, &parent_a)?;
 
-    let parent_b = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_b = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_b_node, &parent_b)?;
 
-    let parent_c = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_c = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_c_node, &parent_c)?;
 
     // All three parents merged into one linked node
     let linked = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(parent_a)
         .parent(parent_b)
         .parent(parent_c);
 
     let mut child = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(linked)
         .typed::<Sync>();
 
@@ -504,7 +503,7 @@ fn node_terminal_via_typed() -> Result<(), Error> {
     let mut async_thread = AsyncThread::<IoThread>::new();
 
     let mut node = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .typed::<areamy::poll::Sync>();
 
     make_push(&mut source_node, &node)?;
@@ -540,12 +539,12 @@ fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
     let mut async_thread = AsyncThread::<IoThread>::new();
 
     let parent = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .typed::<areamy::poll::Async>();
     make_push(&mut source_node, &parent)?;
 
     let mut child = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(parent)
         .typed::<areamy::poll::Sync>();
 
@@ -580,11 +579,11 @@ fn node_sink_deferred_output() -> Result<(), Error> {
     let mut async_thread = AsyncThread::<IoThread>::new();
 
     let parent = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .typed::<areamy::poll::Async>();
     make_push(&mut source_node, &parent)?;
 
-    let sink = async_thread.line(|_| PollDouble::new()).parent(parent);
+    let sink = async_thread.line(|w| PollDouble::new(w)).parent(parent);
     async_thread.add(sink);
 
     let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
@@ -628,13 +627,13 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent_a = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_a = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_a_node, &parent_a)?;
 
-    let parent_b = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_b = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_b_node, &parent_b)?;
 
-    let parent_c = async_thread.line(|_| PollDouble::new()).typed::<Async>();
+    let parent_c = async_thread.line(|w| PollDouble::new(w)).typed::<Async>();
     make_push(&mut source_c_node, &parent_c)?;
 
     let collected_1 = Arc::new(Mutex::new(Vec::new()));
@@ -646,7 +645,7 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
     let sink_1 = async_thread
         .line({
             let c = collected_1.clone();
-            move |_| PollAccumulator::new(c)
+            move |_w| PollAccumulator::new(c)
         })
         .parent(parent_a)
         .parent(parent_b);
@@ -657,7 +656,7 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
     let sink_2 = async_thread
         .line({
             let c = collected_2.clone();
-            move |_| PollAccumulator::new(c)
+            move |_w| PollAccumulator::new(c)
         })
         .parent(parent_c);
     async_thread.add(sink_2);
@@ -706,21 +705,22 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
 /// - flush() pushes flush marker to queue (wakes Work)
 /// - poll() drains queue, doubles data, simulates multi-cycle handshake on flush
 struct HalfCloseRoutine {
-    producer: InputProducer<usize>,
-    consumer: InputConsumer<usize>,
-    output: VecDeque<usize>,
+    input: InputQueue<usize>,
+    output: OutputQueue<usize>,
     flush_cycles: usize,
     flush_cycles_remaining: usize,
     flush_count: Arc<Mutex<usize>>,
 }
 
 impl HalfCloseRoutine {
-    fn new(flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
-        let (producer, consumer) = input_queue();
+    fn new(
+        output_waker: ThreadLocalWaker,
+        flush_cycles: usize,
+        flush_count: Arc<Mutex<usize>>,
+    ) -> Self {
         Self {
-            producer,
-            consumer,
-            output: VecDeque::new(),
+            input: InputQueue::new(),
+            output: OutputQueue::new(output_waker),
             flush_cycles,
             flush_cycles_remaining: 0,
             flush_count,
@@ -730,31 +730,32 @@ impl HalfCloseRoutine {
 
 impl areamy::Send<usize> for HalfCloseRoutine {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        self.producer.push(Input::Data(message));
+        self.input.producer.push(Input::Data(message));
         Ok(())
     }
 }
 
 impl areamy::Next<usize> for HalfCloseRoutine {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.pop_front())
+        Ok(self.output.consumer.pop())
     }
 }
 
 impl areamy::Flush for HalfCloseRoutine {
     fn flush(&mut self) -> Result<(), Error> {
-        self.producer.push(Input::Flush);
+        self.input.producer.push(Input::Flush);
         Ok(())
     }
 }
 
 impl areamy::Poll for HalfCloseRoutine {
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+        let mut cx = core::task::Context::from_waker(&waker.sync);
         // If mid-handshake, count down
         if self.flush_cycles_remaining > 0 {
             self.flush_cycles_remaining -= 1;
             if self.flush_cycles_remaining > 0 {
-                cx.waker().wake_by_ref();
+                waker.sync.wake_by_ref();
                 return Ok(core::task::Poll::Pending);
             }
             *self.flush_count.lock().unwrap() += 1;
@@ -763,14 +764,14 @@ impl areamy::Poll for HalfCloseRoutine {
 
         // Drain queue until flush or empty
         loop {
-            match std::pin::Pin::new(&mut self.consumer.recv()).poll(cx) {
+            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut cx) {
                 core::task::Poll::Ready(Ok(Input::Data(val))) => {
-                    self.output.push_back(val * 2);
+                    self.output.producer.push(val * 2);
                 }
                 core::task::Poll::Ready(Ok(Input::Flush)) => {
-                    self.producer.reset().ok();
+                    self.input.producer.reset().ok();
                     self.flush_cycles_remaining = self.flush_cycles;
-                    cx.waker().wake_by_ref();
+                    waker.sync.wake_by_ref();
                     return Ok(core::task::Poll::Pending);
                 }
                 core::task::Poll::Ready(Err(_)) => {
@@ -806,14 +807,14 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
     let parent = async_thread
         .line({
             let fc = flush_count.clone();
-            move |_| HalfCloseRoutine::new(3, fc)
+            move |w| HalfCloseRoutine::new(w, 3, fc)
         })
         .typed::<Async>();
     make_push(&mut source_node, &parent)?;
 
     // Child collects output to verify flush ordering
     let mut child = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(parent)
         .typed::<Sync>();
 
@@ -857,17 +858,17 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
 /// Takes `flush_cycles` poll cycles to complete each flush (I/O simulation).
 struct BatchRoutine {
     accumulator: usize,
-    output: VecDeque<usize>,
+    output: OutputQueue<usize>,
     flush_requested: bool,
     flush_cycles: usize,
     flush_cycles_remaining: usize,
 }
 
 impl BatchRoutine {
-    fn new(flush_cycles: usize) -> Self {
+    fn new(output_waker: ThreadLocalWaker, flush_cycles: usize) -> Self {
         Self {
             accumulator: 0,
-            output: VecDeque::new(),
+            output: OutputQueue::new(output_waker),
             flush_requested: false,
             flush_cycles,
             flush_cycles_remaining: 0,
@@ -884,14 +885,14 @@ impl areamy::Send<usize> for BatchRoutine {
 
 impl areamy::Next<usize> for BatchRoutine {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.pop_front())
+        Ok(self.output.consumer.pop())
     }
 }
 
 impl areamy::Flush for BatchRoutine {
     fn flush(&mut self) -> Result<(), Error> {
         if self.accumulator > 0 {
-            self.output.push_back(self.accumulator);
+            self.output.producer.push(self.accumulator);
         }
         self.accumulator = 0;
         self.flush_requested = true;
@@ -901,14 +902,14 @@ impl areamy::Flush for BatchRoutine {
 }
 
 impl areamy::Poll for BatchRoutine {
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         if self.flush_requested {
             if self.flush_cycles_remaining == 0 {
                 self.flush_requested = false;
                 return Ok(core::task::Poll::Ready(()));
             }
             self.flush_cycles_remaining -= 1;
-            cx.waker().wake_by_ref();
+            waker.sync.wake_by_ref();
         }
         Ok(core::task::Poll::Pending)
     }
@@ -937,11 +938,13 @@ fn multi_flush_then_close() -> Result<(), Error> {
 
     let mut async_thread = AsyncThread::<IoThread>::new();
 
-    let parent = async_thread.line(|_| BatchRoutine::new(2)).typed::<Async>();
+    let parent = async_thread
+        .line(|w| BatchRoutine::new(w, 2))
+        .typed::<Async>();
     make_push(&mut source_node, &parent)?;
 
     let mut child = async_thread
-        .line(|_| PollDouble::new())
+        .line(|w| PollDouble::new(w))
         .parent(parent)
         .typed::<Sync>();
 

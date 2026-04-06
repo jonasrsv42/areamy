@@ -10,5 +10,5 @@
 pub mod queue;
 pub mod routine;
 
-pub use queue::{Input, InputConsumer, OutputProducer, RecvFut};
+pub use queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue, RecvFut};
 pub use routine::FutureRoutine;

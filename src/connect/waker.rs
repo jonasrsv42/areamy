@@ -21,6 +21,9 @@ pub trait ThreadLocalWake {
 ///
 /// Our equivalent of nightly `core::task::LocalWaker`.
 /// Uses `Rc<dyn ThreadLocalWake>` — cheap clone, naturally `!Send`.
+///
+/// ThreadLocalWaker is useful for driving a state machine through cheaper
+/// [`ThreadLocalWake::wake`] that does not need to cross any thread boundary.
 #[derive(Clone)]
 pub struct ThreadLocalWaker {
     inner: Rc<dyn ThreadLocalWake>,

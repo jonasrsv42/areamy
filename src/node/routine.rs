@@ -6,6 +6,7 @@
 //! For example usage of the [crate::node::routine] traits please see the tests in this file.
 //! or the various routine implementations such as [crate::LineRoutine]
 
+use crate::connect::waker::Waker;
 use crate::error::Error;
 use crate::marker::{Multiplicity, Unary};
 
@@ -48,18 +49,17 @@ pub trait Flush {
 
 /// [`Poll`] trait is the async component of async routines.
 ///
-/// When a node is woken (by an edge push, I/O readiness, or a Future resolving),
-/// the framework calls [Poll::poll] with a [core::task::Context] carrying a
-/// [core::task::Waker]. The routine can clone the waker and hand it to I/O
-/// sources (sockets, timers, async libraries) so they can wake the node later.
+/// When a node is woken, the framework calls [Poll::poll] with a
+/// [Waker](crate::connect::waker::Waker) carrying both a sync waker
+/// (for I/O registration / standard futures) and a thread-local waker
+/// (for cheap same-thread wake).
 ///
-/// Routines that do no I/O can provide a default implementation that returns
-/// [core::task::Poll::Pending].
+/// Routines that drive standard futures can build a [core::task::Context]
+/// from `waker.sync`: `Context::from_waker(&waker.sync)`.
 ///
-/// This is compatible with [core::future::Future] — routines can internally
-/// poll Futures using the same [core::task::Context].
+/// Routines that do no I/O can return [core::task::Poll::Pending].
 pub trait Poll {
-    fn poll(&mut self, cx: &mut core::task::Context<'_>) -> Result<core::task::Poll<()>, Error>;
+    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error>;
 }
 
 /// [`Name`] trait is used to name routines for logging purposes.

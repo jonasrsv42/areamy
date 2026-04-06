@@ -82,11 +82,15 @@ where
                 Ok(Some(Message::Flush(signal))) => {
                     self.worker.flush()?;
                     self.state = NodeState::Flushing(signal);
+                    // Work must poll routine until Ready to complete the flush.
                     self.work_waker.wake();
                     break;
                 }
                 Ok(Some(Message::Marker(signal))) => {
                     self.state = NodeState::MarkerReady(signal);
+                    // Work gets one poll cycle to let routine emit pending output
+                    // before Output forwards the marker.
+                    self.work_waker.wake();
                     break;
                 }
                 Ok(None) => break,
@@ -94,6 +98,7 @@ where
                     if matches!(e.kind, crate::error::ErrorKind::Closed) {
                         self.worker.flush()?;
                         self.state = NodeState::Closing;
+                        // Work must poll routine until Ready to complete the close.
                         self.work_waker.wake();
                         break;
                     }
@@ -105,10 +110,9 @@ where
     }
 
     /// Poll routine. Builds std Context from sync waker for the routine.
-    /// Closed error from routine �� fatal.
+    /// Closed error from routine fatal.
     fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
-        let mut cx = core::task::Context::from_waker(&waker.sync);
-        match crate::Poll::poll(&mut self.worker, &mut cx) {
+        match crate::Poll::poll(&mut self.worker, waker) {
             Ok(poll) => Ok(poll),
             Err(e) if matches!(e.kind, crate::error::ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"
@@ -164,7 +168,6 @@ where
             NodeState::Closed | NodeState::Closing | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Running => {
                 s.drain_input()?;
-                s.output_waker.wake();
                 if matches!(s.state, NodeState::Closing) {
                     return Err(crate::closed!());
                 }
@@ -218,12 +221,10 @@ where
 {
     type ThreadId = ThreadIdType;
 
-    // NOTE: Work wakes Output after every poll_routine call to ensure
-    // async-produced output is drained promptly. This is a cheap but
-    // potentially redundant wake. Ideally the routine's output queue
-    // would hold Output's waker and wake it only on actual push —
-    // but passing per-phase wakers to routines requires GATs for
-    // custom Poll contexts, which Rust doesn't support yet.
+    // Work polls the routine. The routine is responsible for waking
+    // Output when it produces data (via OutputProducer). Work only
+    // wakes Output on state transitions (FlushReady, CloseReady)
+    // where Output needs to forward signals downstream.
     fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
@@ -236,18 +237,21 @@ where
                         _ => return Err(fatal!("expected Flushing state")),
                     };
                     s.state = NodeState::FlushReady(signal);
+                    // Flush complete. Output must drain remaining output
+                    // and forward the Flush signal downstream.
+                    s.output_waker.wake();
                 }
-                s.output_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Closing => {
                 let result = s.poll_routine(waker)?;
                 if matches!(result, core::task::Poll::Ready(())) {
                     s.state = NodeState::CloseReady;
+                    // Close complete. Output must drain remaining output
+                    // and close downstream.
                     s.output_waker.wake();
                     return Err(crate::closed!());
                 }
-                s.output_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Running => {
@@ -257,10 +261,10 @@ where
                         "routine returned Ready without pending flush or close"
                     ));
                 }
-                s.output_waker.wake();
+                // No wake — routine is responsible for waking Output
+                // when it produces data (via OutputProducer).
                 Ok(core::task::Poll::Pending)
             }
-            // MarkerReady — Input already woke Output
             NodeState::MarkerReady(_) => {
                 let result = s.poll_routine(waker)?;
                 if matches!(result, core::task::Poll::Ready(())) {
@@ -268,6 +272,9 @@ where
                         "routine returned Ready without pending flush or close"
                     ));
                 }
+                // Routine got one poll cycle. Output must drain any
+                // produced output and forward the marker downstream.
+                s.output_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             // FlushReady — Work is done, Output handles it
@@ -327,6 +334,7 @@ where
                     _ => return Err(fatal!("expected FlushReady state")),
                 };
                 s.push_output(Message::Flush(signal))?;
+                // Flush forwarded, back to Running. Input can resume draining.
                 s.input_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
@@ -337,6 +345,7 @@ where
                     _ => return Err(fatal!("expected MarkerReady state")),
                 };
                 s.push_output(Message::Marker(signal))?;
+                // Marker forwarded, back to Running. Input can resume draining.
                 s.input_waker.wake();
                 Ok(core::task::Poll::Pending)
             }
@@ -450,7 +459,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(),
+                AsyncMockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 noop_local_waker(),
@@ -491,7 +500,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(),
+                AsyncMockLine::new(noop_local_waker()),
                 input.clone(),
                 output,
                 noop_local_waker(),
@@ -525,7 +534,7 @@ mod tests {
 
         let (_input_phase, mut work_phase, _output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(),
+                AsyncMockLine::new(noop_local_waker()),
                 input,
                 output,
                 noop_local_waker(),
@@ -563,10 +572,7 @@ mod tests {
     }
 
     impl crate::Poll for ClosedErrorRoutine {
-        fn poll(
-            &mut self,
-            _cx: &mut core::task::Context<'_>,
-        ) -> Result<core::task::Poll<()>, Error> {
+        fn poll(&mut self, _waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
             Err(crate::closed!())
         }
     }
@@ -638,7 +644,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(),
+                AsyncMockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 noop_local_waker(),
@@ -667,7 +673,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(),
+                AsyncMockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 noop_local_waker(),
@@ -727,7 +733,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                AsyncMockLine::new(),
+                AsyncMockLine::new(noop_local_waker()),
                 input.clone(),
                 output.clone(),
                 input_waker,

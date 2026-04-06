@@ -129,6 +129,8 @@ where
                         self.state = NodeState::Closing;
                         // Work must poll routine until Ready to complete the close.
                         self.work.waker.wake();
+                        // Wake the other input so it sees Closing and returns Closed.
+                        self.input.right.waker.wake();
                         break;
                     }
                     return Err(e);
@@ -161,6 +163,8 @@ where
                         self.work.target.flush()?;
                         self.state = NodeState::Closing;
                         self.work.waker.wake();
+                        // Wake the other input so it sees Closing and returns Closed.
+                        self.input.left.waker.wake();
                         break;
                     }
                     return Err(e);

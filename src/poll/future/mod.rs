@@ -1,14 +1,12 @@
 //! Future-based async routine primitives.
 //!
-//! [FutureRoutine] wraps a user-provided async fn into an
-//! [LineRoutine](crate::poll::LineRoutine). The async fn receives
-//! an [InputConsumer] and [OutputProducer] and drives I/O via async/await.
+//! - [line::FutureRoutine] — single input, single output
+//! - [biunion::FutureRoutine] — two inputs, single output
 //!
-//! For concurrent sub-tasks (bidi writer + reader), use
-//! [Join](super::Join) or [Select](super::Select) inside the future.
+//! For concurrent sub-tasks, use [Join](super::Join) or [Select](super::Select).
 
+pub mod biunion;
+pub mod line;
 pub mod queue;
-pub mod routine;
 
 pub use queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue, RecvFut};
-pub use routine::FutureRoutine;

@@ -11,6 +11,5 @@ pub use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
 pub use crate::node::line::poll::factory::LineRoutineFactory;
 pub use crate::node::line::poll::routine::LineRoutine;
 pub use crate::thread::poll::stream::{Thread, ThreadHandle};
-pub use future::{FutureRoutine, Input, InputConsumer, OutputProducer};
 pub use join::Join;
 pub use select::Select;

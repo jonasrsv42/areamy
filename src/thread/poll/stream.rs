@@ -5,6 +5,9 @@ use crate::connect::poll::queue::{Consumer, PollQueue};
 use crate::connect::poll::runtime::{self, Runtime};
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::{Error, ErrorKind};
+use crate::node::biunion::poll::builder::node::Node as BiunionNode;
+use crate::node::biunion::poll::factory::BiunionRoutineFactory;
+use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::line::poll::builder::node::Node;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::{Origin, ThreadId, fatal};
@@ -60,6 +63,35 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
         FactoryType::Routine: LineRoutine<InType, OutType>,
     {
         Node::deferred(factory, &mut self.waker_allocator)
+    }
+
+    /// Create a biunion node with two deferred inputs and deferred output.
+    ///
+    /// Resolve inputs and output via wiring methods:
+    /// - `.left()` / `.right()` → Sync input (SyncBridge)
+    /// - `.parent::<Left/Right>(node)` → Async input
+    /// - `.output()` → Sync output
+    pub fn biunion<Left, Right, Out, SignalType, FactoryType>(
+        &mut self,
+        factory: FactoryType,
+    ) -> BiunionNode<
+        crate::node::biunion::poll::builder::node::Allocating<'_>,
+        crate::poll::Deferred,
+        crate::poll::Deferred,
+        crate::poll::Deferred,
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
+    where
+        SignalType: Origin,
+        FactoryType: BiunionRoutineFactory,
+        FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    {
+        BiunionNode::deferred(factory, &mut self.waker_allocator)
     }
 
     /// Add a node to the thread. It will be built when the thread starts.

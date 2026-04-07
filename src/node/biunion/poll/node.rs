@@ -790,8 +790,11 @@ where
 mod tests {
     use super::*;
     use crate::connect::poll::edge::SyncBridge;
+    use crate::connect::waker::ThreadLocalWaker;
     use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_local_waker, noop_waker};
     use crate::{DefaultThread, SyncEdge};
+    use std::cell::Cell;
+    use std::rc::Rc;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -802,230 +805,424 @@ mod tests {
         }
     }
 
-    fn test_waker() -> (std::task::Waker, Arc<AtomicBool>) {
-        let woken = Arc::new(AtomicBool::new(false));
-        let waker = std::task::Waker::from(Arc::new(TestWaker(woken.clone())));
-        (waker, woken)
+    fn sync_waker() -> std::task::Waker {
+        let flag = Arc::new(AtomicBool::new(false));
+        std::task::Waker::from(Arc::new(TestWaker(flag)))
     }
+
+    struct TrackWake(Rc<Cell<bool>>);
+    impl crate::connect::waker::ThreadLocalWake for TrackWake {
+        fn wake(&self) {
+            self.0.set(true);
+        }
+    }
+
+    fn track_local_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {
+        let woken = Rc::new(Cell::new(false));
+        (ThreadLocalWaker::new(TrackWake(woken.clone())), woken)
+    }
+
+    type TestLeftInput = LeftInput<
+        usize,
+        usize,
+        usize,
+        &'static str,
+        DefaultThread,
+        MockBiunion,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncEdge<usize, &'static str>>,
+    >;
+    type TestRightInput = RightInput<
+        usize,
+        usize,
+        usize,
+        &'static str,
+        DefaultThread,
+        MockBiunion,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncEdge<usize, &'static str>>,
+    >;
+    type TestWork = Work<
+        usize,
+        usize,
+        usize,
+        &'static str,
+        DefaultThread,
+        MockBiunion,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncEdge<usize, &'static str>>,
+    >;
+    type TestOutput = Output<
+        usize,
+        usize,
+        usize,
+        &'static str,
+        DefaultThread,
+        MockBiunion,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncBridge<usize, &'static str>>,
+        Arc<SyncEdge<usize, &'static str>>,
+    >;
+
+    struct Harness {
+        left_edge: Arc<SyncBridge<usize, &'static str>>,
+        right_edge: Arc<SyncBridge<usize, &'static str>>,
+        output_edge: Arc<SyncEdge<usize, &'static str>>,
+        left: TestLeftInput,
+        right: TestRightInput,
+        work: TestWork,
+        output: TestOutput,
+        left_woken: Rc<Cell<bool>>,
+        right_woken: Rc<Cell<bool>>,
+        work_woken: Rc<Cell<bool>>,
+        output_woken: Rc<Cell<bool>>,
+        waker: Waker,
+    }
+
+    impl Harness {
+        fn new() -> Self {
+            let left_edge = Arc::new(SyncBridge::new(sync_waker()));
+            let right_edge = Arc::new(SyncBridge::new(sync_waker()));
+            let output_edge = Arc::new(SyncEdge::new());
+
+            let (left_local, left_woken) = track_local_waker();
+            let (right_local, right_woken) = track_local_waker();
+            let (work_local, work_woken) = track_local_waker();
+            let (output_local, output_woken) = track_local_waker();
+
+            let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
+                InputPhases {
+                    left: Phase {
+                        target: left_edge.clone(),
+                        waker: left_local,
+                    },
+                    right: Phase {
+                        target: right_edge.clone(),
+                        waker: right_local,
+                    },
+                },
+                Phase {
+                    target: MockBiunion::new(noop_local_waker()),
+                    waker: work_local,
+                },
+                Phase {
+                    target: output_edge.clone(),
+                    waker: output_local,
+                },
+            );
+
+            Harness {
+                left_edge,
+                right_edge,
+                output_edge,
+                left: phases.inputs.left,
+                right: phases.inputs.right,
+                work: phases.work,
+                output: phases.output,
+                left_woken,
+                right_woken,
+                work_woken,
+                output_woken,
+                waker: noop_waker(),
+            }
+        }
+
+        fn reset_woken(&self) {
+            self.left_woken.set(false);
+            self.right_woken.set(false);
+            self.work_woken.set(false);
+            self.output_woken.set(false);
+        }
+
+        fn poll_left(&mut self) -> Result<core::task::Poll<()>, Error> {
+            self.left.poll(&mut self.waker)
+        }
+
+        fn poll_right(&mut self) -> Result<core::task::Poll<()>, Error> {
+            self.right.poll(&mut self.waker)
+        }
+
+        fn poll_work(&mut self) -> Result<core::task::Poll<()>, Error> {
+            self.work.poll(&mut self.waker)
+        }
+
+        fn poll_output(&mut self) -> Result<core::task::Poll<()>, Error> {
+            self.output.poll(&mut self.waker)
+        }
+
+        fn read_output(&self) -> Option<Message<usize, &'static str>> {
+            self.output_edge.poll().unwrap()
+        }
+    }
+
+    // --- Data flow ---
 
     #[test]
     fn left_input_processes_data() {
-        let (waker, _) = test_waker();
-        let left_input = Arc::new(SyncBridge::new(waker));
-        let (right_waker, _) = test_waker();
-        let right_input = Arc::new(SyncBridge::new(right_waker));
-        let output = Arc::new(SyncEdge::new());
-
-        let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
-            InputPhases {
-                left: Phase {
-                    target: left_input.clone(),
-                    waker: noop_local_waker(),
-                },
-                right: Phase {
-                    target: right_input.clone(),
-                    waker: noop_local_waker(),
-                },
-            },
-            Phase {
-                target: MockBiunion::new(noop_local_waker()),
-                waker: noop_local_waker(),
-            },
-            Phase {
-                target: output.clone(),
-                waker: noop_local_waker(),
-            },
-        );
-
-        let mut left = phases.inputs.left;
-        let mut work = phases.work;
-        let mut out = phases.output;
-        let mut wkr = noop_waker();
-
-        left_input.push_back(Message::Data(5)).unwrap();
-        let _ = left.poll(&mut wkr).unwrap();
-        let _ = work.poll(&mut wkr).unwrap();
-        let _ = out.poll(&mut wkr).unwrap();
-
-        assert_eq!(output.poll().unwrap(), Some(Message::Data(10))); // 5 * 2
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Data(5)).unwrap();
+        let _ = h.poll_left().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Data(10))); // 5 * 2
     }
 
     #[test]
     fn right_input_processes_data() {
-        let (waker, _) = test_waker();
-        let left_input = Arc::new(SyncBridge::new(waker));
-        let (right_waker, _) = test_waker();
-        let right_input = Arc::new(SyncBridge::new(right_waker));
-        let output = Arc::new(SyncEdge::new());
-
-        let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
-            InputPhases {
-                left: Phase {
-                    target: left_input.clone(),
-                    waker: noop_local_waker(),
-                },
-                right: Phase {
-                    target: right_input.clone(),
-                    waker: noop_local_waker(),
-                },
-            },
-            Phase {
-                target: MockBiunion::new(noop_local_waker()),
-                waker: noop_local_waker(),
-            },
-            Phase {
-                target: output.clone(),
-                waker: noop_local_waker(),
-            },
-        );
-
-        let mut right = phases.inputs.right;
-        let mut work = phases.work;
-        let mut out = phases.output;
-        let mut wkr = noop_waker();
-
-        right_input.push_back(Message::Data(5)).unwrap();
-        let _ = right.poll(&mut wkr).unwrap();
-        let _ = work.poll(&mut wkr).unwrap();
-        let _ = out.poll(&mut wkr).unwrap();
-
-        assert_eq!(output.poll().unwrap(), Some(Message::Data(15))); // 5 * 3
+        let mut h = Harness::new();
+        h.right_edge.push_back(Message::Data(5)).unwrap();
+        let _ = h.poll_right().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Data(15))); // 5 * 3
     }
 
     #[test]
     fn both_inputs_process_data() {
-        let (waker, _) = test_waker();
-        let left_input = Arc::new(SyncBridge::new(waker));
-        let (right_waker, _) = test_waker();
-        let right_input = Arc::new(SyncBridge::new(right_waker));
-        let output = Arc::new(SyncEdge::new());
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Data(2)).unwrap();
+        h.right_edge.push_back(Message::Data(3)).unwrap();
+        let _ = h.poll_left().unwrap();
+        let _ = h.poll_right().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Data(4))); // 2 * 2
+        assert_eq!(h.read_output(), Some(Message::Data(9))); // 3 * 3
+    }
 
-        let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
-            InputPhases {
-                left: Phase {
-                    target: left_input.clone(),
-                    waker: noop_local_waker(),
-                },
-                right: Phase {
-                    target: right_input.clone(),
-                    waker: noop_local_waker(),
-                },
-            },
-            Phase {
-                target: MockBiunion::new(noop_local_waker()),
-                waker: noop_local_waker(),
-            },
-            Phase {
-                target: output.clone(),
-                waker: noop_local_waker(),
-            },
-        );
+    // --- Signal forwarding ---
 
-        let mut left = phases.inputs.left;
-        let mut right = phases.inputs.right;
-        let mut work = phases.work;
-        let mut out = phases.output;
-        let mut wkr = noop_waker();
-
-        left_input.push_back(Message::Data(2)).unwrap();
-        right_input.push_back(Message::Data(3)).unwrap();
-
-        let _ = left.poll(&mut wkr).unwrap();
-        let _ = right.poll(&mut wkr).unwrap();
-        let _ = work.poll(&mut wkr).unwrap();
-        let _ = out.poll(&mut wkr).unwrap();
-
-        assert_eq!(output.poll().unwrap(), Some(Message::Data(4))); // 2 * 2
-        assert_eq!(output.poll().unwrap(), Some(Message::Data(9))); // 3 * 3
+    #[test]
+    fn flush_from_left_forwards() {
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Flush("s1")));
     }
 
     #[test]
-    fn flush_from_left_closes_via_work() {
-        let (waker, _) = test_waker();
-        let left_input = Arc::new(SyncBridge::new(waker));
-        let (right_waker, _) = test_waker();
-        let right_input = Arc::new(SyncBridge::<usize, &str>::new(right_waker));
-        let output = Arc::new(SyncEdge::new());
-
-        let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
-            InputPhases {
-                left: Phase {
-                    target: left_input.clone(),
-                    waker: noop_local_waker(),
-                },
-                right: Phase {
-                    target: right_input.clone(),
-                    waker: noop_local_waker(),
-                },
-            },
-            Phase {
-                target: MockBiunion::new(noop_local_waker()),
-                waker: noop_local_waker(),
-            },
-            Phase {
-                target: output.clone(),
-                waker: noop_local_waker(),
-            },
-        );
-
-        let mut left = phases.inputs.left;
-        let mut work = phases.work;
-        let mut out = phases.output;
-        let mut wkr = noop_waker();
-
-        left_input.push_back(Message::Flush("s1")).unwrap();
-        let _ = left.poll(&mut wkr).unwrap();
-        let _ = work.poll(&mut wkr).unwrap();
-        let _ = out.poll(&mut wkr).unwrap();
-
-        assert_eq!(output.poll().unwrap(), Some(Message::Flush("s1")));
+    fn flush_from_right_forwards() {
+        let mut h = Harness::new();
+        h.right_edge.push_back(Message::Flush("s1")).unwrap();
+        let _ = h.poll_right().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Flush("s1")));
     }
+
+    #[test]
+    fn marker_from_left_forwards() {
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Marker("m1")));
+    }
+
+    #[test]
+    fn marker_from_right_forwards() {
+        let mut h = Harness::new();
+        h.right_edge.push_back(Message::Marker("m1")).unwrap();
+        let _ = h.poll_right().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Marker("m1")));
+    }
+
+    // --- Close propagation ---
 
     #[test]
     fn close_from_left_propagates() {
-        let (waker, _) = test_waker();
-        let left_input = Arc::new(SyncBridge::<usize, &str>::new(waker));
-        let (right_waker, _) = test_waker();
-        let right_input = Arc::new(SyncBridge::<usize, &str>::new(right_waker));
-        let output = Arc::new(SyncEdge::new());
-
-        let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
-            InputPhases {
-                left: Phase {
-                    target: left_input.clone(),
-                    waker: noop_local_waker(),
-                },
-                right: Phase {
-                    target: right_input.clone(),
-                    waker: noop_local_waker(),
-                },
-            },
-            Phase {
-                target: MockBiunion::new(noop_local_waker()),
-                waker: noop_local_waker(),
-            },
-            Phase {
-                target: output.clone(),
-                waker: noop_local_waker(),
-            },
-        );
-
-        let mut left = phases.inputs.left;
-        let mut work = phases.work;
-        let mut out = phases.output;
-        let mut wkr = noop_waker();
-
-        SyncBridge::close(&left_input).unwrap();
-
-        // Left detects close → Closing
-        let _ = left.poll(&mut wkr);
-        // Work polls routine → Ready → CloseReady
-        let _ = work.poll(&mut wkr);
-        // Output drains and closes
-        let result = out.poll(&mut wkr);
+        let mut h = Harness::new();
+        SyncBridge::close(&h.left_edge).unwrap();
+        let _ = h.poll_left();
         assert!(matches!(
-            result.unwrap_err().kind,
+            h.poll_right().unwrap_err().kind,
             crate::error::ErrorKind::Closed
         ));
+        let _ = h.poll_work();
+        assert!(matches!(
+            h.poll_output().unwrap_err().kind,
+            crate::error::ErrorKind::Closed
+        ));
+    }
+
+    #[test]
+    fn data_then_close_drains_before_closing() {
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Data(7)).unwrap();
+        let _ = h.poll_left().unwrap();
+        let _ = h.poll_work().unwrap();
+        let _ = h.poll_output().unwrap();
+        assert_eq!(h.read_output(), Some(Message::Data(14))); // 7 * 2
+
+        SyncBridge::close(&h.left_edge).unwrap();
+        let _ = h.poll_left();
+        let _ = h.poll_work();
+        assert!(matches!(
+            h.poll_output().unwrap_err().kind,
+            crate::error::ErrorKind::Closed
+        ));
+    }
+
+    // --- Input waker: close wakes other input ---
+
+    #[test]
+    fn close_from_left_wakes_right() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        SyncBridge::close(&h.left_edge).unwrap();
+        let _ = h.poll_left();
+        assert!(h.right_woken.get(), "closing left must wake right input");
+    }
+
+    #[test]
+    fn close_from_right_wakes_left() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        SyncBridge::close(&h.right_edge).unwrap();
+        let _ = h.poll_right();
+        assert!(h.left_woken.get(), "closing right must wake left input");
+    }
+
+    // --- Input waker: close/flush/marker wakes work ---
+
+    #[test]
+    fn close_from_left_wakes_work() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        SyncBridge::close(&h.left_edge).unwrap();
+        let _ = h.poll_left();
+        assert!(h.work_woken.get(), "closing left must wake work phase");
+    }
+
+    #[test]
+    fn close_from_right_wakes_work() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        SyncBridge::close(&h.right_edge).unwrap();
+        let _ = h.poll_right();
+        assert!(h.work_woken.get(), "closing right must wake work phase");
+    }
+
+    #[test]
+    fn flush_from_left_wakes_work() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        assert!(h.work_woken.get(), "flush from left must wake work phase");
+    }
+
+    #[test]
+    fn flush_from_right_wakes_work() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        h.right_edge.push_back(Message::Flush("s1")).unwrap();
+        let _ = h.poll_right().unwrap();
+        assert!(h.work_woken.get(), "flush from right must wake work phase");
+    }
+
+    #[test]
+    fn marker_from_left_wakes_work() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        assert!(h.work_woken.get(), "marker from left must wake work phase");
+    }
+
+    #[test]
+    fn marker_from_right_wakes_work() {
+        let mut h = Harness::new();
+        h.reset_woken();
+        h.right_edge.push_back(Message::Marker("m1")).unwrap();
+        let _ = h.poll_right().unwrap();
+        assert!(h.work_woken.get(), "marker from right must wake work phase");
+    }
+
+    // --- Work waker: flush/close/marker ready wakes output ---
+
+    #[test]
+    fn flush_ready_wakes_output() {
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        h.reset_woken();
+        let _ = h.poll_work().unwrap();
+        assert!(
+            h.output_woken.get(),
+            "work must wake output when flush ready"
+        );
+    }
+
+    #[test]
+    fn close_ready_wakes_output() {
+        let mut h = Harness::new();
+        SyncBridge::close(&h.left_edge).unwrap();
+        let _ = h.poll_left();
+        h.reset_woken();
+        let _ = h.poll_work();
+        assert!(
+            h.output_woken.get(),
+            "work must wake output when close ready"
+        );
+    }
+
+    #[test]
+    fn marker_ready_wakes_output() {
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        h.reset_woken();
+        let _ = h.poll_work().unwrap();
+        assert!(
+            h.output_woken.get(),
+            "work must wake output when marker ready"
+        );
+    }
+
+    // --- Output waker: flush/marker forwarded wakes both inputs ---
+
+    #[test]
+    fn flush_forwarded_wakes_both_inputs() {
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        let _ = h.poll_work().unwrap();
+        h.reset_woken();
+        let _ = h.poll_output().unwrap();
+        assert!(
+            h.left_woken.get(),
+            "output must wake left after flush forwarded"
+        );
+        assert!(
+            h.right_woken.get(),
+            "output must wake right after flush forwarded"
+        );
+    }
+
+    #[test]
+    fn marker_forwarded_wakes_both_inputs() {
+        let mut h = Harness::new();
+        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        let _ = h.poll_left().unwrap();
+        let _ = h.poll_work().unwrap();
+        h.reset_woken();
+        let _ = h.poll_output().unwrap();
+        assert!(
+            h.left_woken.get(),
+            "output must wake left after marker forwarded"
+        );
+        assert!(
+            h.right_woken.get(),
+            "output must wake right after marker forwarded"
+        );
     }
 }

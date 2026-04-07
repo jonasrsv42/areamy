@@ -14,10 +14,7 @@
 //! - `Allocated` — both inputs resolved, allocator released
 
 use crate::biunion;
-use crate::connect::poll::edge::{
-    Async, AsyncIn, Deferred, Edge, Null, Sync, SyncBridge, SyncInput,
-};
-use crate::connect::poll::traits::AsyncParent;
+use crate::connect::poll::edge::{Async, Deferred, Edge, Null, Sync, SyncBridge, SyncInput};
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::Error;
 use crate::graph::{Add, Get};
@@ -73,7 +70,8 @@ pub struct Node<
     pub(crate) factory: FactoryType,
     pub(crate) input: BuilderInput<LeftEdge, RightEdge, Left, Right, SignalType, ThreadIdType>,
     pub(crate) output: OutEdge::Output<Out, SignalType>,
-    _phantom: std::marker::PhantomData<(fn() -> Out, fn() -> Left, fn() -> Right, ThreadIdType)>,
+    pub(crate) _phantom:
+        std::marker::PhantomData<(fn() -> Out, fn() -> Left, fn() -> Right, ThreadIdType)>,
 }
 
 impl<
@@ -256,212 +254,6 @@ where
                 right: SyncInput {
                     edge: Arc::new(SyncBridge::new(waker)),
                     slot,
-                },
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-// ============================================================
-// AddParent — resolve input to Async via parent
-// ============================================================
-
-use super::traits::AddParent;
-
-/// Both deferred: .parent::<Left>(node) → left becomes Async, stays Allocating
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType, P> AddParent<biunion::Left, P>
-    for Node<
-        Allocating<'a>,
-        Deferred,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Left: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    P: AsyncParent<Left, SignalType, ThreadIdType> + 'static,
-{
-    type Resolved = Node<
-        Allocating<'a>,
-        Async,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn parent(self, parent: P) -> Self::Resolved {
-        Node {
-            alloc: self.alloc,
-            factory: self.factory,
-            input: BuilderInput {
-                left: AsyncIn {
-                    parents: vec![Box::new(parent)],
-                },
-                right: self.input.right,
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-/// Both deferred: .parent::<Right>(node) → right becomes Async, stays Allocating
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType, P> AddParent<biunion::Right, P>
-    for Node<
-        Allocating<'a>,
-        Deferred,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Right: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    P: AsyncParent<Right, SignalType, ThreadIdType> + 'static,
-{
-    type Resolved = Node<
-        Allocating<'a>,
-        Deferred,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn parent(self, parent: P) -> Self::Resolved {
-        Node {
-            alloc: self.alloc,
-            factory: self.factory,
-            input: BuilderInput {
-                left: self.input.left,
-                right: AsyncIn {
-                    parents: vec![Box::new(parent)],
-                },
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-/// Left Sync, right deferred: .parent::<Right>(node) → right becomes Async → Allocated
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType, P> AddParent<biunion::Right, P>
-    for Node<
-        Allocating<'_>,
-        Sync,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Right: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    P: AsyncParent<Right, SignalType, ThreadIdType> + 'static,
-{
-    type Resolved = Node<
-        Allocated,
-        Sync,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn parent(self, parent: P) -> Self::Resolved {
-        Node {
-            alloc: Allocated,
-            factory: self.factory,
-            input: BuilderInput {
-                left: self.input.left,
-                right: AsyncIn {
-                    parents: vec![Box::new(parent)],
-                },
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-/// Left Async, right deferred: .parent::<Right>(node) → right becomes Async → Allocated
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType, P> AddParent<biunion::Right, P>
-    for Node<
-        Allocating<'_>,
-        Async,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Right: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    P: AsyncParent<Right, SignalType, ThreadIdType> + 'static,
-{
-    type Resolved = Node<
-        Allocated,
-        Async,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn parent(self, parent: P) -> Self::Resolved {
-        Node {
-            alloc: Allocated,
-            factory: self.factory,
-            input: BuilderInput {
-                left: self.input.left,
-                right: AsyncIn {
-                    parents: vec![Box::new(parent)],
                 },
             },
             output: Null::new(),

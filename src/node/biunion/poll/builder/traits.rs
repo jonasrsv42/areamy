@@ -1,15 +1,22 @@
 //! Dispatch traits for biunion builder methods.
 //!
-//! [`AddParent`] dispatches `.parent::<Side>(node)` to resolve
+//! [`Resolve`] dispatches `.parent::<Side>(node)` to resolve
 //! left or right input to Async based on the side marker.
 
-use crate::biunion::Side;
+use crate::ThreadId;
+use crate::connect::poll::traits::AsyncParent;
+use crate::signal::Origin;
 
 /// Resolve one input to Async via a parent node.
 ///
-/// Implemented per-side (`biunion::Left`, `biunion::Right`) on
-/// specific builder states. Enables `node.parent::<Left>(parent)`.
-pub trait AddParent<S: Side, ParentType> {
+/// `S::Data` determines the parent's data type based on the side.
+/// Implemented for `biunion::Left` and `biunion::Right` on each
+/// builder state.
+pub trait Resolve<Node, SignalType: Origin, ThreadIdType: ThreadId> {
+    type Data;
     type Resolved;
-    fn parent(self, parent: ParentType) -> Self::Resolved;
+    fn resolve(
+        node: Node,
+        parent: Box<dyn AsyncParent<Self::Data, SignalType, ThreadIdType>>,
+    ) -> Self::Resolved;
 }

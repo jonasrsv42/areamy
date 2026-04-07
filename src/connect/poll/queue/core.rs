@@ -72,11 +72,6 @@ pub(super) struct VyukovQueue {
     signal: Condvar,
 }
 
-// Safety: producers only touch tail (atomic), consumer only touches head.
-// Mutex+Condvar handle cross-thread signaling.
-unsafe impl Send for VyukovQueue {}
-unsafe impl Sync for VyukovQueue {}
-
 impl VyukovQueue {
     pub(super) fn new() -> Self {
         let sentinel = Node::sentinel();

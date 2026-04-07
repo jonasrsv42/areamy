@@ -68,9 +68,9 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
     /// Create a biunion node with two deferred inputs and deferred output.
     ///
     /// Resolve inputs and output via wiring methods:
-    /// - `.left()` / `.right()` → Sync input (SyncBridge)
-    /// - `.parent::<Left/Right>(node)` → Async input
-    /// - `.output()` → Sync output
+    /// - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
+    /// - `.parent::<Left>(node)` / `.parent::<Right>(node)` → Async input
+    /// - `.output::<Sync>()` → Sync output
     pub fn biunion<Left, Right, Out, SignalType, FactoryType>(
         &mut self,
         factory: FactoryType,

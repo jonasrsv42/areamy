@@ -3,18 +3,17 @@
 //! Created via [`poll::Thread::biunion`](crate::poll::Thread). Edge kinds
 //! are resolved via typestate transitions:
 //!
-//! - `.left::<Sync>()` → left input becomes Sync (SyncBridge)
-//! - `.right::<Sync>()` → right input becomes Sync (SyncBridge)
-//! - `.left_parent(node)` → left input becomes Async
-//! - `.right_parent(node)` → right input becomes Async
-//! - `.output()` → resolve output to Sync
+//! - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
+//! - `.parent::<Left>(node)` / `.parent::<Right>(node)` → Async input
+//! - `.output::<Sync>()` → resolve output to Sync
 //!
 //! Allocator lifecycle:
 //! - `Allocating` — holds `&mut WakerAllocator`, one or both inputs still Deferred
 //! - `Allocated` — both inputs resolved, allocator released
 
+use super::traits::{ResolveInput, ResolveOutput};
 use crate::biunion;
-use crate::connect::poll::edge::{Async, Deferred, Edge, Null, Sync, SyncBridge, SyncInput};
+use crate::connect::poll::edge::{Deferred, Edge, Null, Sync};
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::Error;
 use crate::graph::{Add, Get};
@@ -23,7 +22,6 @@ use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
 use crate::{Closeable, ThreadId};
-use std::sync::Arc;
 
 /// Builder still holds `&'a mut WakerAllocator` — one or both inputs deferred.
 pub struct Allocating<'a>(pub(crate) &'a mut WakerAllocator);
@@ -147,234 +145,42 @@ where
 }
 
 // ============================================================
-// Left input transitions
+// .input::<Side, Edge>() — dispatched via ResolveInput
 // ============================================================
 
-/// Left Deferred → Sync. Right still deferred — stays Allocating.
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Node<
-        Allocating<'a>,
-        Deferred,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Left: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    /// Resolve left input to Sync.
-    pub fn left(
-        self,
-    ) -> Node<
-        Allocating<'a>,
-        Sync,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    > {
-        let slot = self.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: self.alloc,
-            factory: self.factory,
-            input: BuilderInput {
-                left: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
-                    slot,
-                },
-                right: self.input.right,
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
+macro_rules! impl_input {
+    ($left:ty, $right:ty $(, $alloc_lt:lifetime)?) => {
+        impl<$($alloc_lt,)? Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+            Node<
+                Allocating<$($alloc_lt)?>, $left, $right, Deferred, Left, Right, Out,
+                SignalType, ThreadIdType, FactoryType,
+            >
+        where
+            SignalType: Origin,
+            ThreadIdType: ThreadId,
+            FactoryType: BiunionRoutineFactory,
+            FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+        {
+            pub fn input<S, E>(self) -> S::Resolved
+            where
+                S: ResolveInput<E, Self>,
+            {
+                S::resolve(self)
+            }
         }
-    }
+    };
 }
 
-// ============================================================
-// Right input transitions (left already resolved)
-// ============================================================
-
-/// Right Deferred → Sync when left is Sync → Allocated
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Node<
-        Allocating<'a>,
-        Sync,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Right: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    /// Resolve right input to Sync. Both inputs resolved — Allocated.
-    pub fn right(
-        self,
-    ) -> Node<
-        Allocated,
-        Sync,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    > {
-        let slot = self.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: Allocated,
-            factory: self.factory,
-            input: BuilderInput {
-                left: self.input.left,
-                right: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
-                    slot,
-                },
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-/// Right deferred, left Async: .right() → right becomes Sync → Allocated
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Node<
-        Allocating<'a>,
-        Async,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Right: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    /// Resolve right input to Sync when left is Async. → Allocated.
-    pub fn right(
-        self,
-    ) -> Node<
-        Allocated,
-        Async,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    > {
-        let slot = self.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: Allocated,
-            factory: self.factory,
-            input: BuilderInput {
-                left: self.input.left,
-                right: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
-                    slot,
-                },
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-/// Left deferred after right resolved to Async: .left() → Allocated
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Node<
-        Allocating<'a>,
-        Deferred,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Left: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    /// Resolve left input to Sync when right is Async. → Allocated.
-    pub fn left(
-        self,
-    ) -> Node<
-        Allocated,
-        Sync,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    > {
-        let slot = self.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: Allocated,
-            factory: self.factory,
-            input: BuilderInput {
-                left: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
-                    slot,
-                },
-                right: self.input.right,
-            },
-            output: Null::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
+impl_input!(Deferred, Deferred, 'a);
+impl_input!(Sync, Deferred, 'a);
+impl_input!(crate::connect::poll::edge::Async, Deferred, 'a);
+impl_input!(Deferred, Sync, 'a);
+impl_input!(Deferred, crate::connect::poll::edge::Async, 'a);
 
 // ============================================================
-// Output resolution
+// .output::<Edge>() — dispatched via ResolveOutput
 // ============================================================
 
-/// Resolve output to Sync. Both inputs must be resolved (Allocated).
 impl<LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
         Allocated,
@@ -391,33 +197,16 @@ impl<LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryTyp
 where
     LeftEdge: Edge,
     RightEdge: Edge,
-    Out: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    SignalType: Origin,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
-    pub fn output(
-        self,
-    ) -> Node<
-        Allocated,
-        LeftEdge,
-        RightEdge,
-        Sync,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    > {
-        Node {
-            alloc: Allocated,
-            factory: self.factory,
-            input: self.input,
-            output: Default::default(),
-            _phantom: std::marker::PhantomData,
-        }
+    pub fn output<E>(self) -> E::Resolved
+    where
+        E: ResolveOutput<Self>,
+    {
+        E::resolve(self)
     }
 }
 

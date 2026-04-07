@@ -3,7 +3,7 @@
 // ============================================================
 
 use super::node::{Allocated, Allocating, BuilderInput, Node};
-use super::traits::Resolve;
+use super::traits::ResolveParent;
 use crate::ThreadId;
 use crate::biunion;
 use crate::connect::poll::edge::{Async, AsyncIn, Deferred, Null, Sync};
@@ -16,7 +16,7 @@ use crate::signal::Origin;
 
 /// .parent::<Left> on both-deferred → left Async, stays Allocating
 impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Resolve<
+    ResolveParent<
         Node<
             Allocating<'a>,
             Deferred,
@@ -84,7 +84,7 @@ where
 
 /// .parent::<Right> on both-deferred → right Async, stays Allocating
 impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Resolve<
+    ResolveParent<
         Node<
             Allocating<'a>,
             Deferred,
@@ -153,7 +153,7 @@ where
 // --- Left Sync, right deferred: .parent::<Right> → Allocated ---
 
 impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Resolve<
+    ResolveParent<
         Node<
             Allocating<'_>,
             Sync,
@@ -222,7 +222,7 @@ where
 // --- Right Sync, left deferred: .parent::<Left> → Allocated ---
 
 impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Resolve<
+    ResolveParent<
         Node<
             Allocating<'_>,
             Deferred,
@@ -291,7 +291,7 @@ where
 // --- Right Async, left deferred: .parent::<Left> → Allocated ---
 
 impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Resolve<
+    ResolveParent<
         Node<
             Allocating<'_>,
             Deferred,
@@ -360,7 +360,7 @@ where
 // --- Left Async, right deferred: .parent::<Right> → Allocated ---
 
 impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Resolve<
+    ResolveParent<
         Node<
             Allocating<'_>,
             Async,
@@ -452,7 +452,7 @@ where
         parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
     ) -> S::Resolved
     where
-        S: Resolve<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
@@ -482,7 +482,7 @@ where
         parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
     ) -> S::Resolved
     where
-        S: Resolve<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
@@ -512,7 +512,7 @@ where
         parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
     ) -> S::Resolved
     where
-        S: Resolve<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
@@ -542,7 +542,7 @@ where
         parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
     ) -> S::Resolved
     where
-        S: Resolve<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
@@ -572,7 +572,7 @@ where
         parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
     ) -> S::Resolved
     where
-        S: Resolve<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }

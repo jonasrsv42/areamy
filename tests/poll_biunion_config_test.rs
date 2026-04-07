@@ -74,7 +74,11 @@ fn biunion_audio_with_config() {
         },
     );
 
-    let mut node = async_thread.biunion(routine).left().right().output();
+    let mut node = async_thread
+        .biunion(routine)
+        .input::<biunion::Left, areamy::poll::Sync>()
+        .input::<biunion::Right, areamy::poll::Sync>()
+        .output::<areamy::poll::Sync>();
 
     let mut audio_source = Source::<usize>::of::<_, biunion::Left>(&node).unwrap();
     let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
@@ -180,8 +184,8 @@ fn biunion_with_async_parent() {
     let mut node = async_thread
         .biunion(biunion_routine)
         .parent::<biunion::Left>(parent)
-        .right()
-        .output();
+        .input::<biunion::Right, areamy::poll::Sync>()
+        .output::<areamy::poll::Sync>();
 
     let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
 

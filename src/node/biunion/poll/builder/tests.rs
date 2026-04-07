@@ -64,7 +64,10 @@ macro_rules! deferred {
 #[test]
 fn sync_sync_sync_builds_four_nodes() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).left().right().output();
+    let node = deferred!(&mut alloc)
+        .input::<crate::biunion::Left, crate::poll::Sync>()
+        .input::<crate::biunion::Right, crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -73,7 +76,9 @@ fn sync_sync_sync_builds_four_nodes() {
 #[test]
 fn sync_sync_deferred_builds_four_nodes() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).left().right();
+    let node = deferred!(&mut alloc)
+        .input::<crate::biunion::Left, crate::poll::Sync>()
+        .input::<crate::biunion::Right, crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -88,8 +93,8 @@ fn async_left_sync_right_sync_output() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
         .parent::<crate::biunion::Left>(MockParent)
-        .right()
-        .output();
+        .input::<crate::biunion::Right, crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -103,9 +108,9 @@ fn async_left_sync_right_sync_output() {
 fn sync_left_async_right_sync_output() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
-        .left()
+        .input::<crate::biunion::Left, crate::poll::Sync>()
         .parent::<crate::biunion::Right>(MockParent)
-        .output();
+        .output::<crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -121,7 +126,7 @@ fn async_async_sync_output() {
     let node = deferred!(&mut alloc)
         .parent::<crate::biunion::Left>(MockParent)
         .parent::<crate::biunion::Right>(MockParent)
-        .output();
+        .output::<crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -134,7 +139,9 @@ fn async_async_sync_output() {
 #[test]
 fn sync_sync_deferred_as_parent() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).left().right();
+    let node = deferred!(&mut alloc)
+        .input::<crate::biunion::Left, crate::poll::Sync>()
+        .input::<crate::biunion::Right, crate::poll::Sync>();
     let local = to_local(alloc);
     let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
     let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
@@ -162,8 +169,8 @@ fn right_async_then_left_sync() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
         .parent::<crate::biunion::Right>(MockParent)
-        .left()
-        .output();
+        .input::<crate::biunion::Left, crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -175,7 +182,7 @@ fn right_async_then_left_async() {
     let node = deferred!(&mut alloc)
         .parent::<crate::biunion::Right>(MockParent)
         .parent::<crate::biunion::Left>(MockParent)
-        .output();
+        .output::<crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -190,7 +197,7 @@ fn async_left_sync_right_deferred_sink() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
         .parent::<crate::biunion::Left>(MockParent)
-        .right();
+        .input::<crate::biunion::Right, crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -200,7 +207,7 @@ fn async_left_sync_right_deferred_sink() {
 fn sync_left_async_right_deferred_sink() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
-        .left()
+        .input::<crate::biunion::Left, crate::poll::Sync>()
         .parent::<crate::biunion::Right>(MockParent);
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
@@ -227,7 +234,7 @@ fn async_left_sync_right_as_parent() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
         .parent::<crate::biunion::Left>(MockParent)
-        .right();
+        .input::<crate::biunion::Right, crate::poll::Sync>();
     let local = to_local(alloc);
     let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
     let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
@@ -238,7 +245,7 @@ fn async_left_sync_right_as_parent() {
 fn sync_left_async_right_as_parent() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
-        .left()
+        .input::<crate::biunion::Left, crate::poll::Sync>()
         .parent::<crate::biunion::Right>(MockParent);
     let local = to_local(alloc);
     let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
@@ -253,7 +260,10 @@ fn sync_left_async_right_as_parent() {
 #[test]
 fn node_ids_are_unique() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).left().right().output();
+    let node = deferred!(&mut alloc)
+        .input::<crate::biunion::Left, crate::poll::Sync>()
+        .input::<crate::biunion::Right, crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     let mut ids: Vec<_> = graph.nodes.iter().map(|n| n.id).collect();

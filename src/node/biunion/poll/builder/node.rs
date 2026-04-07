@@ -7,7 +7,7 @@
 //! - `.right::<Sync>()` → right input becomes Sync (SyncBridge)
 //! - `.left_parent(node)` → left input becomes Async
 //! - `.right_parent(node)` → right input becomes Async
-//! - `.typed::<OutEdge>()` → resolve output kind
+//! - `.output()` → resolve output to Sync
 //!
 //! Allocator lifecycle:
 //! - `Allocating` — holds `&mut WakerAllocator`, one or both inputs still Deferred

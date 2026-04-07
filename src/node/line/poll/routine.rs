@@ -140,7 +140,7 @@ pub mod tests {
         fn wake(&self) {}
     }
 
-    fn noop_local_waker() -> ThreadLocalWaker {
+    pub fn noop_local_waker() -> ThreadLocalWaker {
         ThreadLocalWaker::new(NoopWake)
     }
 

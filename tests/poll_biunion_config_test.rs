@@ -134,7 +134,7 @@ fn biunion_with_async_parent() {
                 })
             },
         ))
-        .typed::<areamy::poll::Async>();
+        .input::<areamy::poll::Sync>();
 
     // Source pushes into parent
     let mut audio_source = Source::<usize>::of::<_, areamy::marker::Unary>(&parent).unwrap();

@@ -40,10 +40,10 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
     /// Create a node with deferred edge kinds.
     ///
     /// Resolve input and output via wiring methods:
-    /// - `.typed::<OutEdge>()` → Sync input, explicit output kind
+    /// - `.input::<Sync>()` → resolve input to Sync
+    /// - `.output::<Sync>()` → resolve output to Sync
     /// - `.parent(node)` → Async input (adds parent)
-    /// - `thread.add(node)` → Sync output (Spawnable)
-    /// - consumed by `.parent()` → Async output (AsyncParent)
+    /// - consumed by `.parent()` → Deferred output (AsyncParent)
     pub fn line<InType, OutType, SignalType, FactoryType>(
         &mut self,
         factory: FactoryType,
@@ -217,7 +217,8 @@ mod tests {
 
         let node = thread
             .line(|w| MockLine::new(w))
-            .typed::<crate::poll::Sync>();
+            .input::<crate::poll::Sync>()
+            .output::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&node).unwrap();
@@ -238,7 +239,8 @@ mod tests {
 
         let mut node = thread
             .line(|w| MockLine::new(w))
-            .typed::<crate::poll::Sync>();
+            .input::<crate::poll::Sync>()
+            .output::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&node).unwrap();
@@ -267,7 +269,7 @@ mod tests {
 
         let parent = thread
             .line(|w| MockLine::new(w))
-            .typed::<crate::poll::Async>();
+            .input::<crate::poll::Sync>();
 
         let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
             Get::get(&parent).unwrap();
@@ -275,7 +277,7 @@ mod tests {
         let mut child = thread
             .line(|w| MockLine::new(w))
             .parent(parent)
-            .typed::<crate::poll::Sync>();
+            .output::<crate::poll::Sync>();
 
         let output = Arc::new(SyncEdge::new());
         make_push(&mut child, &output).unwrap();

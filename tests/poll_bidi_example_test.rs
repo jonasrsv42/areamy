@@ -205,7 +205,10 @@ fn bidi_with_join() -> Result<(), Error> {
         },
     );
 
-    let mut node = async_thread.line(routine).typed::<areamy::poll::Sync>();
+    let mut node = async_thread
+        .line(routine)
+        .input::<areamy::poll::Sync>()
+        .output::<areamy::poll::Sync>();
     make_push(&mut source_node, &node)?;
 
     let output = Arc::new(SyncEdge::new());

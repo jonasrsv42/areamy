@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::task::Waker;
 
 /// Sync input edge paired with its pre-allocated waker slot.
-/// Created during `typed::<Sync>()` on the main thread.
+/// Created during `.input::<Sync>()` on the main thread.
 pub struct SyncInput<DataType, SignalType: Origin> {
     pub edge: Arc<SyncBridge<DataType, SignalType>>,
     pub slot: Slot<std::task::Waker>,

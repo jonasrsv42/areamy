@@ -46,7 +46,7 @@
 //!     })
 //! });
 //!
-//! let node = thread.line(routine).typed::<Sync>();
+//! let node = thread.line(routine).input::<Sync>().output::<Sync>();
 //! ```
 
 use crate::connect::waker::{self, ThreadLocalWaker};
@@ -95,7 +95,7 @@ where
     /// ```ignore
     /// let node = thread.line(FutureRoutine::factory(|input, output| {
     ///     Box::pin(async move { /* ... */ })
-    /// })).typed::<Sync>();
+    /// })).input::<Sync>().output::<Sync>();
     /// ```
     pub fn factory(f: F) -> impl FnOnce(ThreadLocalWaker) -> Self + Send
     where

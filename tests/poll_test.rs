@@ -696,6 +696,12 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
     source_b.push(Message::Data(2))?;
     source_c.push(Message::Data(3))?;
 
+    // Fast close drops unprocessed `send()` data — push Flush so the
+    // routines drain pipelined values before the close cascade.
+    source_a.push(Message::Flush("end".into()))?;
+    source_b.push(Message::Flush("end".into()))?;
+    source_c.push(Message::Flush("end".into()))?;
+
     source_a.close()?;
     source_b.close()?;
     source_c.close()?;

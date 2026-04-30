@@ -10,9 +10,16 @@
 //! - **Flushing**: Work polls routine until Ready → FlushReady
 //! - **FlushReady**: Output drains remaining output, forwards Flush → Running
 //! - **MarkerReady**: Work polls routine once (best-effort drain), Output forwards Marker → Running
-//! - **Closing**: Work polls routine until Ready → CloseReady
-//! - **CloseReady**: Output drains remaining output, closes → Closed
+//! - **CloseReady**: Output drains buffered output, closes → Closed
 //! - **Closed**: all phases return Closed
+//!
+//! # Close vs Flush
+//!
+//! Flush calls `routine.flush()` and polls until Ready — graceful
+//! wrap-up. Close is a *fast* path: no flush, no poll. Output drains
+//! whatever is already buffered in `routine.next()` and closes the
+//! downstream edge; the routine drops with the node, so its `Drop`
+//! is responsible for cancelling any in-flight async work.
 //!
 //! # Marker ordering
 //!
@@ -43,7 +50,6 @@ enum NodeState<SignalType> {
     Flushing(SignalType),
     FlushReady(SignalType),
     MarkerReady(SignalType),
-    Closing,
     CloseReady,
     Closed,
 }
@@ -110,10 +116,15 @@ where
                 Ok(None) => break,
                 Err(e) => {
                     if matches!(e.kind, crate::error::ErrorKind::Closed) {
-                        self.worker.flush()?;
-                        self.state = NodeState::Closing;
-                        // Work must poll routine until Ready to complete the close.
+                        // Fast close: skip flush, skip routine polling.
+                        // Output drains buffered next() and closes the
+                        // downstream edge; routine is dropped with the node.
+                        // Wake Work so it observes CloseReady and reports
+                        // closed back to the poll loop; wake Output to
+                        // drive the drain + close.
+                        self.state = NodeState::CloseReady;
                         self.work_waker.wake();
+                        self.output_waker.wake();
                         break;
                     }
                     return Err(e);
@@ -179,10 +190,10 @@ where
     fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
-            NodeState::Closed | NodeState::Closing | NodeState::CloseReady => Err(crate::closed!()),
+            NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Running => {
                 s.drain_input()?;
-                if matches!(s.state, NodeState::Closing) {
+                if matches!(s.state, NodeState::CloseReady) {
                     return Err(crate::closed!());
                 }
                 Ok(core::task::Poll::Pending)
@@ -254,17 +265,6 @@ where
                     // Flush complete. Output must drain remaining output
                     // and forward the Flush signal downstream.
                     s.output_waker.wake();
-                }
-                Ok(core::task::Poll::Pending)
-            }
-            NodeState::Closing => {
-                let result = s.poll_routine(waker)?;
-                if matches!(result, core::task::Poll::Ready(())) {
-                    s.state = NodeState::CloseReady;
-                    // Close complete. Output must drain remaining output
-                    // and close downstream.
-                    s.output_waker.wake();
-                    return Err(crate::closed!());
                 }
                 Ok(core::task::Poll::Pending)
             }
@@ -512,7 +512,7 @@ mod tests {
         let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
         let output = Arc::new(SyncEdge::new());
 
-        let (mut input_phase, mut work_phase, mut output_phase) =
+        let (mut input_phase, _work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
                 MockLine::new(noop_local_waker()),
                 input.clone(),
@@ -526,13 +526,15 @@ mod tests {
 
         let mut wkr = noop_waker();
 
-        // Input detects closed → Closing
-        let _ = input_phase.poll(&mut wkr);
+        // Fast close: Input detects closed → CloseReady directly,
+        // skipping the Closing/poll-routine cycle. Work is irrelevant.
+        let result = input_phase.poll(&mut wkr);
+        assert!(matches!(
+            result.unwrap_err().kind,
+            crate::error::ErrorKind::Closed
+        ));
 
-        // Work polls routine → Ready → CloseReady
-        let _ = work_phase.poll(&mut wkr);
-
-        // Output drains, closes output → Closed
+        // Output drains buffered output (none here) and closes downstream.
         let result = output_phase.poll(&mut wkr);
         assert!(matches!(
             result.unwrap_err().kind,

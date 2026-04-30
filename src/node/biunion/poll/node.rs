@@ -46,7 +46,6 @@ enum NodeState<SignalType> {
     Flushing(SignalType),
     FlushReady(SignalType),
     MarkerReady(SignalType),
-    Closing,
     CloseReady,
     Closed,
 }
@@ -125,11 +124,14 @@ where
                 Ok(None) => break,
                 Err(e) => {
                     if matches!(e.kind, crate::error::ErrorKind::Closed) {
-                        self.work.target.flush()?;
-                        self.state = NodeState::Closing;
-                        // Work must poll routine until Ready to complete the close.
+                        // Fast close: skip flush, skip routine polling.
+                        // Output drains buffered next() and closes the
+                        // downstream edge; routine drops with the node.
+                        self.state = NodeState::CloseReady;
                         self.work.waker.wake();
-                        // Wake the other input so it sees Closing and returns Closed.
+                        self.output.waker.wake();
+                        // Wake the other input so it sees CloseReady and
+                        // returns Closed.
                         self.input.right.waker.wake();
                         break;
                     }
@@ -160,10 +162,12 @@ where
                 Ok(None) => break,
                 Err(e) => {
                     if matches!(e.kind, crate::error::ErrorKind::Closed) {
-                        self.work.target.flush()?;
-                        self.state = NodeState::Closing;
+                        // Fast close — see `drain_left` for rationale.
+                        self.state = NodeState::CloseReady;
                         self.work.waker.wake();
-                        // Wake the other input so it sees Closing and returns Closed.
+                        self.output.waker.wake();
+                        // Wake the other input so it sees CloseReady and
+                        // returns Closed.
                         self.input.left.waker.wake();
                         break;
                     }
@@ -307,10 +311,10 @@ where
     fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
-            NodeState::Closed | NodeState::Closing | NodeState::CloseReady => Err(crate::closed!()),
+            NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Running => {
                 s.drain_left()?;
-                if matches!(s.state, NodeState::Closing) {
+                if matches!(s.state, NodeState::CloseReady) {
                     return Err(crate::closed!());
                 }
                 Ok(core::task::Poll::Pending)
@@ -422,10 +426,10 @@ where
     fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
-            NodeState::Closed | NodeState::Closing | NodeState::CloseReady => Err(crate::closed!()),
+            NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Running => {
                 s.drain_right()?;
-                if matches!(s.state, NodeState::Closing) {
+                if matches!(s.state, NodeState::CloseReady) {
                     return Err(crate::closed!());
                 }
                 Ok(core::task::Poll::Pending)
@@ -547,15 +551,6 @@ where
                     };
                     s.state = NodeState::FlushReady(signal);
                     s.output.waker.wake();
-                }
-                Ok(core::task::Poll::Pending)
-            }
-            NodeState::Closing => {
-                let result = s.poll_routine(waker)?;
-                if matches!(result, core::task::Poll::Ready(())) {
-                    s.state = NodeState::CloseReady;
-                    s.output.waker.wake();
-                    return Err(crate::closed!());
                 }
                 Ok(core::task::Poll::Pending)
             }
@@ -1163,16 +1158,14 @@ mod tests {
     }
 
     #[test]
-    fn close_ready_wakes_output() {
+    fn close_wakes_output_directly() {
+        // Fast close: drain_left transitions straight to CloseReady and
+        // wakes Output directly (no flush, no work polling).
         let mut h = Harness::new();
         SyncBridge::close(&h.left_edge).unwrap();
-        let _ = h.poll_left();
         h.reset_woken();
-        let _ = h.poll_work();
-        assert!(
-            h.output_woken.get(),
-            "work must wake output when close ready"
-        );
+        let _ = h.poll_left();
+        assert!(h.output_woken.get(), "drain_left must wake output on close");
     }
 
     #[test]

@@ -89,3 +89,25 @@ assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
 assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
 
 ```
+
+## Embedded targets
+
+Areamy has no external dependencies and only relies on `std` primitives
+(`thread`, `sync`, `backtrace`, …) that are available on Espressif's
+ESP-IDF Rust target. To verify the library cross-compiles for ESP32-S3,
+install the toolchain once:
+
+```bash
+cargo install espup
+espup install
+source ~/export-esp.sh
+```
+
+Then run:
+
+```bash
+./scripts/cross-check.sh
+```
+
+That builds the library against `xtensa-esp32s3-espidf` (with `-Z build-std`,
+since Xtensa std isn't pre-built). Add more targets to the script as needed.

@@ -37,6 +37,19 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
         }
     }
 
+    /// Mutable access to the thread's [`WakerAllocator`]. Lets callers
+    /// pre-allocate sync waker slots before the thread starts — useful
+    /// for nodes that need to be woken from external producers running
+    /// on other threads.
+    ///
+    /// Each allocated slot ID must be bound to a [`Pollable`] via a
+    /// custom [`GraphBuilder`] returning a [`GraphNode`] with that ID;
+    /// otherwise the runtime will fail at build time with "slot N is
+    /// empty."
+    pub fn waker_allocator(&mut self) -> &mut WakerAllocator {
+        &mut self.waker_allocator
+    }
+
     /// Create a node with deferred edge kinds.
     ///
     /// Resolve input and output via wiring methods:

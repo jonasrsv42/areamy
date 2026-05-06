@@ -17,7 +17,15 @@ use std::rc::Rc;
 
 /// Build async parent edges, returning edges + collected nodes + allocator.
 fn build_parents<DataType, SignalType, ThreadIdType>(
-    parents: Vec<Box<dyn AsyncParent<DataType, SignalType, ThreadIdType>>>,
+    parents: Vec<
+        Box<
+            dyn AsyncParent<
+                    OutType = DataType,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                >,
+        >,
+    >,
     edge_waker: ThreadLocalWaker,
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
 ) -> Result<
@@ -338,8 +346,7 @@ where
 }
 
 /// Async, Sync → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    AsyncParent<Out, SignalType, ThreadIdType>
+impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
     for Node<
         Allocated,
         Async,
@@ -361,6 +368,10 @@ where
     FactoryType: BiunionRoutineFactory + 'static,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
 {
+    type OutType = Out;
+    type SignalType = SignalType;
+    type ThreadIdType = ThreadIdType;
+
     fn build(
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
@@ -570,8 +581,7 @@ where
 }
 
 /// Sync, Async → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    AsyncParent<Out, SignalType, ThreadIdType>
+impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
     for Node<
         Allocated,
         Sync,
@@ -593,6 +603,10 @@ where
     FactoryType: BiunionRoutineFactory + 'static,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
 {
+    type OutType = Out;
+    type SignalType = SignalType;
+    type ThreadIdType = ThreadIdType;
+
     fn build(
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
@@ -822,8 +836,7 @@ where
 // ============================================================
 
 /// Sync, Sync → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    AsyncParent<Out, SignalType, ThreadIdType>
+impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
     for Node<
         Allocated,
         Sync,
@@ -845,6 +858,10 @@ where
     FactoryType: BiunionRoutineFactory + 'static,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
 {
+    type OutType = Out;
+    type SignalType = SignalType;
+    type ThreadIdType = ThreadIdType;
+
     fn build(
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
@@ -898,8 +915,7 @@ where
 }
 
 /// Async, Async → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    AsyncParent<Out, SignalType, ThreadIdType>
+impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
     for Node<
         Allocated,
         Async,
@@ -921,6 +937,10 @@ where
     FactoryType: BiunionRoutineFactory + 'static,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
 {
+    type OutType = Out;
+    type SignalType = SignalType;
+    type ThreadIdType = ThreadIdType;
+
     fn build(
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,

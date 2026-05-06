@@ -197,7 +197,8 @@ where
 {
     pub fn parent(
         self,
-        parent: impl AsyncParent<InType, SignalType, ThreadIdType> + 'static,
+        parent: impl AsyncParent<OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
+        + 'static,
     ) -> Node<'static, Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
     {
         Node {
@@ -248,7 +249,8 @@ where
 {
     pub fn parent(
         mut self,
-        parent: impl AsyncParent<InType, SignalType, ThreadIdType> + 'static,
+        parent: impl AsyncParent<OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
+        + 'static,
     ) -> Self {
         self.input.parents.push(Box::new(parent));
         self
@@ -509,12 +511,11 @@ where
 }
 
 // ============================================================
-// AsyncParent<OutType, SignalType, ThreadIdType> — calls factory.create() on async thread
+// AsyncParent — calls factory.create() on async thread
 // ============================================================
 
 /// Node<Sync, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType>
-    AsyncParent<OutType, SignalType, ThreadIdType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParent
     for Node<'static, Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
@@ -524,6 +525,10 @@ where
     FactoryType: LineRoutineFactory + 'static,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
+    type OutType = OutType;
+    type SignalType = SignalType;
+    type ThreadIdType = ThreadIdType;
+
     fn build(
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
@@ -559,8 +564,7 @@ where
 }
 
 /// Node<Async, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType>
-    AsyncParent<OutType, SignalType, ThreadIdType>
+impl<InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParent
     for Node<'static, Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
@@ -570,6 +574,10 @@ where
     FactoryType: LineRoutineFactory + 'static,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
 {
+    type OutType = OutType;
+    type SignalType = SignalType;
+    type ThreadIdType = ThreadIdType;
+
     fn build(
         self: Box<Self>,
         output_edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,

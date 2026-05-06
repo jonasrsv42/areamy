@@ -34,7 +34,11 @@ fn make_allocators() -> (
 /// Minimal AsyncParent that produces zero nodes of its own.
 struct MockParent;
 
-impl AsyncParent<usize, &'static str, TestThread> for MockParent {
+impl AsyncParent for MockParent {
+    type OutType = usize;
+    type SignalType = &'static str;
+    type ThreadIdType = TestThread;
+
     fn build(
         self: Box<Self>,
         _edge: Rc<RefCell<PollEdge<usize, &'static str>>>,

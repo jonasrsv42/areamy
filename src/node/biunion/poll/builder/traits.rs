@@ -25,7 +25,13 @@ pub trait ResolveParent<Node, SignalType: Origin, ThreadIdType: ThreadId> {
     type Resolved;
     fn resolve(
         node: Node,
-        parent: Box<dyn AsyncParent<Self::Data, SignalType, ThreadIdType>>,
+        parent: Box<
+            dyn AsyncParent<
+                    OutType = Self::Data,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                >,
+        >,
     ) -> Self::Resolved;
 }
 

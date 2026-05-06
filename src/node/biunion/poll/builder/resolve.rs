@@ -65,7 +65,9 @@ where
             ThreadIdType,
             FactoryType,
         >,
-        parent: Box<dyn AsyncParent<Left, SignalType, ThreadIdType>>,
+        parent: Box<
+            dyn AsyncParent<OutType = Left, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+        >,
     ) -> Self::Resolved {
         Node {
             alloc: node.alloc,
@@ -133,7 +135,9 @@ where
             ThreadIdType,
             FactoryType,
         >,
-        parent: Box<dyn AsyncParent<Right, SignalType, ThreadIdType>>,
+        parent: Box<
+            dyn AsyncParent<OutType = Right, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+        >,
     ) -> Self::Resolved {
         Node {
             alloc: node.alloc,
@@ -202,7 +206,9 @@ where
             ThreadIdType,
             FactoryType,
         >,
-        parent: Box<dyn AsyncParent<Right, SignalType, ThreadIdType>>,
+        parent: Box<
+            dyn AsyncParent<OutType = Right, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+        >,
     ) -> Self::Resolved {
         Node {
             alloc: Allocated,
@@ -271,7 +277,9 @@ where
             ThreadIdType,
             FactoryType,
         >,
-        parent: Box<dyn AsyncParent<Left, SignalType, ThreadIdType>>,
+        parent: Box<
+            dyn AsyncParent<OutType = Left, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+        >,
     ) -> Self::Resolved {
         Node {
             alloc: Allocated,
@@ -340,7 +348,9 @@ where
             ThreadIdType,
             FactoryType,
         >,
-        parent: Box<dyn AsyncParent<Left, SignalType, ThreadIdType>>,
+        parent: Box<
+            dyn AsyncParent<OutType = Left, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+        >,
     ) -> Self::Resolved {
         Node {
             alloc: Allocated,
@@ -409,7 +419,9 @@ where
             ThreadIdType,
             FactoryType,
         >,
-        parent: Box<dyn AsyncParent<Right, SignalType, ThreadIdType>>,
+        parent: Box<
+            dyn AsyncParent<OutType = Right, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+        >,
     ) -> Self::Resolved {
         Node {
             alloc: Allocated,
@@ -449,7 +461,11 @@ where
 {
     pub fn parent<S>(
         self,
-        parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
+        parent: impl AsyncParent<
+            OutType = S::Data,
+            SignalType = SignalType,
+            ThreadIdType = ThreadIdType,
+        > + 'static,
     ) -> S::Resolved
     where
         S: ResolveParent<Self, SignalType, ThreadIdType>,
@@ -479,7 +495,11 @@ where
 {
     pub fn parent<S>(
         self,
-        parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
+        parent: impl AsyncParent<
+            OutType = S::Data,
+            SignalType = SignalType,
+            ThreadIdType = ThreadIdType,
+        > + 'static,
     ) -> S::Resolved
     where
         S: ResolveParent<Self, SignalType, ThreadIdType>,
@@ -509,7 +529,11 @@ where
 {
     pub fn parent<S>(
         self,
-        parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
+        parent: impl AsyncParent<
+            OutType = S::Data,
+            SignalType = SignalType,
+            ThreadIdType = ThreadIdType,
+        > + 'static,
     ) -> S::Resolved
     where
         S: ResolveParent<Self, SignalType, ThreadIdType>,
@@ -539,7 +563,11 @@ where
 {
     pub fn parent<S>(
         self,
-        parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
+        parent: impl AsyncParent<
+            OutType = S::Data,
+            SignalType = SignalType,
+            ThreadIdType = ThreadIdType,
+        > + 'static,
     ) -> S::Resolved
     where
         S: ResolveParent<Self, SignalType, ThreadIdType>,
@@ -569,7 +597,11 @@ where
 {
     pub fn parent<S>(
         self,
-        parent: impl AsyncParent<S::Data, SignalType, ThreadIdType> + 'static,
+        parent: impl AsyncParent<
+            OutType = S::Data,
+            SignalType = SignalType,
+            ThreadIdType = ThreadIdType,
+        > + 'static,
     ) -> S::Resolved
     where
         S: ResolveParent<Self, SignalType, ThreadIdType>,

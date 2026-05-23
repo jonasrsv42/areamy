@@ -84,6 +84,21 @@ assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
 assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
 ```
 
+### Async poll runtime — drop in where it fits
+
+CPU-bound? Sync work threads. I/O-bound? Poll thread, futures, wakers.
+Mix them in the same `ThreadBundle` — same edges, same teardown.
+
+```rust
+let socket = FakeSocket::connect("…").await;
+Join::join([
+    async move { while let Some(v) = socket.read().await { out.push(v + 1); } },
+    async move { while let Input::Data(v) = input.recv().await? { socket.write(v * 3).await; } },
+]).await
+```
+
+Full networking-shaped example: [tests/poll_bidi_example_test.rs](tests/poll_bidi_example_test.rs).
+
 ## Embedded targets
 
 Areamy has no external dependencies and only relies on `std` primitives

@@ -47,6 +47,21 @@ where
     }
 }
 
+impl<DataType, SignalType>
+    Add<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>
+    for PhantomNode<crate::message::Message<DataType, SignalType>>
+where
+    DataType: Send + Sync,
+    SignalType: crate::signal::Origin + Send + Sync,
+{
+    fn add(
+        &mut self,
+        _connection: Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>,
+    ) -> Result<(), crate::error::Error> {
+        Ok(())
+    }
+}
+
 /// [`Connection`] is the base marker indicating that something can form an edge in our graph.
 pub trait Connection {}
 

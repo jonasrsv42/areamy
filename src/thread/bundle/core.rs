@@ -44,7 +44,9 @@ impl ThreadBundle {
     /// the callback list. Which thread "wins" is non-deterministic.
     /// Callbacks run on the winning thread, same constraints as
     /// [`ThreadStream::on_done`](crate::thread::ThreadStream::on_done)
-    /// (no block, no panic).
+    /// (no block, no panic). Panics are caught and logged so one
+    /// misbehaving callback cannot abort the process or prevent its
+    /// siblings from firing.
     ///
     /// **Not provided** (and the caller must handle):
     /// - **Cross-bundle deduplication.** Each `ThreadBundle` has its

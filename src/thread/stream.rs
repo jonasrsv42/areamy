@@ -128,7 +128,12 @@ where
     ///   full.
     /// - Must not acquire a lock held by code that waits on this
     ///   thread.
-    /// - Must not panic.
+    /// - Should not panic. A panic is caught via
+    ///   [`catch_unwind`](std::panic::catch_unwind) so it cannot
+    ///   propagate, abort the process, or stop later callbacks in
+    ///   this thread from running — but the callback's effect is
+    ///   silently dropped (logged unless the `silent` feature is
+    ///   set).
     /// - The `&Done` / inner `&Error` references are valid only for
     ///   the duration of the call; clone fields to retain anything.
     pub fn on_done<F>(&mut self, callback: F) -> &mut Self
@@ -374,6 +379,49 @@ mod tests {
             let tick = self.counter.fetch_add(1, Ordering::SeqCst);
             self.marker.store(tick + 1, Ordering::SeqCst);
         }
+    }
+
+    /// A panicking on_done callback during clean exit must not
+    /// propagate (would convert Join::Ok to Join::Panic) and must not
+    /// prevent later callbacks from running.
+    #[test]
+    fn on_done_panic_on_normal_path_is_isolated() {
+        let mut thread = ThreadStream::<TestThread>::new();
+        thread.add(Box::new(ImmediateClose)).unwrap();
+
+        let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
+        let s1 = seen.clone();
+        let s3 = seen.clone();
+        thread.on_done(move |_| s1.lock().unwrap().push(1));
+        thread.on_done(|_| panic!("callback 2 panics"));
+        thread.on_done(move |_| s3.lock().unwrap().push(3));
+
+        assert!(matches!(thread.start().join(), Join::Ok));
+        assert_eq!(*seen.lock().unwrap(), vec![1, 3]);
+    }
+
+    /// A panicking on_done callback fired from the panic path must
+    /// not double-panic (which would abort the process) and must not
+    /// prevent later callbacks from running.
+    #[test]
+    fn on_done_panic_on_panic_path_is_isolated() {
+        let mut thread = ThreadStream::<TestThread>::new();
+        thread.add(Box::new(Panicker)).unwrap();
+
+        let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
+        let s1 = seen.clone();
+        let s3 = seen.clone();
+        thread.on_done(move |_| s1.lock().unwrap().push(1));
+        thread.on_done(|_| panic!("callback 2 panics during panic"));
+        thread.on_done(move |_| s3.lock().unwrap().push(3));
+
+        // If the catch_unwind in PanicGuard::drop were missing, the
+        // double-panic would abort and this assert would never run.
+        match thread.start().join() {
+            Join::Panic(_) => {}
+            other => panic!("expected Join::Panic, got {:?}", other),
+        }
+        assert_eq!(*seen.lock().unwrap(), vec![1, 3]);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 
 use crate::thread::done::Failure;
 use crate::thread::type_erase::TypeErasedInternalThreadStream;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
 pub(super) type OnFirstError = Box<dyn FnOnce(&Failure) + Send + 'static>;
@@ -15,6 +16,11 @@ pub(super) type OnFirstError = Box<dyn FnOnce(&Failure) + Send + 'static>;
 /// first thread to lock and find a non-empty vec drains it and fires
 /// all callbacks; subsequent winners find the slot empty and do
 /// nothing.
+///
+/// Each user callback is dispatched inside [`catch_unwind`] so one
+/// misbehaving callback cannot prevent its siblings from running and
+/// cannot escape into the spawn closure (which would otherwise
+/// double-panic when fired from the panic path).
 pub(super) fn inject(
     threads: &mut [Box<dyn TypeErasedInternalThreadStream>],
     callbacks: Vec<OnFirstError>,
@@ -42,7 +48,10 @@ pub(super) fn inject(
                 }
             };
             for cb in callbacks {
-                cb(&failure);
+                if catch_unwind(AssertUnwindSafe(|| cb(&failure))).is_err() {
+                    #[cfg(not(feature = "silent"))]
+                    eprintln!("on_first_error callback panicked, continuing");
+                }
             }
         }));
     }
@@ -173,6 +182,34 @@ mod tests {
         let got = captured.lock().unwrap().clone().unwrap();
         assert!(got.starts_with("error: "));
         assert!(got.contains("work failed"));
+    }
+
+    /// A panicking on_first_error callback must not propagate (would
+    /// double-panic when the failure path is `Done::Panic`) and must
+    /// not prevent its siblings from running.
+    #[test]
+    fn panicking_callback_does_not_block_siblings() {
+        let mut thread_a = ThreadStream::<ThreadA>::new();
+        thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
+
+        let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
+        let s1 = seen.clone();
+        let s3 = seen.clone();
+        let mut bundle = ThreadBundle::new();
+        bundle
+            .add(thread_a)
+            .on_first_error(move |_| {
+                s1.lock().unwrap().push(1);
+            })
+            .on_first_error(|_| panic!("on_first_error #2 panics"))
+            .on_first_error(move |_| {
+                s3.lock().unwrap().push(3);
+            });
+
+        // If catch_unwind were missing in inject, the panic on the
+        // panic-path (Done::Panic) would double-panic and abort.
+        let _ = bundle.start().join();
+        assert_eq!(*seen.lock().unwrap(), vec![1, 3]);
     }
 
     #[test]

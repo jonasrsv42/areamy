@@ -63,6 +63,12 @@ where
     /// Create a receiver with no senders attached. Mint senders via
     /// [`Receiver::sender`]. The edge auto-closes when all minted
     /// senders are dropped.
+    ///
+    /// A receiver that never mints a sender has nothing that can
+    /// wake it, so [`read_front`](Self::read_front) /
+    /// [`read_all`](Self::read_all) / [`wait_front`](Self::wait_front)
+    /// will block forever — mint at least one sender before blocking,
+    /// or call [`close`](Self::close) to unblock.
     pub fn new() -> Self {
         let shared = Arc::new(Shared {
             inner: Mutex::new(Inner {

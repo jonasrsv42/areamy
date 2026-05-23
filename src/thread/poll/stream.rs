@@ -209,8 +209,10 @@ fn poll_loop<ThreadIdType: ThreadId>(
 
         let slot = &mut runtime.nodes[node_id];
         let Some(RuntimeNode { pollable, waker }) = slot.as_mut() else {
-            #[cfg(not(feature = "silent"))]
-            eprintln!("Thread wake for closed node {}", node_id);
+            // Benign: a cross-thread producer or sibling node can fire
+            // this slot's waker after we eager-dropped the node on a
+            // prior Ready/Closed. The wake event was already in flight
+            // when the slot was set to None. Silently skip.
             continue;
         };
 

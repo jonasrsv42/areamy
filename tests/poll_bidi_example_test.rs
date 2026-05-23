@@ -9,16 +9,15 @@ use areamy::poll;
 use areamy::poll::Join;
 use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use areamy::sync::Receiver;
 use areamy::{
-    Closeable, Message, Pushable, SyncEdge, ThreadBundle, ThreadId, ThreadStream, make_push,
-    make_work,
+    Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
 };
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::Arc;
 
 #[derive(Debug)]
 struct IoThread;
@@ -211,7 +210,7 @@ fn bidi_with_join() -> Result<(), Error> {
         .output::<areamy::poll::Sync>();
     make_push(&mut source_node, &node)?;
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut node, &output)?;
 
     async_thread.add(node);
@@ -240,7 +239,7 @@ fn bidi_with_join() -> Result<(), Error> {
     assert_eq!(output.read_front()?, Message::Flush("s2".into()));
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }

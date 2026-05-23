@@ -3,9 +3,9 @@
 use areamy::error::Error;
 use areamy::node::Name;
 use areamy::poll;
+use areamy::sync::Receiver;
 use areamy::{
-    Closeable, Message, Pushable, SyncEdge, ThreadBundle, ThreadId, ThreadStream, make_push,
-    make_work,
+    Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
 };
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -179,7 +179,7 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
 
     make_push(&mut source_node, &node)?;
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut node, &output)?;
 
     async_thread.add(node);
@@ -196,7 +196,7 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
     assert_eq!(output.read_front()?, Message::Data(20));
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -220,7 +220,7 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
         .parent(parent)
         .output::<areamy::poll::Sync>();
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
@@ -237,7 +237,7 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
     assert_eq!(output.read_front()?, Message::Data(24));
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -263,7 +263,7 @@ fn long_async_chain() -> Result<(), Error> {
         .parent(d)
         .output::<areamy::poll::Sync>();
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut e, &output)?;
 
     async_thread.add(e);
@@ -285,12 +285,12 @@ fn long_async_chain() -> Result<(), Error> {
     assert_eq!(output.read_front()?, Message::Data(64));
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
 
-/// Fan-out via SyncBridge (Mutex) between Node<Sync, Sync> terminals.
+/// Fan-out via cross-thread sync bridge (Mutex) between Node<Sync, Sync> terminals.
 ///
 /// ```text
 ///                  ┌→ node_b → output_b
@@ -325,8 +325,8 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
     make_push(&mut node_a, &node_b)?;
     make_push(&mut node_a, &node_c)?;
 
-    let output_b = Arc::new(SyncEdge::new());
-    let output_c = Arc::new(SyncEdge::new());
+    let output_b = Receiver::new();
+    let output_c = Receiver::new();
     make_push(&mut node_b, &output_b)?;
     make_push(&mut node_c, &output_c)?;
 
@@ -349,7 +349,7 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
     assert_eq!(output_c.read_front()?, Message::Data(40));
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -389,7 +389,7 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
         .parent(parent_b)
         .output::<areamy::poll::Sync>();
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
@@ -416,7 +416,7 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
 
     source_a.close()?;
     source_b.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -470,7 +470,7 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
         .parent(linked)
         .output::<areamy::poll::Sync>();
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
@@ -500,7 +500,7 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     source_a.close()?;
     source_b.close()?;
     source_c.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -524,7 +524,7 @@ fn node_terminal_via_typed() -> Result<(), Error> {
 
     make_push(&mut source_node, &node)?;
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut node, &output)?;
 
     async_thread.add(node);
@@ -541,7 +541,7 @@ fn node_terminal_via_typed() -> Result<(), Error> {
     assert_eq!(output.read_front()?, Message::Data(20));
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -564,7 +564,7 @@ fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
         .parent(parent)
         .output::<areamy::poll::Sync>();
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
@@ -581,7 +581,7 @@ fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
     assert_eq!(output.read_front()?, Message::Data(24));
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -612,7 +612,7 @@ fn node_sink_deferred_output() -> Result<(), Error> {
     source.push(Message::Data(5))?;
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -705,7 +705,7 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
     source_a.close()?;
     source_b.close()?;
     source_c.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
 
     // Verify sink_1 received doubled values from a and b
@@ -842,7 +842,7 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
         .parent(parent)
         .output::<areamy::poll::Sync>();
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
@@ -872,7 +872,7 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
     assert_eq!(*flush_count.lock().unwrap(), 1);
 
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }
@@ -970,7 +970,7 @@ fn multi_flush_then_close() -> Result<(), Error> {
         .parent(parent)
         .output::<areamy::poll::Sync>();
 
-    let output = Arc::new(SyncEdge::new());
+    let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
@@ -1006,7 +1006,7 @@ fn multi_flush_then_close() -> Result<(), Error> {
     // Close: flush() called (accumulator=0, nothing emitted).
     // poll() returns Ready → close propagates.
     source.close()?;
-    let errors = handle.join()?;
+    let errors = handle.join().errors();
     assert!(errors.is_empty());
     Ok(())
 }

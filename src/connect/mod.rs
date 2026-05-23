@@ -55,12 +55,11 @@ mod make;
 pub mod marker;
 pub mod poll;
 pub mod signal_policy;
-pub mod sync_edge;
+pub mod sync;
 pub mod waker;
 
 pub use graph::{Closeable, Pollable, Pullable, Pushable, Receivable, Workable};
 pub use make::work;
 pub use make::{make_bidi, make_push, make_work};
-pub use poll::{PollEdge, SyncBridge};
+pub use poll::PollEdge;
 pub use signal_policy::{PolicyEdge, SignalPolicy};
-pub use sync_edge::SyncEdge;

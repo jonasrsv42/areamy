@@ -1,9 +1,12 @@
-//! A same-thread async edge. No Mutex, no Send+Sync overhead.
+//! A same-thread async edge.
 //!
 //! Used for connections between async nodes on the same [crate::thread::poll::stream::Thread].
 //! Fires a [Waker] on push to wake the consuming node.
 //!
-//! For cross-thread connections (sync → async), use [SyncBridge] instead.
+//! Unlike sync variants that need separate producer and consumer for clean
+//! teardown semantics this is a single shared queue, this is sound because
+//! this will only-ever be owned by a single thread and so its fully cleaned up
+//! one teardown of that thread.
 
 use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;

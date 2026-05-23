@@ -30,29 +30,29 @@
 //! # Example
 //!
 //! ```
-//! use areamy::{Message, SyncEdge, error::ErrorKind};
-//! use std::sync::Arc;
+//! use areamy::sync::Receiver;
+//! use areamy::{Message, error::ErrorKind};
 //!
-//! // Create an edge (the underlying connection)
-//! let edge = Arc::new(SyncEdge::<i32, usize>::new());
+//! // Create a receiver and mint a sender.
+//! let rx = Receiver::<i32, usize>::new();
+//! let tx = rx.sender();
 //!
-//! // Push some data
-//! edge.push_back(Message::Data(1)).unwrap();
-//! edge.push_back(Message::Data(2)).unwrap();
+//! tx.push_back(Message::Data(1)).unwrap();
+//! tx.push_back(Message::Data(2)).unwrap();
 //!
-//! // Close the edge
-//! edge.close().unwrap();
+//! // Close the channel via the sender.
+//! tx.close().unwrap();
 //!
-//! // Pushes now fail with Closed
-//! let err = edge.push_back(Message::Data(3)).unwrap_err();
+//! // Pushes now fail with Closed.
+//! let err = tx.push_back(Message::Data(3)).unwrap_err();
 //! assert!(matches!(err.kind, ErrorKind::Closed));
 //!
-//! // But buffered data can still be read
-//! assert_eq!(edge.read_front().unwrap(), Message::Data(1));
-//! assert_eq!(edge.read_front().unwrap(), Message::Data(2));
+//! // But buffered data can still be read.
+//! assert_eq!(rx.read_front().unwrap(), Message::Data(1));
+//! assert_eq!(rx.read_front().unwrap(), Message::Data(2));
 //!
-//! // Now buffer is empty - reads return Closed
-//! let err = edge.read_front().unwrap_err();
+//! // Now buffer is empty — reads return Closed.
+//! let err = rx.read_front().unwrap_err();
 //! assert!(matches!(err.kind, ErrorKind::Closed));
 //! ```
 //!

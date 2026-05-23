@@ -6,8 +6,8 @@
 //! Used as type parameters on [`Node`](crate::node::line::poll::builder::node::Node)
 //! to select storage and control which wiring methods are available.
 
-use super::async_in::AsyncIn;
 use super::null::Null;
+use crate::connect::poll::input;
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::marker::Connection;
 use crate::signal::Origin;
@@ -23,7 +23,8 @@ pub trait Edge: Connection {
     type Alloc<'a>;
 }
 
-/// Sync edge — cross-thread, uses [`SyncBridge`] (Mutex + Waker).
+/// Sync edge — cross-thread, uses [`input::sync::Receiver`]
+/// (Mutex + Waker) with refcounted close-on-drop.
 pub struct Sync;
 
 /// Async edge — same-thread, uses [`PollEdge`](super::poll::PollEdge) (no Mutex).
@@ -43,7 +44,7 @@ impl Connection for Deferred {}
 
 impl Edge for Sync {
     type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> =
-        super::sync::SyncInput<InType, SignalType>;
+        input::sync::Input<InType, SignalType>;
     type Output<OutType, SignalType: Origin> = Vec<
         Box<dyn Closeable<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync>,
     >;
@@ -52,7 +53,7 @@ impl Edge for Sync {
 
 impl Edge for Async {
     type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> =
-        AsyncIn<InType, SignalType, ThreadIdType>;
+        input::r#async::Input<InType, SignalType, ThreadIdType>;
     type Output<OutType, SignalType: Origin> = Linktime;
     type Alloc<'a> = ();
 }

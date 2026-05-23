@@ -10,12 +10,12 @@ use areamy::poll;
 use areamy::poll::future;
 use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use areamy::source::push::Source;
-use areamy::{Closeable, Message, Pushable, SyncEdge, ThreadId, make_push};
+use areamy::sync::Receiver;
+use areamy::{Closeable, Message, Pushable, ThreadId, make_push};
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::Arc;
 
 #[derive(Debug)]
 struct IoThread;
@@ -83,7 +83,7 @@ fn biunion_audio_with_config() {
     let mut audio_source = Source::<usize>::of::<_, biunion::Left>(&node).unwrap();
     let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
 
-    let output_edge = Arc::new(SyncEdge::new());
+    let output_edge = Receiver::new();
     make_push(&mut node, &output_edge).unwrap();
 
     async_thread.add(node);
@@ -113,8 +113,7 @@ fn biunion_audio_with_config() {
     // Close audio — should close the whole node (wakes right input too)
     audio_source.close().unwrap();
 
-    let result = handle.join().unwrap();
-    assert!(result.is_none());
+    assert!(matches!(handle.join(), areamy::thread::Join::Ok));
 }
 
 /// Audio comes from an async parent (line node that doubles), config from sync.
@@ -189,7 +188,7 @@ fn biunion_with_async_parent() {
 
     let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
 
-    let output_edge = Arc::new(SyncEdge::new());
+    let output_edge = Receiver::new();
     make_push(&mut node, &output_edge).unwrap();
 
     async_thread.add(node);
@@ -214,6 +213,5 @@ fn biunion_with_async_parent() {
     assert_eq!(output_edge.read_front().unwrap(), Message::Data(30));
 
     audio_source.close().unwrap();
-    let result = handle.join().unwrap();
-    assert!(result.is_none());
+    assert!(matches!(handle.join(), areamy::thread::Join::Ok));
 }

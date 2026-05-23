@@ -12,12 +12,12 @@
 use super::node::{Allocated, Allocating, BuilderInput, Node};
 use crate::ThreadId;
 use crate::biunion;
-use crate::connect::poll::edge::{Deferred, Edge, Null, Sync, SyncBridge, SyncInput};
+use crate::connect::poll::edge::{Deferred, Edge, Null, Sync};
+use crate::connect::poll::input::sync::{Input, Receiver};
 use crate::connect::poll::traits::AsyncParent;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
-use std::sync::Arc;
 
 /// Resolve one input to Async via a parent node.
 pub trait ResolveParent<Node, SignalType: Origin, ThreadIdType: ThreadId> {
@@ -107,8 +107,8 @@ where
             alloc: node.alloc,
             factory: node.factory,
             input: BuilderInput {
-                left: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
+                left: Input {
+                    edge: Receiver::new(waker),
                     slot,
                 },
                 right: node.input.right,
@@ -175,8 +175,8 @@ where
             alloc: Allocated,
             factory: node.factory,
             input: BuilderInput {
-                left: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
+                left: Input {
+                    edge: Receiver::new(waker),
                     slot,
                 },
                 right: node.input.right,
@@ -243,8 +243,8 @@ where
             alloc: Allocated,
             factory: node.factory,
             input: BuilderInput {
-                left: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
+                left: Input {
+                    edge: Receiver::new(waker),
                     slot,
                 },
                 right: node.input.right,
@@ -316,8 +316,8 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: node.input.left,
-                right: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
+                right: Input {
+                    edge: Receiver::new(waker),
                     slot,
                 },
             },
@@ -384,8 +384,8 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: node.input.left,
-                right: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
+                right: Input {
+                    edge: Receiver::new(waker),
                     slot,
                 },
             },
@@ -452,8 +452,8 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: node.input.left,
-                right: SyncInput {
-                    edge: Arc::new(SyncBridge::new(waker)),
+                right: Input {
+                    edge: Receiver::new(waker),
                     slot,
                 },
             },

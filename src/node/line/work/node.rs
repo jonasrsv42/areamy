@@ -1,9 +1,10 @@
 //! [LineTrait] and default implementation for running [LineRoutine].
+use crate::connect::sync::Receiver;
 use crate::error::Error;
 use crate::node::line::LineRoutine;
 use crate::{Closeable, Pushable, Workable};
 use crate::{
-    DefaultThread, SyncEdge, ThreadId,
+    DefaultThread, ThreadId,
     graph::{Add, Get},
     marker::Connection,
 };
@@ -78,7 +79,7 @@ where
     pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>>,
 
     /// Input to our current node that parents will push into.
-    pub input: Arc<SyncEdge<In, SignalType>>,
+    pub input: Receiver<In, SignalType>,
 }
 
 /// Mark our Line as a possible connection in a graph. It's a connection
@@ -196,7 +197,7 @@ where
             worker,
             workers: Vec::new(),
             pushes: Vec::new(),
-            input: Arc::new(SyncEdge::new()),
+            input: Receiver::new(),
         }
     }
 }
@@ -218,7 +219,7 @@ where
             worker,
             workers: Vec::new(),
             pushes: Vec::new(),
-            input: Arc::new(SyncEdge::new()),
+            input: Receiver::new(),
         }
     }
 

@@ -13,13 +13,13 @@
 //!   implement [`Pullable`](crate::Pullable) directly, like file readers. These pull data
 //!   on-demand rather than buffering.
 
+use crate::connect::sync::Receiver;
 use crate::error::Error;
 use crate::graph::Get;
 use crate::marker::Connection;
 use crate::message::Message;
-use crate::{Origin, Pullable, Pushable, SyncEdge, ThreadId};
+use crate::{Origin, Pullable, Pushable, ThreadId};
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 /// A buffer that serves as the entry point to a [`Pullable`] subgraph.
 ///
@@ -54,11 +54,8 @@ where
     SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
 {
-    /// The input queue to the [Pullable] chain. For now we have a [SyncEdge]
-    /// but will support [std::collections::VecDeque] in the future as well.
-    ///
-    /// TODO: support having a sync or nosync input.
-    pub input: Arc<SyncEdge<DataType, SignalType>>,
+    /// The input queue to the [Pullable] chain.
+    pub input: Receiver<DataType, SignalType>,
 
     /// The threadId that belongs to the child nodes.
     thread: PhantomData<ThreadIdType>,
@@ -72,7 +69,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            input: Arc::new(SyncEdge::new()),
+            input: Receiver::new(),
             thread: PhantomData,
         }
     }

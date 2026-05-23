@@ -426,10 +426,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::poll::edge::SyncBridge;
+    use crate::DefaultThread;
+    use crate::connect::poll::input;
+    use crate::connect::sync::Receiver;
     use crate::connect::waker::{self, ThreadLocalWake, ThreadLocalWaker};
     use crate::node::line::poll::routine::tests::MockLine;
-    use crate::{DefaultThread, SyncEdge};
     use std::cell::Cell;
     use std::rc::Rc;
     use std::sync::Arc;
@@ -468,14 +469,15 @@ mod tests {
     #[test]
     fn poll_processes_input_and_produces_output() {
         let (waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::new(waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::new(waker);
+        let input = input_recv.sender();
+        let output = Receiver::new();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
                 MockLine::new(noop_local_waker()),
-                input.clone(),
-                output.clone(),
+                input_recv,
+                output.sender(),
                 noop_local_waker(),
                 noop_local_waker(),
                 noop_local_waker(),
@@ -509,20 +511,21 @@ mod tests {
     #[test]
     fn poll_returns_closed_on_closed_input() {
         let (waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::<usize, &str>::new(waker);
+        let input = input_recv.sender();
+        let output = Receiver::new();
 
         let (mut input_phase, _work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
                 MockLine::new(noop_local_waker()),
-                input.clone(),
-                output,
+                input_recv,
+                output.sender(),
                 noop_local_waker(),
                 noop_local_waker(),
                 noop_local_waker(),
             );
 
-        SyncBridge::close(&input).unwrap();
+        input.close().unwrap();
 
         let mut wkr = noop_waker();
 
@@ -545,14 +548,14 @@ mod tests {
     #[test]
     fn poll_calls_routine_poll() {
         let (waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::<usize, &str>::new(waker);
+        let output = Receiver::new();
 
         let (_input_phase, mut work_phase, _output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
                 MockLine::new(noop_local_waker()),
-                input,
-                output,
+                input_recv,
+                output.sender(),
                 noop_local_waker(),
                 noop_local_waker(),
                 noop_local_waker(),
@@ -599,14 +602,14 @@ mod tests {
     #[test]
     fn routine_returning_closed_becomes_fatal() {
         let (waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::<usize, &str>::new(waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::<usize, &str>::new(waker);
+        let output = Receiver::new();
 
         let (_input_phase, mut work_phase, _output_phase) =
             new_phases::<_, _, _, DefaultThread, _, _, _>(
                 ClosedErrorRoutine,
-                input,
-                output,
+                input_recv,
+                output.sender(),
                 noop_local_waker(),
                 noop_local_waker(),
                 noop_local_waker(),
@@ -625,14 +628,15 @@ mod tests {
     #[test]
     fn routine_returning_closed_during_flush_becomes_fatal() {
         let (waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::new(waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::new(waker);
+        let input = input_recv.sender();
+        let output = Receiver::new();
 
         let (mut input_phase, mut work_phase, _output_phase) =
             new_phases::<_, _, _, DefaultThread, _, _, _>(
                 ClosedErrorRoutine,
-                input.clone(),
-                output,
+                input_recv,
+                output.sender(),
                 noop_local_waker(),
                 noop_local_waker(),
                 noop_local_waker(),
@@ -655,14 +659,15 @@ mod tests {
     #[test]
     fn poll_drains_multiple_inputs() {
         let (waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::new(waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::new(waker);
+        let input = input_recv.sender();
+        let output = Receiver::new();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
                 MockLine::new(noop_local_waker()),
-                input.clone(),
-                output.clone(),
+                input_recv,
+                output.sender(),
                 noop_local_waker(),
                 noop_local_waker(),
                 noop_local_waker(),
@@ -684,14 +689,15 @@ mod tests {
     #[test]
     fn marker_preserves_ordering_with_data() {
         let (waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::new(waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::new(waker);
+        let input = input_recv.sender();
+        let output = Receiver::new();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
                 MockLine::new(noop_local_waker()),
-                input.clone(),
-                output.clone(),
+                input_recv,
+                output.sender(),
                 noop_local_waker(),
                 noop_local_waker(),
                 noop_local_waker(),
@@ -733,8 +739,9 @@ mod tests {
     #[test]
     fn flush_wakes_input_for_remaining_data() {
         let (bridge_waker, _) = test_waker();
-        let input = Arc::new(SyncBridge::new(bridge_waker));
-        let output = Arc::new(SyncEdge::new());
+        let input_recv = input::sync::Receiver::new(bridge_waker);
+        let input = input_recv.sender();
+        let output = Receiver::new();
 
         let input_woken = Rc::new(Cell::new(false));
         let input_waker = ThreadLocalWaker::new({
@@ -750,8 +757,8 @@ mod tests {
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
                 MockLine::new(noop_local_waker()),
-                input.clone(),
-                output.clone(),
+                input_recv,
+                output.sender(),
                 input_waker,
                 noop_local_waker(),
                 noop_local_waker(),
@@ -763,7 +770,7 @@ mod tests {
 
         let mut wkr = noop_waker();
 
-        // Input drains Data(1), hits Flush → Flushing. Data(2) still in SyncBridge.
+        // Input drains Data(1), hits Flush → Flushing. Data(2) still in the bridge.
         let _ = input_phase.poll(&mut wkr).unwrap();
         // Work → Ready → FlushReady
         let _ = work_phase.poll(&mut wkr).unwrap();

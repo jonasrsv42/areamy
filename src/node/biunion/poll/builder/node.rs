@@ -246,7 +246,7 @@ where
         Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + std::marker::Sync>,
         Error,
     > {
-        Ok(Box::new(self.input.left.edge.clone()))
+        Ok(Box::new(self.input.left.edge.sender()))
     }
 }
 
@@ -282,7 +282,7 @@ where
         Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + std::marker::Sync>,
         Error,
     > {
-        Ok(Box::new(self.input.right.edge.clone()))
+        Ok(Box::new(self.input.right.edge.sender()))
     }
 }
 

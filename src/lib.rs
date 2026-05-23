@@ -9,7 +9,7 @@ pub mod node;
 mod signal;
 pub mod sink;
 pub mod source;
-mod thread;
+pub mod thread;
 pub mod work;
 pub use source::source::{GraphPullSource, GraphPushSource};
 mod contains;
@@ -24,9 +24,10 @@ pub use contains::Contains;
 pub use generates::Generates;
 
 pub use crate::connect::graph;
+pub use connect::sync;
 pub use connect::{
-    Closeable, PolicyEdge, Pollable, Pullable, Pushable, Receivable, SignalPolicy, SyncBridge,
-    SyncEdge, Workable, make_bidi, make_push, make_work, marker::Connection,
+    Closeable, PolicyEdge, Pollable, Pullable, Pushable, Receivable, SignalPolicy, Workable,
+    make_bidi, make_push, make_work, marker::Connection,
 };
 pub use message::Message;
 pub use node::{
@@ -39,8 +40,7 @@ pub use signal::{Origin, Trackable};
 pub mod poll;
 pub use sink::GraphSink;
 pub use thread::{
-    BundlePanics, DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream,
-    ThreadStreamHandle,
+    DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream, ThreadStreamHandle,
 };
 
 #[cfg(test)]

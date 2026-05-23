@@ -58,15 +58,16 @@ where
     }
 }
 
-// Connect a synchronous worker with a non-synchronouys pullable to create synchronous
-// node.
-/// [bridge_nosync] creates a [LineTrait] implementation from a [LineRoutine] and
-/// a [Pullable]. The [LineTrait] can the be further connected to other graph nodes using
-/// the same functions as documented in [crate::work::make_line].
+/// Build a [LineTrait] node fed by a [Pullable] parent.
 ///
-/// * `pullable` - a [Pullable] type that will be owned by [LineTrait]
-/// * `worker` - a [LineRoutine] that will be in the resulting [LineTrait] node.
-pub fn bridge_nosync<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
+/// Bridges a pull-graph segment (the `pullable`) into a work-graph
+/// node (built from `worker`). The resulting node can be wired to
+/// other work-graph nodes via [crate::make_bidi], [crate::make_push]
+/// and [crate::make_work] like any other [LineTrait].
+///
+/// * `pullable` - a [Pullable] parent owned by the returned node.
+/// * `worker` - the [LineRoutine] that processes data inside the node.
+pub fn from_pull<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
     pullable: PullableType,
     worker: RoutineType,
 ) -> Box<
@@ -85,7 +86,7 @@ where
         Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
 {
     let mut line = Line::of(worker);
-    let bridge = Bridge::new(pullable, line.input.clone());
+    let bridge = Bridge::new(pullable, line.input.sender());
     line.workers.push(Box::new(bridge));
 
     Box::new(line)
@@ -102,7 +103,7 @@ pub mod tests {
         let buffer = crate::pull::SourceBuffer::new();
         let mut source = Source::new(&buffer).unwrap();
 
-        let line = bridge_nosync(buffer, MockLine::new());
+        let line = from_pull(buffer, MockLine::new());
         let mut sink = Sink::new(line).unwrap();
 
         source.push(Message::Data(1)).unwrap();

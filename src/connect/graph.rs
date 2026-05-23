@@ -28,7 +28,7 @@ pub trait Workable: Send + Connection {
 /// <div class="warning"> Nodes should never implement [Pushable] as it
 /// easily leads to circualar references and memory leaks </div>
 ///
-/// Instead nodes hold a reference to something that is `Pushable` such as a Arc<SyncEdge<...>> Or Rc<RefCell<Vec<..>>>
+/// Instead nodes hold a reference to something that is [Pushable] such as a [crate::sync::Sender] or `Rc<RefCell<Vec<..>>>`
 pub trait Pushable: Connection {
     /// The DataType used in [Message<DataType, SignalType>] for this [Pushable]
     type DataType;
@@ -140,8 +140,8 @@ pub trait Get<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicit
 #[cfg(any(test, doc))]
 pub mod tests {
     use super::*;
-    use crate::{DefaultThread, Message, SyncEdge, make_bidi, make_push};
-    use std::sync::Arc;
+    use crate::connect::sync::Receiver;
+    use crate::{DefaultThread, Message, make_bidi, make_push};
 
     /// A `Simple` "coroutine". At time of writing, 2024/12/11, coroutines
     /// are still experimental in rust.
@@ -178,7 +178,7 @@ pub mod tests {
     ///
     pub struct Node {
         /// Incoming data connection(s), `Pushable`(s).
-        pub input: Arc<SyncEdge<usize, usize>>,
+        pub input: Receiver<usize, usize>,
         /// The underyling routine of the node.
         pub routine: Routine,
 
@@ -198,7 +198,7 @@ pub mod tests {
     impl Node {
         pub fn new() -> Self {
             Node {
-                input: Arc::new(SyncEdge::new()),
+                input: Receiver::new(),
                 routine: Routine { state: 0 },
                 workers: Vec::new(),
                 pullable: None,
@@ -245,7 +245,7 @@ pub mod tests {
     /// Method for fetching input. We put it in a `Box` for dynamic dispatch.
     impl Get<dyn Pushable<DataType = usize, SignalType = usize>> for Node {
         fn get(&self) -> Result<Box<dyn Pushable<DataType = usize, SignalType = usize>>, Error> {
-            Ok(Box::new(self.input.clone()))
+            Ok(Box::new(self.input.sender()))
         }
     }
 
@@ -255,7 +255,7 @@ pub mod tests {
             &self,
         ) -> Result<Box<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync>, Error>
         {
-            Ok(Box::new(self.input.clone()))
+            Ok(Box::new(self.input.sender()))
         }
     }
 
@@ -278,9 +278,9 @@ pub mod tests {
         }
     }
 
-    /// A `work` and `push` chain example. Since we use `SyncEdge` for message passing
-    /// it is excellent for sharing nodes across different threads. As in the mutli-threaded graph
-    /// example above.
+    /// A `work` and `push` chain example. Since message passing uses
+    /// [crate::sync::Sender] / [crate::sync::Receiver] pairs, the same chain
+    /// works across threads — see the multi-threaded graph example above.
     #[test]
     fn connect_push_work_bidi_chain() {
         let node_1 = Box::new(Node::new());
@@ -293,7 +293,7 @@ pub mod tests {
         make_bidi(node_1, node_2.as_mut()).unwrap();
         make_bidi(node_2, node_3.as_mut()).unwrap();
 
-        let sink = Arc::new(SyncEdge::new());
+        let sink = Receiver::new();
 
         make_push(&mut node_3, &sink).unwrap();
 
@@ -382,7 +382,7 @@ pub mod tests {
         let mut node_2 = Box::new(Node::new());
         let mut node_3 = Box::new(Node::new());
 
-        let mut input = node_1.input.clone();
+        let mut input = node_1.input.sender();
 
         Add::<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>::add(
             node_2.as_mut(),
@@ -407,7 +407,7 @@ pub mod tests {
     /// A simple async node that processes input via `Pollable`.
     /// It polls its input edge non-blockingly and processes data.
     struct AsyncNode {
-        input: Arc<SyncEdge<usize, usize>>,
+        input: Receiver<usize, usize>,
         routine: Routine,
         outputs: Vec<usize>,
     }
@@ -415,7 +415,7 @@ pub mod tests {
     impl AsyncNode {
         fn new() -> Self {
             AsyncNode {
-                input: Arc::new(SyncEdge::new()),
+                input: Receiver::new(),
                 routine: Routine { state: 0 },
                 outputs: Vec::new(),
             }
@@ -452,7 +452,7 @@ pub mod tests {
         }
 
         let mut node = AsyncNode::new();
-        let mut input = node.input.clone();
+        let mut input = node.input.sender();
 
         input.push(Message::Data(0)).unwrap();
         input.push(Message::Data(1)).unwrap();
@@ -486,7 +486,7 @@ pub mod tests {
 
     /// A `Pollable` node that returns `Ready` when closed.
     struct ClosingAsyncNode {
-        input: Arc<SyncEdge<usize, usize>>,
+        input: Receiver<usize, usize>,
     }
 
     impl Connection for ClosingAsyncNode {}
@@ -515,7 +515,7 @@ pub mod tests {
         }
 
         let mut node = ClosingAsyncNode {
-            input: Arc::new(SyncEdge::new()),
+            input: Receiver::new(),
         };
 
         node.input.close().unwrap();

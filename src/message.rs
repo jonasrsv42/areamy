@@ -72,6 +72,21 @@ where
     }
 }
 
+impl<DataType, SignalType> Message<DataType, SignalType>
+where
+    SignalType: Origin,
+{
+    /// [Message::data] provides a convenient method of
+    /// extracting [Message::Data] from a [Message]
+    pub fn data(self) -> Option<DataType> {
+        match self {
+            Message::Data(data) => Some(data),
+            Message::Flush(_) => None,
+            Message::Marker(_) => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +101,12 @@ mod tests {
             Message::Data(5),
         ];
         assert_eq!(Message::data_from_iter(iter.into_iter()), vec![1, 2, 5]);
+    }
+
+    #[test]
+    fn data_from_message() {
+        assert!(matches!(Message::<i32, usize>::Data(5).data(), Some(5)));
+        assert!(matches!(Message::<i32, usize>::Flush(5).data(), None));
+        assert!(matches!(Message::<i32, usize>::Marker(5).data(), None));
     }
 }

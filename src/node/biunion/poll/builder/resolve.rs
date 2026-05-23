@@ -6,7 +6,8 @@ use super::node::{Allocated, Allocating, BuilderInput, Node};
 use super::traits::ResolveParent;
 use crate::ThreadId;
 use crate::biunion;
-use crate::connect::poll::edge::{Async, AsyncIn, Deferred, Null, Sync};
+use crate::connect::poll::edge::{Async, Deferred, Null, Sync};
+use crate::connect::poll::input;
 use crate::connect::poll::traits::AsyncParent;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
@@ -73,7 +74,7 @@ where
             alloc: node.alloc,
             factory: node.factory,
             input: BuilderInput {
-                left: AsyncIn {
+                left: input::r#async::Input {
                     parents: vec![parent],
                 },
                 right: node.input.right,
@@ -144,7 +145,7 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: node.input.left,
-                right: AsyncIn {
+                right: input::r#async::Input {
                     parents: vec![parent],
                 },
             },
@@ -215,7 +216,7 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: node.input.left,
-                right: AsyncIn {
+                right: input::r#async::Input {
                     parents: vec![parent],
                 },
             },
@@ -285,7 +286,7 @@ where
             alloc: Allocated,
             factory: node.factory,
             input: BuilderInput {
-                left: AsyncIn {
+                left: input::r#async::Input {
                     parents: vec![parent],
                 },
                 right: node.input.right,
@@ -356,7 +357,7 @@ where
             alloc: Allocated,
             factory: node.factory,
             input: BuilderInput {
-                left: AsyncIn {
+                left: input::r#async::Input {
                     parents: vec![parent],
                 },
                 right: node.input.right,
@@ -428,7 +429,7 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: node.input.left,
-                right: AsyncIn {
+                right: input::r#async::Input {
                     parents: vec![parent],
                 },
             },

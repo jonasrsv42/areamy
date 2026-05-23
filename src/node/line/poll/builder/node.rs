@@ -24,8 +24,9 @@
 //! thread and does NOT need to be [Send].
 
 use super::traits::{ResolveInput, ResolveOutput};
-use crate::connect::poll::edge::{Async, AsyncIn, Deferred, Edge, Null, PollEdge, Sync};
+use crate::connect::poll::edge::{Async, Deferred, Edge, Null, PollEdge, Sync};
 use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
+use crate::connect::poll::input;
 use crate::connect::poll::traits::AsyncParent;
 use crate::connect::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::error::Error;
@@ -96,7 +97,7 @@ where
     }
 
     /// Resolve input edge. Only [`Sync`] is supported via [`ResolveInput`].
-    /// Allocates a sync waker and creates a [SyncBridge].
+    /// Allocates a sync waker and creates a sync→poll bridge receiver.
     /// Releases the allocator borrow. Output stays Deferred.
     pub fn input<E: ResolveInput<InType, SignalType, ThreadIdType>>(
         self,
@@ -204,7 +205,7 @@ where
         Node {
             alloc: (),
             factory: self.factory,
-            input: AsyncIn {
+            input: input::r#async::Input {
                 parents: vec![Box::new(parent)],
             },
             output: self.output,
@@ -278,7 +279,7 @@ where
         Box<dyn Closeable<DataType = InType, SignalType = SignalType> + Send + std::marker::Sync>,
         Error,
     > {
-        Ok(Box::new(self.input.edge.clone()))
+        Ok(Box::new(self.input.edge.sender()))
     }
 }
 

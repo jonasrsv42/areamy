@@ -36,46 +36,43 @@ impl<T: Closeable> Closeable for Rc<RefCell<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Message;
     use crate::Pushable;
-    use crate::{Message, SyncEdge};
-    use std::sync::Arc;
+    use crate::connect::sync::{Receiver, Sender};
 
     fn close(closeable: &mut impl Closeable<DataType = usize, SignalType = usize>) {
         closeable.close().unwrap();
     }
 
     #[test]
-    fn closeable_arc_dyn_can_close() {
-        let queue = Arc::new(SyncEdge::<usize, usize>::new());
+    fn closeable_boxed_dyn_can_close() {
+        let rx = Receiver::<usize, usize>::new();
+        let tx = rx.sender();
 
-        let mut closeable: Box<dyn Closeable<DataType = usize, SignalType = usize>> =
-            Box::new(queue.clone());
+        let mut closeable: Box<dyn Closeable<DataType = usize, SignalType = usize>> = Box::new(tx);
 
-        // Push some data first
         closeable.push(Message::Data(5)).unwrap();
-
-        // Close it
         close(&mut closeable);
 
-        // Can still read buffered data
-        assert_eq!(queue.read_front().unwrap(), Message::Data(5));
+        assert_eq!(rx.read_front().unwrap(), Message::Data(5));
 
-        // But push should fail now
-        let result = queue.push_back(Message::Data(6));
-        assert!(result.is_err());
+        // Channel is closed; further pushes fail.
+        let extra = rx.sender();
+        assert!(extra.push_back(Message::Data(6)).is_err());
     }
 
     #[test]
-    fn closeable_arc_can_close() {
-        let queue = Arc::new(SyncEdge::<usize, usize>::new());
-        let mut closeable: Box<Arc<SyncEdge<usize, usize>>> = Box::new(queue.clone());
+    fn closeable_boxed_concrete_can_close() {
+        let rx = Receiver::<usize, usize>::new();
+        let tx = rx.sender();
+        let mut closeable: Box<Sender<usize, usize>> = Box::new(tx);
 
         closeable.push(Message::Data(5)).unwrap();
         close(&mut closeable);
 
-        assert_eq!(queue.read_front().unwrap(), Message::Data(5));
+        assert_eq!(rx.read_front().unwrap(), Message::Data(5));
 
-        let result = queue.push_back(Message::Data(6));
-        assert!(result.is_err());
+        let extra = rx.sender();
+        assert!(extra.push_back(Message::Data(6)).is_err());
     }
 }

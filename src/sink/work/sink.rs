@@ -1,10 +1,9 @@
-use crate::SyncEdge;
+use crate::connect::sync::Receiver;
 use crate::error::Error;
 use crate::{
     Closeable, DefaultThread, ThreadId, Trackable, Workable, graph::Add, marker::Multiplicity,
 };
 use crate::{Message, Origin};
-use std::sync::Arc;
 
 pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
 where
@@ -13,7 +12,7 @@ where
     ThreadIdType: ThreadId,
 {
     workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
-    buffer: Arc<SyncEdge<DataType, SignalType>>,
+    buffer: Receiver<DataType, SignalType>,
 }
 
 impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>
@@ -30,15 +29,9 @@ where
             > + 'static,
         >,
     ) -> Result<Self, Error> {
-        let shared_buffer = Arc::new(SyncEdge::new());
-
-        Add::add(workable.as_mut(), Box::new(shared_buffer.clone()))?;
-        let sink = Self {
-            workable,
-            buffer: shared_buffer.clone(),
-        };
-
-        return Ok(sink);
+        let buffer = Receiver::new();
+        Add::add(workable.as_mut(), Box::new(buffer.sender()))?;
+        Ok(Self { workable, buffer })
     }
 }
 
@@ -60,15 +53,9 @@ where
     where
         MultiplicityType: Multiplicity,
     {
-        let shared_buffer = Arc::new(SyncEdge::new());
-
-        Add::add(workable.as_mut(), Box::new(shared_buffer.clone()))?;
-        let sink = Self {
-            workable,
-            buffer: shared_buffer.clone(),
-        };
-
-        return Ok(sink);
+        let buffer = Receiver::new();
+        Add::add(workable.as_mut(), Box::new(buffer.sender()))?;
+        Ok(Self { workable, buffer })
     }
 
     pub fn read(&mut self) -> Result<Message<DataType, SignalType>, Error> {
@@ -108,7 +95,7 @@ where
 mod tests {
     use super::*;
     use crate::{graph::Get, marker::Connection};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     struct MockNode {
         output: Message<usize, &'static str>,

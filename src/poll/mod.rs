@@ -4,10 +4,9 @@ pub mod future;
 pub mod join;
 pub mod select;
 
-pub use crate::connect::poll::edge::{
-    Async, AsyncIn, Deferred, Edge, Linktime, Null, PollEdge, Sync,
-};
+pub use crate::connect::poll::edge::{Async, Deferred, Edge, Linktime, Null, PollEdge, Sync};
 pub use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
+pub use crate::connect::poll::input;
 pub use crate::node::line::poll::factory::LineRoutineFactory;
 pub use crate::node::line::poll::routine::LineRoutine;
 pub use crate::thread::poll::stream::{Thread, ThreadHandle};

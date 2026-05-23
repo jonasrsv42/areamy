@@ -18,9 +18,9 @@ use std::marker::PhantomData;
 /// Compare
 ///
 /// ```bash
-/// areamy::sync::Connect<EncoderFrame>(a, b)
-/// areamy::sync::Connect<DecoderFrame>(b, c)
-/// areamy::sync::Connect<Decision>(c, d)
+/// areamy::work::Connect::<EncoderFrame>::bidi(a, &mut b)
+/// areamy::work::Connect::<DecoderFrame>::bidi(b, &mut c)
+/// areamy::work::Connect::<Decision>::bidi(c, &mut d)
 /// ```
 /// versus
 ///

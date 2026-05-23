@@ -46,35 +46,35 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Message, SyncEdge};
-    use std::sync::Arc;
+    use crate::Message;
+    use crate::connect::sync::{Receiver, Sender};
 
     fn push(pushable: &mut impl Pushable<DataType = usize, SignalType = usize>, value: usize) {
         pushable.push(Message::Data(value)).unwrap();
     }
 
     #[test]
-    fn pushable_can_push() {
-        let mut pushable = SyncEdge::<usize, usize>::new();
-        push(&mut pushable, 5);
-        assert_eq!(pushable.read_all().unwrap(), vec![Message::Data(5)]);
+    fn pushable_sender_can_push() {
+        let rx = Receiver::<usize, usize>::new();
+        let mut tx = rx.sender();
+        push(&mut tx, 5);
+        assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
     }
 
     #[test]
-    fn pushable_arc_dyn_can_push() {
-        let queue = Arc::new(SyncEdge::<usize, usize>::new());
-
+    fn pushable_boxed_dyn_can_push() {
+        let rx = Receiver::<usize, usize>::new();
         let mut pushable: Box<dyn Pushable<DataType = usize, SignalType = usize>> =
-            Box::new(queue.clone());
+            Box::new(rx.sender());
         push(&mut pushable, 5);
-        assert_eq!(queue.read_all().unwrap(), vec![Message::Data(5)]);
+        assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
     }
 
     #[test]
-    fn pushable_arc_can_push() {
-        let queue = Arc::new(SyncEdge::<usize, usize>::new());
-        let mut pushable: Box<Arc<SyncEdge<usize, usize>>> = Box::new(queue.clone());
+    fn pushable_boxed_concrete_can_push() {
+        let rx = Receiver::<usize, usize>::new();
+        let mut pushable: Box<Sender<usize, usize>> = Box::new(rx.sender());
         push(&mut pushable, 5);
-        assert_eq!(queue.read_all().unwrap(), vec![Message::Data(5)]);
+        assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
     }
 }

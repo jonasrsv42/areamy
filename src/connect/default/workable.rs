@@ -19,18 +19,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Message;
     use crate::connect::graph::tests::Node;
-    use crate::{Message, SyncEdge};
-    use std::sync::Arc;
+    use crate::connect::sync::Receiver;
 
     #[test]
     fn workable_can_work() {
         let mut node = Node::new();
 
-        let input = node.input.clone();
-        let output = Arc::new(SyncEdge::<usize, usize>::new());
+        let input = node.input.sender();
+        let output = Receiver::<usize, usize>::new();
 
-        node.outputs.push(Box::new(output.clone()));
+        node.outputs.push(Box::new(output.sender()));
 
         input.push_back(Message::Data(0)).unwrap();
         input.push_back(Message::Data(2)).unwrap();
@@ -53,10 +53,10 @@ mod tests {
     fn workable_arc_can_work() {
         let mut node = Arc::new(Mutex::new(Node::new()));
 
-        let input = node.lock().unwrap().input.clone();
-        let output = Arc::new(SyncEdge::<usize, usize>::new());
+        let input = node.lock().unwrap().input.sender();
+        let output = Receiver::<usize, usize>::new();
 
-        node.lock().unwrap().outputs.push(Box::new(output.clone()));
+        node.lock().unwrap().outputs.push(Box::new(output.sender()));
 
         input.push_back(Message::Data(0)).unwrap();
         input.push_back(Message::Data(2)).unwrap();

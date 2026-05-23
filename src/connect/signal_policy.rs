@@ -113,8 +113,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Message, Origin, SyncEdge};
-    use std::sync::Arc;
+    use crate::connect::sync::Receiver;
+    use crate::{Message, Origin};
 
     #[derive(Debug, PartialEq, Eq, Hash)]
     struct TestSignal(u32);
@@ -123,8 +123,8 @@ mod tests {
 
     #[test]
     fn test_policy_edge_forward() {
-        let edge = Arc::new(SyncEdge::<f64, TestSignal>::new());
-        let mut policy_edge = PolicyEdge::new(edge.clone(), SignalPolicy::Forward);
+        let edge = Receiver::<f64, TestSignal>::new();
+        let mut policy_edge = PolicyEdge::new(edge.sender(), SignalPolicy::Forward);
 
         // Forward policy should allow all signals
         policy_edge.push(Message::Flush(TestSignal(1))).unwrap();
@@ -142,8 +142,8 @@ mod tests {
 
     #[test]
     fn test_policy_edge_follow_data() {
-        let edge = Arc::new(SyncEdge::<f64, TestSignal>::new());
-        let mut policy_edge = PolicyEdge::new(edge.clone(), SignalPolicy::FollowData);
+        let edge = Receiver::<f64, TestSignal>::new();
+        let mut policy_edge = PolicyEdge::new(edge.sender(), SignalPolicy::FollowData);
 
         // First signal should be dropped (no data yet)
         policy_edge.push(Message::Flush(TestSignal(1))).unwrap();
@@ -173,8 +173,8 @@ mod tests {
 
     #[test]
     fn test_policy_edge_block() {
-        let edge = Arc::new(SyncEdge::<f64, TestSignal>::new());
-        let mut policy_edge = PolicyEdge::new(edge.clone(), SignalPolicy::Block);
+        let edge = Receiver::<f64, TestSignal>::new();
+        let mut policy_edge = PolicyEdge::new(edge.sender(), SignalPolicy::Block);
 
         // All signals should be blocked
         policy_edge.push(Message::Flush(TestSignal(1))).unwrap();

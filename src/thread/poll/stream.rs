@@ -1,15 +1,21 @@
 //! Async thread that runs [Pollable] nodes driven by wakers.
 
+use super::runtime::ClosableRuntime;
 use crate::connect::poll::graph::GraphBuilder;
 use crate::connect::poll::queue::{Consumer, PollQueue};
-use crate::connect::poll::runtime::{self, Runtime};
+use crate::connect::poll::runtime::Node as RuntimeNode;
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::{Error, ErrorKind};
-use crate::node::biunion::poll::builder::node::Node as BiunionNode;
+use crate::node::biunion::poll::builder::node::{Allocating, Node as BiunionNode};
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::line::poll::builder::node::Node;
+use crate::node::line::poll::factory::LineRoutineFactory;
 use crate::node::line::poll::routine::LineRoutine;
+use crate::poll::Deferred;
+use crate::thread::Join;
+use crate::thread::callback::{self, OnDone, PanicGuard};
+use crate::thread::done::Done;
 use crate::{Origin, ThreadId, fatal};
 use std::thread::{JoinHandle, spawn};
 
@@ -19,6 +25,7 @@ pub struct Thread<ThreadIdType: ThreadId + 'static> {
     builders: Vec<Box<dyn GraphBuilder<ThreadIdType>>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,
+    on_done: Vec<OnDone>,
 }
 
 /// Handle to a running async thread.
@@ -34,7 +41,19 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
             builders: Vec::new(),
             waker_allocator: WakerAllocator::new(producer),
             queue,
+            on_done: Vec::new(),
         }
+    }
+
+    /// Register a callback to fire when the thread exits. See
+    /// [`ThreadStream::on_done`](crate::thread::ThreadStream::on_done)
+    /// for the full contract — same semantics here.
+    pub fn on_done<F>(&mut self, callback: F) -> &mut Self
+    where
+        F: FnOnce(&Done) + Send + 'static,
+    {
+        self.on_done.push(Box::new(callback));
+        self
     }
 
     /// Mutable access to the thread's [`WakerAllocator`]. Lets callers
@@ -60,19 +79,10 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
     pub fn line<InType, OutType, SignalType, FactoryType>(
         &mut self,
         factory: FactoryType,
-    ) -> Node<
-        '_,
-        crate::poll::Deferred,
-        crate::poll::Deferred,
-        InType,
-        OutType,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    ) -> Node<'_, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
     where
         SignalType: Origin,
-        FactoryType: crate::node::line::poll::factory::LineRoutineFactory,
+        FactoryType: LineRoutineFactory,
         FactoryType::Routine: LineRoutine<InType, OutType>,
     {
         Node::deferred(factory, &mut self.waker_allocator)
@@ -88,10 +98,10 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
         &mut self,
         factory: FactoryType,
     ) -> BiunionNode<
-        crate::node::biunion::poll::builder::node::Allocating<'_>,
-        crate::poll::Deferred,
-        crate::poll::Deferred,
-        crate::poll::Deferred,
+        Allocating<'_>,
+        Deferred,
+        Deferred,
+        Deferred,
         Left,
         Right,
         Out,
@@ -114,21 +124,33 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
 
     /// Start the async thread. Consumes self, returns a handle.
     pub fn start(self) -> ThreadHandle {
-        let builders = self.builders;
-        let waker_allocator = self.waker_allocator;
-        let queue = self.queue;
+        let Self {
+            builders,
+            waker_allocator,
+            queue,
+            on_done,
+        } = self;
 
         ThreadHandle {
             thread: spawn(move || {
-                let (mut runtime, consumer) = match prepare(builders, waker_allocator, queue) {
-                    Ok(r) => r,
+                let mut guard = PanicGuard::new(on_done);
+
+                let result = match prepare(builders, waker_allocator, queue) {
+                    Ok((mut runtime, consumer)) => poll_loop(&mut runtime, &consumer),
                     Err(e) => {
                         #[cfg(not(feature = "silent"))]
                         eprintln!("Thread prepare: {}", e);
-                        return Err(e);
+                        Err(e)
                     }
                 };
-                poll_loop(&mut runtime, &consumer)
+
+                let callbacks = guard.drain();
+                let done = match &result {
+                    Ok(()) => Done::Close,
+                    Err(e) => Done::Error(e),
+                };
+                callback::fire(callbacks, &done);
+                result
             }),
         }
     }
@@ -139,7 +161,7 @@ fn prepare<ThreadIdType: ThreadId>(
     builders: Vec<Box<dyn GraphBuilder<ThreadIdType>>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,
-) -> Result<(Runtime<ThreadIdType>, Consumer), Error> {
+) -> Result<(ClosableRuntime<ThreadIdType>, Consumer), Error> {
     let (consumer, local_producer) = queue.local();
     let mut allocator = waker_allocator.local::<ThreadIdType>(local_producer);
     let mut all_nodes = Vec::new();
@@ -151,30 +173,31 @@ fn prepare<ThreadIdType: ThreadId>(
     }
 
     let runtime = allocator.build(all_nodes)?;
-    Ok((runtime, consumer))
+    Ok((runtime.into(), consumer))
 }
 
 impl ThreadHandle {
     /// Join the async thread.
-    pub fn join(self) -> Result<Option<Error>, Error> {
+    pub fn join(self) -> Join {
         match self.thread.join() {
-            Ok(Ok(())) => Ok(None),
-            Ok(Err(e)) => Ok(Some(e)),
-            Err(panic_err) => Err(fatal!("Thread panicked: {:?}", panic_err)),
+            Ok(Ok(())) => Join::Ok,
+            Ok(Err(e)) => Join::Error(e),
+            Err(panic_err) => Join::Panic(fatal!("Thread panicked: {:?}", panic_err)),
         }
     }
 }
 
-/// Waker-driven poll loop. Blocks on ready queue, polls only woken nodes.
-/// Runs until all nodes are closed.
+/// Waker-driven poll loop. Blocks on ready queue, polls only woken
+/// nodes. A node returning `Ready` or `Closed` is taken out of its
+/// slot here — its close-on-drop cascade fires immediately, and a
+/// later wake for the same id is observable as `None`.
 fn poll_loop<ThreadIdType: ThreadId>(
-    runtime: &mut Runtime<ThreadIdType>,
+    runtime: &mut ClosableRuntime<ThreadIdType>,
     consumer: &Consumer,
 ) -> Result<(), Error> {
-    let mut closed = vec![false; runtime.nodes.len()];
-    let mut closed_count = 0;
+    let mut alive = runtime.nodes.len();
 
-    while closed_count < runtime.nodes.len() {
+    while alive > 0 {
         let node_id = match consumer.next() {
             Ok(id) => id,
             Err(e) => {
@@ -184,12 +207,12 @@ fn poll_loop<ThreadIdType: ThreadId>(
             }
         };
 
-        if closed[node_id] {
+        let slot = &mut runtime.nodes[node_id];
+        let Some(RuntimeNode { pollable, waker }) = slot.as_mut() else {
+            #[cfg(not(feature = "silent"))]
+            eprintln!("Thread wake for closed node {}", node_id);
             continue;
-        }
-
-        let node = &mut runtime.nodes[node_id];
-        let runtime::Node { pollable, waker } = node;
+        };
 
         match pollable.poll(waker) {
             Ok(core::task::Poll::Pending) => {}
@@ -198,8 +221,11 @@ fn poll_loop<ThreadIdType: ThreadId>(
                 kind: ErrorKind::Closed,
                 ..
             }) => {
-                closed[node_id] = true;
-                closed_count += 1;
+                // Drop the node here — its `Sender`/`Receiver` handles
+                // drop with it and the cascade fires before we move on
+                // to the next ready event.
+                *slot = None;
+                alive -= 1;
             }
             Err(e) => {
                 #[cfg(not(feature = "silent"))]
@@ -215,14 +241,18 @@ fn poll_loop<ThreadIdType: ThreadId>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connect::sync::Receiver;
     use crate::graph::Get;
     use crate::node::line::poll::routine::tests::MockLine;
-    use crate::{Closeable, Message, SyncEdge, make_push};
-    use std::sync::Arc;
+    use crate::poll;
+    use crate::{Closeable, Message, make_push};
 
     #[derive(Debug)]
     struct IoThread;
     impl ThreadId for IoThread {}
+
+    type InputHandle =
+        Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>;
 
     #[test]
     fn async_thread_starts_and_stops() {
@@ -230,20 +260,17 @@ mod tests {
 
         let node = thread
             .line(|w| MockLine::new(w))
-            .input::<crate::poll::Sync>()
-            .output::<crate::poll::Sync>();
+            .input::<poll::Sync>()
+            .output::<poll::Sync>();
 
-        let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
-            Get::get(&node).unwrap();
+        let mut input: InputHandle = Get::get(&node).unwrap();
 
         thread.add(node);
-
         let handle = thread.start();
 
         input.close().unwrap();
 
-        let result = handle.join().unwrap();
-        assert!(result.is_none());
+        assert!(matches!(handle.join(), Join::Ok));
     }
 
     #[test]
@@ -252,60 +279,120 @@ mod tests {
 
         let mut node = thread
             .line(|w| MockLine::new(w))
-            .input::<crate::poll::Sync>()
-            .output::<crate::poll::Sync>();
+            .input::<poll::Sync>()
+            .output::<poll::Sync>();
 
-        let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
-            Get::get(&node).unwrap();
+        let mut input: InputHandle = Get::get(&node).unwrap();
 
-        let output = Arc::new(SyncEdge::new());
+        let output = Receiver::new();
         make_push(&mut node, &output).unwrap();
 
         thread.add(node);
         let handle = thread.start();
 
         input.push(Message::Data(2)).unwrap();
-
-        let result = output.read_front().unwrap();
-        assert_eq!(result, Message::Data(4));
+        assert_eq!(output.read_front().unwrap(), Message::Data(4));
 
         input.close().unwrap();
-        let result = handle.join().unwrap();
-        assert!(result.is_none());
+        assert!(matches!(handle.join(), Join::Ok));
     }
 
-    /// Close propagation: closing the source should propagate through
-    /// the async chain and close the output edge.
+    // ---- on_done callback coverage ----
+
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    #[derive(Debug, PartialEq)]
+    enum Observed {
+        Close,
+        Error(String),
+        Panic,
+    }
+
+    fn record(seen: Arc<Mutex<Vec<Observed>>>) -> impl FnOnce(&Done) + Send + 'static {
+        move |done| {
+            let obs = match done {
+                Done::Close => Observed::Close,
+                Done::Error(e) => Observed::Error(e.to_string()),
+                Done::Panic => Observed::Panic,
+            };
+            seen.lock().unwrap().push(obs);
+        }
+    }
+
+    #[test]
+    fn on_done_fires_close_on_clean_exit() {
+        let mut thread = Thread::<IoThread>::new();
+        let node = thread
+            .line(|w| MockLine::new(w))
+            .input::<poll::Sync>()
+            .output::<poll::Sync>();
+
+        let mut input: InputHandle = Get::get(&node).unwrap();
+        thread.add(node);
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        thread.on_done(record(seen.clone()));
+
+        let handle = thread.start();
+        input.close().unwrap();
+        let _ = handle.join();
+
+        assert_eq!(*seen.lock().unwrap(), vec![Observed::Close]);
+    }
+
+    #[test]
+    fn on_done_multiple_callbacks_fire_in_registration_order() {
+        let mut thread = Thread::<IoThread>::new();
+        let node = thread
+            .line(|w| MockLine::new(w))
+            .input::<poll::Sync>()
+            .output::<poll::Sync>();
+
+        let mut input: InputHandle = Get::get(&node).unwrap();
+        thread.add(node);
+
+        let order = Arc::new(Mutex::new(Vec::<u32>::new()));
+        let o1 = order.clone();
+        let o2 = order.clone();
+        let o3 = order.clone();
+        thread.on_done(move |_| o1.lock().unwrap().push(1));
+        thread.on_done(move |_| o2.lock().unwrap().push(2));
+        thread.on_done(move |_| o3.lock().unwrap().push(3));
+
+        let handle = thread.start();
+        input.close().unwrap();
+        let _ = handle.join();
+
+        assert_eq!(*order.lock().unwrap(), vec![1, 2, 3]);
+    }
+
+    /// Closing the source should propagate through the async chain
+    /// and close the output edge.
     #[test]
     fn close_propagates_through_chain() {
         let mut thread = Thread::<IoThread>::new();
 
-        let parent = thread
-            .line(|w| MockLine::new(w))
-            .input::<crate::poll::Sync>();
+        let parent = thread.line(|w| MockLine::new(w)).input::<poll::Sync>();
 
-        let mut input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
-            Get::get(&parent).unwrap();
+        let mut input: InputHandle = Get::get(&parent).unwrap();
 
         let mut child = thread
             .line(|w| MockLine::new(w))
             .parent(parent)
-            .output::<crate::poll::Sync>();
+            .output::<poll::Sync>();
 
-        let output = Arc::new(SyncEdge::new());
+        let output = Receiver::new();
         make_push(&mut child, &output).unwrap();
 
         thread.add(child);
         let handle = thread.start();
 
-        // Send some data first
         input.push(Message::Data(1)).unwrap();
         assert_eq!(output.read_front().unwrap(), Message::Data(4));
 
-        // Close input — should propagate: parent closes → child closes → output closes
         input.close().unwrap();
 
-        // Output should be closed — reading should eventually return Closed
         let result = output.read_front();
         assert!(
             result.is_err(),
@@ -313,7 +400,6 @@ mod tests {
             result
         );
 
-        let join_result = handle.join().unwrap();
-        assert!(join_result.is_none());
+        assert!(matches!(handle.join(), Join::Ok));
     }
 }

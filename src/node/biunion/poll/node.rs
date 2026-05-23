@@ -784,10 +784,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::poll::edge::SyncBridge;
+    use crate::DefaultThread;
+    use crate::connect::poll::input;
+    use crate::connect::sync::{Receiver, Sender};
     use crate::connect::waker::ThreadLocalWaker;
     use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_local_waker, noop_waker};
-    use crate::{DefaultThread, SyncEdge};
     use std::cell::Cell;
     use std::rc::Rc;
     use std::sync::Arc;
@@ -824,9 +825,9 @@ mod tests {
         &'static str,
         DefaultThread,
         MockBiunion,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncEdge<usize, &'static str>>,
+        input::sync::Receiver<usize, &'static str>,
+        input::sync::Receiver<usize, &'static str>,
+        Sender<usize, &'static str>,
     >;
     type TestRightInput = RightInput<
         usize,
@@ -835,9 +836,9 @@ mod tests {
         &'static str,
         DefaultThread,
         MockBiunion,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncEdge<usize, &'static str>>,
+        input::sync::Receiver<usize, &'static str>,
+        input::sync::Receiver<usize, &'static str>,
+        Sender<usize, &'static str>,
     >;
     type TestWork = Work<
         usize,
@@ -846,9 +847,9 @@ mod tests {
         &'static str,
         DefaultThread,
         MockBiunion,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncEdge<usize, &'static str>>,
+        input::sync::Receiver<usize, &'static str>,
+        input::sync::Receiver<usize, &'static str>,
+        Sender<usize, &'static str>,
     >;
     type TestOutput = Output<
         usize,
@@ -857,15 +858,15 @@ mod tests {
         &'static str,
         DefaultThread,
         MockBiunion,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncBridge<usize, &'static str>>,
-        Arc<SyncEdge<usize, &'static str>>,
+        input::sync::Receiver<usize, &'static str>,
+        input::sync::Receiver<usize, &'static str>,
+        Sender<usize, &'static str>,
     >;
 
     struct Harness {
-        left_edge: Arc<SyncBridge<usize, &'static str>>,
-        right_edge: Arc<SyncBridge<usize, &'static str>>,
-        output_edge: Arc<SyncEdge<usize, &'static str>>,
+        left_edge: input::sync::Sender<usize, &'static str>,
+        right_edge: input::sync::Sender<usize, &'static str>,
+        output_edge: Receiver<usize, &'static str>,
         left: TestLeftInput,
         right: TestRightInput,
         work: TestWork,
@@ -879,9 +880,12 @@ mod tests {
 
     impl Harness {
         fn new() -> Self {
-            let left_edge = Arc::new(SyncBridge::new(sync_waker()));
-            let right_edge = Arc::new(SyncBridge::new(sync_waker()));
-            let output_edge = Arc::new(SyncEdge::new());
+            let left_recv = input::sync::Receiver::new(sync_waker());
+            let left_edge = left_recv.sender();
+            let right_recv = input::sync::Receiver::new(sync_waker());
+            let right_edge = right_recv.sender();
+            let output_edge = Receiver::new();
+            let output_sender = output_edge.sender();
 
             let (left_local, left_woken) = track_local_waker();
             let (right_local, right_woken) = track_local_waker();
@@ -891,11 +895,11 @@ mod tests {
             let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
                 InputPhases {
                     left: Phase {
-                        target: left_edge.clone(),
+                        target: left_recv,
                         waker: left_local,
                     },
                     right: Phase {
-                        target: right_edge.clone(),
+                        target: right_recv,
                         waker: right_local,
                     },
                 },
@@ -904,7 +908,7 @@ mod tests {
                     waker: work_local,
                 },
                 Phase {
-                    target: output_edge.clone(),
+                    target: output_sender,
                     waker: output_local,
                 },
             );
@@ -1035,7 +1039,7 @@ mod tests {
     #[test]
     fn close_from_left_propagates() {
         let mut h = Harness::new();
-        SyncBridge::close(&h.left_edge).unwrap();
+        h.left_edge.close().unwrap();
         let _ = h.poll_left();
         assert!(matches!(
             h.poll_right().unwrap_err().kind,
@@ -1057,7 +1061,7 @@ mod tests {
         let _ = h.poll_output().unwrap();
         assert_eq!(h.read_output(), Some(Message::Data(14))); // 7 * 2
 
-        SyncBridge::close(&h.left_edge).unwrap();
+        h.left_edge.close().unwrap();
         let _ = h.poll_left();
         let _ = h.poll_work();
         assert!(matches!(
@@ -1072,7 +1076,7 @@ mod tests {
     fn close_from_left_wakes_right() {
         let mut h = Harness::new();
         h.reset_woken();
-        SyncBridge::close(&h.left_edge).unwrap();
+        h.left_edge.close().unwrap();
         let _ = h.poll_left();
         assert!(h.right_woken.get(), "closing left must wake right input");
     }
@@ -1081,7 +1085,7 @@ mod tests {
     fn close_from_right_wakes_left() {
         let mut h = Harness::new();
         h.reset_woken();
-        SyncBridge::close(&h.right_edge).unwrap();
+        h.right_edge.close().unwrap();
         let _ = h.poll_right();
         assert!(h.left_woken.get(), "closing right must wake left input");
     }
@@ -1092,7 +1096,7 @@ mod tests {
     fn close_from_left_wakes_work() {
         let mut h = Harness::new();
         h.reset_woken();
-        SyncBridge::close(&h.left_edge).unwrap();
+        h.left_edge.close().unwrap();
         let _ = h.poll_left();
         assert!(h.work_woken.get(), "closing left must wake work phase");
     }
@@ -1101,7 +1105,7 @@ mod tests {
     fn close_from_right_wakes_work() {
         let mut h = Harness::new();
         h.reset_woken();
-        SyncBridge::close(&h.right_edge).unwrap();
+        h.right_edge.close().unwrap();
         let _ = h.poll_right();
         assert!(h.work_woken.get(), "closing right must wake work phase");
     }
@@ -1162,7 +1166,7 @@ mod tests {
         // Fast close: drain_left transitions straight to CloseReady and
         // wakes Output directly (no flush, no work polling).
         let mut h = Harness::new();
-        SyncBridge::close(&h.left_edge).unwrap();
+        h.left_edge.close().unwrap();
         h.reset_woken();
         let _ = h.poll_left();
         assert!(h.output_woken.get(), "drain_left must wake output on close");

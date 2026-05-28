@@ -3,42 +3,33 @@
 
 use super::mock::{BorrowingLine, LifetimeThread};
 use crate::connect::sync::Receiver;
-use crate::graph::Get;
 use crate::marker::Unary;
 use crate::node::line::work::bridge::from_pull;
 use crate::pull::Connect as PullConnect;
 use crate::source::pull::SourceBuffer;
 use crate::thread::{ThreadBundle, ThreadStream};
-use crate::{Closeable, Message, Trackable, make_push, make_work};
-
-// ============================================================
-// line × Pullable (pull → work bridge, through ThreadBundle)
-// ============================================================
+use crate::work::Source;
+use crate::{Closeable, Message, Pushable, make_push, make_work};
 
 #[test]
 fn line_pull_borrowed() {
     let multiplier: usize = 4;
 
     // Pull chain: SourceBuffer -> BorrowingLine (pull) -> bridged into work-line
-    let buffer: SourceBuffer<usize, Trackable<&'static str>, LifetimeThread> = SourceBuffer::new();
-    let mut source: Box<
-        dyn Closeable<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
-    > = Get::get(&buffer).unwrap();
-    let pull_line = PullConnect::<usize, Trackable<&'static str>>::pull(
-        buffer,
-        BorrowingLine::new(&multiplier),
-    );
+    let buffer = SourceBuffer::new();
+    let mut source = Source::new(&buffer).unwrap();
+    let pull_line = PullConnect::pull(buffer, BorrowingLine::new(&multiplier));
 
     // Bridge pull-segment into work-graph (so we can run it on a ThreadStream).
     let mut bridged = from_pull(pull_line, BorrowingLine::new(&multiplier));
-    let output = Receiver::<usize, Trackable<&'static str>>::new();
+    let output = Receiver::new();
     make_push(bridged.as_mut(), &output).unwrap();
 
-    let mut sync_thread = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, LifetimeThread>(bridged, &mut sync_thread).unwrap();
+    let mut thread = ThreadStream::<'_, LifetimeThread>::new();
+    make_work::<Unary, _>(bridged, &mut thread).unwrap();
 
     let mut bundle = ThreadBundle::new();
-    bundle.add(sync_thread);
+    bundle.add(thread);
 
     std::thread::scope(|s| {
         let handle = bundle.start(s);
@@ -48,8 +39,7 @@ fn line_pull_borrowed() {
         assert_eq!(output.read_front().unwrap(), Message::Data(16));
 
         source.close().unwrap();
-        let joins = handle.join().errors();
-        assert!(joins.is_empty());
+        assert!(handle.join().errors().is_empty());
     });
 
     let _ = multiplier;

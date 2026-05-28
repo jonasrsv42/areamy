@@ -98,8 +98,8 @@ where
 }
 
 /// [Get] the [Pushable] from [SourceBuffer].
-impl<DataType, SignalType, ThreadIdType>
-    Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+impl<'params, DataType, SignalType, ThreadIdType>
+    Get<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
     for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
@@ -108,15 +108,20 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
+    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>, Error>
+    {
         Get::get(&self.input)
     }
 }
 
 /// [Get] the [crate::GraphPushSource] from [SourceBuffer] for closing.
-impl<DataType, SignalType, ThreadIdType>
-    Get<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType> + Send + Sync>
-    for SourceBuffer<DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType>
+    Get<
+        dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>
+            + Send
+            + Sync
+            + 'params,
+    > for SourceBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -125,7 +130,12 @@ where
     fn get(
         &self,
     ) -> Result<
-        Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType> + Send + Sync>,
+        Box<
+            dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>
+                + Send
+                + Sync
+                + 'params,
+        >,
         Error,
     > {
         Get::get(&self.input)

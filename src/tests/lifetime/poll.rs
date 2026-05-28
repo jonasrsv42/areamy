@@ -10,12 +10,8 @@ use crate::marker::Unary;
 use crate::poll;
 use crate::poll::future::OutputQueue;
 use crate::thread::{ThreadBundle, ThreadStream};
-use crate::work::make_line;
-use crate::{Closeable, Message, biunion, make_push, make_work};
-
-// ============================================================
-// line × Pollable (async, through ThreadBundle)
-// ============================================================
+use crate::work::{Source, make_line};
+use crate::{Closeable, Message, Pushable, biunion, make_push, make_work};
 
 #[test]
 fn line_poll_borrowed() {
@@ -31,9 +27,8 @@ fn line_poll_borrowed() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> =
-        Get::get(&node).unwrap();
-    let output = Receiver::<usize, &'static str>::new();
+    let mut input = Source::new(&node).unwrap();
+    let output = Receiver::new();
     make_push(&mut node, &output).unwrap();
 
     thread.add(node);
@@ -51,16 +46,11 @@ fn line_poll_borrowed() {
         assert_eq!(output.read_front().unwrap(), Message::Data(15));
 
         input.close().unwrap();
-        let joins = handle.join().errors();
-        assert!(joins.is_empty());
+        assert!(handle.join().errors().is_empty());
     });
 
     let _ = multiplier;
 }
-
-// ============================================================
-// biunion × Pollable (async, through ThreadBundle)
-// ============================================================
 
 #[test]
 fn biunion_poll_borrowed() {
@@ -77,12 +67,9 @@ fn biunion_poll_borrowed() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut left: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> =
-        Get::<_, biunion::Left>::get(&node).unwrap();
-    let mut right: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> =
-        Get::<_, biunion::Right>::get(&node).unwrap();
-
-    let output = Receiver::<usize, &'static str>::new();
+    let mut left = Source::new::<biunion::Left>(&node).unwrap();
+    let mut right = Source::new::<biunion::Right>(&node).unwrap();
+    let output = Receiver::new();
     make_push(&mut node, &output).unwrap();
 
     thread.add(node);
@@ -101,21 +88,15 @@ fn biunion_poll_borrowed() {
 
         left.close().unwrap();
         right.close().unwrap();
-        let joins = handle.join().errors();
-        assert!(joins.is_empty());
+        assert!(handle.join().errors().is_empty());
     });
 
     let _ = bias;
 }
 
-// ============================================================
-// Async parent chain in poll (two poll lines chained via .parent())
-// ============================================================
-
-/// Two poll line nodes wired with `.parent()` — node `b` consumes
-/// node `a` as an `AsyncParent<'params>` (in-thread, no Mutex). Both
-/// routines borrow `&multiplier`. Exercises the `AsyncParent<'params>`
-/// trait + the Async input edge path with non-`'static` routines.
+/// Two poll line nodes wired with `.parent()` — node `b` consumes `a` as
+/// an `AsyncParent<'params>` (in-thread, no Mutex). Both routines borrow
+/// `&multiplier`.
 #[test]
 fn poll_async_parent_chain_borrowed() {
     let multiplier: usize = 4;
@@ -130,8 +111,7 @@ fn poll_async_parent_chain_borrowed() {
         })
         .input::<poll::Sync>();
 
-    let mut input: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> =
-        Get::get(&a).unwrap();
+    let mut input = Source::new(&a).unwrap();
 
     let mut b = thread
         .line(move |w| PollBorrowingLine {
@@ -141,7 +121,7 @@ fn poll_async_parent_chain_borrowed() {
         .parent(a)
         .output::<poll::Sync>();
 
-    let output = Receiver::<usize, &'static str>::new();
+    let output = Receiver::new();
     make_push(&mut b, &output).unwrap();
 
     thread.add(b);
@@ -160,22 +140,15 @@ fn poll_async_parent_chain_borrowed() {
         assert_eq!(output.read_front().unwrap(), Message::Data(48));
 
         input.close().unwrap();
-        let joins = handle.join().errors();
-        assert!(joins.is_empty());
+        assert!(handle.join().errors().is_empty());
     });
 
     let _ = multiplier;
 }
 
-// ============================================================
-// Borrowed Sync poll output sink (exercises Edge::Output<'params>)
-// ============================================================
-
-/// Adds a `Box<dyn Closeable + 'params>` directly onto a Sync poll line
-/// node's output `Vec`. The sink holds `&config`, so its lifetime is
-/// genuinely shorter than `'static`; without the `'params` bound on
-/// [`crate::connect::poll::edge::Edge::Output`] (and the matching `Add`
-/// impl) this would not compile.
+/// Add a `Box<dyn Closeable + 'params>` directly onto a Sync poll line
+/// node's output `Vec`. The sink holds `&config`; without `'params` on
+/// `Edge::Output` and the matching `Add` impl this would not compile.
 #[test]
 fn poll_borrowed_output_sink() {
     let multiplier: usize = 2;
@@ -191,12 +164,9 @@ fn poll_borrowed_output_sink() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> =
-        Get::get(&node).unwrap();
-
-    let output = Receiver::<usize, &'static str>::new();
-    let forward: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> =
-        Get::get(&output).unwrap();
+    let mut input = Source::new(&node).unwrap();
+    let output = Receiver::new();
+    let forward = Get::get(&output).unwrap();
     let sink = BorrowingSink {
         _config: &config,
         forward,
@@ -215,32 +185,21 @@ fn poll_borrowed_output_sink() {
         assert_eq!(output.read_front().unwrap(), Message::Data(12));
 
         input.close().unwrap();
-        let joins = handle.join().errors();
-        assert!(joins.is_empty());
+        assert!(handle.join().errors().is_empty());
     });
 
     let _ = (multiplier, config);
 }
 
-// ============================================================
-// make_push from a borrowed parent INTO a poll node
-// ============================================================
-
 /// `make_push(borrowed_parent_node, &poll_node)` — exercises the poll
-/// node's `Get<dyn Closeable + 'params>` impl from the *child* side.
-/// `make_push` unifies parent's `Add<dyn ... + 'params>` with child's
-/// `Get<dyn ... + 'params>`; if the poll node's `Get` is hard-coded to
-/// `'static` (via object-lifetime default), the unification forces
-/// parent's `'params = 'static`, which fails when parent borrows a
-/// non-`'static` config.
+/// node's `Get<dyn Closeable + 'params>` impl from the *child* side. If
+/// the impl is `'static`-defaulted, `'params` collapses and the borrowed
+/// parent fails to compile.
 #[test]
 fn poll_node_input_from_borrowed_parent() {
     let mult: usize = 2;
-
-    // Parent: borrowed work line.
     let mut work_line = make_line(BorrowingLine::new(&mult));
 
-    // Child: poll node, also borrowing the same &mult.
     let mut poll_thread = poll::Thread::<'_, LifetimePollThread>::new();
     let mult_ref = &mult;
     let mut poll_node = poll_thread
@@ -251,21 +210,15 @@ fn poll_node_input_from_borrowed_parent() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    // Source feeding the parent.
-    let mut input: Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> =
-        Get::get(work_line.as_ref()).unwrap();
-
-    // The key line — must select Get<dyn Closeable + 'params> on poll_node
-    // where 'params matches work_line's borrow lifetime (not 'static).
+    let mut input = Source::new(work_line.as_ref()).unwrap();
     make_push(work_line.as_mut(), &poll_node).unwrap();
 
-    // Drain at the poll node's output.
-    let output = Receiver::<usize, &'static str>::new();
+    let output = Receiver::new();
     make_push(&mut poll_node, &output).unwrap();
 
     poll_thread.add(poll_node);
     let mut work_thread = ThreadStream::<'_, LifetimePollThread>::new();
-    make_work::<Unary, LifetimePollThread>(work_line, &mut work_thread).unwrap();
+    make_work::<Unary, _>(work_line, &mut work_thread).unwrap();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(work_thread);
@@ -279,8 +232,7 @@ fn poll_node_input_from_borrowed_parent() {
         assert_eq!(output.read_front().unwrap(), Message::Data(12));
 
         input.close().unwrap();
-        let joins = handle.join().errors();
-        assert!(joins.is_empty());
+        assert!(handle.join().errors().is_empty());
     });
 
     let _ = mult;

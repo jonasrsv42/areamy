@@ -2,19 +2,26 @@ use crate::Message;
 use crate::error::Error;
 use crate::{DefaultThread, Origin, Pullable, ThreadId, Trackable, marker::Connection, sink};
 
-pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
-where
+pub struct Sink<
+    'params,
+    DataType,
+    SignalType = Trackable<&'static str>,
+    ThreadIdType = DefaultThread,
+> where
     DataType: Sync + Send,
     SignalType: Origin,
     ThreadIdType: ThreadId,
 {
     // We store it in the heap to mask the recursive `Pullable` type.
     // If one does not want a heap allocation then reading directly from the pullable is OK.
-    pullable:
-        Box<dyn Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>>,
+    pullable: Box<
+        dyn Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>
+            + 'params,
+    >,
 }
 
-impl<DataType, SignalType, ThreadIdType> Connection for Sink<DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType> Connection
+    for Sink<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send,
     SignalType: Origin,
@@ -22,14 +29,14 @@ where
 {
 }
 
-impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>
+impl<'params, DataType, SignalType> Sink<'params, DataType, SignalType, DefaultThread>
 where
     DataType: Sync + Send,
     SignalType: Origin,
 {
     pub fn new(
         pullable: impl Pullable<ThreadId = DefaultThread, DataType = DataType, SignalType = SignalType>
-        + 'static,
+        + 'params,
     ) -> Self {
         let sink = Self {
             pullable: Box::new(pullable),
@@ -39,7 +46,8 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> Pullable for Sink<DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType> Pullable
+    for Sink<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send,
     SignalType: Origin,
@@ -54,8 +62,8 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> sink::GraphSink
-    for Sink<DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType> sink::GraphSink
+    for Sink<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send,
     SignalType: Origin,

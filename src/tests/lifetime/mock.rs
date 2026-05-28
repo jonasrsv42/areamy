@@ -11,7 +11,7 @@ use crate::marker::Connection;
 use crate::poll::future::OutputQueue;
 use crate::{
     BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, ThreadId,
-    bifurcation, biunion,
+    Trackable, bifurcation, biunion,
 };
 use std::collections::VecDeque;
 
@@ -247,15 +247,15 @@ impl<'a> BifurcationRoutine<usize, usize, usize> for BorrowingBifurcation<'a> {}
 pub(super) struct BorrowingSink<'a> {
     pub(super) _config: &'a usize,
     pub(super) forward:
-        Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>,
+        Box<dyn Closeable<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
 }
 
 impl<'a> Connection for BorrowingSink<'a> {}
 
 impl<'a> Pushable for BorrowingSink<'a> {
     type DataType = usize;
-    type SignalType = &'static str;
-    fn push(&mut self, msg: Message<usize, &'static str>) -> Result<(), Error> {
+    type SignalType = Trackable<&'static str>;
+    fn push(&mut self, msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
         self.forward.push(msg)
     }
 }
@@ -271,6 +271,6 @@ impl<'a> Closeable for BorrowingSink<'a> {
 /// `'static` at the call site.
 pub(super) fn box_borrowing_sink<'a>(
     s: BorrowingSink<'a>,
-) -> Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync + 'a> {
+) -> Box<dyn Closeable<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync + 'a> {
     Box::new(s)
 }

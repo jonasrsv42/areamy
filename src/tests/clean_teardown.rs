@@ -3,19 +3,18 @@
 //! Each test pins a different cross-thread edge type so we can see
 //! exactly which channel still lacks close-on-drop.
 
-use crate::Closeable;
-use crate::Message;
-use crate::Pushable;
 use crate::error::{Error, ErrorKind};
-use crate::graph::Get;
 use crate::node::Name;
+use crate::node::line::poll::routine::tests::MockLine;
 use crate::sync::Receiver;
 use crate::thread::Join;
+use crate::thread::poll::stream::Thread;
 use crate::work::{Connect, Sink, Source, make_bifurcation, make_line};
 use crate::{
     BifurcationRoutine, Flush, LineReader, LineRoutine, Next, ThreadBundle, ThreadId, ThreadStream,
     Trackable, bifurcation, fatal, make_work,
 };
+use crate::{Closeable, Message, Pushable};
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]
@@ -159,17 +158,13 @@ fn middle_thread_error_does_not_deadlock_drain() {
 /// forever.
 #[test]
 fn poll_thread_does_not_deadlock_when_sync_input_drops() {
-    use crate::node::line::poll::routine::tests::MockLine;
-    use crate::thread::poll::stream::Thread;
-
     let mut thread = Thread::<'_, PollThread>::new();
     let node = thread
         .line(|w| MockLine::new(w))
         .input::<crate::poll::Sync>()
         .output::<crate::poll::Sync>();
 
-    let input: Box<dyn Closeable<DataType = usize, SignalType = &str> + Send + Sync> =
-        Get::get(&node).unwrap();
+    let input = Source::new(&node).unwrap();
 
     thread.add(node);
     std::thread::scope(|s| {

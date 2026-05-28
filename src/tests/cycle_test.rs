@@ -1,16 +1,13 @@
-//! Test to demonstrate signal policy handling in a cyclic graph.
+//! Signal-policy handling in a cyclic graph.
 //!
-//! This test creates a cycle between a biunion and bifurcation:
-//! - Biunion takes inputs from right side and increments by 1, forwarding to bifurcation
-//! - Bifurcation decides if output value > 5:
-//!   - If > 5: outputs to the sink
-//!   - If <= 5: sends back to biunion's left input for further processing
+//! Topology: biunion → bifurcation, with bifurcation's left output fed
+//! back into biunion's left input. The biunion increments by 1; the
+//! bifurcation routes values > 5 to its right output (final sink) and
+//! values ≤ 5 back through the cycle.
 //!
-//! The forward connection (biunion -> bifurcation) uses make_bidi with Forward policy
-//! The backward connection (bifurcation -> biunion) uses make_push with FollowData policy
-//!
-//! This demonstrates how our signal policies prevent infinite cycles of signals
-//! while allowing data to flow correctly.
+//! - Forward edge (biunion → bifurcation) uses `make_bidi` (Forward policy).
+//! - Back-edge (bifurcation → biunion) uses `make_push` (FollowData policy)
+//!   so signals don't propagate around the loop forever.
 
 use crate::error::Error;
 use crate::node::{bifurcation, biunion};
@@ -22,7 +19,6 @@ use crate::{
 };
 use std::collections::VecDeque;
 
-// Biunion routine that increments values by 1
 struct IncrementBiunion {
     output: VecDeque<usize>,
 }
@@ -35,62 +31,45 @@ impl IncrementBiunion {
     }
 }
 
-// Implementation for biunion's left input (from feedback)
 impl crate::Send<usize, biunion::Left> for IncrementBiunion {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        println!(
-            "Biunion received {} on left input, incrementing to {}",
-            message,
-            message + 1
-        );
         self.output.push_back(message + 1);
         Ok(())
     }
 }
 
-// Implementation for biunion's right input (from initial input)
 impl crate::Send<usize, biunion::Right> for IncrementBiunion {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        println!(
-            "Biunion received {} on right input, incrementing to {}",
-            message,
-            message + 1
-        );
         self.output.push_back(message + 1);
         Ok(())
     }
 }
 
-// Output implementation
 impl crate::Next<usize> for IncrementBiunion {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        let result = self.output.pop_front();
-        if result.is_some() {
-            println!("Biunion outputting {}", result.unwrap());
-        }
-        Ok(result)
+        Ok(self.output.pop_front())
     }
 }
 
 impl crate::Flush for IncrementBiunion {
     fn flush(&mut self) -> Result<(), Error> {
-        println!("Biunion flushed");
         Ok(())
     }
 }
 
 impl crate::node::Name for IncrementBiunion {
-    fn name<'a>(&'a self) -> &'a str {
+    fn name(&self) -> &str {
         "IncrementBiunion"
     }
 }
 
 impl BiunionRoutine<usize, usize, usize> for IncrementBiunion {}
 
-// Bifurcation routine that decides based on value > 5
+/// Routes values > 5 to the right output (sink); values ≤ 5 to the
+/// left output (feedback into the biunion).
 struct DeciderBifurcation {
-    left_output: VecDeque<usize>,  // For values <= 5, going back to biunion
-    right_output: VecDeque<usize>, // For values > 5, going to final output
+    left_output: VecDeque<usize>,
+    right_output: VecDeque<usize>,
 }
 
 impl DeciderBifurcation {
@@ -102,54 +81,37 @@ impl DeciderBifurcation {
     }
 }
 
-// Input implementation
 impl crate::Send<usize> for DeciderBifurcation {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        println!("Bifurcation received {}, deciding...", message);
-
         if message > 5 {
-            println!("Value {} > 5, sending to right output", message);
             self.right_output.push_back(message);
         } else {
-            println!("Value {} <= 5, sending to left output (feedback)", message);
             self.left_output.push_back(message);
         }
-
         Ok(())
     }
 }
 
-// Left output implementation (feedback to biunion)
 impl crate::Next<usize, bifurcation::Left> for DeciderBifurcation {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        let result = self.left_output.pop_front();
-        if result.is_some() {
-            println!("Bifurcation left output: {}", result.unwrap());
-        }
-        Ok(result)
+        Ok(self.left_output.pop_front())
     }
 }
 
-// Right output implementation (final output)
 impl crate::Next<usize, bifurcation::Right> for DeciderBifurcation {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        let result = self.right_output.pop_front();
-        if result.is_some() {
-            println!("Bifurcation right output: {}", result.unwrap());
-        }
-        Ok(result)
+        Ok(self.right_output.pop_front())
     }
 }
 
 impl crate::Flush for DeciderBifurcation {
     fn flush(&mut self) -> Result<(), Error> {
-        println!("Bifurcation flushed");
         Ok(())
     }
 }
 
 impl crate::node::Name for DeciderBifurcation {
-    fn name<'a>(&'a self) -> &'a str {
+    fn name(&self) -> &str {
         "DeciderBifurcation"
     }
 }
@@ -158,91 +120,58 @@ impl BifurcationRoutine<usize, usize, usize> for DeciderBifurcation {}
 
 #[test]
 fn test_cycle_with_signal_policies() {
-    // Create our nodes
     let biunion = make_biunion(IncrementBiunion::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
-    // Create a source to input to biunion's right side
     let source = Source::new::<biunion::Right>(&biunion).unwrap();
 
-    // Connect bifurcation's left output back to biunion's left input (backward connection)
-    // This uses SignalPolicy::FollowData by default in make_push
+    // bifurcation.left → biunion.left (back-edge, FollowData)
     Connect::<usize>::push::<bifurcation::Left, biunion::Left>(
         bifurcation.as_mut(),
         biunion.as_ref(),
     )
     .unwrap();
 
-    // Connect biunion's output to bifurcation's input (forward connection)
-    // This uses SignalPolicy::Forward by default in make_bidi
+    // biunion → bifurcation (forward, Forward policy via make_bidi)
     make_bidi(biunion, &mut bifurcation).unwrap();
 
-    // Create a sink for the bifurcation's right output
     let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
-
     let mut reader = LineReader::new(source, sink);
-    println!("=== Starting cycle test with value 1 ===");
 
-    // Input value 1 to start the cycle
     reader.push(Message::Data(1)).unwrap();
-
     assert_eq!(reader.flush("hello".into()).unwrap(), vec![6]);
-
-    println!("=== Test completed successfully ===");
 }
 
 #[test]
 fn test_cycle_with_multiple_values() {
-    // Create our nodes
-    let biunion = make_biunion::<
-        usize,
-        usize,
-        usize,
-        crate::Trackable<&'static str>,
-        crate::DefaultThread,
-        IncrementBiunion,
-    >(IncrementBiunion::new());
+    let biunion = make_biunion(IncrementBiunion::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
-    // Create a source to input to biunion's right side
     let source = Source::new::<biunion::Right>(&biunion).unwrap();
 
-    // Connect bifurcation's left output back to biunion's left input (backward connection)
     Connect::<usize>::push::<bifurcation::Left, biunion::Left>(
         bifurcation.as_mut(),
         biunion.as_ref(),
     )
     .unwrap();
 
-    // Connect biunion's output to bifurcation's input (forward connection)
     make_bidi(biunion, &mut bifurcation).unwrap();
 
-    // Create a sink for the bifurcation's right output
     let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
-
     let mut reader = LineReader::new(source, sink);
-    println!("=== Starting cycle test with values 1-6 ===");
 
-    // Input values 1 through 6
     for i in 1..=6 {
-        println!("Pushing value {}", i);
         reader.push(Message::Data(i)).unwrap();
     }
 
-    // Flush and check the results
-    let results = reader.flush("flush-test".into()).unwrap();
-    println!("Results after flush: {:?}", results);
-
-    // The expected results:
-    // - Values 1-5 go through the cycle and increment until they exceed 5
-    // - Value 6 goes directly to output after one increment (becomes 7)
-    // So we expect: [6, 6, 6, 6, 6, 7]
-    assert_eq!(results, vec![6, 6, 6, 6, 6, 7]);
-
-    println!("=== Multiple values test completed successfully ===");
+    // Biunion prioritizes the left (feedback) input, so values 1-5 each
+    // fully cycle (becoming 6) before value 6 is processed (becoming 7).
+    assert_eq!(
+        reader.flush("flush-test".into()).unwrap(),
+        vec![6, 6, 6, 6, 6, 7]
+    );
 }
 
-// Line routine that increments values by 1
 struct IncrementLine {
     output: VecDeque<usize>,
 }
@@ -255,35 +184,27 @@ impl IncrementLine {
     }
 }
 
-// Implementation for receiving input
 impl crate::Send<usize> for IncrementLine {
     fn send(&mut self, message: usize) -> Result<(), Error> {
-        println!("Line received {}, incrementing to {}", message, message + 1);
         self.output.push_back(message + 1);
         Ok(())
     }
 }
 
-// Output implementation
 impl crate::Next<usize> for IncrementLine {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        let result = self.output.pop_front();
-        if result.is_some() {
-            println!("Line outputting {}", result.unwrap());
-        }
-        Ok(result)
+        Ok(self.output.pop_front())
     }
 }
 
 impl crate::Flush for IncrementLine {
     fn flush(&mut self) -> Result<(), Error> {
-        println!("Line flushed");
         Ok(())
     }
 }
 
 impl crate::node::Name for IncrementLine {
-    fn name<'a>(&'a self) -> &'a str {
+    fn name(&self) -> &str {
         "IncrementLine"
     }
 }
@@ -292,19 +213,9 @@ impl crate::node::line::LineRoutine<usize, usize> for IncrementLine {}
 
 #[test]
 fn test_cycle_with_line_node() {
-    // Import additional dependencies for line node
-
-    // Create our nodes
-    let line = make_line::<
-        usize,
-        usize,
-        crate::Trackable<&'static str>,
-        crate::DefaultThread,
-        IncrementLine,
-    >(IncrementLine::new());
+    let line = make_line(IncrementLine::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
-    // Create a source to input to the line node
     let source = Source::new(&line).unwrap();
 
     // Connect bifurcation's left output back to line's input (backward connection)
@@ -318,21 +229,12 @@ fn test_cycle_with_line_node() {
     // Connect line's output to bifurcation's input (forward connection)
     make_bidi(line, &mut bifurcation).unwrap();
 
-    // Create a sink for the bifurcation's right output
     let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
-
     let mut reader = LineReader::new(source, sink);
-    println!("=== Starting cycle test with line node: values 1-6 ===");
 
-    // Input values 1 through 6
     for i in 1..=6 {
-        println!("Pushing value {}", i);
         reader.push(Message::Data(i)).unwrap();
     }
-
-    // Flush and check the results
-    let results = reader.flush("line-cycle-test".into()).unwrap();
-    println!("Results after flush: {:?}", results);
 
     // The expected results for line node: [6, 7, 6, 6, 6, 6]
     //
@@ -369,7 +271,8 @@ fn test_cycle_with_line_node() {
     //
     // This test demonstrates how the same cycle logic with different node types
     // produces different behaviors due to their internal scheduling mechanisms.
-    assert_eq!(results, vec![6, 7, 6, 6, 6, 6]);
-
-    println!("=== Line node cycle test completed successfully ===");
+    assert_eq!(
+        reader.flush("line-cycle-test".into()).unwrap(),
+        vec![6, 7, 6, 6, 6, 6]
+    );
 }

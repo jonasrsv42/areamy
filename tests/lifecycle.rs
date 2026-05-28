@@ -266,7 +266,7 @@ fn build_graph<'params>(
 
     // Helper thread: drain sink-side Receiver until Closed, append
     // every Data value to `seen`.
-    let seen = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let seen = Arc::new(Mutex::new(Vec::new()));
     let seen_drain = seen.clone();
     let drain = std::thread::spawn(move || {
         loop {

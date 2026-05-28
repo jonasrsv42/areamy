@@ -8,7 +8,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
+/// Boxed future input to [`Select`]. `'params` bounds non-`'static`
+/// captures (e.g. `&Model`) the inner futures hold.
+pub type BoxFut<'params> = Pin<Box<dyn Future<Output = Result<(), Error>> + 'params>>;
 
 /// Select from multiple futures. Completes when the first one finishes.
 /// Returns the index of the completed future. Propagates errors.
@@ -22,19 +24,19 @@ type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 /// ]).await?;
 /// // idx == 0 or 1
 /// ```
-pub struct Select {
-    futures: Vec<BoxFut>,
+pub struct Select<'params> {
+    futures: Vec<BoxFut<'params>>,
 }
 
-impl Select {
-    pub fn select(futures: impl IntoIterator<Item = BoxFut>) -> Self {
+impl<'params> Select<'params> {
+    pub fn select(futures: impl IntoIterator<Item = BoxFut<'params>>) -> Self {
         Self {
             futures: futures.into_iter().collect(),
         }
     }
 }
 
-impl Future for Select {
+impl Future for Select<'_> {
     type Output = Result<usize, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<usize, Error>> {

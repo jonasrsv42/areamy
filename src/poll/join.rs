@@ -9,7 +9,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
+/// Boxed future input to [`Join`]. `'params` bounds non-`'static`
+/// captures (e.g. `&Model`) the sub-futures hold.
+pub type BoxFut<'params> = Pin<Box<dyn Future<Output = Result<(), Error>> + 'params>>;
 
 /// Join multiple futures concurrently. Completes when all finish.
 /// Propagates the first error encountered.
@@ -21,19 +23,19 @@ type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 /// let reader = Box::pin(async { /* ... */ Ok(()) });
 /// Join::new(vec![writer, reader]).await?;
 /// ```
-pub struct Join {
-    futures: Vec<Option<BoxFut>>,
+pub struct Join<'params> {
+    futures: Vec<Option<BoxFut<'params>>>,
 }
 
-impl Join {
-    pub fn join(futures: impl IntoIterator<Item = BoxFut>) -> Self {
+impl<'params> Join<'params> {
+    pub fn join(futures: impl IntoIterator<Item = BoxFut<'params>>) -> Self {
         Self {
             futures: futures.into_iter().map(Some).collect(),
         }
     }
 }
 
-impl Future for Join {
+impl Future for Join<'_> {
     type Output = Result<(), Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {

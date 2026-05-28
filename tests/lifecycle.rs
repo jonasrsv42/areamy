@@ -223,10 +223,9 @@ fn build_graph<'params>(
     generation: usize,
 ) -> GenerationHandles<'params> {
     // Pull segment on the main thread.
-    let buffer: SourceBuffer<usize, areamy::Trackable<&'static str>, WorkThread> =
-        SourceBuffer::new();
-    let source: Source<usize> = Source::<usize>::new(&buffer).unwrap();
-    let pull_line = pull::Connect::<usize>::pull(buffer, PullIdentity::new());
+    let buffer = SourceBuffer::new();
+    let source = Source::new(&buffer).unwrap();
+    let pull_line = pull::Connect::pull(buffer, PullIdentity::new());
 
     // Work segment: wrap the pull tail into a work-line that accepts
     // one message and then errors. Lives on its own OS thread.
@@ -243,7 +242,7 @@ fn build_graph<'params>(
     // Sink-side `Receiver` on the main thread, drained by a helper
     // thread so the orchestrator can verify real data flowed in
     // each generation.
-    let sink_recv: Receiver<usize, areamy::Trackable<&'static str>> = Receiver::new();
+    let sink_recv = Receiver::new();
     make_push(&mut bridged, &poll_node).unwrap();
     make_push(&mut poll_node, &sink_recv).unwrap();
 

@@ -16,12 +16,12 @@ where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 {
-    pub fn new<MultiplicityType>(
+    pub fn new<'params, MultiplicityType>(
         workable: &mut (
                  impl Add<
-            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
             MultiplicityType,
-        > + 'static
+        > + 'params
              ),
     ) -> Result<Self, Error>
     where

@@ -305,12 +305,12 @@ where
     }
 }
 
-impl<D, S> Get<dyn Pushable<DataType = D, SignalType = S>> for Sender<D, S>
+impl<'params, D, S> Get<dyn Pushable<DataType = D, SignalType = S> + 'params> for Sender<D, S>
 where
     D: Send + Sync + 'static,
     S: Origin + Send + Sync + 'static,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = D, SignalType = S>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = D, SignalType = S> + 'params>, Error> {
         Ok(Box::new(self.clone()))
     }
 }

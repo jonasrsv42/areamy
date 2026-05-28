@@ -19,7 +19,8 @@ impl<Type> PhantomNode<Type> {
 
 // We assume MessageType is Message<DataType, SignalType>
 // This is just a placeholder implementation for PhantomNode
-impl<DataType, SignalType> Add<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+impl<'params, DataType, SignalType>
+    Add<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
     for PhantomNode<crate::message::Message<DataType, SignalType>>
 where
     DataType: Send + Sync,
@@ -27,13 +28,14 @@ where
 {
     fn add(
         &mut self,
-        _connection: Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>,
+        _connection: Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>,
     ) -> Result<(), crate::error::Error> {
         Ok(())
     }
 }
 
-impl<DataType, SignalType> Add<dyn Closeable<DataType = DataType, SignalType = SignalType>>
+impl<'params, DataType, SignalType>
+    Add<dyn Closeable<DataType = DataType, SignalType = SignalType> + 'params>
     for PhantomNode<crate::message::Message<DataType, SignalType>>
 where
     DataType: Send + Sync,
@@ -41,14 +43,14 @@ where
 {
     fn add(
         &mut self,
-        _connection: Box<dyn Closeable<DataType = DataType, SignalType = SignalType>>,
+        _connection: Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + 'params>,
     ) -> Result<(), crate::error::Error> {
         Ok(())
     }
 }
 
-impl<DataType, SignalType>
-    Add<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>
+impl<'params, DataType, SignalType>
+    Add<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
     for PhantomNode<crate::message::Message<DataType, SignalType>>
 where
     DataType: Send + Sync,
@@ -56,7 +58,9 @@ where
 {
     fn add(
         &mut self,
-        _connection: Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>,
+        _connection: Box<
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+        >,
     ) -> Result<(), crate::error::Error> {
         Ok(())
     }

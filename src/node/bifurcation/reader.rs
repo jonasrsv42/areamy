@@ -5,8 +5,13 @@ use crate::{
 };
 use std::fmt::Debug;
 
-pub struct BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType = DefaultThread>
-where
+pub struct BifurcationReader<
+    'params,
+    SourceType,
+    LeftSinkType,
+    RightSinkType,
+    ThreadIdType = DefaultThread,
+> where
     SourceType: GraphPushSource,
     LeftSinkType: GraphSink,
     RightSinkType: GraphSink,
@@ -15,11 +20,11 @@ where
     pub input: SourceType,
     pub left: LeftSinkType,
     pub right: RightSinkType,
-    pub workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
+    pub workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
 }
 
-impl<SourceType, LeftSinkType, RightSinkType>
-    BifurcationReader<SourceType, LeftSinkType, RightSinkType, DefaultThread>
+impl<'params, SourceType, LeftSinkType, RightSinkType>
+    BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, DefaultThread>
 where
     SourceType: GraphPushSource,
     LeftSinkType: GraphSink,
@@ -29,8 +34,8 @@ where
         input: SourceType,
         left: LeftSinkType,
         right: RightSinkType,
-        workable: Box<dyn Workable<ThreadId = DefaultThread>>,
-    ) -> BifurcationReader<SourceType, LeftSinkType, RightSinkType, DefaultThread> {
+        workable: Box<dyn Workable<ThreadId = DefaultThread> + 'params>,
+    ) -> BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, DefaultThread> {
         Self {
             input,
             left,
@@ -40,8 +45,8 @@ where
     }
 }
 
-impl<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
-    BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+impl<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+    BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
     SourceType: GraphPushSource,
     LeftSinkType: GraphSink,
@@ -92,8 +97,8 @@ where
     }
 }
 
-impl<SourceType, LeftSinkType, RightSinkType, ThreadIdType> Drop
-    for BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+impl<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType> Drop
+    for BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
     SourceType: GraphPushSource,
     LeftSinkType: GraphSink,
@@ -105,8 +110,8 @@ where
     }
 }
 
-impl<In, Left, Right, OriginType, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
-    BifurcationReader<SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+impl<'params, In, Left, Right, OriginType, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+    BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
 where
     In: Send + Sync,
     Left: Debug + Send + Sync + 'static,

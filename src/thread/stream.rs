@@ -16,9 +16,9 @@ use super::done::Done;
 use super::join::Join;
 use crate::error::{Error, ErrorKind};
 use crate::{ThreadId, Workable, fatal, graph::Add};
-use std::thread::{JoinHandle, spawn};
+use std::thread::{Scope, ScopedJoinHandle};
 
-type Workables<ThreadIdType> = Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>;
+type Workables<'params, ThreadIdType> = Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>;
 
 /// Drive workables until the vec drains. A workable returning
 /// [`ErrorKind::Closed`] is dropped immediately — its outgoing
@@ -26,7 +26,9 @@ type Workables<ThreadIdType> = Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>;
 /// cascade fires within this work loop, so other workables in the
 /// same thread that share edges with it observe `Closed` on their
 /// next poll.
-fn work_loop<ThreadIdType: ThreadId>(workables: &mut Workables<ThreadIdType>) -> Result<(), Error> {
+fn work_loop<'params, ThreadIdType: ThreadId>(
+    workables: &mut Workables<'params, ThreadIdType>,
+) -> Result<(), Error> {
     while !workables.is_empty() {
         let mut i = 0;
         while i < workables.len() {
@@ -57,7 +59,9 @@ fn work_loop<ThreadIdType: ThreadId>(workables: &mut Workables<ThreadIdType>) ->
 /// before the OS thread exits — so close-on-drop cascades fire as
 /// part of thread termination. Empty input falls out of `work_loop`'s
 /// outer `while` immediately, so no explicit guard is needed.
-fn run<ThreadIdType: ThreadId>(mut workables: Workables<ThreadIdType>) -> Result<(), Error> {
+fn run<'params, ThreadIdType: ThreadId>(
+    mut workables: Workables<'params, ThreadIdType>,
+) -> Result<(), Error> {
     work_loop::<ThreadIdType>(&mut workables)
 }
 
@@ -71,29 +75,32 @@ fn run<ThreadIdType: ThreadId>(mut workables: Workables<ThreadIdType>) -> Result
 /// ```ignore
 /// let mut thread = ThreadStream::<MyThread>::new();
 /// make_work::<_, MyThread>(some_vertex, &mut thread)?;
-/// let handle = thread.start();  // consumes ThreadStream, returns handle
+/// std::thread::scope(|s| {
+///     let handle = thread.start(s);  // consumes ThreadStream, returns handle
+///     // ...
+/// });
 /// ```
-pub struct ThreadStream<ThreadIdType>
+pub struct ThreadStream<'params, ThreadIdType>
 where
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
 {
-    workables: Workables<ThreadIdType>,
-    on_done: Vec<OnDone>,
+    pub(crate) workables: Workables<'params, ThreadIdType>,
+    pub(crate) on_done: Vec<OnDone>,
 }
 
 /// A handle to a running thread, returned by [`ThreadStream::start`].
 ///
 /// Call [`join`](Self::join) to wait for the thread to complete.
-pub struct ThreadStreamHandle {
-    thread: JoinHandle<Result<(), Error>>,
+pub struct ThreadStreamHandle<'threads> {
+    thread: ScopedJoinHandle<'threads, Result<(), Error>>,
     /// Captured `type_name::<ThreadIdType>()` from start time, used
     /// to label the thread in panic diagnostics.
     thread_name: &'static str,
 }
 
-impl<ThreadIdType> Default for ThreadStream<ThreadIdType>
+impl<'params, ThreadIdType> Default for ThreadStream<'params, ThreadIdType>
 where
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
 {
     fn default() -> Self {
         Self {
@@ -103,9 +110,9 @@ where
     }
 }
 
-impl<ThreadIdType> ThreadStream<ThreadIdType>
+impl<'params, ThreadIdType> ThreadStream<'params, ThreadIdType>
 where
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
 {
     /// Create a new idle thread stream with no workables.
     pub fn new() -> Self {
@@ -144,30 +151,44 @@ where
         self
     }
 
+    /// Run the work loop synchronously on the current thread, with
+    /// PanicGuard + on_done callbacks. Used by [`start`](Self::start)
+    /// (via `scope.spawn`) and the type-erase layer.
+    pub(crate) fn run(self) -> Result<(), Error> {
+        let Self { workables, on_done } = self;
+        let mut guard = PanicGuard::new(on_done);
+        let result = run::<ThreadIdType>(workables);
+        let callbacks = guard.drain();
+        let done = match &result {
+            Ok(()) => Done::Close,
+            Err(e) => Done::Error(e),
+        };
+        callback::fire(callbacks, &done);
+        result
+    }
+
     /// Start the thread, consuming this [`ThreadStream`] and returning a handle.
     ///
-    /// The thread will run until a workable returns [`ErrorKind::Closed`]
-    /// (clean exit) or another error (failure).
-    pub fn start(self) -> ThreadStreamHandle {
-        let Self { workables, on_done } = self;
+    /// Spawns into the provided `scope`. The thread will run until a
+    /// workable returns [`ErrorKind::Closed`] (clean exit) or another
+    /// error (failure).
+    pub fn start<'threads>(
+        self,
+        scope: &'threads Scope<'threads, 'params>,
+    ) -> ThreadStreamHandle<'threads>
+    where
+        'params: 'threads,
+    {
+        let thread_name = std::any::type_name::<ThreadIdType>();
+        let thread = scope.spawn(move || self.run());
         ThreadStreamHandle {
-            thread: spawn(move || {
-                let mut guard = PanicGuard::new(on_done);
-                let result = run::<ThreadIdType>(workables);
-                let callbacks = guard.drain();
-                let done = match &result {
-                    Ok(()) => Done::Close,
-                    Err(e) => Done::Error(e),
-                };
-                callback::fire(callbacks, &done);
-                result
-            }),
-            thread_name: std::any::type_name::<ThreadIdType>(),
+            thread,
+            thread_name,
         }
     }
 }
 
-impl ThreadStreamHandle {
+impl<'threads> ThreadStreamHandle<'threads> {
     /// Join the thread, waiting for it to complete.
     pub fn join(self) -> Join {
         match self.thread.join() {
@@ -183,10 +204,13 @@ impl ThreadStreamHandle {
 }
 
 /// Add workables to an idle thread stream.
-impl<ThreadIdType: ThreadId> Add<dyn Workable<ThreadId = ThreadIdType>>
-    for ThreadStream<ThreadIdType>
+impl<'params, ThreadIdType: ThreadId> Add<dyn Workable<ThreadId = ThreadIdType> + 'params>
+    for ThreadStream<'params, ThreadIdType>
 {
-    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
+    fn add(
+        &mut self,
+        workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
+    ) -> Result<(), Error> {
         self.workables.push(workable);
         Ok(())
     }
@@ -234,39 +258,47 @@ mod tests {
 
     #[test]
     fn start_and_join_empty_thread() {
-        let thread = ThreadStream::<TestThread>::new();
-        let handle = thread.start();
-        assert!(matches!(handle.join(), Join::Ok));
+        let thread = ThreadStream::<'_, TestThread>::new();
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            assert!(matches!(handle.join(), Join::Ok));
+        });
     }
 
     #[test]
     fn closed_workable_exits_cleanly() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(ImmediateClose)).unwrap();
-        let handle = thread.start();
-        assert!(matches!(handle.join(), Join::Ok));
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            assert!(matches!(handle.join(), Join::Ok));
+        });
     }
 
     #[test]
     fn work_error_is_reported() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(WorkError)).unwrap();
-        let handle = thread.start();
-        match handle.join() {
-            Join::Error(e) => assert!(e.to_string().contains("work failed")),
-            other => panic!("expected Error, got {:?}", other),
-        }
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            match handle.join() {
+                Join::Error(e) => assert!(e.to_string().contains("work failed")),
+                other => panic!("expected Error, got {:?}", other),
+            }
+        });
     }
 
     #[test]
     fn panic_is_reported_as_panic_variant() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(Panicker)).unwrap();
-        let handle = thread.start();
-        match handle.join() {
-            Join::Panic(e) => assert!(e.to_string().contains("panicked")),
-            other => panic!("expected Panic, got {:?}", other),
-        }
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            match handle.join() {
+                Join::Panic(e) => assert!(e.to_string().contains("panicked")),
+                other => panic!("expected Panic, got {:?}", other),
+            }
+        });
     }
 
     // ---- on_done callback coverage ----
@@ -296,25 +328,29 @@ mod tests {
 
     #[test]
     fn on_done_fires_close_on_clean_exit() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(ImmediateClose)).unwrap();
 
         let seen = Arc::new(Mutex::new(Vec::new()));
         thread.on_done(record(seen.clone()));
 
-        let _ = thread.start().join();
+        std::thread::scope(|s| {
+            let _ = thread.start(s).join();
+        });
         assert_eq!(*seen.lock().unwrap(), vec![Observed::Close]);
     }
 
     #[test]
     fn on_done_fires_error_on_work_failure() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(WorkError)).unwrap();
 
         let seen = Arc::new(Mutex::new(Vec::new()));
         thread.on_done(record(seen.clone()));
 
-        let _ = thread.start().join();
+        std::thread::scope(|s| {
+            let _ = thread.start(s).join();
+        });
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 1);
         match &seen[0] {
@@ -325,19 +361,21 @@ mod tests {
 
     #[test]
     fn on_done_fires_panic_on_panic() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(Panicker)).unwrap();
 
         let seen = Arc::new(Mutex::new(Vec::new()));
         thread.on_done(record(seen.clone()));
 
-        let _ = thread.start().join();
+        std::thread::scope(|s| {
+            let _ = thread.start(s).join();
+        });
         assert_eq!(*seen.lock().unwrap(), vec![Observed::Panic]);
     }
 
     #[test]
     fn on_done_multiple_callbacks_fire_in_registration_order() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(ImmediateClose)).unwrap();
 
         let order = Arc::new(Mutex::new(Vec::<u32>::new()));
@@ -348,16 +386,20 @@ mod tests {
         thread.on_done(move |_| o2.lock().unwrap().push(2));
         thread.on_done(move |_| o3.lock().unwrap().push(3));
 
-        let _ = thread.start().join();
+        std::thread::scope(|s| {
+            let _ = thread.start(s).join();
+        });
         assert_eq!(*order.lock().unwrap(), vec![1, 2, 3]);
     }
 
     #[test]
     fn on_done_no_callback_when_none_registered() {
         // Sanity: the bookkeeping path works when nothing's registered.
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(ImmediateClose)).unwrap();
-        assert!(matches!(thread.start().join(), Join::Ok));
+        std::thread::scope(|s| {
+            assert!(matches!(thread.start(s).join(), Join::Ok));
+        });
     }
 
     /// A workable that holds a sentinel which records its drop order
@@ -386,7 +428,7 @@ mod tests {
     /// prevent later callbacks from running.
     #[test]
     fn on_done_panic_on_normal_path_is_isolated() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(ImmediateClose)).unwrap();
 
         let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
@@ -396,7 +438,9 @@ mod tests {
         thread.on_done(|_| panic!("callback 2 panics"));
         thread.on_done(move |_| s3.lock().unwrap().push(3));
 
-        assert!(matches!(thread.start().join(), Join::Ok));
+        std::thread::scope(|s| {
+            assert!(matches!(thread.start(s).join(), Join::Ok));
+        });
         assert_eq!(*seen.lock().unwrap(), vec![1, 3]);
     }
 
@@ -405,7 +449,7 @@ mod tests {
     /// prevent later callbacks from running.
     #[test]
     fn on_done_panic_on_panic_path_is_isolated() {
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread.add(Box::new(Panicker)).unwrap();
 
         let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
@@ -417,10 +461,10 @@ mod tests {
 
         // If the catch_unwind in PanicGuard::drop were missing, the
         // double-panic would abort and this assert would never run.
-        match thread.start().join() {
+        std::thread::scope(|sc| match thread.start(sc).join() {
             Join::Panic(_) => {}
             other => panic!("expected Join::Panic, got {:?}", other),
-        }
+        });
         assert_eq!(*seen.lock().unwrap(), vec![1, 3]);
     }
 
@@ -430,7 +474,7 @@ mod tests {
         let workable_drop_tick = Arc::new(AtomicUsize::new(0));
         let callback_tick = Arc::new(AtomicUsize::new(0));
 
-        let mut thread = ThreadStream::<TestThread>::new();
+        let mut thread = ThreadStream::<'_, TestThread>::new();
         thread
             .add(Box::new(DropMarker {
                 marker: workable_drop_tick.clone(),
@@ -445,7 +489,9 @@ mod tests {
             cb_tick.store(tick + 1, Ordering::SeqCst);
         });
 
-        let _ = thread.start().join();
+        std::thread::scope(|s| {
+            let _ = thread.start(s).join();
+        });
         let w = workable_drop_tick.load(Ordering::SeqCst);
         let c = callback_tick.load(Ordering::SeqCst);
         assert!(

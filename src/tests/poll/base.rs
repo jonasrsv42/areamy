@@ -1,10 +1,10 @@
 //! Integration tests for mixed sync + async graphs.
 
-use areamy::error::Error;
-use areamy::node::Name;
-use areamy::poll;
-use areamy::sync::Receiver;
-use areamy::{
+use crate::error::Error;
+use crate::node::Name;
+use crate::poll;
+use crate::sync::Receiver;
+use crate::{
     Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
 };
 use std::collections::VecDeque;
@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 
 /// Routine that queues input in send via waker-aware Queue, then
 /// doubles it in poll. Send wakes Work via the queue's waker.
-use areamy::connect::waker::{self as waker, ThreadLocalWaker};
-use areamy::poll::future::queue::{Input, InputQueue, OutputQueue};
+use crate::connect::waker::{self as waker, ThreadLocalWaker};
+use crate::poll::future::queue::{Input, InputQueue, OutputQueue};
 
 struct PollDouble {
     input: InputQueue<usize>,
@@ -29,27 +29,27 @@ impl PollDouble {
     }
 }
 
-impl areamy::Send<usize> for PollDouble {
+impl crate::Send<usize> for PollDouble {
     fn send(&mut self, message: usize) -> Result<(), Error> {
         self.input.producer.push(Input::Data(message));
         Ok(())
     }
 }
 
-impl areamy::Next<usize> for PollDouble {
+impl crate::Next<usize> for PollDouble {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         Ok(self.output.consumer.pop())
     }
 }
 
-impl areamy::Flush for PollDouble {
+impl crate::Flush for PollDouble {
     fn flush(&mut self) -> Result<(), Error> {
         self.input.producer.push(Input::Flush);
         Ok(())
     }
 }
 
-impl areamy::Poll for PollDouble {
+impl crate::Poll for PollDouble {
     fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         let mut cx = core::task::Context::from_waker(&waker.sync);
         loop {
@@ -91,27 +91,27 @@ impl PollAccumulator {
     }
 }
 
-impl areamy::Send<usize> for PollAccumulator {
+impl crate::Send<usize> for PollAccumulator {
     fn send(&mut self, message: usize) -> Result<(), Error> {
         self.collected.lock().unwrap().push(message);
         Ok(())
     }
 }
 
-impl areamy::Next<usize> for PollAccumulator {
+impl crate::Next<usize> for PollAccumulator {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         Ok(None)
     }
 }
 
-impl areamy::Flush for PollAccumulator {
+impl crate::Flush for PollAccumulator {
     fn flush(&mut self) -> Result<(), Error> {
         self.flushed = true;
         Ok(())
     }
 }
 
-impl areamy::Poll for PollAccumulator {
+impl crate::Poll for PollAccumulator {
     fn poll(&mut self, _waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         if self.flushed {
             self.flushed = false;
@@ -122,7 +122,7 @@ impl areamy::Poll for PollAccumulator {
 }
 
 impl Name for PollAccumulator {}
-impl areamy::LineRoutine<usize, usize> for PollAccumulator {}
+impl crate::LineRoutine<usize, usize> for PollAccumulator {}
 impl poll::LineRoutine<usize, usize> for PollAccumulator {}
 
 /// Sync Double — used for the sync part of the graph.
@@ -138,27 +138,27 @@ impl Double {
     }
 }
 
-impl areamy::Send<usize> for Double {
+impl crate::Send<usize> for Double {
     fn send(&mut self, message: usize) -> Result<(), Error> {
         self.output.push_back(message * 2);
         Ok(())
     }
 }
 
-impl areamy::Next<usize> for Double {
+impl crate::Next<usize> for Double {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         Ok(self.output.pop_front())
     }
 }
 
-impl areamy::Flush for Double {
+impl crate::Flush for Double {
     fn flush(&mut self) -> Result<(), Error> {
         Ok(())
     }
 }
 
 impl Name for Double {}
-impl areamy::LineRoutine<usize, usize> for Double {}
+impl crate::LineRoutine<usize, usize> for Double {}
 
 #[derive(Debug)]
 struct IoThread;
@@ -168,14 +168,14 @@ impl ThreadId for IoThread {}
 /// Data only appears in output after poll() processes it.
 #[test]
 fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let mut node = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
 
     make_push(&mut source_node, &node)?;
 
@@ -184,75 +184,79 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
 
     async_thread.add(node);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // 5 → sync Double → 10 → async PollDouble (send queues, poll doubles) → 20
-    source.push(Message::Data(5))?;
-    assert_eq!(output.read_front()?, Message::Data(20));
+        // 5 → sync Double → 10 → async PollDouble (send queues, poll doubles) → 20
+        source.push(Message::Data(5))?;
+        assert_eq!(output.read_front()?, Message::Data(20));
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Node<Sync, Async> → Node<Async, Sync> via merge.
 /// Both async nodes use poll() to process data.
 #[test]
 fn async_chain_with_local_edges() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_node, &parent)?;
 
     let mut child = async_thread
         .line(|w| PollDouble::new(w))
         .parent(parent)
-        .output::<areamy::poll::Sync>();
+        .output::<crate::poll::Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // 3 → sync Double → 6 → async PollDouble → 12 → async PollDouble → 24
-    source.push(Message::Data(3))?;
-    assert_eq!(output.read_front()?, Message::Data(24));
+        // 3 → sync Double → 6 → async PollDouble → 12 → async PollDouble → 24
+        source.push(Message::Data(3))?;
+        assert_eq!(output.read_front()?, Message::Data(24));
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Five async nodes chained via merge: parent → linked → linked → linked → child.
 #[test]
 fn long_async_chain() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let a = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_node, &a)?;
 
     let b = async_thread.line(|w| PollDouble::new(w)).parent(a);
@@ -261,33 +265,35 @@ fn long_async_chain() -> Result<(), Error> {
     let mut e = async_thread
         .line(|w| PollDouble::new(w))
         .parent(d)
-        .output::<areamy::poll::Sync>();
+        .output::<crate::poll::Sync>();
 
     let output = Receiver::new();
     make_push(&mut e, &output)?;
 
     async_thread.add(e);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // 1 → sync Double → 2
-    //   → a PollDouble → 4
-    //   → b PollDouble → 8
-    //   → c PollDouble → 16
-    //   → d PollDouble → 32
-    //   → e PollDouble → 64
-    source.push(Message::Data(1))?;
-    assert_eq!(output.read_front()?, Message::Data(64));
+        // 1 → sync Double → 2
+        //   → a PollDouble → 4
+        //   → b PollDouble → 8
+        //   → c PollDouble → 16
+        //   → d PollDouble → 32
+        //   → e PollDouble → 64
+        source.push(Message::Data(1))?;
+        assert_eq!(output.read_front()?, Message::Data(64));
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Fan-out via cross-thread sync bridge (Mutex) between Node<Sync, Sync> terminals.
@@ -303,23 +309,23 @@ fn long_async_chain() -> Result<(), Error> {
 /// Push connections allow fan-out at the cost of Mutex.
 #[test]
 fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let mut node_a = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
     let mut node_b = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
     let mut node_c = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
 
     make_push(&mut source_node, &node_a)?;
     make_push(&mut node_a, &node_b)?;
@@ -334,24 +340,26 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
     async_thread.add(node_b);
     async_thread.add(node_c);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // 5 → sync Double → 10 → node_a PollDouble → 20
-    //   → node_b PollDouble → 40
-    //   → node_c PollDouble → 40
-    source.push(Message::Data(5))?;
-    assert_eq!(output_b.read_front()?, Message::Data(40));
-    assert_eq!(output_c.read_front()?, Message::Data(40));
+        // 5 → sync Double → 10 → node_a PollDouble → 20
+        //   → node_b PollDouble → 40
+        //   → node_c PollDouble → 40
+        source.push(Message::Data(5))?;
+        assert_eq!(output_b.read_front()?, Message::Data(40));
+        assert_eq!(output_c.read_front()?, Message::Data(40));
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Two independent parent chains merged into one child.
@@ -365,29 +373,29 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
 /// Child drains from both parents. Output receives doubled values from both.
 #[test]
 fn merge_two_parents_into_child() -> Result<(), Error> {
-    let mut source_a_node = areamy::work::make_line(Double::new());
-    let mut source_a = areamy::work::Source::<usize>::of(&source_a_node)?;
+    let mut source_a_node = crate::work::make_line(Double::new());
+    let mut source_a = crate::work::Source::<usize>::of(&source_a_node)?;
 
-    let mut source_b_node = areamy::work::make_line(Double::new());
-    let mut source_b = areamy::work::Source::<usize>::of(&source_b_node)?;
+    let mut source_b_node = crate::work::make_line(Double::new());
+    let mut source_b = crate::work::Source::<usize>::of(&source_b_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent_a = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_a_node, &parent_a)?;
 
     let parent_b = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_b_node, &parent_b)?;
 
     let mut child = async_thread
         .line(|w| PollDouble::new(w))
         .parent(parent_a)
         .parent(parent_b)
-        .output::<areamy::poll::Sync>();
+        .output::<crate::poll::Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -397,28 +405,30 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
     // Independent blocking sources need separate sync threads —
     // work() calls read_front() which blocks, preventing other
     // sources on the same thread from being serviced.
-    let mut sync_a = ThreadStream::<areamy::DefaultThread>::new();
-    let mut sync_b = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_a = ThreadStream::<'_, crate::DefaultThread>::new();
+    let mut sync_b = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_a_node, &mut sync_a)?;
     make_work(source_b_node, &mut sync_b)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_a).add(sync_b).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // source_a: 5 → Double → 10 → PollDouble → 20 → PollDouble → 40
-    source_a.push(Message::Data(5))?;
-    assert_eq!(output.read_front()?, Message::Data(40));
+        // source_a: 5 → Double → 10 → PollDouble → 20 → PollDouble → 40
+        source_a.push(Message::Data(5))?;
+        assert_eq!(output.read_front()?, Message::Data(40));
 
-    // source_b: 3 → Double → 6 → PollDouble → 12 → PollDouble → 24
-    source_b.push(Message::Data(3))?;
-    assert_eq!(output.read_front()?, Message::Data(24));
+        // source_b: 3 → Double → 6 → PollDouble → 12 → PollDouble → 24
+        source_b.push(Message::Data(3))?;
+        assert_eq!(output.read_front()?, Message::Data(24));
 
-    source_a.close()?;
-    source_b.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source_a.close()?;
+        source_b.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Three parents merged into one linked node, then child for sync output.
@@ -432,30 +442,30 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
 /// ```
 #[test]
 fn merge_three_parents_via_linked() -> Result<(), Error> {
-    let mut source_a_node = areamy::work::make_line(Double::new());
-    let mut source_a = areamy::work::Source::<usize>::of(&source_a_node)?;
+    let mut source_a_node = crate::work::make_line(Double::new());
+    let mut source_a = crate::work::Source::<usize>::of(&source_a_node)?;
 
-    let mut source_b_node = areamy::work::make_line(Double::new());
-    let mut source_b = areamy::work::Source::<usize>::of(&source_b_node)?;
+    let mut source_b_node = crate::work::make_line(Double::new());
+    let mut source_b = crate::work::Source::<usize>::of(&source_b_node)?;
 
-    let mut source_c_node = areamy::work::make_line(Double::new());
-    let mut source_c = areamy::work::Source::<usize>::of(&source_c_node)?;
+    let mut source_c_node = crate::work::make_line(Double::new());
+    let mut source_c = crate::work::Source::<usize>::of(&source_c_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent_a = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_a_node, &parent_a)?;
 
     let parent_b = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_b_node, &parent_b)?;
 
     let parent_c = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_c_node, &parent_c)?;
 
     // All three parents merged into one linked node
@@ -468,7 +478,7 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     let mut child = async_thread
         .line(|w| PollDouble::new(w))
         .parent(linked)
-        .output::<areamy::poll::Sync>();
+        .output::<crate::poll::Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -476,33 +486,35 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     async_thread.add(child);
 
     // Independent blocking sources need separate sync threads.
-    let mut sync_a = ThreadStream::<areamy::DefaultThread>::new();
-    let mut sync_b = ThreadStream::<areamy::DefaultThread>::new();
-    let mut sync_c = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_a = ThreadStream::<'_, crate::DefaultThread>::new();
+    let mut sync_b = ThreadStream::<'_, crate::DefaultThread>::new();
+    let mut sync_c = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_a_node, &mut sync_a)?;
     make_work(source_b_node, &mut sync_b)?;
     make_work(source_c_node, &mut sync_c)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_a).add(sync_b).add(sync_c).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // source_a: 1 → Double → 2 → PollDouble → 4
-    //   → linked PollDouble → 8 → child PollDouble → 16
-    source_a.push(Message::Data(1))?;
-    assert_eq!(output.read_front()?, Message::Data(16));
+        // source_a: 1 → Double → 2 → PollDouble → 4
+        //   → linked PollDouble → 8 → child PollDouble → 16
+        source_a.push(Message::Data(1))?;
+        assert_eq!(output.read_front()?, Message::Data(16));
 
-    // source_c: 2 → Double → 4 → PollDouble → 8
-    //   → linked PollDouble → 16 → child PollDouble → 32
-    source_c.push(Message::Data(2))?;
-    assert_eq!(output.read_front()?, Message::Data(32));
+        // source_c: 2 → Double → 4 → PollDouble → 8
+        //   → linked PollDouble → 16 → child PollDouble → 32
+        source_c.push(Message::Data(2))?;
+        assert_eq!(output.read_front()?, Message::Data(32));
 
-    source_a.close()?;
-    source_b.close()?;
-    source_c.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source_a.close()?;
+        source_b.close()?;
+        source_c.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 // ============================================================
@@ -512,15 +524,15 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
 /// Terminal via typed: Node<Sync, Sync>.
 #[test]
 fn node_terminal_via_typed() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let mut node = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
 
     make_push(&mut source_node, &node)?;
 
@@ -529,92 +541,98 @@ fn node_terminal_via_typed() -> Result<(), Error> {
 
     async_thread.add(node);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // 5 → Double → 10 → PollDouble → 20
-    source.push(Message::Data(5))?;
-    assert_eq!(output.read_front()?, Message::Data(20));
+        // 5 → Double → 10 → PollDouble → 20
+        source.push(Message::Data(5))?;
+        assert_eq!(output.read_front()?, Message::Data(20));
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Parent→child via typed + parent.
 #[test]
 fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_node, &parent)?;
 
     let mut child = async_thread
         .line(|w| PollDouble::new(w))
         .parent(parent)
-        .output::<areamy::poll::Sync>();
+        .output::<crate::poll::Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // 3 → Double → 6 → PollDouble → 12 → PollDouble → 24
-    source.push(Message::Data(3))?;
-    assert_eq!(output.read_front()?, Message::Data(24));
+        // 3 → Double → 6 → PollDouble → 12 → PollDouble → 24
+        source.push(Message::Data(3))?;
+        assert_eq!(output.read_front()?, Message::Data(24));
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Sink: Deferred output, data discarded via Null.
 #[test]
 fn node_sink_deferred_output() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_node, &parent)?;
 
     let sink = async_thread.line(|w| PollDouble::new(w)).parent(parent);
     async_thread.add(sink);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    source.push(Message::Data(5))?;
+        source.push(Message::Data(5))?;
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Multiple async sink nodes with PollAccumulator to verify data arrives.
@@ -630,30 +648,30 @@ fn node_sink_deferred_output() -> Result<(), Error> {
 /// Both sinks accumulate values. Test verifies correct values arrive.
 #[test]
 fn async_only_multiple_sinks() -> Result<(), Error> {
-    let mut source_a_node = areamy::work::make_line(Double::new());
-    let mut source_a = areamy::work::Source::<usize>::of(&source_a_node)?;
+    let mut source_a_node = crate::work::make_line(Double::new());
+    let mut source_a = crate::work::Source::<usize>::of(&source_a_node)?;
 
-    let mut source_b_node = areamy::work::make_line(Double::new());
-    let mut source_b = areamy::work::Source::<usize>::of(&source_b_node)?;
+    let mut source_b_node = crate::work::make_line(Double::new());
+    let mut source_b = crate::work::Source::<usize>::of(&source_b_node)?;
 
-    let mut source_c_node = areamy::work::make_line(Double::new());
-    let mut source_c = areamy::work::Source::<usize>::of(&source_c_node)?;
+    let mut source_c_node = crate::work::make_line(Double::new());
+    let mut source_c = crate::work::Source::<usize>::of(&source_c_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent_a = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_a_node, &parent_a)?;
 
     let parent_b = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_b_node, &parent_b)?;
 
     let parent_c = async_thread
         .line(|w| PollDouble::new(w))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_c_node, &parent_c)?;
 
     let collected_1 = Arc::new(Mutex::new(Vec::new()));
@@ -681,43 +699,45 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
         .parent(parent_c);
     async_thread.add(sink_2);
 
-    let mut sync_a = ThreadStream::<areamy::DefaultThread>::new();
-    let mut sync_b = ThreadStream::<areamy::DefaultThread>::new();
-    let mut sync_c = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_a = ThreadStream::<'_, crate::DefaultThread>::new();
+    let mut sync_b = ThreadStream::<'_, crate::DefaultThread>::new();
+    let mut sync_c = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_a_node, &mut sync_a)?;
     make_work(source_b_node, &mut sync_b)?;
     make_work(source_c_node, &mut sync_c)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_a).add(sync_b).add(sync_c).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    source_a.push(Message::Data(1))?;
-    source_b.push(Message::Data(2))?;
-    source_c.push(Message::Data(3))?;
+        source_a.push(Message::Data(1))?;
+        source_b.push(Message::Data(2))?;
+        source_c.push(Message::Data(3))?;
 
-    // Fast close drops unprocessed `send()` data — push Flush so the
-    // routines drain pipelined values before the close cascade.
-    source_a.push(Message::Flush("end".into()))?;
-    source_b.push(Message::Flush("end".into()))?;
-    source_c.push(Message::Flush("end".into()))?;
+        // Fast close drops unprocessed `send()` data — push Flush so the
+        // routines drain pipelined values before the close cascade.
+        source_a.push(Message::Flush("end".into()))?;
+        source_b.push(Message::Flush("end".into()))?;
+        source_c.push(Message::Flush("end".into()))?;
 
-    source_a.close()?;
-    source_b.close()?;
-    source_c.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
+        source_a.close()?;
+        source_b.close()?;
+        source_c.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
 
-    // Verify sink_1 received doubled values from a and b
-    let mut vals_1 = collected_1.lock().unwrap().clone();
-    vals_1.sort();
-    assert_eq!(vals_1, vec![4, 8]);
+        // Verify sink_1 received doubled values from a and b
+        let mut vals_1 = collected_1.lock().unwrap().clone();
+        vals_1.sort();
+        assert_eq!(vals_1, vec![4, 8]);
 
-    // Verify sink_2 received doubled value from c
-    let vals_2 = collected_2.lock().unwrap().clone();
-    assert_eq!(vals_2, vec![12]);
+        // Verify sink_2 received doubled value from c
+        let vals_2 = collected_2.lock().unwrap().clone();
+        assert_eq!(vals_2, vec![12]);
 
-    Ok(())
+        Ok(())
+    })
 }
 
 // ============================================================
@@ -754,27 +774,27 @@ impl HalfCloseRoutine {
     }
 }
 
-impl areamy::Send<usize> for HalfCloseRoutine {
+impl crate::Send<usize> for HalfCloseRoutine {
     fn send(&mut self, message: usize) -> Result<(), Error> {
         self.input.producer.push(Input::Data(message));
         Ok(())
     }
 }
 
-impl areamy::Next<usize> for HalfCloseRoutine {
+impl crate::Next<usize> for HalfCloseRoutine {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         Ok(self.output.consumer.pop())
     }
 }
 
-impl areamy::Flush for HalfCloseRoutine {
+impl crate::Flush for HalfCloseRoutine {
     fn flush(&mut self) -> Result<(), Error> {
         self.input.producer.push(Input::Flush);
         Ok(())
     }
 }
 
-impl areamy::Poll for HalfCloseRoutine {
+impl crate::Poll for HalfCloseRoutine {
     fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         let mut cx = core::task::Context::from_waker(&waker.sync);
         // If mid-handshake, count down
@@ -821,11 +841,11 @@ impl poll::LineRoutine<usize, usize> for HalfCloseRoutine {}
 /// Data sent before the flush is doubled and forwarded.
 #[test]
 fn flush_waits_for_routine_ready() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
     let flush_count = Arc::new(Mutex::new(0));
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     // HalfCloseRoutine needs 3 poll cycles to complete flush handshake
     let parent = async_thread
@@ -833,48 +853,50 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
             let fc = flush_count.clone();
             move |w| HalfCloseRoutine::new(w, 3, fc)
         })
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_node, &parent)?;
 
     // Child collects output to verify flush ordering
     let mut child = async_thread
         .line(|w| PollDouble::new(w))
         .parent(parent)
-        .output::<areamy::poll::Sync>();
+        .output::<crate::poll::Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // Send data then flush
-    // 5 → Double → 10 → HalfCloseRoutine.send(10) → pending=[10]
-    source.push(Message::Data(5))?;
+        // Send data then flush
+        // 5 → Double → 10 → HalfCloseRoutine.send(10) → pending=[10]
+        source.push(Message::Data(5))?;
 
-    // Flush: HalfCloseRoutine.flush() → output=[20], starts 3-cycle handshake
-    // After 3 poll cycles: Ready → Flush signal forwarded → child receives it
-    source.push(Message::Flush("segment-1".into()))?;
+        // Flush: HalfCloseRoutine.flush() → output=[20], starts 3-cycle handshake
+        // After 3 poll cycles: Ready → Flush signal forwarded → child receives it
+        source.push(Message::Flush("segment-1".into()))?;
 
-    // Data(20) arrives at child (PollDouble) → 40
-    assert_eq!(output.read_front()?, Message::Data(40));
+        // Data(20) arrives at child (PollDouble) → 40
+        assert_eq!(output.read_front()?, Message::Data(40));
 
-    // Flush signal arrives at child after handshake completes
-    assert_eq!(output.read_front()?, Message::Flush("segment-1".into()));
+        // Flush signal arrives at child after handshake completes
+        assert_eq!(output.read_front()?, Message::Flush("segment-1".into()));
 
-    // Verify handshake completed exactly once
-    assert_eq!(*flush_count.lock().unwrap(), 1);
+        // Verify handshake completed exactly once
+        assert_eq!(*flush_count.lock().unwrap(), 1);
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }
 
 /// Accumulates data until flush, then outputs the sum. Simulates a
@@ -900,20 +922,20 @@ impl BatchRoutine {
     }
 }
 
-impl areamy::Send<usize> for BatchRoutine {
+impl crate::Send<usize> for BatchRoutine {
     fn send(&mut self, message: usize) -> Result<(), Error> {
         self.accumulator += message;
         Ok(())
     }
 }
 
-impl areamy::Next<usize> for BatchRoutine {
+impl crate::Next<usize> for BatchRoutine {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         Ok(self.output.consumer.pop())
     }
 }
 
-impl areamy::Flush for BatchRoutine {
+impl crate::Flush for BatchRoutine {
     fn flush(&mut self) -> Result<(), Error> {
         if self.accumulator > 0 {
             self.output.producer.push(self.accumulator);
@@ -925,7 +947,7 @@ impl areamy::Flush for BatchRoutine {
     }
 }
 
-impl areamy::Poll for BatchRoutine {
+impl crate::Poll for BatchRoutine {
     fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         if self.flush_requested {
             if self.flush_cycles_remaining == 0 {
@@ -955,58 +977,60 @@ impl poll::LineRoutine<usize, usize> for BatchRoutine {}
 ///   Close                          → empty flush, close propagates
 #[test]
 fn multi_flush_then_close() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut source_node = crate::work::make_line(Double::new());
+    let mut source = crate::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent = async_thread
         .line(|w| BatchRoutine::new(w, 2))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
     make_push(&mut source_node, &parent)?;
 
     let mut child = async_thread
         .line(|w| PollDouble::new(w))
         .parent(parent)
-        .output::<areamy::poll::Sync>();
+        .output::<crate::poll::Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    // Segment 1: Data(1), Data(2), Flush
-    // Double: 1→2, 2→4. Batch accumulates 2+4=6.
-    // Flush: emits 6, 2-cycle handshake, Flush("s1") forwarded.
-    // PollDouble: 6→12
-    source.push(Message::Data(1))?;
-    source.push(Message::Data(2))?;
-    source.push(Message::Flush("s1".into()))?;
+        // Segment 1: Data(1), Data(2), Flush
+        // Double: 1→2, 2→4. Batch accumulates 2+4=6.
+        // Flush: emits 6, 2-cycle handshake, Flush("s1") forwarded.
+        // PollDouble: 6→12
+        source.push(Message::Data(1))?;
+        source.push(Message::Data(2))?;
+        source.push(Message::Flush("s1".into()))?;
 
-    assert_eq!(output.read_front()?, Message::Data(12));
-    assert_eq!(output.read_front()?, Message::Flush("s1".into()));
+        assert_eq!(output.read_front()?, Message::Data(12));
+        assert_eq!(output.read_front()?, Message::Flush("s1".into()));
 
-    // Segment 2: Data(3), Flush
-    // Double: 3→6. Batch accumulates 6.
-    // Flush: emits 6, 2-cycle handshake, Flush("s2") forwarded.
-    // PollDouble: 6→12
-    source.push(Message::Data(3))?;
-    source.push(Message::Flush("s2".into()))?;
+        // Segment 2: Data(3), Flush
+        // Double: 3→6. Batch accumulates 6.
+        // Flush: emits 6, 2-cycle handshake, Flush("s2") forwarded.
+        // PollDouble: 6→12
+        source.push(Message::Data(3))?;
+        source.push(Message::Flush("s2".into()))?;
 
-    assert_eq!(output.read_front()?, Message::Data(12));
-    assert_eq!(output.read_front()?, Message::Flush("s2".into()));
+        assert_eq!(output.read_front()?, Message::Data(12));
+        assert_eq!(output.read_front()?, Message::Flush("s2".into()));
 
-    // Close: flush() called (accumulator=0, nothing emitted).
-    // poll() returns Ready → close propagates.
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        // Close: flush() called (accumulator=0, nothing emitted).
+        // poll() returns Ready → close propagates.
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }

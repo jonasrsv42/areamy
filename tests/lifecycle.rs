@@ -198,8 +198,8 @@ struct GraphEvent {
 // ---- per-generation handles ------------------------------------------------
 
 /// Everything the orchestrator hangs onto for one generation.
-struct GenerationHandles {
-    bundle: ThreadBundleHandle,
+struct GenerationHandles<'s> {
+    bundle: ThreadBundleHandle<'s>,
     source: Source<usize, areamy::Trackable<&'static str>>,
     /// JoinHandle for the helper thread that drains the sink-side
     /// Receiver into `seen`.
@@ -217,7 +217,11 @@ struct GenerationHandles {
 /// generation by value, so events reaching the orchestrator carry
 /// the generation of the bundle that emitted them — not whatever the
 /// orchestrator's current generation happens to be on dequeue.
-fn build_graph(tx: mpsc::Sender<GraphEvent>, generation: usize) -> GenerationHandles {
+fn build_graph<'s>(
+    scope: &'s std::thread::Scope<'s, 'static>,
+    tx: mpsc::Sender<GraphEvent>,
+    generation: usize,
+) -> GenerationHandles<'s> {
     // Pull segment on the main thread.
     let buffer: SourceBuffer<usize, areamy::Trackable<&'static str>, WorkThread> =
         SourceBuffer::new();
@@ -230,7 +234,7 @@ fn build_graph(tx: mpsc::Sender<GraphEvent>, generation: usize) -> GenerationHan
 
     // Poll segment: a poll line on a dedicated async thread with a
     // sync→poll bridge on input and a sync edge on output.
-    let mut poll_thread = poll::Thread::<PollThread>::new();
+    let mut poll_thread = poll::Thread::<'_, PollThread>::new();
     let mut poll_node = poll_thread
         .line(|w| PollDouble::new(w))
         .input::<poll::Sync>()
@@ -245,7 +249,7 @@ fn build_graph(tx: mpsc::Sender<GraphEvent>, generation: usize) -> GenerationHan
 
     poll_thread.add(poll_node);
 
-    let mut work_thread = ThreadStream::<WorkThread>::new();
+    let mut work_thread = ThreadStream::<'_, WorkThread>::new();
     make_work(bridged, &mut work_thread).unwrap();
 
     let mut bundle = ThreadBundle::new();
@@ -259,7 +263,7 @@ fn build_graph(tx: mpsc::Sender<GraphEvent>, generation: usize) -> GenerationHan
             });
         });
 
-    let handle = bundle.start();
+    let handle = bundle.start(scope);
 
     // Helper thread: drain sink-side Receiver until Closed, append
     // every Data value to `seen`.
@@ -288,7 +292,7 @@ fn build_graph(tx: mpsc::Sender<GraphEvent>, generation: usize) -> GenerationHan
 /// thread has exited), then join the drain thread (which exits when
 /// it sees Closed on the sink-side Receiver). Returns the values the
 /// drain thread observed.
-fn teardown(mut gen_handles: GenerationHandles) -> Vec<usize> {
+fn teardown(mut gen_handles: GenerationHandles<'_>) -> Vec<usize> {
     let _ = Closeable::close(&mut gen_handles.source);
     let _ = gen_handles.bundle.join();
     let _ = gen_handles.drain.join();
@@ -300,101 +304,103 @@ const TARGET_GENERATIONS: usize = 3;
 
 #[test]
 fn restart_loop_with_generation_dedup_and_real_data_flow() {
-    let (event_tx, event_rx) = mpsc::channel::<GraphEvent>();
+    std::thread::scope(|s| {
+        let (event_tx, event_rx) = mpsc::channel::<GraphEvent>();
 
-    let mut current_gen: usize = 0;
-    let mut completed_cycles = 0;
-    let mut stale_events_seen: Vec<usize> = Vec::new();
-    let mut per_gen_observed: Vec<Vec<usize>> = Vec::new();
+        let mut current_gen: usize = 0;
+        let mut completed_cycles = 0;
+        let mut stale_events_seen: Vec<usize> = Vec::new();
+        let mut per_gen_observed: Vec<Vec<usize>> = Vec::new();
 
-    let mut gen_handles = build_graph(event_tx.clone(), current_gen);
+        let mut gen_handles = build_graph(s, event_tx.clone(), current_gen);
 
-    // Push two items: the first flows all the way through (sink sees
-    // 1 * 2 = 2); the second triggers the work-line failure path.
-    gen_handles.source.push(Message::Data(1)).unwrap();
-    gen_handles.source.push(Message::Data(2)).unwrap();
+        // Push two items: the first flows all the way through (sink sees
+        // 1 * 2 = 2); the second triggers the work-line failure path.
+        gen_handles.source.push(Message::Data(1)).unwrap();
+        gen_handles.source.push(Message::Data(2)).unwrap();
 
-    loop {
-        let event = match event_rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(e) => e,
-            Err(_) => panic!(
-                "timeout: no event at generation {} after {} cycles",
-                current_gen, completed_cycles
-            ),
-        };
+        loop {
+            let event = match event_rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(e) => e,
+                Err(_) => panic!(
+                    "timeout: no event at generation {} after {} cycles",
+                    current_gen, completed_cycles
+                ),
+            };
 
-        if event.generation != current_gen {
-            stale_events_seen.push(event.generation);
-            continue;
-        }
+            if event.generation != current_gen {
+                stale_events_seen.push(event.generation);
+                continue;
+            }
 
-        match event.kind {
-            EventKind::Error => {
-                let observed = teardown(gen_handles);
-                per_gen_observed.push(observed);
-                completed_cycles += 1;
+            match event.kind {
+                EventKind::Error => {
+                    let observed = teardown(gen_handles);
+                    per_gen_observed.push(observed);
+                    completed_cycles += 1;
 
-                if completed_cycles >= TARGET_GENERATIONS {
-                    break;
+                    if completed_cycles >= TARGET_GENERATIONS {
+                        break;
+                    }
+
+                    // Inject one stale event from the gen we just tore
+                    // down — the next loop iteration must dequeue it and
+                    // discard without rebuilding. Exactly one injection
+                    // per transition → `TARGET_GENERATIONS - 1` stales.
+                    event_tx
+                        .send(GraphEvent {
+                            generation: current_gen,
+                            kind: EventKind::Error,
+                        })
+                        .unwrap();
+
+                    current_gen += 1;
+                    gen_handles = build_graph(s, event_tx.clone(), current_gen);
+                    gen_handles.source.push(Message::Data(1)).unwrap();
+                    gen_handles.source.push(Message::Data(2)).unwrap();
                 }
-
-                // Inject one stale event from the gen we just tore
-                // down — the next loop iteration must dequeue it and
-                // discard without rebuilding. Exactly one injection
-                // per transition → `TARGET_GENERATIONS - 1` stales.
-                event_tx
-                    .send(GraphEvent {
-                        generation: current_gen,
-                        kind: EventKind::Error,
-                    })
-                    .unwrap();
-
-                current_gen += 1;
-                gen_handles = build_graph(event_tx.clone(), current_gen);
-                gen_handles.source.push(Message::Data(1)).unwrap();
-                gen_handles.source.push(Message::Data(2)).unwrap();
             }
         }
-    }
 
-    assert_eq!(completed_cycles, TARGET_GENERATIONS);
+        assert_eq!(completed_cycles, TARGET_GENERATIONS);
 
-    // `on_first_error` fires at most once per bundle, so the only
-    // stale events are the ones we inject — exactly one per
-    // transition.
-    assert_eq!(
-        stale_events_seen.len(),
-        TARGET_GENERATIONS - 1,
-        "expected one stale event per transition; got {:?}",
-        stale_events_seen
-    );
-    assert!(
-        stale_events_seen.iter().all(|&g| g < current_gen),
-        "stale events should all be from older generations, got {:?} with current_gen={}",
-        stale_events_seen,
-        current_gen
-    );
-
-    // Every generation must have produced real data through the
-    // graph before its failure path fired — proves we're not just
-    // constructing-and-tearing-down without actually doing work.
-    assert_eq!(per_gen_observed.len(), TARGET_GENERATIONS);
-    for (idx, observed) in per_gen_observed.iter().enumerate() {
-        assert!(
-            !observed.is_empty(),
-            "generation {} produced no output before failure: {:?}",
-            idx,
-            observed
-        );
-        // We pushed `1`, FailAfter(1) accepted it, PollDouble made
-        // it `2`. The second push triggers the error path and
-        // doesn't flow through.
+        // `on_first_error` fires at most once per bundle, so the only
+        // stale events are the ones we inject — exactly one per
+        // transition.
         assert_eq!(
-            observed,
-            &vec![2usize],
-            "generation {} observed unexpected values: {:?}",
-            idx,
-            observed
+            stale_events_seen.len(),
+            TARGET_GENERATIONS - 1,
+            "expected one stale event per transition; got {:?}",
+            stale_events_seen
         );
-    }
+        assert!(
+            stale_events_seen.iter().all(|&g| g < current_gen),
+            "stale events should all be from older generations, got {:?} with current_gen={}",
+            stale_events_seen,
+            current_gen
+        );
+
+        // Every generation must have produced real data through the
+        // graph before its failure path fired — proves we're not just
+        // constructing-and-tearing-down without actually doing work.
+        assert_eq!(per_gen_observed.len(), TARGET_GENERATIONS);
+        for (idx, observed) in per_gen_observed.iter().enumerate() {
+            assert!(
+                !observed.is_empty(),
+                "generation {} produced no output before failure: {:?}",
+                idx,
+                observed
+            );
+            // We pushed `1`, FailAfter(1) accepted it, PollDouble made
+            // it `2`. The second push triggers the error path and
+            // doesn't flow through.
+            assert_eq!(
+                observed,
+                &vec![2usize],
+                "generation {} observed unexpected values: {:?}",
+                idx,
+                observed
+            );
+        }
+    });
 }

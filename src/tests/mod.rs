@@ -1,5 +1,8 @@
 //! Tests for the areamy crate.
 
-pub mod clean_teardown;
-pub mod cycle_test;
-pub mod no_clone_test;
+mod clean_teardown;
+mod cycle_test;
+mod lifetime;
+mod no_clone_test;
+mod poll;
+mod pull;

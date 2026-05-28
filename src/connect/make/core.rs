@@ -36,6 +36,7 @@ use crate::{
 /// bidi chains should be impossible, so Forward is a safe default here without risk
 /// of infinite signal propagation.
 pub fn make_bidi<
+    'params,
     ParentType,
     ChildMultiplicity: Multiplicity, // Generic over type of child connection
     ParentMultiplicity: Multiplicity, // Generic over type of parent connection
@@ -45,19 +46,19 @@ pub fn make_bidi<
 >(
     mut parent: Box<ParentType>,
     child: &mut (
-             impl Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
+             impl Add<dyn Workable<ThreadId = ThreadIdType> + 'params, ChildMultiplicity>
              + Get<
-        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
         ChildMultiplicity,
     >
          ),
 ) -> Result<(), Error>
 where
     ParentType: Add<
-            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
             ParentMultiplicity,
         > + Workable<ThreadId = ThreadIdType>
-        + 'static,
+        + 'params,
 {
     // We need to get the pushable manually and apply Forward policy
     let pushable = child.get()?;
@@ -96,17 +97,18 @@ where
 /// when they follow data messages. This is a safety measure for cycles in the graph,
 /// as using [SignalPolicy::Forward] in back-edges can cause infinite signal propagation loops.
 pub fn make_push<
+    'params,
     GetMultiplicity: Multiplicity,
     AddMultiplicity: Multiplicity,
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 >(
     parent: &mut impl Add<
-        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
         AddMultiplicity,
     >,
     child: &impl Get<
-        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+        dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
         GetMultiplicity,
     >,
 ) -> Result<(), Error> {
@@ -142,9 +144,9 @@ pub fn make_push<
 /// scheduling circles, which would be deadlocks.
 /// </div>
 ///
-pub fn make_work<MultiplicityType: Multiplicity, ThreadIdType>(
-    parent: Box<impl Workable<ThreadId = ThreadIdType> + 'static>,
-    child: &mut impl Add<dyn Workable<ThreadId = ThreadIdType>, MultiplicityType>,
+pub fn make_work<'params, MultiplicityType: Multiplicity, ThreadIdType>(
+    parent: Box<impl Workable<ThreadId = ThreadIdType> + 'params>,
+    child: &mut impl Add<dyn Workable<ThreadId = ThreadIdType> + 'params, MultiplicityType>,
 ) -> Result<(), Error>
 where
 {

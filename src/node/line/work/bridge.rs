@@ -1,7 +1,6 @@
 //! Bridge a [LineTrait] with a [crate::pull::Line]
 
-use crate::node::line::work::node::LineTrait;
-use crate::{LineRoutine, Origin, Pullable, ThreadId, Workable, graph::Add, work::Line};
+use crate::{LineRoutine, Origin, Pullable, ThreadId, Workable, work::Line};
 use crate::{Pushable, marker::Connection};
 
 /// [`Bridge`] is a bridge between a [Pullable] and [Workable] segment.
@@ -58,34 +57,33 @@ where
     }
 }
 
-/// Build a [LineTrait] node fed by a [Pullable] parent.
+/// Build a [`crate::work::Line`] node fed by a [Pullable] parent.
 ///
 /// Bridges a pull-graph segment (the `pullable`) into a work-graph
 /// node (built from `worker`). The resulting node can be wired to
 /// other work-graph nodes via [crate::make_bidi], [crate::make_push]
-/// and [crate::make_work] like any other [LineTrait].
+/// and [crate::make_work] like any other line node.
+///
+/// Returns a concrete `Box<Line<...>>` rather than `Box<impl LineTrait + ...>`
+/// — `impl Trait` returns hide type info from the inferencer in cyclic
+/// graphs, matching the policy used by [`crate::work::make_line`].
 ///
 /// * `pullable` - a [Pullable] parent owned by the returned node.
 /// * `worker` - the [LineRoutine] that processes data inside the node.
-pub fn from_pull<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
+pub fn from_pull<'params, In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
     pullable: PullableType,
     worker: RoutineType,
-) -> Box<
-    impl LineTrait<In = In, Out = Out, Signal = SignalType, LineRoutine = RoutineType>
-    + Workable<ThreadId = ThreadIdType>
-    + Add<dyn Workable<ThreadId = ThreadIdType>>
-    + Send,
->
+) -> Box<Line<'params, In, Out, SignalType, ThreadIdType, RoutineType>>
 where
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    RoutineType: 'static + LineRoutine<In, Out>,
+    RoutineType: 'params + LineRoutine<In, Out>,
     PullableType:
-        Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
+        Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + Send + 'params,
 {
-    let mut line = Line::of(worker);
+    let mut line = Line::<'params, In, Out, SignalType, ThreadIdType, RoutineType>::of(worker);
     let bridge = Bridge::new(pullable, line.input.sender());
     line.workers.push(Box::new(bridge));
 

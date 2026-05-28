@@ -15,12 +15,12 @@ use crate::{Closeable, ThreadId};
 
 /// Trait for edge markers. Uses GATs to resolve storage types.
 pub trait Edge: Connection {
-    type Input<InType, SignalType: Origin, ThreadIdType: ThreadId>;
-    type Output<OutType, SignalType: Origin>;
+    type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId>;
+    type Output<'params, OutType, SignalType: Origin>;
     /// Allocator state for this edge kind.
-    /// `Deferred` holds `&'a mut WakerAllocator`, resolved edges hold
+    /// `Deferred` holds `&'alloc mut WakerAllocator`, resolved edges hold
     /// their allocated result or `()`.
-    type Alloc<'a>;
+    type Alloc<'alloc>;
 }
 
 /// Sync edge — cross-thread, uses [`input::sync::Receiver`]
@@ -43,23 +43,29 @@ impl Connection for Async {}
 impl Connection for Deferred {}
 
 impl Edge for Sync {
-    type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> =
+    type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
         input::sync::Input<InType, SignalType>;
-    type Output<OutType, SignalType: Origin> = Vec<
-        Box<dyn Closeable<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync>,
+    type Output<'params, OutType, SignalType: Origin> = Vec<
+        Box<
+            dyn Closeable<DataType = OutType, SignalType = SignalType>
+                + Send
+                + std::marker::Sync
+                + 'params,
+        >,
     >;
-    type Alloc<'a> = ();
+    type Alloc<'alloc> = ();
 }
 
 impl Edge for Async {
-    type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> =
-        input::r#async::Input<InType, SignalType, ThreadIdType>;
-    type Output<OutType, SignalType: Origin> = Linktime;
-    type Alloc<'a> = ();
+    type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
+        input::r#async::Input<'params, InType, SignalType, ThreadIdType>;
+    type Output<'params, OutType, SignalType: Origin> = Linktime;
+    type Alloc<'alloc> = ();
 }
 
 impl Edge for Deferred {
-    type Input<InType, SignalType: Origin, ThreadIdType: ThreadId> = Null<InType, SignalType>;
-    type Output<OutType, SignalType: Origin> = Null<OutType, SignalType>;
-    type Alloc<'a> = &'a mut WakerAllocator;
+    type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
+        Null<InType, SignalType>;
+    type Output<'params, OutType, SignalType: Origin> = Null<OutType, SignalType>;
+    type Alloc<'alloc> = &'alloc mut WakerAllocator;
 }

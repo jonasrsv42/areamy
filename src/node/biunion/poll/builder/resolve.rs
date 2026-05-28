@@ -16,10 +16,12 @@ use crate::signal::Origin;
 // --- Both deferred: parent on Node<Allocating, Deferred, Deferred, Deferred> ---
 
 /// .parent::<Left> on both-deferred → left Async, stays Allocating
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
+        'params,
         Node<
-            Allocating<'a>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Deferred,
             Deferred,
@@ -37,12 +39,13 @@ where
     Left: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     type Data = Left;
     type Resolved = Node<
-        Allocating<'a>,
+        'params,
+        Allocating<'alloc>,
         Async,
         Deferred,
         Deferred,
@@ -55,7 +58,8 @@ where
     >;
     fn resolve(
         node: Node<
-            Allocating<'a>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Deferred,
             Deferred,
@@ -67,7 +71,12 @@ where
             FactoryType,
         >,
         parent: Box<
-            dyn AsyncParent<OutType = Left, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+            dyn AsyncParent<
+                    'params,
+                    OutType = Left,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
         >,
     ) -> Self::Resolved {
         Node {
@@ -86,10 +95,12 @@ where
 }
 
 /// .parent::<Right> on both-deferred → right Async, stays Allocating
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
+        'params,
         Node<
-            Allocating<'a>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Deferred,
             Deferred,
@@ -107,12 +118,13 @@ where
     Right: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     type Data = Right;
     type Resolved = Node<
-        Allocating<'a>,
+        'params,
+        Allocating<'alloc>,
         Deferred,
         Async,
         Deferred,
@@ -125,7 +137,8 @@ where
     >;
     fn resolve(
         node: Node<
-            Allocating<'a>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Deferred,
             Deferred,
@@ -137,7 +150,12 @@ where
             FactoryType,
         >,
         parent: Box<
-            dyn AsyncParent<OutType = Right, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+            dyn AsyncParent<
+                    'params,
+                    OutType = Right,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
         >,
     ) -> Self::Resolved {
         Node {
@@ -157,10 +175,12 @@ where
 
 // --- Left Sync, right deferred: .parent::<Right> → Allocated ---
 
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
+        'params,
         Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Sync,
             Deferred,
             Deferred,
@@ -178,11 +198,12 @@ where
     Right: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     type Data = Right;
     type Resolved = Node<
+        'params,
         Allocated,
         Sync,
         Async,
@@ -196,7 +217,8 @@ where
     >;
     fn resolve(
         node: Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Sync,
             Deferred,
             Deferred,
@@ -208,7 +230,12 @@ where
             FactoryType,
         >,
         parent: Box<
-            dyn AsyncParent<OutType = Right, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+            dyn AsyncParent<
+                    'params,
+                    OutType = Right,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
         >,
     ) -> Self::Resolved {
         Node {
@@ -228,10 +255,12 @@ where
 
 // --- Right Sync, left deferred: .parent::<Left> → Allocated ---
 
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
+        'params,
         Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Sync,
             Deferred,
@@ -249,11 +278,12 @@ where
     Left: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     type Data = Left;
     type Resolved = Node<
+        'params,
         Allocated,
         Async,
         Sync,
@@ -267,7 +297,8 @@ where
     >;
     fn resolve(
         node: Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Sync,
             Deferred,
@@ -279,7 +310,12 @@ where
             FactoryType,
         >,
         parent: Box<
-            dyn AsyncParent<OutType = Left, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+            dyn AsyncParent<
+                    'params,
+                    OutType = Left,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
         >,
     ) -> Self::Resolved {
         Node {
@@ -299,10 +335,12 @@ where
 
 // --- Right Async, left deferred: .parent::<Left> → Allocated ---
 
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
+        'params,
         Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Async,
             Deferred,
@@ -320,11 +358,12 @@ where
     Left: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     type Data = Left;
     type Resolved = Node<
+        'params,
         Allocated,
         Async,
         Async,
@@ -338,7 +377,8 @@ where
     >;
     fn resolve(
         node: Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Deferred,
             Async,
             Deferred,
@@ -350,7 +390,12 @@ where
             FactoryType,
         >,
         parent: Box<
-            dyn AsyncParent<OutType = Left, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+            dyn AsyncParent<
+                    'params,
+                    OutType = Left,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
         >,
     ) -> Self::Resolved {
         Node {
@@ -370,10 +415,12 @@ where
 
 // --- Left Async, right deferred: .parent::<Right> → Allocated ---
 
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
+        'params,
         Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Async,
             Deferred,
             Deferred,
@@ -391,11 +438,12 @@ where
     Right: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     type Data = Right;
     type Resolved = Node<
+        'params,
         Allocated,
         Async,
         Async,
@@ -409,7 +457,8 @@ where
     >;
     fn resolve(
         node: Node<
-            Allocating<'_>,
+            'params,
+            Allocating<'alloc>,
             Async,
             Deferred,
             Deferred,
@@ -421,7 +470,12 @@ where
             FactoryType,
         >,
         parent: Box<
-            dyn AsyncParent<OutType = Right, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+            dyn AsyncParent<
+                    'params,
+                    OutType = Right,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
         >,
     ) -> Self::Resolved {
         Node {
@@ -441,9 +495,10 @@ where
 
 // --- Inherent .parent::<S>() method on all states with a Deferred input ---
 
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
-        Allocating<'a>,
+        'params,
+        Allocating<'alloc>,
         Deferred,
         Deferred,
         Deferred,
@@ -457,27 +512,29 @@ impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     pub fn parent<S>(
         self,
         parent: impl AsyncParent<
+            'params,
             OutType = S::Data,
             SignalType = SignalType,
             ThreadIdType = ThreadIdType,
-        > + 'static,
+        > + 'params,
     ) -> S::Resolved
     where
-        S: ResolveParent<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<'params, Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
 }
 
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
-        Allocating<'a>,
+        'params,
+        Allocating<'alloc>,
         Sync,
         Deferred,
         Deferred,
@@ -491,27 +548,29 @@ impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     pub fn parent<S>(
         self,
         parent: impl AsyncParent<
+            'params,
             OutType = S::Data,
             SignalType = SignalType,
             ThreadIdType = ThreadIdType,
-        > + 'static,
+        > + 'params,
     ) -> S::Resolved
     where
-        S: ResolveParent<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<'params, Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
 }
 
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
-        Allocating<'a>,
+        'params,
+        Allocating<'alloc>,
         Async,
         Deferred,
         Deferred,
@@ -525,27 +584,29 @@ impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     pub fn parent<S>(
         self,
         parent: impl AsyncParent<
+            'params,
             OutType = S::Data,
             SignalType = SignalType,
             ThreadIdType = ThreadIdType,
-        > + 'static,
+        > + 'params,
     ) -> S::Resolved
     where
-        S: ResolveParent<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<'params, Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
 }
 
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
-        Allocating<'a>,
+        'params,
+        Allocating<'alloc>,
         Deferred,
         Sync,
         Deferred,
@@ -559,27 +620,29 @@ impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     pub fn parent<S>(
         self,
         parent: impl AsyncParent<
+            'params,
             OutType = S::Data,
             SignalType = SignalType,
             ThreadIdType = ThreadIdType,
-        > + 'static,
+        > + 'params,
     ) -> S::Resolved
     where
-        S: ResolveParent<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<'params, Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }
 }
 
-impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
-        Allocating<'a>,
+        'params,
+        Allocating<'alloc>,
         Deferred,
         Async,
         Deferred,
@@ -593,19 +656,20 @@ impl<'a, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory,
+    FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     pub fn parent<S>(
         self,
         parent: impl AsyncParent<
+            'params,
             OutType = S::Data,
             SignalType = SignalType,
             ThreadIdType = ThreadIdType,
-        > + 'static,
+        > + 'params,
     ) -> S::Resolved
     where
-        S: ResolveParent<Self, SignalType, ThreadIdType>,
+        S: ResolveParent<'params, Self, SignalType, ThreadIdType>,
     {
         S::resolve(self, Box::new(parent))
     }

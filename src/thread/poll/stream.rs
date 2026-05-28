@@ -17,23 +17,23 @@ use crate::thread::Join;
 use crate::thread::callback::{self, OnDone, PanicGuard};
 use crate::thread::done::Done;
 use crate::{Origin, ThreadId, fatal};
-use std::thread::{JoinHandle, spawn};
+use std::thread::{Scope, ScopedJoinHandle};
 
 /// An idle async thread. Add builders via [Thread::add], then
 /// call [Thread::start] to spawn the OS thread.
-pub struct Thread<ThreadIdType: ThreadId + 'static> {
-    builders: Vec<Box<dyn GraphBuilder<ThreadIdType>>>,
+pub struct Thread<'params, ThreadIdType: ThreadId + 'static> {
+    builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,
     on_done: Vec<OnDone>,
 }
 
 /// Handle to a running async thread.
-pub struct ThreadHandle {
-    thread: JoinHandle<Result<(), Error>>,
+pub struct ThreadHandle<'threads> {
+    thread: ScopedJoinHandle<'threads, Result<(), Error>>,
 }
 
-impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
+impl<'params, ThreadIdType: ThreadId + 'static> Thread<'params, ThreadIdType> {
     pub fn new() -> Self {
         let queue = PollQueue::new();
         let producer = queue.producer();
@@ -79,10 +79,10 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
     pub fn line<InType, OutType, SignalType, FactoryType>(
         &mut self,
         factory: FactoryType,
-    ) -> Node<'_, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    ) -> Node<'_, 'params, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
     where
         SignalType: Origin,
-        FactoryType: LineRoutineFactory,
+        FactoryType: LineRoutineFactory<'params>,
         FactoryType::Routine: LineRoutine<InType, OutType>,
     {
         Node::deferred(factory, &mut self.waker_allocator)
@@ -98,6 +98,7 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
         &mut self,
         factory: FactoryType,
     ) -> BiunionNode<
+        'params,
         Allocating<'_>,
         Deferred,
         Deferred,
@@ -111,19 +112,21 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
     >
     where
         SignalType: Origin,
-        FactoryType: BiunionRoutineFactory,
+        FactoryType: BiunionRoutineFactory<'params>,
         FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
     {
         BiunionNode::deferred(factory, &mut self.waker_allocator)
     }
 
     /// Add a node to the thread. It will be built when the thread starts.
-    pub fn add(&mut self, builder: impl GraphBuilder<ThreadIdType> + 'static) {
+    pub fn add(&mut self, builder: impl GraphBuilder<'params, ThreadIdType> + 'params) {
         self.builders.push(Box::new(builder));
     }
 
-    /// Start the async thread. Consumes self, returns a handle.
-    pub fn start(self) -> ThreadHandle {
+    /// Run the poll loop synchronously on the current thread, with
+    /// PanicGuard + on_done callbacks. Used by [`start`](Self::start)
+    /// (via `scope.spawn`) and the type-erase layer.
+    pub(crate) fn run(self) -> Result<(), Error> {
         let Self {
             builders,
             waker_allocator,
@@ -131,37 +134,46 @@ impl<ThreadIdType: ThreadId + 'static> Thread<ThreadIdType> {
             on_done,
         } = self;
 
-        ThreadHandle {
-            thread: spawn(move || {
-                let mut guard = PanicGuard::new(on_done);
+        let mut guard = PanicGuard::new(on_done);
 
-                let result = match prepare(builders, waker_allocator, queue) {
-                    Ok((mut runtime, consumer)) => poll_loop(&mut runtime, &consumer),
-                    Err(e) => {
-                        #[cfg(not(feature = "silent"))]
-                        eprintln!("Thread prepare: {}", e);
-                        Err(e)
-                    }
-                };
+        let result = match prepare(builders, waker_allocator, queue) {
+            Ok((mut runtime, consumer)) => poll_loop(&mut runtime, &consumer),
+            Err(e) => {
+                #[cfg(not(feature = "silent"))]
+                eprintln!("Thread prepare: {}", e);
+                Err(e)
+            }
+        };
 
-                let callbacks = guard.drain();
-                let done = match &result {
-                    Ok(()) => Done::Close,
-                    Err(e) => Done::Error(e),
-                };
-                callback::fire(callbacks, &done);
-                result
-            }),
-        }
+        let callbacks = guard.drain();
+        let done = match &result {
+            Ok(()) => Done::Close,
+            Err(e) => Done::Error(e),
+        };
+        callback::fire(callbacks, &done);
+        result
+    }
+
+    /// Start the async thread inside the provided `scope`. Consumes self,
+    /// returns a handle bound to `'threads`.
+    pub fn start<'threads>(
+        self,
+        scope: &'threads Scope<'threads, 'params>,
+    ) -> ThreadHandle<'threads>
+    where
+        'params: 'threads,
+    {
+        let thread = scope.spawn(move || self.run());
+        ThreadHandle { thread }
     }
 }
 
 /// Build the runtime and return it with the consumer for the poll loop.
-fn prepare<ThreadIdType: ThreadId>(
-    builders: Vec<Box<dyn GraphBuilder<ThreadIdType>>>,
+fn prepare<'params, ThreadIdType: ThreadId + 'params>(
+    builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,
-) -> Result<(ClosableRuntime<ThreadIdType>, Consumer), Error> {
+) -> Result<(ClosableRuntime<'params, ThreadIdType>, Consumer), Error> {
     let (consumer, local_producer) = queue.local();
     let mut allocator = waker_allocator.local::<ThreadIdType>(local_producer);
     let mut all_nodes = Vec::new();
@@ -176,7 +188,7 @@ fn prepare<ThreadIdType: ThreadId>(
     Ok((runtime.into(), consumer))
 }
 
-impl ThreadHandle {
+impl<'threads> ThreadHandle<'threads> {
     /// Join the async thread.
     pub fn join(self) -> Join {
         match self.thread.join() {
@@ -258,7 +270,7 @@ mod tests {
 
     #[test]
     fn async_thread_starts_and_stops() {
-        let mut thread = Thread::<IoThread>::new();
+        let mut thread = Thread::<'_, IoThread>::new();
 
         let node = thread
             .line(|w| MockLine::new(w))
@@ -268,16 +280,16 @@ mod tests {
         let mut input: InputHandle = Get::get(&node).unwrap();
 
         thread.add(node);
-        let handle = thread.start();
-
-        input.close().unwrap();
-
-        assert!(matches!(handle.join(), Join::Ok));
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            input.close().unwrap();
+            assert!(matches!(handle.join(), Join::Ok));
+        });
     }
 
     #[test]
     fn async_thread_processes_data() {
-        let mut thread = Thread::<IoThread>::new();
+        let mut thread = Thread::<'_, IoThread>::new();
 
         let mut node = thread
             .line(|w| MockLine::new(w))
@@ -290,13 +302,13 @@ mod tests {
         make_push(&mut node, &output).unwrap();
 
         thread.add(node);
-        let handle = thread.start();
-
-        input.push(Message::Data(2)).unwrap();
-        assert_eq!(output.read_front().unwrap(), Message::Data(4));
-
-        input.close().unwrap();
-        assert!(matches!(handle.join(), Join::Ok));
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            input.push(Message::Data(2)).unwrap();
+            assert_eq!(output.read_front().unwrap(), Message::Data(4));
+            input.close().unwrap();
+            assert!(matches!(handle.join(), Join::Ok));
+        });
     }
 
     // ---- on_done callback coverage ----
@@ -324,7 +336,7 @@ mod tests {
 
     #[test]
     fn on_done_fires_close_on_clean_exit() {
-        let mut thread = Thread::<IoThread>::new();
+        let mut thread = Thread::<'_, IoThread>::new();
         let node = thread
             .line(|w| MockLine::new(w))
             .input::<poll::Sync>()
@@ -336,16 +348,18 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::new()));
         thread.on_done(record(seen.clone()));
 
-        let handle = thread.start();
-        input.close().unwrap();
-        let _ = handle.join();
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            input.close().unwrap();
+            let _ = handle.join();
+        });
 
         assert_eq!(*seen.lock().unwrap(), vec![Observed::Close]);
     }
 
     #[test]
     fn on_done_multiple_callbacks_fire_in_registration_order() {
-        let mut thread = Thread::<IoThread>::new();
+        let mut thread = Thread::<'_, IoThread>::new();
         let node = thread
             .line(|w| MockLine::new(w))
             .input::<poll::Sync>()
@@ -362,9 +376,11 @@ mod tests {
         thread.on_done(move |_| o2.lock().unwrap().push(2));
         thread.on_done(move |_| o3.lock().unwrap().push(3));
 
-        let handle = thread.start();
-        input.close().unwrap();
-        let _ = handle.join();
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            input.close().unwrap();
+            let _ = handle.join();
+        });
 
         assert_eq!(*order.lock().unwrap(), vec![1, 2, 3]);
     }
@@ -373,7 +389,7 @@ mod tests {
     /// and close the output edge.
     #[test]
     fn close_propagates_through_chain() {
-        let mut thread = Thread::<IoThread>::new();
+        let mut thread = Thread::<'_, IoThread>::new();
 
         let parent = thread.line(|w| MockLine::new(w)).input::<poll::Sync>();
 
@@ -388,20 +404,22 @@ mod tests {
         make_push(&mut child, &output).unwrap();
 
         thread.add(child);
-        let handle = thread.start();
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
 
-        input.push(Message::Data(1)).unwrap();
-        assert_eq!(output.read_front().unwrap(), Message::Data(4));
+            input.push(Message::Data(1)).unwrap();
+            assert_eq!(output.read_front().unwrap(), Message::Data(4));
 
-        input.close().unwrap();
+            input.close().unwrap();
 
-        let result = output.read_front();
-        assert!(
-            result.is_err(),
-            "Expected Closed error after close propagation, got {:?}",
-            result
-        );
+            let result = output.read_front();
+            assert!(
+                result.is_err(),
+                "Expected Closed error after close propagation, got {:?}",
+                result
+            );
 
-        assert!(matches!(handle.join(), Join::Ok));
+            assert!(matches!(handle.join(), Join::Ok));
+        });
     }
 }

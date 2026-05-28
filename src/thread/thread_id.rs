@@ -2,7 +2,7 @@
 use std::fmt::Debug;
 
 /// [`ThreadId`] is used to mark a graph node with what group of threads are allowed to schedule it.
-pub trait ThreadId: Send + Sync {}
+pub trait ThreadId: Send + Sync + 'static {}
 
 /// [`DefaultThread`] is the default thread group.
 #[derive(Debug)]

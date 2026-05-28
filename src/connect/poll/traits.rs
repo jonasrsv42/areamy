@@ -28,7 +28,7 @@ use core::cell::RefCell;
 /// Receives an output edge and the allocator, produces a [Graph],
 /// and returns the allocator inside it. The child creates the edge and calls
 /// [AsyncParent::build] during its own [GraphBuilder::build](crate::connect::poll::graph::GraphBuilder::build).
-pub trait AsyncParent: Send {
+pub trait AsyncParent<'params>: Send + 'params {
     type OutType;
     type SignalType: Origin;
     type ThreadIdType: ThreadId;
@@ -37,5 +37,5 @@ pub trait AsyncParent: Send {
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Self::OutType, Self::SignalType>>>,
         allocator: ThreadLocalWakerAllocator<Self::ThreadIdType>,
-    ) -> Result<Graph<Self::ThreadIdType>, Error>;
+    ) -> Result<Graph<'params, Self::ThreadIdType>, Error>;
 }

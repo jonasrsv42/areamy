@@ -14,6 +14,7 @@
 
 use crate::error::Error;
 use crate::node::{bifurcation, biunion};
+use crate::work::make_line;
 use crate::{
     BifurcationRoutine, BiunionRoutine, LineReader, Message, make_bidi,
     work::Connect,
@@ -193,7 +194,14 @@ fn test_cycle_with_signal_policies() {
 #[test]
 fn test_cycle_with_multiple_values() {
     // Create our nodes
-    let biunion = make_biunion(IncrementBiunion::new());
+    let biunion = make_biunion::<
+        usize,
+        usize,
+        usize,
+        crate::Trackable<&'static str>,
+        crate::DefaultThread,
+        IncrementBiunion,
+    >(IncrementBiunion::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
     // Create a source to input to biunion's right side
@@ -285,10 +293,15 @@ impl crate::node::line::LineRoutine<usize, usize> for IncrementLine {}
 #[test]
 fn test_cycle_with_line_node() {
     // Import additional dependencies for line node
-    use crate::work::make_line;
 
     // Create our nodes
-    let line = make_line(IncrementLine::new());
+    let line = make_line::<
+        usize,
+        usize,
+        crate::Trackable<&'static str>,
+        crate::DefaultThread,
+        IncrementLine,
+    >(IncrementLine::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
     // Create a source to input to the line node

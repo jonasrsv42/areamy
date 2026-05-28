@@ -2,30 +2,45 @@
 //! bundle API.
 
 use super::first_error::{self, OnFirstError};
+use crate::error::Error;
+use crate::fatal;
 use crate::thread::done::Failure;
-use crate::thread::join::BundleJoin;
-use crate::thread::type_erase::{
-    TypeErasedInternalThreadStream, TypeErasedInternalThreadStreamHandle,
-};
+use crate::thread::join::{BundleJoin, Join};
+use crate::thread::type_erase::TypeErasedInternalThreadStream;
+use std::thread::{Scope, ScopedJoinHandle};
 
 /// A bundle of idle threads that can be started together.
-#[derive(Default)]
-pub struct ThreadBundle {
-    threads: Vec<Box<dyn TypeErasedInternalThreadStream>>,
+pub struct ThreadBundle<'params> {
+    threads: Vec<Box<dyn TypeErasedInternalThreadStream<'params> + 'params>>,
     on_first_error: Vec<OnFirstError>,
 }
 
-/// A handle to running threads, returned by [`ThreadBundle::start`].
-pub struct ThreadBundleHandle {
-    threads: Vec<Box<dyn TypeErasedInternalThreadStreamHandle>>,
+impl<'params> Default for ThreadBundle<'params> {
+    fn default() -> Self {
+        Self {
+            threads: Vec::new(),
+            on_first_error: Vec::new(),
+        }
+    }
 }
 
-impl ThreadBundle {
+/// A scoped join handle paired with its thread name (for panic diagnostics).
+struct BundleEntry<'threads> {
+    handle: ScopedJoinHandle<'threads, Result<(), Error>>,
+    thread_name: &'static str,
+}
+
+/// A handle to running threads, returned by [`ThreadBundle::start`].
+pub struct ThreadBundleHandle<'threads> {
+    entries: Vec<BundleEntry<'threads>>,
+}
+
+impl<'params> ThreadBundle<'params> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn add(&mut self, thread: impl TypeErasedInternalThreadStream + 'static) -> &mut Self {
+    pub fn add(&mut self, thread: impl TypeErasedInternalThreadStream<'params>) -> &mut Self {
         self.threads.push(Box::new(thread));
         self
     }
@@ -63,21 +78,53 @@ impl ThreadBundle {
         self
     }
 
-    pub fn start(mut self) -> ThreadBundleHandle {
+    /// Spawn all bundled threads into the provided `scope`. Returns a
+    /// handle bound to `'threads` (the scope's lifetime).
+    pub fn start<'threads>(
+        mut self,
+        scope: &'threads Scope<'threads, 'params>,
+    ) -> ThreadBundleHandle<'threads>
+    where
+        'params: 'threads,
+    {
         first_error::inject(&mut self.threads, std::mem::take(&mut self.on_first_error));
 
-        ThreadBundleHandle {
-            threads: self.threads.into_iter().map(|t| t.start()).collect(),
-        }
+        let entries = self
+            .threads
+            .into_iter()
+            .map(|t| {
+                let thread_name = t.thread_name();
+                let handle = scope.spawn(move || t.run());
+                BundleEntry {
+                    handle,
+                    thread_name,
+                }
+            })
+            .collect();
+
+        ThreadBundleHandle { entries }
     }
 }
 
-impl ThreadBundleHandle {
+impl<'threads> ThreadBundleHandle<'threads> {
     /// Join all threads. Returns one [`Join`](crate::thread::Join)
     /// per registered thread, in registration order, wrapped in
     /// [`BundleJoin`].
     pub fn join(self) -> BundleJoin {
-        BundleJoin::new(self.threads.into_iter().map(|t| t.join()).collect())
+        let joins: Vec<Join> = self
+            .entries
+            .into_iter()
+            .map(|entry| match entry.handle.join() {
+                Ok(Ok(())) => Join::Ok,
+                Ok(Err(e)) => Join::Error(e),
+                Err(panic_err) => Join::Panic(fatal!(
+                    "Thread {} panicked: {:?}",
+                    entry.thread_name,
+                    panic_err
+                )),
+            })
+            .collect();
+        BundleJoin::new(joins)
     }
 }
 
@@ -91,39 +138,43 @@ mod tests {
     #[test]
     fn start_and_join_empty() {
         let bundle = ThreadBundle::new();
-        let handle = bundle.start();
-        assert!(handle.join().is_empty());
+        std::thread::scope(|s| {
+            let handle = bundle.start(s);
+            assert!(handle.join().is_empty());
+        });
     }
 
     #[test]
     fn heterogeneous_threads() {
         let mut bundle = ThreadBundle::new();
         bundle
-            .add(ThreadStream::<ThreadA>::new())
-            .add(ThreadStream::<ThreadB>::new());
-        let handle = bundle.start();
-        let results = handle.join();
-        assert_eq!(results.len(), 2);
-        assert!(matches!(results[0], Join::Ok));
-        assert!(matches!(results[1], Join::Ok));
+            .add(ThreadStream::<'_, ThreadA>::new())
+            .add(ThreadStream::<'_, ThreadB>::new());
+        std::thread::scope(|s| {
+            let handle = bundle.start(s);
+            let results = handle.join();
+            assert_eq!(results.len(), 2);
+            assert!(matches!(results[0], Join::Ok));
+            assert!(matches!(results[1], Join::Ok));
+        });
     }
 
     #[test]
     fn chaining() {
         let mut bundle = ThreadBundle::new();
         bundle
-            .add(ThreadStream::<ThreadA>::new())
-            .add(ThreadStream::<ThreadA>::new())
-            .add(ThreadStream::<ThreadB>::new());
+            .add(ThreadStream::<'_, ThreadA>::new())
+            .add(ThreadStream::<'_, ThreadA>::new())
+            .add(ThreadStream::<'_, ThreadB>::new());
         assert_eq!(bundle.threads.len(), 3);
     }
 
     #[test]
     fn work_error_appears_in_results() {
-        let mut thread_a = ThreadStream::<ThreadA>::new();
+        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
         thread_a.add(Box::new(WorkError::<ThreadA>::new())).unwrap();
 
-        let mut thread_b = ThreadStream::<ThreadB>::new();
+        let mut thread_b = ThreadStream::<'_, ThreadB>::new();
         thread_b
             .add(Box::new(ImmediateClose::<ThreadB>::new()))
             .unwrap();
@@ -131,39 +182,45 @@ mod tests {
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);
 
-        let results = bundle.start().join();
-        assert!(matches!(results[0], Join::Error(_)));
-        assert!(matches!(results[1], Join::Ok));
+        std::thread::scope(|s| {
+            let results = bundle.start(s).join();
+            assert!(matches!(results[0], Join::Error(_)));
+            assert!(matches!(results[1], Join::Ok));
+        });
     }
 
     #[test]
     fn panic_appears_as_panic_variant() {
-        let mut thread_a = ThreadStream::<ThreadA>::new();
+        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
         thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
 
-        let thread_b = ThreadStream::<ThreadB>::new();
+        let thread_b = ThreadStream::<'_, ThreadB>::new();
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);
 
-        let results = bundle.start().join();
-        assert!(matches!(results[0], Join::Panic(_)));
-        assert!(matches!(results[1], Join::Ok));
+        std::thread::scope(|s| {
+            let results = bundle.start(s).join();
+            assert!(matches!(results[0], Join::Panic(_)));
+            assert!(matches!(results[1], Join::Ok));
+        });
     }
 
     #[test]
     fn multiple_panics_each_recorded() {
-        let mut thread_a = ThreadStream::<ThreadA>::new();
+        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
         thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
 
-        let mut thread_b = ThreadStream::<ThreadB>::new();
+        let mut thread_b = ThreadStream::<'_, ThreadB>::new();
         thread_b.add(Box::new(Panicker::<ThreadB>::new())).unwrap();
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);
 
-        let results = bundle.start().join();
-        assert!(matches!(results[0], Join::Panic(_)));
-        assert!(matches!(results[1], Join::Panic(_)));
+        std::thread::scope(|s| {
+            let results = bundle.start(s).join();
+            assert!(matches!(results[0], Join::Panic(_)));
+            assert!(matches!(results[1], Join::Panic(_)));
+        });
     }
 }

@@ -208,7 +208,8 @@ where
     }
 }
 
-impl<DataType, SignalType> Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+impl<'params, DataType, SignalType>
+    Get<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
     for Sender<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
@@ -216,13 +217,14 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
+    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>, Error>
+    {
         Ok(Box::new(self.clone()))
     }
 }
 
-impl<DataType, SignalType>
-    Get<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>
+impl<'params, DataType, SignalType>
+    Get<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
     for Sender<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
@@ -230,15 +232,18 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>, Error>
-    {
+    ) -> Result<
+        Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
+        Error,
+    > {
         Ok(Box::new(self.clone()))
     }
 }
 
 // Receiver acts as a connection point: `Get::get(&receiver)` mints a
 // fresh Sender so upstream nodes can push into it.
-impl<DataType, SignalType> Get<dyn Pushable<DataType = DataType, SignalType = SignalType>>
+impl<'params, DataType, SignalType>
+    Get<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
     for Receiver<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
@@ -246,13 +251,14 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType>>, Error> {
+    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>, Error>
+    {
         Ok(Box::new(self.sender()))
     }
 }
 
-impl<DataType, SignalType>
-    Get<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>
+impl<'params, DataType, SignalType>
+    Get<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
     for Receiver<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
@@ -260,8 +266,10 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync>, Error>
-    {
+    ) -> Result<
+        Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
+        Error,
+    > {
         Ok(Box::new(self.sender()))
     }
 }

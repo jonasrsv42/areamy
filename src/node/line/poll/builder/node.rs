@@ -41,19 +41,28 @@ use std::rc::Rc;
 
 /// Unified async node builder.
 #[must_use = "node must be consumed (add to thread or pass to another builder)"]
-pub struct Node<'a, InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-where
+pub struct Node<
+    'alloc,
+    'params,
+    InEdgeType,
+    OutEdgeType,
+    InType,
+    OutType,
+    SignalType,
+    ThreadIdType,
+    FactoryType,
+> where
     InEdgeType: Edge,
     OutEdgeType: Edge,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
-    alloc: InEdgeType::Alloc<'a>,
+    alloc: InEdgeType::Alloc<'alloc>,
     factory: FactoryType,
-    input: InEdgeType::Input<InType, SignalType, ThreadIdType>,
-    output: OutEdgeType::Output<OutType, SignalType>,
+    input: InEdgeType::Input<'params, InType, SignalType, ThreadIdType>,
+    output: OutEdgeType::Output<'params, OutType, SignalType>,
     _phantom: std::marker::PhantomData<(fn() -> OutType, fn() -> InType, ThreadIdType)>,
 }
 
@@ -61,14 +70,25 @@ where
 // Connection — all variants
 // ============================================================
 
-impl<InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType> Connection
-    for Node<'_, InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InEdgeType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Connection
+    for Node<
+        '_,
+        'params,
+        InEdgeType,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     InEdgeType: Edge,
     OutEdgeType: Edge,
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
 }
@@ -78,15 +98,25 @@ where
 // ============================================================
 
 /// Node<Deferred, Deferred> — unresolved, no allocation yet.
-impl<'a, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<'a, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<
+        'alloc,
+        'params,
+        Deferred,
+        Deferred,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
-    pub fn deferred(factory: FactoryType, alloc: &'a mut WakerAllocator) -> Self {
+    pub fn deferred(factory: FactoryType, alloc: &'alloc mut WakerAllocator) -> Self {
         Self {
             alloc,
             factory,
@@ -99,9 +129,10 @@ where
     /// Resolve input edge. Only [`Sync`] is supported via [`ResolveInput`].
     /// Allocates a sync waker and creates a sync→poll bridge receiver.
     /// Releases the allocator borrow. Output stays Deferred.
-    pub fn input<E: ResolveInput<InType, SignalType, ThreadIdType>>(
+    pub fn input<E: ResolveInput<'params, InType, SignalType, ThreadIdType>>(
         self,
-    ) -> Node<'static, E, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType> {
+    ) -> Node<'static, 'params, E, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    {
         let (input, alloc) = E::resolve(self.alloc);
         Node {
             alloc,
@@ -114,9 +145,10 @@ where
 
     /// Resolve output edge. Only [`Sync`] is supported via [`ResolveOutput`].
     /// Input stays Deferred — allocator borrow is preserved.
-    pub fn output<E: ResolveOutput<OutType, SignalType>>(
+    pub fn output<E: ResolveOutput<'params, OutType, SignalType>>(
         self,
-    ) -> Node<'a, Deferred, E, InType, OutType, SignalType, ThreadIdType, FactoryType> {
+    ) -> Node<'alloc, 'params, Deferred, E, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    {
         Node {
             alloc: self.alloc,
             factory: self.factory,
@@ -132,17 +164,18 @@ where
 // ============================================================
 
 /// Resolve input when output is already Sync.
-impl<'a, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<'a, Deferred, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<'alloc, 'params, Deferred, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     SignalType: Origin,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
-    pub fn input<E: ResolveInput<InType, SignalType, ThreadIdType>>(
+    pub fn input<E: ResolveInput<'params, InType, SignalType, ThreadIdType>>(
         self,
-    ) -> Node<'static, E, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType> {
+    ) -> Node<'static, 'params, E, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    {
         let (input, alloc) = E::resolve(self.alloc);
         Node {
             alloc,
@@ -159,18 +192,19 @@ where
 // ============================================================
 
 /// Resolve output on Node<Sync, Deferred>.
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<'static, Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<'static, 'params, Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
-    pub fn output<E: ResolveOutput<OutType, SignalType>>(
+    pub fn output<E: ResolveOutput<'params, OutType, SignalType>>(
         self,
-    ) -> Node<'static, Sync, E, InType, OutType, SignalType, ThreadIdType, FactoryType> {
+    ) -> Node<'static, 'params, Sync, E, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    {
         Node {
             alloc: (),
             factory: self.factory,
@@ -186,22 +220,45 @@ where
 // ============================================================
 
 /// First parent on Deferred input: transitions to Async. Releases allocator.
-impl<'a, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<'a, Deferred, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'alloc, 'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<
+        'alloc,
+        'params,
+        Deferred,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     OutEdgeType: Edge,
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     pub fn parent(
         self,
-        parent: impl AsyncParent<OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
-        + 'static,
-    ) -> Node<'static, Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    {
+        parent: impl AsyncParent<
+            'params,
+            OutType = InType,
+            SignalType = SignalType,
+            ThreadIdType = ThreadIdType,
+        > + 'params,
+    ) -> Node<
+        'static,
+        'params,
+        Async,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    > {
         Node {
             alloc: (),
             factory: self.factory,
@@ -215,18 +272,19 @@ where
 }
 
 /// Resolve output on Node<Async, Deferred>. Input stays Async.
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<'static, Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<'static, 'params, Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
-    pub fn output<E: ResolveOutput<OutType, SignalType>>(
+    pub fn output<E: ResolveOutput<'params, OutType, SignalType>>(
         self,
-    ) -> Node<'static, Async, E, InType, OutType, SignalType, ThreadIdType, FactoryType> {
+    ) -> Node<'static, 'params, Async, E, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    {
         Node {
             alloc: (),
             factory: self.factory,
@@ -238,20 +296,34 @@ where
 }
 
 /// Additional parent on Async input: adds parent, stays Async.
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<'static, Async, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Node<
+        'static,
+        'params,
+        Async,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     OutEdgeType: Edge,
     InType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     pub fn parent(
         mut self,
-        parent: impl AsyncParent<OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
-        + 'static,
+        parent: impl AsyncParent<
+            'params,
+            OutType = InType,
+            SignalType = SignalType,
+            ThreadIdType = ThreadIdType,
+        > + 'params,
     ) -> Self {
         self.input.parents.push(Box::new(parent));
         self
@@ -262,21 +334,47 @@ where
 // Get<dyn Closeable + Send + Sync> — Sync input only
 // ============================================================
 
-impl<OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Get<dyn Closeable<DataType = InType, SignalType = SignalType> + Send + std::marker::Sync>
-    for Node<'static, Sync, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+// `'params` on the dyn bound: without it the object-lifetime default locks
+// the impl to `'static`, and `make_push` from a parent with shorter
+// `'params` would fail to select this impl (`Get<T>` is invariant in `T`).
+// Reusing the node's `'params` is sufficient — the borrow checker shrinks
+// `Node<'params>` covariantly at the call site to match the caller's
+// requested lifetime.
+impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Get<
+        dyn Closeable<DataType = InType, SignalType = SignalType>
+            + Send
+            + std::marker::Sync
+            + 'params,
+    >
+    for Node<
+        'static,
+        'params,
+        Sync,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     OutEdgeType: Edge,
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     fn get(
         &self,
     ) -> Result<
-        Box<dyn Closeable<DataType = InType, SignalType = SignalType> + Send + std::marker::Sync>,
+        Box<
+            dyn Closeable<DataType = InType, SignalType = SignalType>
+                + Send
+                + std::marker::Sync
+                + 'params,
+        >,
         Error,
     > {
         Ok(Box::new(self.input.edge.sender()))
@@ -287,21 +385,29 @@ where
 // Add<dyn Closeable + Send + Sync> — Sync output only
 // ============================================================
 
-impl<InEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Add<dyn Closeable<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync>
-    for Node<'_, InEdgeType, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Add<
+        dyn Closeable<DataType = OutType, SignalType = SignalType>
+            + Send
+            + std::marker::Sync
+            + 'params,
+    >
+    for Node<'_, 'params, InEdgeType, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InEdgeType: Edge,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory,
+    FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     fn add(
         &mut self,
         connection: Box<
-            dyn Closeable<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync,
+            dyn Closeable<DataType = OutType, SignalType = SignalType>
+                + Send
+                + std::marker::Sync
+                + 'params,
         >,
     ) -> Result<(), Error> {
         self.output.push(connection);
@@ -314,20 +420,21 @@ where
 // ============================================================
 
 /// Terminal: Node<Sync, Sync>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<'static, Sync, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<'static, 'params, Sync, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: LineRoutineFactory + 'static,
-    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
         let routine = self.factory.create(output.value.local.clone());
@@ -358,20 +465,21 @@ where
 }
 
 /// Child: Node<Async, Sync>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<'static, Async, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<'static, 'params, Async, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: LineRoutineFactory + 'static,
-    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let input = allocator.next();
         let edge_waker = input.value.local.clone();
         let mut edges = Vec::new();
@@ -413,20 +521,31 @@ where
 }
 
 /// Sink: Node<Sync, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<'static, Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<
+        'static,
+        'params,
+        Sync,
+        Deferred,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: LineRoutineFactory + 'static,
-    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
         let routine = self.factory.create(output.value.local.clone());
@@ -457,20 +576,31 @@ where
 }
 
 /// Sink: Node<Async, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<'static, Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<
+        'static,
+        'params,
+        Async,
+        Deferred,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: LineRoutineFactory + 'static,
-    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let input = allocator.next();
         let edge_waker = input.value.local.clone();
         let mut edges = Vec::new();
@@ -516,15 +646,25 @@ where
 // ============================================================
 
 /// Node<Sync, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParent
-    for Node<'static, Sync, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
+    for Node<
+        'static,
+        'params,
+        Sync,
+        Deferred,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: LineRoutineFactory + 'static,
-    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
     type OutType = OutType;
     type SignalType = SignalType;
@@ -534,7 +674,7 @@ where
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
         let routine = self.factory.create(output.value.local.clone());
@@ -565,15 +705,25 @@ where
 }
 
 /// Node<Async, Deferred>
-impl<InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParent
-    for Node<'static, Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
+    for Node<
+        'static,
+        'params,
+        Async,
+        Deferred,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: LineRoutineFactory + 'static,
-    FactoryType::Routine: LineRoutine<InType, OutType> + 'static,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
     type OutType = OutType;
     type SignalType = SignalType;
@@ -583,7 +733,7 @@ where
         self: Box<Self>,
         output_edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let input = allocator.next();
         let edge_waker = input.value.local.clone();
         let mut input_edges = Vec::new();

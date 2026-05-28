@@ -4,14 +4,14 @@
 //! frames while receiving config updates on a separate input. Config changes
 //! the processing behavior (multiplier) without interrupting the data flow.
 
-use areamy::biunion;
-use areamy::error::Error;
-use areamy::poll;
-use areamy::poll::future;
-use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
-use areamy::source::push::Source;
-use areamy::sync::Receiver;
-use areamy::{Closeable, Message, Pushable, ThreadId, make_push};
+use crate::biunion;
+use crate::error::Error;
+use crate::poll;
+use crate::poll::future;
+use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use crate::source::push::Source;
+use crate::sync::Receiver;
+use crate::{Closeable, Message, Pushable, ThreadId, make_push};
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
@@ -31,7 +31,7 @@ struct Config {
 /// The routine applies the current config multiplier to audio frames.
 #[test]
 fn biunion_audio_with_config() {
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let routine = future::biunion::FutureRoutine::factory(
         |audio: InputConsumer<usize>,
@@ -69,16 +69,16 @@ fn biunion_audio_with_config() {
                         Ok(())
                     });
 
-                areamy::poll::Join::join([audio_task, config_task]).await
+                crate::poll::Join::join([audio_task, config_task]).await
             })
         },
     );
 
     let mut node = async_thread
         .biunion(routine)
-        .input::<biunion::Left, areamy::poll::Sync>()
-        .input::<biunion::Right, areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<biunion::Left, crate::poll::Sync>()
+        .input::<biunion::Right, crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
 
     let mut audio_source = Source::<usize>::of::<_, biunion::Left>(&node).unwrap();
     let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
@@ -87,40 +87,42 @@ fn biunion_audio_with_config() {
     make_push(&mut node, &output_edge).unwrap();
 
     async_thread.add(node);
-    let handle = async_thread.start();
+    std::thread::scope(|s| {
+        let handle = async_thread.start(s);
 
-    // Send audio with default multiplier (1)
-    audio_source.push(Message::Data(10)).unwrap();
-    assert_eq!(output_edge.read_front().unwrap(), Message::Data(10)); // 10 * 1
+        // Send audio with default multiplier (1)
+        audio_source.push(Message::Data(10)).unwrap();
+        assert_eq!(output_edge.read_front().unwrap(), Message::Data(10)); // 10 * 1
 
-    // Update config: multiplier = 3
-    config_source
-        .push(Message::Data(Config { multiplier: 3 }))
-        .unwrap();
+        // Update config: multiplier = 3
+        config_source
+            .push(Message::Data(Config { multiplier: 3 }))
+            .unwrap();
 
-    // Send marker on config to synchronize — when it arrives on output,
-    // we know the config update was processed.
-    config_source.push(Message::Marker("sync".into())).unwrap();
-    assert!(matches!(
-        output_edge.read_front().unwrap(),
-        Message::Marker(_)
-    ));
+        // Send marker on config to synchronize — when it arrives on output,
+        // we know the config update was processed.
+        config_source.push(Message::Marker("sync".into())).unwrap();
+        assert!(matches!(
+            output_edge.read_front().unwrap(),
+            Message::Marker(_)
+        ));
 
-    // Send more audio with new multiplier
-    audio_source.push(Message::Data(10)).unwrap();
-    assert_eq!(output_edge.read_front().unwrap(), Message::Data(30)); // 10 * 3
+        // Send more audio with new multiplier
+        audio_source.push(Message::Data(10)).unwrap();
+        assert_eq!(output_edge.read_front().unwrap(), Message::Data(30)); // 10 * 3
 
-    // Close audio — should close the whole node (wakes right input too)
-    audio_source.close().unwrap();
+        // Close audio — should close the whole node (wakes right input too)
+        audio_source.close().unwrap();
 
-    assert!(matches!(handle.join(), areamy::thread::Join::Ok));
+        assert!(matches!(handle.join(), crate::thread::Join::Ok));
+    });
 }
 
 /// Audio comes from an async parent (line node that doubles), config from sync.
 /// parent (doubles) → biunion (applies config multiplier) → output
 #[test]
 fn biunion_with_async_parent() {
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     // Parent line node: doubles input
     let parent = async_thread
@@ -137,10 +139,10 @@ fn biunion_with_async_parent() {
                 })
             },
         ))
-        .input::<areamy::poll::Sync>();
+        .input::<crate::poll::Sync>();
 
     // Source pushes into parent
-    let mut audio_source = Source::<usize>::of::<_, areamy::marker::Unary>(&parent).unwrap();
+    let mut audio_source = Source::<usize>::of::<_, crate::marker::Unary>(&parent).unwrap();
 
     // Biunion: left from async parent, right from sync config
     let biunion_routine = future::biunion::FutureRoutine::factory(
@@ -175,7 +177,7 @@ fn biunion_with_async_parent() {
                         Ok(())
                     });
 
-                areamy::poll::Join::join([audio_task, config_task]).await
+                crate::poll::Join::join([audio_task, config_task]).await
             })
         },
     );
@@ -183,8 +185,8 @@ fn biunion_with_async_parent() {
     let mut node = async_thread
         .biunion(biunion_routine)
         .parent::<biunion::Left>(parent)
-        .input::<biunion::Right, areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<biunion::Right, crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
 
     let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
 
@@ -192,26 +194,28 @@ fn biunion_with_async_parent() {
     make_push(&mut node, &output_edge).unwrap();
 
     async_thread.add(node);
-    let handle = async_thread.start();
+    std::thread::scope(|s| {
+        let handle = async_thread.start(s);
 
-    // Audio 5 → parent doubles → 10 → biunion (multiplier=1) → 10
-    audio_source.push(Message::Data(5)).unwrap();
-    assert_eq!(output_edge.read_front().unwrap(), Message::Data(10));
+        // Audio 5 → parent doubles → 10 → biunion (multiplier=1) → 10
+        audio_source.push(Message::Data(5)).unwrap();
+        assert_eq!(output_edge.read_front().unwrap(), Message::Data(10));
 
-    // Update config: multiplier = 3
-    config_source
-        .push(Message::Data(Config { multiplier: 3 }))
-        .unwrap();
-    config_source.push(Message::Marker("sync".into())).unwrap();
-    assert!(matches!(
-        output_edge.read_front().unwrap(),
-        Message::Marker(_)
-    ));
+        // Update config: multiplier = 3
+        config_source
+            .push(Message::Data(Config { multiplier: 3 }))
+            .unwrap();
+        config_source.push(Message::Marker("sync".into())).unwrap();
+        assert!(matches!(
+            output_edge.read_front().unwrap(),
+            Message::Marker(_)
+        ));
 
-    // Audio 5 → parent doubles → 10 → biunion (multiplier=3) → 30
-    audio_source.push(Message::Data(5)).unwrap();
-    assert_eq!(output_edge.read_front().unwrap(), Message::Data(30));
+        // Audio 5 → parent doubles → 10 → biunion (multiplier=3) → 30
+        audio_source.push(Message::Data(5)).unwrap();
+        assert_eq!(output_edge.read_front().unwrap(), Message::Data(30));
 
-    audio_source.close().unwrap();
-    assert!(matches!(handle.join(), areamy::thread::Join::Ok));
+        audio_source.close().unwrap();
+        assert!(matches!(handle.join(), crate::thread::Join::Ok));
+    });
 }

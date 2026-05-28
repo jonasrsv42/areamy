@@ -166,7 +166,7 @@ fn bidi_with_join() -> Result<(), Error> {
     let mut source_node = areamy::work::make_line(Double::new());
     let mut source = areamy::work::Source::<usize>::of(&source_node)?;
 
-    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let routine = FutureRoutine::factory(
         |input: InputConsumer<usize>, output: OutputProducer<usize>| {
@@ -215,31 +215,34 @@ fn bidi_with_join() -> Result<(), Error> {
 
     async_thread.add(node);
 
-    let mut sync_thread = ThreadStream::<areamy::DefaultThread>::new();
+    let mut sync_thread = ThreadStream::<'_, areamy::DefaultThread>::new();
     make_work(source_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
-    let handle = bundle.start();
 
-    // 5 → Double → 10 → writer(×3) → 30 → reader(+1) → 31
-    source.push(Message::Data(5))?;
-    source.push(Message::Data(2))?;
-    source.push(Message::Flush("s1".into()))?;
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = bundle.start(s);
 
-    assert_eq!(output.read_front()?, Message::Data(31));
-    assert_eq!(output.read_front()?, Message::Data(13)); // 2→4→12→13
-    assert_eq!(output.read_front()?, Message::Flush("s1".into()));
+        // 5 → Double → 10 → writer(×3) → 30 → reader(+1) → 31
+        source.push(Message::Data(5))?;
+        source.push(Message::Data(2))?;
+        source.push(Message::Flush("s1".into()))?;
 
-    // Second segment — future recreated, new socket
-    source.push(Message::Data(1))?;
-    source.push(Message::Flush("s2".into()))?;
+        assert_eq!(output.read_front()?, Message::Data(31));
+        assert_eq!(output.read_front()?, Message::Data(13)); // 2→4→12→13
+        assert_eq!(output.read_front()?, Message::Flush("s1".into()));
 
-    assert_eq!(output.read_front()?, Message::Data(7)); // 1→2→6→7
-    assert_eq!(output.read_front()?, Message::Flush("s2".into()));
+        // Second segment — future recreated, new socket
+        source.push(Message::Data(1))?;
+        source.push(Message::Flush("s2".into()))?;
 
-    source.close()?;
-    let errors = handle.join().errors();
-    assert!(errors.is_empty());
-    Ok(())
+        assert_eq!(output.read_front()?, Message::Data(7)); // 1→2→6→7
+        assert_eq!(output.read_front()?, Message::Flush("s2".into()));
+
+        source.close()?;
+        let errors = handle.join().errors();
+        assert!(errors.is_empty());
+        Ok(())
+    })
 }

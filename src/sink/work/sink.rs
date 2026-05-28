@@ -5,17 +5,21 @@ use crate::{
 };
 use crate::{Message, Origin};
 
-pub struct Sink<DataType, SignalType = Trackable<&'static str>, ThreadIdType = DefaultThread>
-where
+pub struct Sink<
+    'params,
+    DataType,
+    SignalType = Trackable<&'static str>,
+    ThreadIdType = DefaultThread,
+> where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
 {
-    workable: Box<dyn Workable<ThreadId = ThreadIdType>>,
+    workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
     buffer: Receiver<DataType, SignalType>,
 }
 
-impl<DataType, SignalType> Sink<DataType, SignalType, DefaultThread>
+impl<'params, DataType, SignalType> Sink<'params, DataType, SignalType, DefaultThread>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -24,9 +28,9 @@ where
         mut workable: Box<
             impl Workable<ThreadId = DefaultThread>
             + Add<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 MultiplicityType,
-            > + 'static,
+            > + 'params,
         >,
     ) -> Result<Self, Error> {
         let buffer = Receiver::new();
@@ -35,7 +39,7 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> Sink<DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType> Sink<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -45,9 +49,9 @@ where
         mut workable: Box<
             impl Workable<ThreadId = ThreadIdType>
             + Add<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 MultiplicityType,
-            > + 'static,
+            > + 'params,
         >,
     ) -> Result<Self, Error>
     where
@@ -71,8 +75,8 @@ where
     }
 }
 
-impl<DataType, SignalType, ThreadIdType> crate::sink::GraphSink
-    for Sink<DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType> crate::sink::GraphSink
+    for Sink<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,

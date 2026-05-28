@@ -56,6 +56,7 @@ where
 {
     /// Exactly the same as [make_bidi] but with ability to ergonomically annotate the DataType.
     pub fn bidi<
+        'params,
         ParentType,
         ChildType,
         ParentMultiplicity: Multiplicity,
@@ -66,17 +67,17 @@ where
         child: &mut ChildType,
     ) -> Result<(), Error>
     where
-        ChildType: 'static
-            + Add<dyn Workable<ThreadId = ThreadIdType>, ChildMultiplicity>
+        ChildType: 'params
+            + Add<dyn Workable<ThreadId = ThreadIdType> + 'params, ChildMultiplicity>
             + Get<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 ChildMultiplicity,
             >,
         ParentType: Add<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 ParentMultiplicity,
             > + Workable<ThreadId = ThreadIdType>
-            + 'static,
+            + 'params,
     {
         make_bidi(parent, child)?;
 
@@ -84,13 +85,13 @@ where
     }
 
     /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
-    pub fn push<AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
+    pub fn push<'params, AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
         parent: &mut impl Add<
-            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
             AddMultiplicity,
         >,
         child: &impl Get<
-            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync,
+            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
             GetMultiplicity,
         >,
     ) -> Result<(), Error> {

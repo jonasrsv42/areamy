@@ -11,23 +11,23 @@ use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
 // it has two workable sources and inputs.
-pub trait BiunionTrait:
+pub trait BiunionTrait<'params>:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync>
+    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync + 'params>
 
     // We can add things for it to work on, parents nodes.
-    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Left>
-    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>, biunion::Right>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params, biunion::Left>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params, biunion::Right>
 
     // We can retrieve pushable edges
-    + Get<dyn Pushable<DataType = Self::Left, SignalType = Self::Signal>, biunion::Left>
-    + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal>, biunion::Right>
+    + Get<dyn Pushable<DataType = Self::Left, SignalType = Self::Signal> + 'params, biunion::Left>
+    + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal> + 'params, biunion::Right>
 
     // We can retrieve Closeable for closing the input edges.
-    + Get<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync, biunion::Left>
-    + Get<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync, biunion::Right>
+    + Get<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync + 'params, biunion::Left>
+    + Get<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync + 'params, biunion::Right>
 {
     // The input data going into the line.
     type Left:  Send + Sync + 'static;
@@ -44,7 +44,9 @@ pub trait BiunionTrait:
 // A `Send+Sync` variant of our node. Looks how neatly all the
 // `AddWorkable` and `GetPushable` parameters are automatically derived
 // for this since those traits are generic over our builders :))
-impl<BiunionType: BiunionTrait> BiunionTrait for Arc<Mutex<BiunionType>> {
+impl<'params, BiunionType: BiunionTrait<'params>> BiunionTrait<'params>
+    for Arc<Mutex<BiunionType>>
+{
     type Left = BiunionType::Left;
     type Right = BiunionType::Right;
     type Out = BiunionType::Out;
@@ -53,12 +55,12 @@ impl<BiunionType: BiunionTrait> BiunionTrait for Arc<Mutex<BiunionType>> {
 }
 
 /// Parent workables grouped by biunion side.
-pub struct Worker<ThreadIdType: ThreadId> {
-    pub left: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
-    pub right: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
+pub struct Worker<'params, ThreadIdType: ThreadId> {
+    pub left: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
+    pub right: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
 }
 
-impl<ThreadIdType: ThreadId> Default for Worker<ThreadIdType> {
+impl<'params, ThreadIdType: ThreadId> Default for Worker<'params, ThreadIdType> {
     fn default() -> Self {
         Self {
             left: Vec::new(),
@@ -92,49 +94,50 @@ where
     }
 }
 
-pub struct Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+pub struct Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync,
     Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     /// The coroutine of this node.
     pub routine: RoutineType,
 
     /// Parent workables, grouped by side.
-    pub worker: Worker<ThreadIdType>,
+    pub worker: Worker<'params, ThreadIdType>,
 
     /// Output connections. Uses Closeable to support shutdown propagation.
-    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>>,
+    pub pushes:
+        Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>>,
 
     /// Input edges, grouped by side.
     pub input: Input<Left, Right, SignalType>,
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Connection
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType> Connection
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync,
     Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> Workable
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType> Workable
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn work(&mut self) -> Result<(), Error> {
         let mut push_ok = self.try_push()?;
@@ -182,14 +185,14 @@ where
     type ThreadId = ThreadIdType;
 }
 
-impl<Left, Right, Out, SignalType, RoutineType>
-    Biunion<Left, Right, Out, SignalType, DefaultThread, RoutineType>
+impl<'params, Left, Right, Out, SignalType, RoutineType>
+    Biunion<'params, Left, Right, Out, SignalType, DefaultThread, RoutineType>
 where
     Left: Send + Sync,
     Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     pub fn new(routine: RoutineType) -> Self {
         Biunion {
@@ -201,15 +204,15 @@ where
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync,
     Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     pub fn of(routine: RoutineType) -> Self {
         Biunion {
@@ -306,15 +309,15 @@ where
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType> BiunionTrait
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType> BiunionTrait<'params>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     type Left = Left;
     type Right = Right;
@@ -323,124 +326,144 @@ where
     type BiunionRoutine = RoutineType;
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<DataType = Left, SignalType = SignalType>, biunion::Left>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn Pushable<DataType = Left, SignalType = SignalType> + 'params, biunion::Left>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = Left, SignalType = SignalType>>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Pushable<DataType = Left, SignalType = SignalType> + 'params>, Error> {
         Get::get(&self.input.left)
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<DataType = Right, SignalType = SignalType>, biunion::Right>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn Pushable<DataType = Right, SignalType = SignalType> + 'params, biunion::Right>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = Right, SignalType = SignalType>>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Pushable<DataType = Right, SignalType = SignalType> + 'params>, Error> {
         Get::get(&self.input.right)
     }
 }
 
 /// Get a [Closeable] for the left input edge.
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync, biunion::Left>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<
+        dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync + 'params,
+        biunion::Left,
+    > for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync>, Error>
-    {
+    ) -> Result<
+        Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>,
+        Error,
+    > {
         Get::get(&self.input.left)
     }
 }
 
 /// Get a [Closeable] for the right input edge.
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync, biunion::Right>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<
+        dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync + 'params,
+        biunion::Right,
+    > for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync>, Error>
-    {
+    ) -> Result<
+        Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>,
+        Error,
+    > {
         Get::get(&self.input.right)
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Left>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Add<dyn Workable<ThreadId = ThreadIdType> + 'params, biunion::Left>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
-    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
+    fn add(
+        &mut self,
+        workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
+    ) -> Result<(), Error> {
         Ok(self.worker.left.push(workable))
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Workable<ThreadId = ThreadIdType>, biunion::Right>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Add<dyn Workable<ThreadId = ThreadIdType> + 'params, biunion::Right>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
-    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
+    fn add(
+        &mut self,
+        workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
+    ) -> Result<(), Error> {
         Ok(self.worker.right.push(workable))
     }
 }
 
-impl<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>
-    for Biunion<Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
+    ThreadIdType: ThreadId + 'static,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>,
+        closeable: Box<
+            dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params,
+        >,
     ) -> Result<(), Error> {
         Ok(self.pushes.push(closeable))
     }

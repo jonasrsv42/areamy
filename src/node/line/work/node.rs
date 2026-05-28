@@ -26,15 +26,15 @@ use std::sync::{Arc, Mutex};
 /// encouraged to implement [LineTrait] whenever [Line] does not
 /// suit their needs.
 
-pub trait LineTrait:
+pub trait LineTrait<'params>:
     // We can work on the line to produce output.
     Workable
     // We can add things for it to work on, parents nodes.
-    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId>>
+    + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
     // We can add edges it should push into.
-    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync>
+    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync + 'params>
     // We can retrieve its edge for others to push into.
-    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal> + Send + Sync>
+    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal> + Send + Sync + 'params>
 {
     /// The input data going into the line.
     type In: Send + Sync + 'static;
@@ -48,7 +48,7 @@ pub trait LineTrait:
 }
 
 ///  A Send+Sync+Clone variant of our [LineTrait] for types that implement it.
-impl<LineType: LineTrait> LineTrait for Arc<Mutex<LineType>> {
+impl<'params, LineType: LineTrait<'params>> LineTrait<'params> for Arc<Mutex<LineType>> {
     type In = LineType::In;
     type Out = LineType::Out;
     type Signal = LineType::Signal;
@@ -61,22 +61,23 @@ impl<LineType: LineTrait> LineTrait for Arc<Mutex<LineType>> {
 /// If the implementation is not suitable for a usecase then implementing
 /// your own [LineTrait] will let it be used as a drop-in replacement
 /// for [Line].
-pub struct Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+pub struct Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
+    ThreadIdType: ThreadId + 'static,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     /// Worker or `Coroutine` associated with the current node.
     pub worker: LineRoutineType,
 
     /// Parent nodes that we can schedule to work.
-    pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType>>>,
+    pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
 
     /// Edges that we can push data into. Uses [Closeable] to support shutdown propagation.
-    pub pushes: Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>>,
+    pub pushes:
+        Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>>,
 
     /// Input to our current node that parents will push into.
     pub input: Receiver<In, SignalType>,
@@ -84,25 +85,25 @@ where
 
 /// Mark our Line as a possible connection in a graph. It's a connection
 /// because it is `Workable`.
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Connection
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> Connection
+    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
+    ThreadIdType: ThreadId + 'static,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
 }
 
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Workable
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> Workable
+    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     ThreadIdType: ThreadId,
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    LineRoutineType: LineRoutine<In, Out>,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     /// [Line::work] will produce output into all its [Line::pushes] when
     /// [Line::work] is invoked.
@@ -182,12 +183,13 @@ where
     type ThreadId = ThreadIdType;
 }
 
-impl<In, Out, SignalType, LineRoutineType> Line<In, Out, SignalType, DefaultThread, LineRoutineType>
+impl<'params, In, Out, SignalType, LineRoutineType>
+    Line<'params, In, Out, SignalType, DefaultThread, LineRoutineType>
 where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    LineRoutineType: LineRoutine<In, Out>,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     /// Create a [Line] owned by the [DefaultThread] with routine [LineRoutine].
     ///
@@ -202,14 +204,14 @@ where
     }
 }
 
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
+    ThreadIdType: ThreadId + 'static,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     /// Create a [Line] with routine [LineRoutine].
     ///
@@ -263,14 +265,14 @@ where
 /// Implement [LineTrait] for [Line].
 /// It's mostly a type mapping after we've implemented
 /// all the supertraits.
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType> LineTrait
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> LineTrait<'params>
+    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
+    ThreadIdType: ThreadId + 'static,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     type In = In;
     type Out = Out;
@@ -279,36 +281,42 @@ where
 }
 
 /// Get a [Closeable] for this node's input edge.
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Get<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync>
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Get<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync + 'params>
+    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
+    ThreadIdType: ThreadId + 'static,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync>, Error>
-    {
+    ) -> Result<
+        Box<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync + 'params>,
+        Error,
+    > {
         Get::get(&self.input)
     }
 }
 
 /// Implement the [Add] constructor for inbound [Workable] edge.
 /// This allows users to add [Workable] edges to this node such that it can schedule them.
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType> Add<dyn Workable<ThreadId = ThreadIdType>>
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Add<dyn Workable<ThreadId = ThreadIdType> + 'params>
+    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
+    ThreadIdType: ThreadId + 'static,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
-    fn add(&mut self, workable: Box<dyn Workable<ThreadId = ThreadIdType>>) -> Result<(), Error> {
+    fn add(
+        &mut self,
+        workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
+    ) -> Result<(), Error> {
         Ok(self.workers.push(workable))
     }
 }
@@ -316,19 +324,21 @@ where
 /// Implement the [Add] constructor for output [Closeable] edge.
 /// This allows users to add [Closeable] edges to this node such that it can push data
 /// into them when scheduled, and close them on shutdown.
-impl<In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>
-    for Line<In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
+    Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>
+    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
+    ThreadIdType: ThreadId + 'static,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync>,
+        closeable: Box<
+            dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params,
+        >,
     ) -> Result<(), Error> {
         Ok(self.pushes.push(closeable))
     }
@@ -344,19 +354,24 @@ where
 /// This is intentional — `impl Trait` return types prevent the compiler from
 /// resolving supertrait bounds involving `dyn Trait + Send + Sync`, which
 /// breaks type inference for `make_bidi`/`make_push` in downstream code.
-pub fn make_line<In, Out, SignalType, ThreadIdType, RoutineType>(
+pub fn make_line<'params, In, Out, SignalType, ThreadIdType, RoutineType>(
     worker: RoutineType,
-) -> Box<Line<In, Out, SignalType, ThreadIdType, RoutineType>>
+) -> Box<Line<'params, In, Out, SignalType, ThreadIdType, RoutineType>>
 where
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    RoutineType: LineRoutine<In, Out> + 'static,
+    RoutineType: LineRoutine<In, Out> + 'params,
 {
-    Box::new(Line::<In, Out, SignalType, ThreadIdType, RoutineType>::of(
-        worker,
-    ))
+    Box::new(Line::<
+        'params,
+        In,
+        Out,
+        SignalType,
+        ThreadIdType,
+        RoutineType,
+    >::of(worker))
 }
 
 #[cfg(test)]

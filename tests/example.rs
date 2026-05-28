@@ -73,7 +73,7 @@ fn sync_multithread() -> Result<(), areamy::error::Error> {
     let source = areamy::work::Source::<usize>::of(&in_node)?;
     areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
 
-    let mut helper_thread = areamy::ThreadStream::<HelperThread>::new();
+    let mut helper_thread = areamy::ThreadStream::<'_, HelperThread>::new();
 
     // Ensure that middle node, using the `HelperThread` pushes data into out node.
     areamy::work::Connect::<usize>::push(&mut middle_node, &out_node)?;
@@ -84,16 +84,23 @@ fn sync_multithread() -> Result<(), areamy::error::Error> {
     let sink = areamy::work::Sink::new(out_node)?;
     let mut reader = areamy::LineReader::new(source, sink);
 
-    // Start the helper thread (consumes thread, returns handle).
-    let _handle = helper_thread.start();
+    std::thread::scope(|s| {
+        // Start the helper thread (consumes thread, returns handle).
+        let _handle = helper_thread.start(s);
 
-    // Helper thread will run the computation in the first two nodes.
-    reader.push(areamy::Message::Data(1))?;
-    reader.push(areamy::Message::Data(2))?;
+        // Helper thread will run the computation in the first two nodes.
+        reader.push(areamy::Message::Data(1)).unwrap();
+        reader.push(areamy::Message::Data(2)).unwrap();
 
-    // Main thread runs computation in the final output node.
-    assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
-    assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
+        // Main thread runs computation in the final output node.
+        assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
+        assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
+
+        // Close the source so the helper thread can exit before scope
+        // waits for it. Without this, scope would deadlock waiting for
+        // a helper thread blocked on `wait_front()`.
+        reader.close().unwrap();
+    });
 
     Ok(())
 }

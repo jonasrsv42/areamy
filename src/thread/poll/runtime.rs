@@ -11,12 +11,14 @@
 use crate::ThreadId;
 use crate::connect::poll::runtime::{Node, Runtime};
 
-pub struct ClosableRuntime<ThreadIdType: ThreadId> {
-    pub nodes: Vec<Option<Node<ThreadIdType>>>,
+pub struct ClosableRuntime<'params, ThreadIdType: ThreadId> {
+    pub nodes: Vec<Option<Node<'params, ThreadIdType>>>,
 }
 
-impl<ThreadIdType: ThreadId> From<Runtime<ThreadIdType>> for ClosableRuntime<ThreadIdType> {
-    fn from(runtime: Runtime<ThreadIdType>) -> Self {
+impl<'params, ThreadIdType: ThreadId> From<Runtime<'params, ThreadIdType>>
+    for ClosableRuntime<'params, ThreadIdType>
+{
+    fn from(runtime: Runtime<'params, ThreadIdType>) -> Self {
         Self {
             nodes: runtime.nodes.into_iter().map(Some).collect(),
         }

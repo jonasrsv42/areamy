@@ -16,14 +16,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// Build async parent edges, returning edges + collected nodes + allocator.
-fn build_parents<DataType, SignalType, ThreadIdType>(
+fn build_parents<'params, DataType, SignalType, ThreadIdType>(
     parents: Vec<
         Box<
             dyn AsyncParent<
+                    'params,
                     OutType = DataType,
                     SignalType = SignalType,
                     ThreadIdType = ThreadIdType,
-                >,
+                > + 'params,
         >,
     >,
     edge_waker: ThreadLocalWaker,
@@ -31,7 +32,7 @@ fn build_parents<DataType, SignalType, ThreadIdType>(
 ) -> Result<
     (
         Vec<Rc<RefCell<PollEdge<DataType, SignalType>>>>,
-        Vec<GraphNode<ThreadIdType>>,
+        Vec<GraphNode<'params, ThreadIdType>>,
         ThreadLocalWakerAllocator<ThreadIdType>,
     ),
     Error,
@@ -58,21 +59,34 @@ where
 // ============================================================
 
 /// Sync, Sync → Sync output
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<Allocated, Sync, Sync, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<
+        'params,
+        Allocated,
+        Sync,
+        Sync,
+        Sync,
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
         let left_id = self.input.left.slot.id;
@@ -121,8 +135,10 @@ where
 }
 
 /// Sync, Sync → Deferred output (sink)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
     for Node<
+        'params,
         Allocated,
         Sync,
         Sync,
@@ -140,13 +156,13 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
         let left_id = self.input.left.slot.id;
@@ -199,21 +215,34 @@ where
 // ============================================================
 
 /// Async, Sync → Sync output
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<Allocated, Async, Sync, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<
+        'params,
+        Allocated,
+        Async,
+        Sync,
+        Sync,
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     Left: 'static,
     Right: Send + std::marker::Sync + 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
@@ -267,8 +296,10 @@ where
 }
 
 /// Async, Sync → Deferred output (sink)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
     for Node<
+        'params,
         Allocated,
         Async,
         Sync,
@@ -286,13 +317,13 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
@@ -346,8 +377,9 @@ where
 }
 
 /// Async, Sync → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
     for Node<
+        'params,
         Allocated,
         Async,
         Sync,
@@ -365,8 +397,8 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     type OutType = Out;
     type SignalType = SignalType;
@@ -376,7 +408,7 @@ where
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
@@ -434,21 +466,34 @@ where
 // ============================================================
 
 /// Sync, Async → Sync output
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<Allocated, Sync, Async, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<
+        'params,
+        Allocated,
+        Sync,
+        Async,
+        Sync,
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     Left: Send + std::marker::Sync + 'static,
     Right: 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
@@ -502,8 +547,10 @@ where
 }
 
 /// Sync, Async → Deferred output (sink)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
     for Node<
+        'params,
         Allocated,
         Sync,
         Async,
@@ -521,13 +568,13 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
@@ -581,8 +628,9 @@ where
 }
 
 /// Sync, Async → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
     for Node<
+        'params,
         Allocated,
         Sync,
         Async,
@@ -600,8 +648,8 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     type OutType = Out;
     type SignalType = SignalType;
@@ -611,7 +659,7 @@ where
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
@@ -669,21 +717,34 @@ where
 // ============================================================
 
 /// Async, Async → Sync output
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
-    for Node<Allocated, Async, Async, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<
+        'params,
+        Allocated,
+        Async,
+        Async,
+        Sync,
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
 where
     Left: 'static,
     Right: 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
@@ -745,8 +806,10 @@ where
 }
 
 /// Async, Async → Deferred output (sink)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> GraphBuilder<ThreadIdType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
     for Node<
+        'params,
         Allocated,
         Async,
         Async,
@@ -764,13 +827,13 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn build(
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
@@ -836,8 +899,9 @@ where
 // ============================================================
 
 /// Sync, Sync → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
     for Node<
+        'params,
         Allocated,
         Sync,
         Sync,
@@ -855,8 +919,8 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     type OutType = Out;
     type SignalType = SignalType;
@@ -866,7 +930,7 @@ where
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
         let left_id = self.input.left.slot.id;
@@ -915,8 +979,9 @@ where
 }
 
 /// Async, Async → Deferred output (consumed as parent)
-impl<Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
     for Node<
+        'params,
         Allocated,
         Async,
         Async,
@@ -934,8 +999,8 @@ where
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId + 'static,
-    FactoryType: BiunionRoutineFactory + 'static,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'static,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
     type OutType = Out;
     type SignalType = SignalType;
@@ -945,7 +1010,7 @@ where
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<ThreadIdType>, Error> {
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,

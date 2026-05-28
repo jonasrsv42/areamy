@@ -34,7 +34,7 @@ fn make_allocators() -> (
 /// Minimal AsyncParent that produces zero nodes of its own.
 struct MockParent;
 
-impl AsyncParent for MockParent {
+impl AsyncParent<'static> for MockParent {
     type OutType = usize;
     type SignalType = &'static str;
     type ThreadIdType = TestThread;
@@ -43,7 +43,7 @@ impl AsyncParent for MockParent {
         self: Box<Self>,
         _edge: Rc<RefCell<PollEdge<usize, &'static str>>>,
         allocator: ThreadLocalWakerAllocator<TestThread>,
-    ) -> Result<crate::connect::poll::graph::Graph<TestThread>, Error> {
+    ) -> Result<crate::connect::poll::graph::Graph<'static, TestThread>, Error> {
         Ok(crate::connect::poll::graph::Graph {
             allocator,
             nodes: vec![],

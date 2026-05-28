@@ -90,12 +90,12 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
     /// Each [GraphNode] is placed at its ID index. Every allocated slot
     /// must be filled exactly once. Creates wakers and enqueues all nodes
     /// for initial poll.
-    pub fn build(
+    pub fn build<'params>(
         self,
-        nodes: Vec<GraphNode<ThreadIdType>>,
-    ) -> Result<Runtime<ThreadIdType>, Error> {
+        nodes: Vec<GraphNode<'params, ThreadIdType>>,
+    ) -> Result<Runtime<'params, ThreadIdType>, Error> {
         let count = self.count;
-        let mut slots: Vec<Option<Box<dyn Pollable<ThreadId = ThreadIdType>>>> =
+        let mut slots: Vec<Option<Box<dyn Pollable<ThreadId = ThreadIdType> + 'params>>> =
             Vec::with_capacity(count);
         slots.resize_with(count, || None);
 

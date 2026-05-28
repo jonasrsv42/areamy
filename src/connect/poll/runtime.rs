@@ -9,12 +9,12 @@ use crate::{Pollable, ThreadId};
 use alloc::vec::Vec;
 
 /// A pollable node paired with its waker for the poll loop.
-pub struct Node<ThreadIdType: ThreadId> {
-    pub pollable: Box<dyn Pollable<ThreadId = ThreadIdType>>,
+pub struct Node<'params, ThreadIdType: ThreadId> {
+    pub pollable: Box<dyn Pollable<ThreadId = ThreadIdType> + 'params>,
     pub waker: waker::Waker,
 }
 
 /// Finalized runtime. All slots filled, ready for the poll loop.
-pub struct Runtime<ThreadIdType: ThreadId> {
-    pub nodes: Vec<Node<ThreadIdType>>,
+pub struct Runtime<'params, ThreadIdType: ThreadId> {
+    pub nodes: Vec<Node<'params, ThreadIdType>>,
 }

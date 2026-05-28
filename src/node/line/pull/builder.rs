@@ -7,18 +7,18 @@ use std::marker::PhantomData;
 /// of the parent. This connection does not use synchronization or dynamic dispatch
 /// and is well suited for line segments in the graph where performance is necessary
 /// and where synchronization or message passing could be a overhead.
-pub fn make_pull<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
+pub fn make_pull<'params, In, Out, SignalType, ThreadIdType, RoutineType, PullableType>(
     pullable: PullableType,
     worker: RoutineType,
 ) -> Line<In, Out, SignalType, ThreadIdType, RoutineType, PullableType>
 where
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     In: Send + Sync + 'static,
     Out: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
-    RoutineType: 'static + LineRoutine<In, Out>,
+    RoutineType: 'params + LineRoutine<In, Out>,
     PullableType:
-        Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'static,
+        Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType> + 'params,
 {
     Line::new(worker, pullable)
 }
@@ -39,16 +39,16 @@ where
     SignalType: Origin + Send + Sync + 'static,
 {
     /// [Connect::pull] is the same as [make_pull] but with type hints.
-    pub fn pull<Out, ThreadIdType, RoutineType, PullableType>(
+    pub fn pull<'params, Out, ThreadIdType, RoutineType, PullableType>(
         pullable: PullableType,
         worker: RoutineType,
     ) -> Line<DataType, Out, SignalType, ThreadIdType, RoutineType, PullableType>
     where
-        ThreadIdType: ThreadId + 'static,
+        ThreadIdType: ThreadId,
         Out: Send + Sync + 'static,
-        RoutineType: 'static + LineRoutine<DataType, Out>,
+        RoutineType: 'params + LineRoutine<DataType, Out>,
         PullableType: Pullable<ThreadId = ThreadIdType, DataType = DataType, SignalType = SignalType>
-            + 'static,
+            + 'params,
     {
         make_pull(pullable, worker)
     }

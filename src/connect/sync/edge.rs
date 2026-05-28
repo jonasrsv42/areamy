@@ -315,34 +315,42 @@ where
     }
 }
 
-impl<D, S> Get<dyn Closeable<DataType = D, SignalType = S> + Send + Sync> for Sender<D, S>
+impl<'params, D, S> Get<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>
+    for Sender<D, S>
 where
     D: Send + Sync + 'static,
     S: Origin + Send + Sync + 'static,
 {
-    fn get(&self) -> Result<Box<dyn Closeable<DataType = D, SignalType = S> + Send + Sync>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>, Error>
+    {
         Ok(Box::new(self.clone()))
     }
 }
 
 // Receiver acts as a connection point in the graph: `Get::get(&receiver)`
 // mints a fresh Sender so upstream nodes can push into it.
-impl<D, S> Get<dyn Pushable<DataType = D, SignalType = S>> for Receiver<D, S>
+impl<'params, D, S> Get<dyn Pushable<DataType = D, SignalType = S> + 'params> for Receiver<D, S>
 where
     D: Send + Sync + 'static,
     S: Origin + Send + Sync + 'static,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = D, SignalType = S>>, Error> {
+    fn get(&self) -> Result<Box<dyn Pushable<DataType = D, SignalType = S> + 'params>, Error> {
         Ok(Box::new(self.sender()))
     }
 }
 
-impl<D, S> Get<dyn Closeable<DataType = D, SignalType = S> + Send + Sync> for Receiver<D, S>
+impl<'params, D, S> Get<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>
+    for Receiver<D, S>
 where
     D: Send + Sync + 'static,
     S: Origin + Send + Sync + 'static,
 {
-    fn get(&self) -> Result<Box<dyn Closeable<DataType = D, SignalType = S> + Send + Sync>, Error> {
+    fn get(
+        &self,
+    ) -> Result<Box<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>, Error>
+    {
         Ok(Box::new(self.sender()))
     }
 }

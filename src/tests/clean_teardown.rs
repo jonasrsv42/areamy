@@ -17,8 +17,6 @@ use crate::{
     Trackable, bifurcation, fatal, make_work,
 };
 use std::collections::VecDeque;
-use std::sync::mpsc;
-use std::time::Duration;
 
 #[derive(Debug, Clone)]
 struct MiddleThread;
@@ -105,7 +103,7 @@ fn middle_thread_error_does_not_deadlock_drain() {
     let source: Source<usize> = Source::new(&middle).unwrap();
     Connect::<usize>::push(&mut middle, &sink_node).unwrap();
 
-    let mut middle_thread = ThreadStream::<MiddleThread>::new();
+    let mut middle_thread = ThreadStream::<'_, MiddleThread>::new();
     make_work(middle, &mut middle_thread).unwrap();
 
     let mut bundle = ThreadBundle::new();
@@ -114,45 +112,37 @@ fn middle_thread_error_does_not_deadlock_drain() {
     let sink: Sink<usize> = Sink::new(sink_node).unwrap();
     let mut reader = LineReader::new(source, sink);
 
-    let bundle_handle = bundle.start();
+    std::thread::scope(|s| {
+        let bundle_handle = bundle.start(s);
 
-    let (done_tx, done_rx) = mpsc::channel();
-
-    std::thread::spawn(move || {
-        let join_result = bundle_handle.join();
-
-        let drain_result = loop {
-            match reader.read() {
-                Ok(_) => continue,
-                Err(e) if matches!(e.kind, ErrorKind::Closed) => break Ok::<(), Error>(()),
-                Err(other) => break Err(other),
+        // Drain in a scoped helper thread so the main thread can join the bundle.
+        let drain_handle = s.spawn(move || {
+            loop {
+                match reader.read() {
+                    Ok(_) => continue,
+                    Err(e) if matches!(e.kind, ErrorKind::Closed) => break Ok::<(), Error>(()),
+                    Err(other) => break Err(other),
+                }
             }
-        };
+        });
 
-        let _ = done_tx.send((join_result, drain_result));
+        let joins = bundle_handle.join();
+        let drain_result = drain_handle.join().expect("drain helper panicked");
+
+        // Middle errored, so we expect Join::Error there; the
+        // property under test is that the bundle returned at all.
+        assert_eq!(joins.len(), 1);
+        assert!(
+            matches!(&joins[0], Join::Error(_)),
+            "expected Join::Error for the failing middle thread, got {:?}",
+            joins[0]
+        );
+        assert!(
+            drain_result.is_ok(),
+            "drain failed: {:?}",
+            drain_result.err()
+        );
     });
-
-    match done_rx.recv_timeout(Duration::from_secs(5)) {
-        Ok((joins, drain_result)) => {
-            // Middle errored, so we expect Join::Error there; the
-            // property under test is that the bundle returned at all.
-            assert_eq!(joins.len(), 1);
-            assert!(
-                matches!(&joins[0], Join::Error(_)),
-                "expected Join::Error for the failing middle thread, got {:?}",
-                joins[0]
-            );
-            assert!(
-                drain_result.is_ok(),
-                "drain failed: {:?}",
-                drain_result.err()
-            );
-        }
-        Err(_) => panic!(
-            "Deadlock: drain + bundle.join did not complete within 5s — \
-             sibling-stop did not fire."
-        ),
-    }
 }
 
 /// Cross-thread sync → poll teardown.
@@ -172,7 +162,7 @@ fn poll_thread_does_not_deadlock_when_sync_input_drops() {
     use crate::node::line::poll::routine::tests::MockLine;
     use crate::thread::poll::stream::Thread;
 
-    let mut thread = Thread::<PollThread>::new();
+    let mut thread = Thread::<'_, PollThread>::new();
     let node = thread
         .line(|w| MockLine::new(w))
         .input::<crate::poll::Sync>()
@@ -182,27 +172,19 @@ fn poll_thread_does_not_deadlock_when_sync_input_drops() {
         Get::get(&node).unwrap();
 
     thread.add(node);
-    let handle = thread.start();
+    std::thread::scope(|s| {
+        let handle = thread.start(s);
 
-    // Producer dies without calling close().
-    drop(input);
+        // Producer dies without calling close().
+        drop(input);
 
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(handle.join());
-    });
-
-    match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(join) => assert!(
+        let join = handle.join();
+        assert!(
             matches!(join, Join::Ok),
             "expected Join::Ok, got {:?}",
             join
-        ),
-        Err(_) => panic!(
-            "Deadlock: poll thread did not exit within 5s after sync \
-             producer was dropped — SyncBridge needs close-on-drop."
-        ),
-    }
+        );
+    });
 }
 
 // ---- shared routines for the topology tests below ----
@@ -247,23 +229,6 @@ impl Flush for Tee {
 impl Name for Tee {}
 impl BifurcationRoutine<usize, usize, usize> for Tee {}
 
-/// Run a closure on a helper thread and recv-timeout the result so a
-/// deadlock fails the test instead of hanging the runner.
-fn with_timeout<T: Send + 'static>(
-    secs: u64,
-    label: &str,
-    work: impl FnOnce() -> T + Send + 'static,
-) -> T {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(work());
-    });
-    match rx.recv_timeout(Duration::from_secs(secs)) {
-        Ok(v) => v,
-        Err(_) => panic!("Deadlock: {} did not complete within {}s", label, secs),
-    }
-}
-
 /// Fan-out: one producer thread runs a bifurcation that duplicates
 /// each value to two consumer threads, each pushing to its own sync
 /// receiver on the main thread. Closing the source cascades through
@@ -292,9 +257,9 @@ fn fan_out_bifurcation_into_two_consumer_threads() {
     Connect::<usize>::push(&mut consumer_a, &output_a).unwrap();
     Connect::<usize>::push(&mut consumer_b, &output_b).unwrap();
 
-    let mut producer_thread = ThreadStream::<ProducerThread>::new();
-    let mut consumer_a_thread = ThreadStream::<Consumer1>::new();
-    let mut consumer_b_thread = ThreadStream::<Consumer2>::new();
+    let mut producer_thread = ThreadStream::<'_, ProducerThread>::new();
+    let mut consumer_a_thread = ThreadStream::<'_, Consumer1>::new();
+    let mut consumer_b_thread = ThreadStream::<'_, Consumer2>::new();
     make_work(tee, &mut producer_thread).unwrap();
     make_work(consumer_a, &mut consumer_a_thread).unwrap();
     make_work(consumer_b, &mut consumer_b_thread).unwrap();
@@ -304,14 +269,15 @@ fn fan_out_bifurcation_into_two_consumer_threads() {
         .add(producer_thread)
         .add(consumer_a_thread)
         .add(consumer_b_thread);
-    let handle = bundle.start();
 
-    for v in 0..4 {
-        source.push(Message::Data(v)).unwrap();
-    }
-    source.close().unwrap();
+    std::thread::scope(|s| {
+        let handle = bundle.start(s);
 
-    let result = with_timeout(5, "fan_out drain + join", move || {
+        for v in 0..4 {
+            source.push(Message::Data(v)).unwrap();
+        }
+        source.close().unwrap();
+
         let drain = |rx: Receiver<usize, Trackable<&'static str>>| -> Vec<usize> {
             let mut got = Vec::new();
             loop {
@@ -327,14 +293,12 @@ fn fan_out_bifurcation_into_two_consumer_threads() {
         let a = drain(output_a);
         let b = drain(output_b);
         let joins = handle.join();
-        (a, b, joins)
-    });
 
-    let (a, b, joins) = result;
-    assert_eq!(a, vec![0, 1, 2, 3]);
-    assert_eq!(b, vec![0, 1, 2, 3]);
-    assert_eq!(joins.len(), 3);
-    for j in joins.iter() {
-        assert!(matches!(j, Join::Ok), "expected Join::Ok, got {:?}", j);
-    }
+        assert_eq!(a, vec![0, 1, 2, 3]);
+        assert_eq!(b, vec![0, 1, 2, 3]);
+        assert_eq!(joins.len(), 3);
+        for j in joins.iter() {
+            assert!(matches!(j, Join::Ok), "expected Join::Ok, got {:?}", j);
+        }
+    });
 }

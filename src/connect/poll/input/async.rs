@@ -11,10 +11,15 @@ use crate::connect::poll::traits::AsyncParent;
 use crate::signal::Origin;
 
 /// Bundles parent [`AsyncParent`] configs for an async-input poll node.
-pub struct Input<InType, SignalType: Origin, ThreadIdType: ThreadId> {
+pub struct Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> {
     pub parents: Vec<
         Box<
-            dyn AsyncParent<OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>,
+            dyn AsyncParent<
+                    'params,
+                    OutType = InType,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
         >,
     >,
 }

@@ -43,7 +43,7 @@ impl<'params, DataType, SignalType, ThreadIdType> Sink<'params, DataType, Signal
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
 {
     pub fn of<MultiplicityType>(
         mut workable: Box<
@@ -80,7 +80,7 @@ impl<'params, DataType, SignalType, ThreadIdType> crate::sink::GraphSink
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
 {
     type ThreadId = ThreadIdType;
     type DataType = DataType;

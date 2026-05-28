@@ -21,7 +21,7 @@ use std::thread::{Scope, ScopedJoinHandle};
 
 /// An idle async thread. Add builders via [Thread::add], then
 /// call [Thread::start] to spawn the OS thread.
-pub struct Thread<'params, ThreadIdType: ThreadId + 'static> {
+pub struct Thread<'params, ThreadIdType: ThreadId> {
     builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,
@@ -33,7 +33,7 @@ pub struct ThreadHandle<'threads> {
     thread: ScopedJoinHandle<'threads, Result<(), Error>>,
 }
 
-impl<'params, ThreadIdType: ThreadId + 'static> Thread<'params, ThreadIdType> {
+impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     pub fn new() -> Self {
         let queue = PollQueue::new();
         let producer = queue.producer();
@@ -169,7 +169,7 @@ impl<'params, ThreadIdType: ThreadId + 'static> Thread<'params, ThreadIdType> {
 }
 
 /// Build the runtime and return it with the consumer for the poll loop.
-fn prepare<'params, ThreadIdType: ThreadId + 'params>(
+fn prepare<'params, ThreadIdType: ThreadId>(
     builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
     waker_allocator: WakerAllocator,
     queue: PollQueue,

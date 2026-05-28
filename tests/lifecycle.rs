@@ -198,9 +198,9 @@ struct GraphEvent {
 // ---- per-generation handles ------------------------------------------------
 
 /// Everything the orchestrator hangs onto for one generation.
-struct GenerationHandles<'s> {
-    bundle: ThreadBundleHandle<'s>,
-    source: Source<usize, areamy::Trackable<&'static str>>,
+struct GenerationHandles<'params> {
+    bundle: ThreadBundleHandle<'params>,
+    source: Source<'params, usize, areamy::Trackable<&'static str>>,
     /// JoinHandle for the helper thread that drains the sink-side
     /// Receiver into `seen`.
     drain: JoinHandle<()>,
@@ -217,11 +217,11 @@ struct GenerationHandles<'s> {
 /// generation by value, so events reaching the orchestrator carry
 /// the generation of the bundle that emitted them — not whatever the
 /// orchestrator's current generation happens to be on dequeue.
-fn build_graph<'s>(
-    scope: &'s std::thread::Scope<'s, 'static>,
+fn build_graph<'params>(
+    scope: &'params std::thread::Scope<'params, 'static>,
     tx: mpsc::Sender<GraphEvent>,
     generation: usize,
-) -> GenerationHandles<'s> {
+) -> GenerationHandles<'params> {
     // Pull segment on the main thread.
     let buffer: SourceBuffer<usize, areamy::Trackable<&'static str>, WorkThread> =
         SourceBuffer::new();

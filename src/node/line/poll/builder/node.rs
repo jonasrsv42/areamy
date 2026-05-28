@@ -427,7 +427,7 @@ where
     InType: Send + std::marker::Sync + 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
@@ -472,7 +472,7 @@ where
     InType: 'static,
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
@@ -538,7 +538,7 @@ where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
@@ -593,7 +593,7 @@ where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
@@ -662,7 +662,7 @@ where
     InType: Send + std::marker::Sync + 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {
@@ -721,7 +721,7 @@ where
     InType: 'static,
     OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
 {

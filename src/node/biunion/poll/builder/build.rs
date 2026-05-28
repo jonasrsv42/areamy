@@ -40,7 +40,7 @@ fn build_parents<'params, DataType, SignalType, ThreadIdType>(
 where
     DataType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
 {
     let mut edges = Vec::new();
     let mut nodes = Vec::new();
@@ -79,7 +79,7 @@ where
     Right: Send + std::marker::Sync + 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -155,7 +155,7 @@ where
     Right: Send + std::marker::Sync + 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -235,7 +235,7 @@ where
     Right: Send + std::marker::Sync + 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -316,7 +316,7 @@ where
     Right: Send + std::marker::Sync + 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -396,7 +396,7 @@ where
     Right: Send + std::marker::Sync + 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -486,7 +486,7 @@ where
     Right: 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -567,7 +567,7 @@ where
     Right: 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -647,7 +647,7 @@ where
     Right: 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -737,7 +737,7 @@ where
     Right: 'static,
     Out: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -826,7 +826,7 @@ where
     Right: 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -918,7 +918,7 @@ where
     Right: Send + std::marker::Sync + 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {
@@ -998,7 +998,7 @@ where
     Right: 'static,
     Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
 {

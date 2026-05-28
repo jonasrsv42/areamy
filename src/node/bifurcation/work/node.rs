@@ -83,7 +83,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     /// The coroutine of this node.
@@ -106,7 +106,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
 }
@@ -118,7 +118,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     fn work(&mut self) -> Result<(), Error> {
@@ -208,7 +208,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     pub fn of(routine: RoutineType) -> Self {
@@ -298,7 +298,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     type In = In;
@@ -316,7 +316,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     fn get(
@@ -335,7 +335,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     fn get(
@@ -358,7 +358,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     fn add(
@@ -381,7 +381,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     fn add(
@@ -402,7 +402,7 @@ where
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
 {
     fn add(

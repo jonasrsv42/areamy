@@ -100,7 +100,7 @@ where
     Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     /// The coroutine of this node.
@@ -124,7 +124,7 @@ where
     Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
 }
@@ -136,7 +136,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn work(&mut self) -> Result<(), Error> {
@@ -211,7 +211,7 @@ where
     Right: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     pub fn of(routine: RoutineType) -> Self {
@@ -316,7 +316,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     type Left = Left;
@@ -334,7 +334,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn get(
@@ -352,7 +352,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn get(
@@ -373,7 +373,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn get(
@@ -397,7 +397,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn get(
@@ -418,7 +418,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn add(
@@ -437,7 +437,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn add(
@@ -456,7 +456,7 @@ where
     Right: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn add(

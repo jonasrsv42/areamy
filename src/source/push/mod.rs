@@ -8,23 +8,27 @@ use crate::{
 };
 
 /// A `Source` is a convenience type for an input. It forwards data into some inner source.
-pub struct Source<DataType, SignalType = Trackable<&'static str>>
+pub struct Source<'params, DataType, SignalType = Trackable<&'static str>>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
-    inner:
-        Box<dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType> + Send + Sync>,
+    inner: Box<
+        dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>
+            + Send
+            + Sync
+            + 'params,
+    >,
 }
 
-impl<DataType, SignalType> Connection for Source<DataType, SignalType>
+impl<'params, DataType, SignalType> Connection for Source<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
 }
 
-impl<DataType> Source<DataType, Trackable<&'static str>>
+impl<'params, DataType> Source<'params, DataType, Trackable<&'static str>>
 where
     DataType: Send + Sync + 'static,
 {
@@ -32,7 +36,8 @@ where
         input: &impl Get<
             dyn crate::GraphPushSource<DataType = DataType, SignalType = Trackable<&'static str>>
                 + Send
-                + Sync,
+                + Sync
+                + 'params,
             MultiplicityType,
         >,
     ) -> Result<Self, Error> {
@@ -41,7 +46,7 @@ where
     }
 }
 
-impl<DataType, SignalType> Source<DataType, SignalType>
+impl<'params, DataType, SignalType> Source<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
@@ -51,7 +56,8 @@ where
         Node: Get<
                 dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>
                     + Send
-                    + Sync,
+                    + Sync
+                    + 'params,
                 MultiplicityType,
             >,
         MultiplicityType: Multiplicity,
@@ -61,7 +67,7 @@ where
     }
 }
 
-impl<DataType, SignalType> Pushable for Source<DataType, SignalType>
+impl<'params, DataType, SignalType> Pushable for Source<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -74,7 +80,7 @@ where
     }
 }
 
-impl<DataType, SignalType> crate::GraphPushSource for Source<DataType, SignalType>
+impl<'params, DataType, SignalType> crate::GraphPushSource for Source<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,

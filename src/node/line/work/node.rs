@@ -66,7 +66,7 @@ where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     /// Worker or `Coroutine` associated with the current node.
@@ -91,7 +91,7 @@ where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
 }
@@ -210,7 +210,7 @@ where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     /// Create a [Line] with routine [LineRoutine].
@@ -271,7 +271,7 @@ where
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     type In = In;
@@ -288,7 +288,7 @@ where
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     fn get(
@@ -310,7 +310,7 @@ where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     fn add(
@@ -331,7 +331,7 @@ where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
     fn add(
@@ -361,7 +361,7 @@ where
     In: Send + Sync + 'static,
     Out: Clone + Send + Sync + 'static,
     SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId + 'static,
+    ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out> + 'params,
 {
     Box::new(Line::<

@@ -99,6 +99,21 @@ Join::join([
 
 Full networking-shaped example: [tests/poll_bidi_example_test.rs](tests/poll_bidi_example_test.rs).
 
+#### Deadlines
+
+Race input against a wall-clock timeout via `recv_with_timeout`:
+
+```rust
+match input.recv_with_timeout(MAX_HOLD).await? {
+    Some(Input::Data(v)) => buffer.push(v),
+    Some(Input::Flush)   => return,
+    None                 => flush(&mut buffer),  // timed out
+}
+```
+
+For lower-level use, every `Waker` exposes `schedule_at(deadline)` —
+the node gets re-polled at that `Instant`.
+
 ## Embedded targets
 
 Areamy has no external dependencies and only relies on `std` primitives

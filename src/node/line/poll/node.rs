@@ -430,7 +430,7 @@ mod tests {
     use crate::connect::poll::input;
     use crate::connect::sync::Receiver;
     use crate::connect::waker::{self, ThreadLocalWake, ThreadLocalWaker};
-    use crate::node::line::poll::routine::tests::MockLine;
+    use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
     use std::cell::Cell;
     use std::rc::Rc;
     use std::sync::Arc;
@@ -476,7 +476,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                MockLine::new(noop_local_waker()),
+                MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
                 noop_local_waker(),
@@ -518,7 +518,7 @@ mod tests {
 
         let (mut input_phase, _work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                MockLine::new(noop_local_waker()),
+                MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
                 noop_local_waker(),
@@ -554,7 +554,7 @@ mod tests {
 
         let (_input_phase, mut work_phase, _output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                MockLine::new(noop_local_waker()),
+                MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
                 noop_local_waker(),
@@ -666,7 +666,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                MockLine::new(noop_local_waker()),
+                MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
                 noop_local_waker(),
@@ -696,7 +696,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                MockLine::new(noop_local_waker()),
+                MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
                 noop_local_waker(),
@@ -758,7 +758,7 @@ mod tests {
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
-                MockLine::new(noop_local_waker()),
+                MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
                 input_waker,

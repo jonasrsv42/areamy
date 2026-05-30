@@ -149,7 +149,7 @@ struct PollDouble {
     out: VecDeque<usize>,
 }
 impl PollDouble {
-    fn new(_waker: areamy::connect::waker::ThreadLocalWaker) -> Self {
+    fn new(_wakers: areamy::poll::LineWakers) -> Self {
         Self {
             out: VecDeque::new(),
         }

@@ -16,8 +16,8 @@ use std::rc::Rc;
 struct TestThread;
 impl ThreadId for TestThread {}
 
-fn mock_factory() -> impl FnOnce(crate::connect::waker::ThreadLocalWaker) -> MockLine + Send {
-    |waker| MockLine::new(waker)
+fn mock_factory() -> impl FnOnce(crate::poll::LineWakers) -> MockLine + Send {
+    |wakers| MockLine::new(wakers)
 }
 
 fn make_allocators() -> (

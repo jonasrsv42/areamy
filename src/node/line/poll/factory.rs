@@ -3,8 +3,8 @@
 //! The factory is [Send] (crosses threads). The routine it produces
 //! stays on the async thread and does NOT need to be [Send].
 //!
-//! [LineRoutineFactory::create] receives a [ThreadLocalWaker] for the output
-//! phase so the routine can wake Output when it produces data.
+//! [LineRoutineFactory::create] receives a [LineWakers] bundle giving
+//! the routine access to all three phase wakers.
 //!
 //! The `'params` parameter bounds how long the factory (and the routine
 //! it produces) may hold borrows captured from the surrounding scope.
@@ -13,24 +13,35 @@
 
 use crate::connect::waker::ThreadLocalWaker;
 
-/// Factory for poll line routines. [Send] — crosses threads.
+/// Phase wakers the framework hands to a line routine at construction.
 ///
-/// [LineRoutineFactory::create] is called on the async thread with
-/// the output phase waker. The routine stores it and wakes Output
-/// when it sends data, avoiding unnecessary output polls.
-pub trait LineRoutineFactory<'params>: Send + 'params {
-    type Routine: 'params;
-    fn create(self, output_waker: ThreadLocalWaker) -> Self::Routine;
+/// - `input` wakes the input phase (drains the input edge).
+/// - `work` wakes the work phase (the one that polls the routine).
+///   `InputQueue::new(wakers.work)` is what makes deadline-driven
+///   re-polls (via `recv_with_timeout` / `schedule_at`) route back to
+///   the right place.
+/// - `output` wakes the output phase (drains the output queue). Pass
+///   to `OutputQueue::new` so `push` nudges Output to drain.
+pub struct LineWakers {
+    pub input: ThreadLocalWaker,
+    pub work: ThreadLocalWaker,
+    pub output: ThreadLocalWaker,
 }
 
-/// Blanket impl: any `FnOnce(ThreadLocalWaker) -> R + Send + 'params` is a [LineRoutineFactory].
+/// Factory for poll line routines. [Send] — crosses threads.
+pub trait LineRoutineFactory<'params>: Send + 'params {
+    type Routine: 'params;
+    fn create(self, wakers: LineWakers) -> Self::Routine;
+}
+
+/// Blanket impl: any `FnOnce(LineWakers) -> R + Send + 'params` is a [LineRoutineFactory].
 impl<'params, F, R> LineRoutineFactory<'params> for F
 where
-    F: FnOnce(ThreadLocalWaker) -> R + Send + 'params,
+    F: FnOnce(LineWakers) -> R + Send + 'params,
     R: 'params,
 {
     type Routine = R;
-    fn create(self, output_waker: ThreadLocalWaker) -> R {
-        self(output_waker)
+    fn create(self, wakers: LineWakers) -> R {
+        self(wakers)
     }
 }

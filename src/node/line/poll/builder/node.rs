@@ -32,7 +32,7 @@ use crate::connect::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::error::Error;
 use crate::graph::{Add, Get};
 use crate::marker::Connection;
-use crate::node::line::poll::factory::LineRoutineFactory;
+use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
 use crate::{Closeable, ThreadId};
@@ -437,12 +437,17 @@ where
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let input_waker = allocator.local_waker(self.input.slot.id);
+        let routine = self.factory.create(LineWakers {
+            input: input_waker.clone(),
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             self.input.edge,
             self.output,
-            allocator.local_waker(self.input.slot.id),
+            input_waker,
             work.value.local,
             output.value.local,
         );
@@ -495,7 +500,11 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let routine = self.factory.create(LineWakers {
+            input: input.value.local.clone(),
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             edges,
@@ -548,12 +557,17 @@ where
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let input_waker = allocator.local_waker(self.input.slot.id);
+        let routine = self.factory.create(LineWakers {
+            input: input_waker.clone(),
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             self.input.edge,
             self.output,
-            allocator.local_waker(self.input.slot.id),
+            input_waker,
             work.value.local,
             output.value.local,
         );
@@ -616,7 +630,11 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let routine = self.factory.create(LineWakers {
+            input: input.value.local.clone(),
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             edges,
@@ -677,12 +695,17 @@ where
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let input_waker = allocator.local_waker(self.input.slot.id);
+        let routine = self.factory.create(LineWakers {
+            input: input_waker.clone(),
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             self.input.edge,
             edge,
-            allocator.local_waker(self.input.slot.id),
+            input_waker,
             work.value.local,
             output.value.local,
         );
@@ -749,7 +772,11 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let routine = self.factory.create(LineWakers {
+            input: input.value.local.clone(),
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
             routine,
             input_edges,

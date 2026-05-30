@@ -49,9 +49,10 @@
 //! let node = thread.line(routine).input::<Sync>().output::<Sync>();
 //! ```
 
-use crate::connect::waker::{self, ThreadLocalWaker};
+use crate::connect::waker;
 use crate::error::Error;
 use crate::node::Name;
+use crate::node::line::poll::factory::LineWakers;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
 use std::future::Future;
@@ -81,9 +82,13 @@ impl<'params, InType, OutType, F> FutureRoutine<'params, InType, OutType, F>
 where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
-    pub fn new(waker: ThreadLocalWaker, factory: F) -> Self {
-        let input = InputQueue::new(waker.clone());
-        let output = OutputQueue::new(waker);
+    pub fn new(wakers: LineWakers, factory: F) -> Self {
+        // InputQueue gets the *work* waker so `recv_with_timeout`'s
+        // `schedule_at` re-polls the future via the work phase (the
+        // one that actually polls the routine). OutputQueue gets the
+        // output waker so push() nudges Output to drain.
+        let input = InputQueue::new(wakers.work);
+        let output = OutputQueue::new(wakers.output);
         let future = (factory)(input.consumer.clone(), output.producer.clone());
         Self {
             input,
@@ -95,18 +100,18 @@ where
 
     /// Create a [LineRoutineFactory](crate::node::line::poll::factory::LineRoutineFactory)
     /// from an async closure. The closure receives input/output queues —
-    /// the output waker is wired automatically.
+    /// wakers are wired automatically.
     ///
     /// ```ignore
     /// let node = thread.line(FutureRoutine::factory(|input, output| {
     ///     Box::pin(async move { /* ... */ })
     /// })).input::<Sync>().output::<Sync>();
     /// ```
-    pub fn factory(f: F) -> impl FnOnce(ThreadLocalWaker) -> Self + Send + 'params
+    pub fn factory(f: F) -> impl FnOnce(LineWakers) -> Self + Send + 'params
     where
         F: Send,
     {
-        move |output_waker| Self::new(output_waker, f)
+        move |wakers| Self::new(wakers, f)
     }
 }
 

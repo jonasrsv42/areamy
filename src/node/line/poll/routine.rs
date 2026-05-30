@@ -89,10 +89,10 @@ pub mod tests {
     }
 
     impl MockLine {
-        pub fn new(output_waker: ThreadLocalWaker) -> Self {
+        pub fn new(wakers: crate::poll::LineWakers) -> Self {
             MockLine {
                 state: 0,
-                output: OutputQueue::new(output_waker),
+                output: OutputQueue::new(wakers.output),
                 poll_count: 0,
                 flushed: false,
             }
@@ -145,6 +145,14 @@ pub mod tests {
         ThreadLocalWaker::new(NoopWake)
     }
 
+    pub fn noop_line_wakers() -> crate::poll::LineWakers {
+        crate::poll::LineWakers {
+            input: noop_local_waker(),
+            work: noop_local_waker(),
+            output: noop_local_waker(),
+        }
+    }
+
     fn noop_waker() -> Waker {
         Waker {
             sync: std::task::Waker::noop().clone(),
@@ -154,14 +162,14 @@ pub mod tests {
 
     #[test]
     fn poll_line_send_next_works() {
-        let mut line = MockLine::new(noop_local_waker());
+        let mut line = MockLine::new(noop_line_wakers());
         line.send(2).unwrap();
         assert_eq!(line.next().unwrap(), Some(4));
     }
 
     #[test]
     fn poll_line_poll_increments_count() {
-        let mut line = MockLine::new(noop_local_waker());
+        let mut line = MockLine::new(noop_line_wakers());
         let mut waker = noop_waker();
 
         assert_eq!(line.poll_count, 0);

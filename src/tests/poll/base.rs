@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
 
 /// Routine that queues input in send via waker-aware Queue, then
 /// doubles it in poll. Send wakes Work via the queue's waker.
-use crate::connect::waker::{self as waker, ThreadLocalWaker};
+use crate::connect::waker::{self as waker};
+use crate::poll::LineWakers;
 use crate::poll::future::queue::{Input, InputQueue, OutputQueue};
 
 struct PollDouble {
@@ -21,10 +22,13 @@ struct PollDouble {
 }
 
 impl PollDouble {
-    fn new(waker: ThreadLocalWaker) -> Self {
+    fn new(wakers: LineWakers) -> Self {
         Self {
-            input: InputQueue::new(waker.clone()),
-            output: OutputQueue::new(waker),
+            // work waker on InputQueue so `recv_with_timeout` would
+            // re-poll the routine; output waker on OutputQueue so
+            // push() wakes the Output phase to drain.
+            input: InputQueue::new(wakers.work),
+            output: OutputQueue::new(wakers.output),
         }
     }
 }
@@ -759,10 +763,10 @@ struct HalfCloseRoutine {
 }
 
 impl HalfCloseRoutine {
-    fn new(waker: ThreadLocalWaker, flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
+    fn new(wakers: LineWakers, flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
         Self {
-            input: InputQueue::new(waker.clone()),
-            output: OutputQueue::new(waker),
+            input: InputQueue::new(wakers.work),
+            output: OutputQueue::new(wakers.output),
             flush_cycles,
             flush_cycles_remaining: 0,
             flush_count,
@@ -907,10 +911,10 @@ struct BatchRoutine {
 }
 
 impl BatchRoutine {
-    fn new(output_waker: ThreadLocalWaker, flush_cycles: usize) -> Self {
+    fn new(wakers: LineWakers, flush_cycles: usize) -> Self {
         Self {
             accumulator: 0,
-            output: OutputQueue::new(output_waker),
+            output: OutputQueue::new(wakers.output),
             flush_requested: false,
             flush_cycles,
             flush_cycles_remaining: 0,
@@ -1028,5 +1032,88 @@ fn multi_flush_then_close() -> Result<(), Error> {
         let errors = handle.join().errors();
         assert!(errors.is_empty());
         Ok(())
+    })
+}
+
+/// Regression: `recv_with_timeout` must actually fire at its deadline.
+///
+/// Internally, `RecvTimeoutFut::poll` calls `schedule_at` on the local
+/// waker stored in `InputQueue`. That waker MUST be bound to the work
+/// phase (the one that polls the future) — if it's bound to a different
+/// phase (e.g. output), the deadline fires the wrong phase and the
+/// future never re-polls.
+///
+/// Routine: try `recv_with_timeout(10ms)` once. On `None` (timeout
+/// fired), push 999 + drain to Flush. On `Some(_)` (input arrived
+/// first — which means the test pushed Flush before the timeout
+/// fired, indicating the waker is mis-routed), push 0.
+///
+/// Test: don't push anything for 100ms (plenty of slack for the 10ms
+/// timeout). Then close the source to terminate. Assert first output
+/// is 999. With the bug, it's 0.
+#[test]
+fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
+    use crate::poll::future::line::FutureRoutine;
+    use crate::poll::future::queue::{InputConsumer, OutputProducer};
+    use crate::source::push::Source;
+    use std::time::Duration;
+
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut node = async_thread
+        .line(FutureRoutine::factory(
+            |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+                Box::pin(async move {
+                    match input.recv_with_timeout(Duration::from_millis(10)).await? {
+                        None => {
+                            output.push(999);
+                            // Drain until Flush so the input queue
+                            // closes cleanly before we return.
+                            loop {
+                                match input.recv().await? {
+                                    Input::Data(_) => continue,
+                                    Input::Flush => break,
+                                }
+                            }
+                        }
+                        Some(_) => output.push(0),
+                    }
+                    Ok(())
+                })
+            },
+        ))
+        .input::<crate::poll::Sync>()
+        .output::<crate::poll::Sync>();
+
+    let mut source = Source::<usize>::of::<_, crate::marker::Unary>(&node).unwrap();
+    let output = Receiver::new();
+    make_push(&mut node, &output)?;
+    async_thread.add(node);
+
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = async_thread.start(s);
+
+        // Sleep well past the 10ms timeout. If the waker is wired
+        // correctly, recv_with_timeout returns None during this window
+        // and the routine emits 999.
+        std::thread::sleep(Duration::from_millis(100));
+        source.close()?;
+
+        match output.read_front() {
+            Ok(Message::Data(999)) => {}
+            Ok(other) => panic!(
+                "recv_with_timeout did not fire — got {:?} instead of 999. \
+                 schedule_at is likely routing to the wrong phase.",
+                other
+            ),
+            Err(e) => panic!(
+                "no output received: {} — recv_with_timeout never resolved.",
+                e
+            ),
+        }
+
+        match handle.join() {
+            crate::thread::Join::Ok => Ok(()),
+            other => panic!("async thread did not exit cleanly: {:?}", other),
+        }
     })
 }

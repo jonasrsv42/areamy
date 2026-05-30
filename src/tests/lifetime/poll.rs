@@ -20,9 +20,9 @@ fn line_poll_borrowed() {
 
     let multiplier_ref = &multiplier;
     let mut node = thread
-        .line(move |w| PollBorrowingLine {
+        .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w),
+            output: OutputQueue::new(w.output),
         })
         .input::<poll::Sync>()
         .output::<poll::Sync>();
@@ -105,18 +105,18 @@ fn poll_async_parent_chain_borrowed() {
     let multiplier_ref = &multiplier;
 
     let a = thread
-        .line(move |w| PollBorrowingLine {
+        .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w),
+            output: OutputQueue::new(w.output),
         })
         .input::<poll::Sync>();
 
     let mut input = Source::new(&a).unwrap();
 
     let mut b = thread
-        .line(move |w| PollBorrowingLine {
+        .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w),
+            output: OutputQueue::new(w.output),
         })
         .parent(a)
         .output::<poll::Sync>();
@@ -157,9 +157,9 @@ fn poll_borrowed_output_sink() {
 
     let multiplier_ref = &multiplier;
     let mut node = thread
-        .line(move |w| PollBorrowingLine {
+        .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w),
+            output: OutputQueue::new(w.output),
         })
         .input::<poll::Sync>()
         .output::<poll::Sync>();
@@ -203,9 +203,9 @@ fn poll_node_input_from_borrowed_parent() {
     let mut poll_thread = poll::Thread::<'_, LifetimePollThread>::new();
     let mult_ref = &mult;
     let mut poll_node = poll_thread
-        .line(move |w| PollBorrowingLine {
+        .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: mult_ref,
-            output: OutputQueue::new(w),
+            output: OutputQueue::new(w.output),
         })
         .input::<poll::Sync>()
         .output::<poll::Sync>();

@@ -16,8 +16,8 @@ use std::rc::Rc;
 struct TestThread;
 impl ThreadId for TestThread {}
 
-fn mock_factory() -> impl FnOnce(crate::connect::waker::ThreadLocalWaker) -> MockBiunion + Send {
-    |waker| MockBiunion::new(waker)
+fn mock_factory() -> impl FnOnce(crate::poll::BiunionWakers) -> MockBiunion + Send {
+    |wakers| MockBiunion::new(wakers)
 }
 
 fn make_allocators() -> (

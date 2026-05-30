@@ -788,7 +788,9 @@ mod tests {
     use crate::connect::poll::input;
     use crate::connect::sync::{Receiver, Sender};
     use crate::connect::waker::ThreadLocalWaker;
-    use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_local_waker, noop_waker};
+    use crate::node::biunion::poll::routine::tests::{
+        MockBiunion, noop_biunion_wakers, noop_waker,
+    };
     use std::cell::Cell;
     use std::rc::Rc;
     use std::sync::Arc;
@@ -905,7 +907,7 @@ mod tests {
                     },
                 },
                 Phase {
-                    target: MockBiunion::new(noop_local_waker()),
+                    target: MockBiunion::new(noop_biunion_wakers()),
                     waker: work_local,
                 },
                 Phase {

@@ -5,9 +5,10 @@
 //! [OutputProducer]. Use [Select](crate::poll::Select) to await either input.
 
 use crate::biunion;
-use crate::connect::waker::{self, ThreadLocalWaker};
+use crate::connect::waker;
 use crate::error::Error;
 use crate::node::Name;
+use crate::node::biunion::poll::factory::BiunionWakers;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
 use std::future::Future;
@@ -43,12 +44,14 @@ where
     F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
-    pub fn new(waker: ThreadLocalWaker, factory: F) -> Self {
+    pub fn new(wakers: BiunionWakers, factory: F) -> Self {
+        // Both InputQueues get the *work* waker so `recv_with_timeout`
+        // on either input re-polls the routine via the work phase.
         let input = Inputs {
-            left: InputQueue::new(waker.clone()),
-            right: InputQueue::new(waker.clone()),
+            left: InputQueue::new(wakers.work.clone()),
+            right: InputQueue::new(wakers.work),
         };
-        let output = OutputQueue::new(waker);
+        let output = OutputQueue::new(wakers.output);
         let future = (factory)(
             input.left.consumer.clone(),
             input.right.consumer.clone(),
@@ -63,12 +66,12 @@ where
     }
 
     /// Create a factory closure for use with `thread.biunion()`.
-    /// Users don't need to handle the output waker.
-    pub fn factory(f: F) -> impl FnOnce(ThreadLocalWaker) -> Self + Send + 'params
+    /// Users don't need to handle wakers.
+    pub fn factory(f: F) -> impl FnOnce(BiunionWakers) -> Self + Send + 'params
     where
         F: Send,
     {
-        move |output_waker| Self::new(output_waker, f)
+        move |wakers| Self::new(wakers, f)
     }
 }
 

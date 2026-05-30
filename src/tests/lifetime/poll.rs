@@ -59,9 +59,9 @@ fn biunion_poll_borrowed() {
 
     let bias_ref = &bias;
     let mut node = thread
-        .biunion(move |w| PollBorrowingBiunion {
+        .biunion(move |w: poll::BiunionWakers| PollBorrowingBiunion {
             bias: bias_ref,
-            output: OutputQueue::new(w),
+            output: OutputQueue::new(w.output),
         })
         .input::<biunion::Left, poll::Sync>()
         .input::<biunion::Right, poll::Sync>()

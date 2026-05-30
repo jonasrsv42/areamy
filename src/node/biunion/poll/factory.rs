@@ -9,23 +9,40 @@
 
 use crate::connect::waker::ThreadLocalWaker;
 
-/// Factory for poll biunion routines. [Send] — crosses threads.
-///
-/// [BiunionRoutineFactory::create] is called on the async thread with
-/// the output phase waker.
-pub trait BiunionRoutineFactory<'params>: Send + 'params {
-    type Routine: 'params;
-    fn create(self, output_waker: ThreadLocalWaker) -> Self::Routine;
+/// Per-input wakers, grouped under [`BiunionWakers::input`] so a
+/// routine accesses them via `wakers.input.left` / `wakers.input.right`.
+pub struct BiunionInputs {
+    pub left: ThreadLocalWaker,
+    pub right: ThreadLocalWaker,
 }
 
-/// Blanket impl: any `FnOnce(ThreadLocalWaker) -> R + Send + 'params` is a [BiunionRoutineFactory].
+/// Phase wakers the framework hands to a biunion routine.
+///
+/// - `input.left` / `input.right` wake the two input phases.
+/// - `work` wakes the work phase (polls the routine). Used by
+///   `recv_with_timeout` on either input so the routine re-polls at
+///   the deadline.
+/// - `output` wakes the output phase to drain.
+pub struct BiunionWakers {
+    pub input: BiunionInputs,
+    pub work: ThreadLocalWaker,
+    pub output: ThreadLocalWaker,
+}
+
+/// Factory for poll biunion routines. [Send] — crosses threads.
+pub trait BiunionRoutineFactory<'params>: Send + 'params {
+    type Routine: 'params;
+    fn create(self, wakers: BiunionWakers) -> Self::Routine;
+}
+
+/// Blanket impl: any `FnOnce(BiunionWakers) -> R + Send + 'params` is a [BiunionRoutineFactory].
 impl<'params, F, R> BiunionRoutineFactory<'params> for F
 where
-    F: FnOnce(ThreadLocalWaker) -> R + Send + 'params,
+    F: FnOnce(BiunionWakers) -> R + Send + 'params,
     R: 'params,
 {
     type Routine = R;
-    fn create(self, output_waker: ThreadLocalWaker) -> R {
-        self(output_waker)
+    fn create(self, wakers: BiunionWakers) -> R {
+        self(wakers)
     }
 }

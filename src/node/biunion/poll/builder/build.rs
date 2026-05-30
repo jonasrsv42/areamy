@@ -8,7 +8,7 @@ use crate::connect::poll::traits::AsyncParent;
 use crate::connect::poll::wakers::ThreadLocalWakerAllocator;
 use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
-use crate::node::biunion::poll::factory::BiunionRoutineFactory;
+use crate::node::biunion::poll::factory::{BiunionInputs, BiunionRoutineFactory, BiunionWakers};
 use crate::node::biunion::poll::node::{self, InputPhases, Phase};
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
@@ -91,16 +91,25 @@ where
         let output = allocator.next();
         let left_id = self.input.left.slot.id;
         let right_id = self.input.right.slot.id;
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: self.input.left.edge,
-                    waker: allocator.local_waker(left_id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: self.input.right.edge,
-                    waker: allocator.local_waker(right_id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -167,16 +176,25 @@ where
         let output = allocator.next();
         let left_id = self.input.left.slot.id;
         let right_id = self.input.right.slot.id;
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: self.input.left.edge,
-                    waker: allocator.local_waker(left_id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: self.input.right.edge,
-                    waker: allocator.local_waker(right_id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -254,16 +272,25 @@ where
         let right_id = self.input.right.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_slot.id);
+        let right_waker = allocator.local_waker(right_id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: left_edges,
-                    waker: allocator.local_waker(left_slot.id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: self.input.right.edge,
-                    waker: allocator.local_waker(right_id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -335,16 +362,25 @@ where
         let right_id = self.input.right.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_slot.id);
+        let right_waker = allocator.local_waker(right_id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: left_edges,
-                    waker: allocator.local_waker(left_slot.id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: self.input.right.edge,
-                    waker: allocator.local_waker(right_id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -420,16 +456,25 @@ where
         let right_id = self.input.right.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_slot.id);
+        let right_waker = allocator.local_waker(right_id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: left_edges,
-                    waker: allocator.local_waker(left_slot.id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: self.input.right.edge,
-                    waker: allocator.local_waker(right_id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -505,16 +550,25 @@ where
         let left_id = self.input.left.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_slot.id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: self.input.left.edge,
-                    waker: allocator.local_waker(left_id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: right_edges,
-                    waker: allocator.local_waker(right_slot.id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -586,16 +640,25 @@ where
         let left_id = self.input.left.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_slot.id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: self.input.left.edge,
-                    waker: allocator.local_waker(left_id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: right_edges,
-                    waker: allocator.local_waker(right_slot.id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -671,16 +734,25 @@ where
         let left_id = self.input.left.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_slot.id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: self.input.left.edge,
-                    waker: allocator.local_waker(left_id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: right_edges,
-                    waker: allocator.local_waker(right_slot.id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -764,16 +836,25 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_slot.id);
+        let right_waker = allocator.local_waker(right_slot.id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: left_edges,
-                    waker: allocator.local_waker(left_slot.id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: right_edges,
-                    waker: allocator.local_waker(right_slot.id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -853,16 +934,25 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_slot.id);
+        let right_waker = allocator.local_waker(right_slot.id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: left_edges,
-                    waker: allocator.local_waker(left_slot.id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: right_edges,
-                    waker: allocator.local_waker(right_slot.id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -935,16 +1025,25 @@ where
         let output = allocator.next();
         let left_id = self.input.left.slot.id;
         let right_id = self.input.right.slot.id;
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: self.input.left.edge,
-                    waker: allocator.local_waker(left_id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: self.input.right.edge,
-                    waker: allocator.local_waker(right_id),
+                    waker: right_waker,
                 },
             },
             Phase {
@@ -1030,16 +1129,25 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let routine = self.factory.create(output.value.local.clone());
+        let left_waker = allocator.local_waker(left_slot.id);
+        let right_waker = allocator.local_waker(right_slot.id);
+        let routine = self.factory.create(BiunionWakers {
+            input: BiunionInputs {
+                left: left_waker.clone(),
+                right: right_waker.clone(),
+            },
+            work: work.value.local.clone(),
+            output: output.value.local.clone(),
+        });
         let phases = node::new_phases(
             InputPhases {
                 left: Phase {
                     target: left_edges,
-                    waker: allocator.local_waker(left_slot.id),
+                    waker: left_waker,
                 },
                 right: Phase {
                     target: right_edges,
-                    waker: allocator.local_waker(right_slot.id),
+                    waker: right_waker,
                 },
             },
             Phase {

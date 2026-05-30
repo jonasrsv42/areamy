@@ -35,12 +35,23 @@ pub mod tests {
     }
 
     impl MockBiunion {
-        pub fn new(output_waker: ThreadLocalWaker) -> Self {
+        pub fn new(wakers: crate::poll::BiunionWakers) -> Self {
             MockBiunion {
-                output: OutputQueue::new(output_waker),
+                output: OutputQueue::new(wakers.output),
                 poll_count: 0,
                 flushed: false,
             }
+        }
+    }
+
+    pub fn noop_biunion_wakers() -> crate::poll::BiunionWakers {
+        crate::poll::BiunionWakers {
+            input: crate::poll::BiunionInputs {
+                left: noop_local_waker(),
+                right: noop_local_waker(),
+            },
+            work: noop_local_waker(),
+            output: noop_local_waker(),
         }
     }
 

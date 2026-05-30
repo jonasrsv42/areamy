@@ -81,9 +81,9 @@ impl<'params, InType, OutType, F> FutureRoutine<'params, InType, OutType, F>
 where
     F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
-    pub fn new(output_waker: ThreadLocalWaker, factory: F) -> Self {
-        let input = InputQueue::new();
-        let output = OutputQueue::new(output_waker);
+    pub fn new(waker: ThreadLocalWaker, factory: F) -> Self {
+        let input = InputQueue::new(waker.clone());
+        let output = OutputQueue::new(waker);
         let future = (factory)(input.consumer.clone(), output.producer.clone());
         Self {
             input,

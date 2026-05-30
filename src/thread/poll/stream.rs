@@ -137,7 +137,7 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
         let mut guard = PanicGuard::new(on_done);
 
         let result = match prepare(builders, waker_allocator, queue) {
-            Ok((mut runtime, consumer)) => poll_loop(&mut runtime, &consumer),
+            Ok((mut runtime, mut consumer)) => poll_loop(&mut runtime, &mut consumer),
             Err(e) => {
                 #[cfg(not(feature = "silent"))]
                 eprintln!("Thread prepare: {}", e);
@@ -205,7 +205,7 @@ impl<'threads> ThreadHandle<'threads> {
 /// later wake for the same id is observable as `None`.
 fn poll_loop<ThreadIdType: ThreadId>(
     runtime: &mut ClosableRuntime<ThreadIdType>,
-    consumer: &Consumer,
+    consumer: &mut Consumer,
 ) -> Result<(), Error> {
     let mut alive = runtime.nodes.len();
 

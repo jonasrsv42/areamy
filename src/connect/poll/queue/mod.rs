@@ -8,24 +8,23 @@
 //!
 //! - [Consumer]: blocking dequeue, `!Send`, `!Sync`
 //! - [Producer]: enqueue + signal, `Send + Sync + Clone`
-//! - [ThreadLocalProducer]: enqueue only, `Clone`, `!Send`, `!Sync`
+//! - [ThreadLocalProducer]: enqueue + schedule, `Clone`, `!Send`, `!Sync`
 
 mod consumer;
 mod core;
+mod deadline;
 mod producer;
+mod scheduler;
 mod thread_local;
 
 pub use consumer::Consumer;
 pub use producer::Producer;
 pub use thread_local::ThreadLocalProducer;
 
-use ::core::marker::PhantomData;
+use ::core::cell::RefCell;
+use alloc::rc::Rc;
 use alloc::sync::Arc;
 
-/// Configuration-phase handle for the poll queue. `Send` — can cross threads.
-///
-/// Use [PollQueue::producer] to create cross-thread producers.
-/// Use [PollQueue::local] to finalize on the async thread.
 pub struct PollQueue {
     inner: Arc<core::VyukovQueue>,
 }
@@ -37,7 +36,6 @@ impl PollQueue {
         }
     }
 
-    /// Create a cross-thread producer. Can be called multiple times.
     pub fn producer(&self) -> Producer {
         Producer {
             inner: self.inner.clone(),
@@ -47,15 +45,12 @@ impl PollQueue {
     /// Consume config and create the async-thread handles.
     /// Must be called on the async thread — returns `!Send` types.
     pub fn local(self) -> (Consumer, ThreadLocalProducer) {
+        let scheduler = Rc::new(RefCell::new(scheduler::Scheduler::new(self.inner)));
         (
             Consumer {
-                inner: self.inner.clone(),
-                _local: PhantomData,
+                inner: scheduler.clone(),
             },
-            ThreadLocalProducer {
-                inner: self.inner,
-                _local: PhantomData,
-            },
+            ThreadLocalProducer { inner: scheduler },
         )
     }
 }
@@ -80,7 +75,7 @@ mod tests {
     #[test]
     fn push_and_next() {
         let config = PollQueue::new();
-        let (consumer, local) = config.local();
+        let (mut consumer, local) = config.local();
         local.push(42);
         assert_eq!(consumer.next().unwrap(), 42);
     }
@@ -88,7 +83,7 @@ mod tests {
     #[test]
     fn fifo_order() {
         let config = PollQueue::new();
-        let (consumer, local) = config.local();
+        let (mut consumer, local) = config.local();
         local.push(1);
         local.push(2);
         local.push(3);
@@ -102,7 +97,7 @@ mod tests {
     fn cross_thread_blocks_until_signal() {
         let config = PollQueue::new();
         let producer = config.producer();
-        let (consumer, _) = config.local();
+        let (mut consumer, _) = config.local();
 
         let handle = thread::spawn(move || {
             thread::sleep(std::time::Duration::from_millis(10));
@@ -117,7 +112,7 @@ mod tests {
     fn mixed_local_and_cross_thread() {
         let config = PollQueue::new();
         let producer = config.producer();
-        let (consumer, local) = config.local();
+        let (mut consumer, local) = config.local();
 
         local.push(1);
         local.push(2);

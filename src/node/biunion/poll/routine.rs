@@ -88,6 +88,7 @@ pub mod tests {
     struct NoopWake;
     impl ThreadLocalWake for NoopWake {
         fn wake(&self) {}
+        fn schedule_at(&self, _: std::time::Instant) {}
     }
 
     pub fn noop_local_waker() -> ThreadLocalWaker {

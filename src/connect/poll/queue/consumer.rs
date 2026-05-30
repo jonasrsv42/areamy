@@ -1,39 +1,36 @@
-//! [Consumer] — dequeues items from the poll queue. `!Send`, `!Sync`.
+//! [Consumer] — dequeues nodes from the poll queue. `!Send`, `!Sync`.
+//!
+//! Thin handle over [super::scheduler::Scheduler]. Single-consumer
+//! invariant: not `Clone`, [Consumer::next] takes `&mut self`.
 
-use super::core::VyukovQueue;
+use super::scheduler::Scheduler;
 use crate::connect::poll::marker::NodeId;
 use crate::error::Error;
 
-use alloc::sync::Arc;
-use core::marker::PhantomData;
+use alloc::rc::Rc;
+use core::cell::RefCell;
 
-/// Dequeues items from the poll queue. `!Send`, `!Sync` —
-/// must stay on the async thread.
-///
-/// Correctness of the lock-free queue depends on Consumer not crossing
-/// threads. See `core.rs` module docs.
-///
 /// ```compile_fail
-/// use areamy::connect::poll::queue::{poll_queue, Consumer};
+/// use areamy::connect::poll::queue::{PollQueue, Consumer};
 /// fn require_send<T: Send>() {}
-/// let (consumer, _, _) = poll_queue();
+/// let q = PollQueue::new();
+/// let (consumer, _) = q.local();
 /// require_send::<Consumer>(); // must not compile
 /// ```
 ///
 /// ```compile_fail
-/// use areamy::connect::poll::queue::{poll_queue, Consumer};
+/// use areamy::connect::poll::queue::{PollQueue, Consumer};
 /// fn require_sync<T: Sync>() {}
-/// let (consumer, _, _) = poll_queue();
+/// let q = PollQueue::new();
+/// let (consumer, _) = q.local();
 /// require_sync::<Consumer>(); // must not compile
 /// ```
 pub struct Consumer {
-    pub(super) inner: Arc<VyukovQueue>,
-    pub(super) _local: PhantomData<*const ()>,
+    pub(super) inner: Rc<RefCell<Scheduler>>,
 }
 
 impl Consumer {
-    /// Dequeue the next item. Blocks if empty until a [Producer](super::Producer) signals.
-    pub fn next(&self) -> Result<NodeId, Error> {
-        self.inner.next()
+    pub fn next(&mut self) -> Result<NodeId, Error> {
+        self.inner.borrow_mut().next()
     }
 }

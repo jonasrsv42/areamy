@@ -9,21 +9,22 @@
 //! [Pollable::poll](crate::Pollable).
 
 use alloc::rc::Rc;
+use std::time::Instant;
 
 /// Trait for thread-local wake implementations. `!Send`, `!Sync`.
 ///
-/// Mirrors `std::task::Wake` but without `Send + Sync` requirements.
+/// Mirrors `std::task::Wake` but without `Send + Sync` requirements,
+/// and adds a deadline-bound variant for timer-driven polls.
 pub trait ThreadLocalWake {
     fn wake(&self);
+    /// Schedule the owning node to be polled at `deadline`.
+    fn schedule_at(&self, deadline: Instant);
 }
 
 /// A thread-local waker handle. `!Send`, `!Sync`, `Clone`.
 ///
 /// Our equivalent of nightly `core::task::LocalWaker`.
 /// Uses `Rc<dyn ThreadLocalWake>` — cheap clone, naturally `!Send`.
-///
-/// ThreadLocalWaker is useful for driving a state machine through cheaper
-/// [`ThreadLocalWake::wake`] that does not need to cross any thread boundary.
 #[derive(Clone)]
 pub struct ThreadLocalWaker {
     inner: Rc<dyn ThreadLocalWake>,
@@ -39,6 +40,10 @@ impl ThreadLocalWaker {
     pub fn wake(&self) {
         self.inner.wake();
     }
+
+    pub fn schedule_at(&self, deadline: Instant) {
+        self.inner.schedule_at(deadline);
+    }
 }
 
 /// Waker pair for [Pollable::poll](crate::Pollable).
@@ -51,4 +56,12 @@ impl ThreadLocalWaker {
 pub struct Waker {
     pub sync: core::task::Waker,
     pub local: ThreadLocalWaker,
+}
+
+impl Waker {
+    /// Schedule the owning node to be polled at `deadline`. Delegates
+    /// to [`ThreadLocalWaker::schedule_at`].
+    pub fn schedule_at(&self, deadline: Instant) {
+        self.local.schedule_at(deadline);
+    }
 }

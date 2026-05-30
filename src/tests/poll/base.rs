@@ -21,10 +21,10 @@ struct PollDouble {
 }
 
 impl PollDouble {
-    fn new(output_waker: ThreadLocalWaker) -> Self {
+    fn new(waker: ThreadLocalWaker) -> Self {
         Self {
-            input: InputQueue::new(),
-            output: OutputQueue::new(output_waker),
+            input: InputQueue::new(waker.clone()),
+            output: OutputQueue::new(waker),
         }
     }
 }
@@ -759,14 +759,10 @@ struct HalfCloseRoutine {
 }
 
 impl HalfCloseRoutine {
-    fn new(
-        output_waker: ThreadLocalWaker,
-        flush_cycles: usize,
-        flush_count: Arc<Mutex<usize>>,
-    ) -> Self {
+    fn new(waker: ThreadLocalWaker, flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
         Self {
-            input: InputQueue::new(),
-            output: OutputQueue::new(output_waker),
+            input: InputQueue::new(waker.clone()),
+            output: OutputQueue::new(waker),
             flush_cycles,
             flush_cycles_remaining: 0,
             flush_count,

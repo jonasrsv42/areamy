@@ -447,6 +447,7 @@ mod tests {
     struct NoopLocalWake;
     impl ThreadLocalWake for NoopLocalWake {
         fn wake(&self) {}
+        fn schedule_at(&self, _: std::time::Instant) {}
     }
 
     fn test_waker() -> (std::task::Waker, Arc<AtomicBool>) {
@@ -750,6 +751,7 @@ mod tests {
                 fn wake(&self) {
                     self.0.set(true);
                 }
+                fn schedule_at(&self, _: std::time::Instant) {}
             }
             Wake(input_woken.clone())
         });

@@ -121,6 +121,7 @@ mod tests {
         fn wake(&self) {
             self.0.set(true);
         }
+        fn schedule_at(&self, _: std::time::Instant) {}
     }
 
     fn test_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {
@@ -133,6 +134,7 @@ mod tests {
         struct NoopWake;
         impl ThreadLocalWake for NoopWake {
             fn wake(&self) {}
+            fn schedule_at(&self, _: std::time::Instant) {}
         }
         ThreadLocalWaker::new(NoopWake)
     }

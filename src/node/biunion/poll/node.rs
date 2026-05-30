@@ -811,6 +811,7 @@ mod tests {
         fn wake(&self) {
             self.0.set(true);
         }
+        fn schedule_at(&self, _: std::time::Instant) {}
     }
 
     fn track_local_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {

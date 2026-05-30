@@ -449,6 +449,7 @@ pub mod tests {
         struct NoopWake;
         impl ThreadLocalWake for NoopWake {
             fn wake(&self) {}
+            fn schedule_at(&self, _: std::time::Instant) {}
         }
 
         let mut node = AsyncNode::new();
@@ -512,6 +513,7 @@ pub mod tests {
         struct NoopWake;
         impl ThreadLocalWake for NoopWake {
             fn wake(&self) {}
+            fn schedule_at(&self, _: std::time::Instant) {}
         }
 
         let mut node = ClosingAsyncNode {

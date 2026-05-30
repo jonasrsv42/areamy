@@ -18,6 +18,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::Waker;
+use std::time::{Duration, Instant};
 
 // ============================================================
 // Input queue
@@ -32,7 +33,13 @@ pub enum Input<T> {
 struct InputInner<T> {
     buffer: VecDeque<Input<T>>,
     closed: bool,
+    /// Std waker set by the future's `cx` on first poll; fired by
+    /// [InputProducer::push] when data arrives.
     waker: Waker,
+    /// Areamy local waker for the owning node. [RecvDeadlineFut] uses
+    /// this to call [ThreadLocalWaker::schedule_at] so the node is
+    /// re-polled when its deadline elapses.
+    local: ThreadLocalWaker,
 }
 
 /// Pushes input data into the queue. Held by the node's Input phase.
@@ -60,11 +67,12 @@ pub struct InputQueue<T> {
 }
 
 impl<T> InputQueue<T> {
-    pub fn new() -> Self {
+    pub fn new(local: ThreadLocalWaker) -> Self {
         let inner = Rc::new(RefCell::new(InputInner {
             buffer: VecDeque::new(),
             closed: false,
             waker: Waker::noop().clone(),
+            local,
         }));
         Self {
             producer: InputProducer(inner.clone()),
@@ -106,6 +114,22 @@ impl<T> InputConsumer<T> {
     pub fn recv(&self) -> RecvFut<T> {
         RecvFut(self.clone())
     }
+
+    /// Await the next input item, bounded by `timeout`.
+    ///
+    /// Resolves to `Ok(Some(Input::*))` if an item arrives first,
+    /// `Ok(None)` if `timeout` elapses first. After a `Flush`,
+    /// subsequent calls return `Err(Closed)` (same as [recv]).
+    ///
+    /// The deadline is fixed at call time (`Instant::now() + timeout`),
+    /// not at first poll.
+    pub fn recv_with_timeout(&self, timeout: Duration) -> RecvTimeoutFut<T> {
+        RecvTimeoutFut {
+            consumer: self.clone(),
+            deadline: Instant::now() + timeout,
+            scheduled: false,
+        }
+    }
 }
 
 /// Future that resolves to the next [Input] item.
@@ -137,6 +161,55 @@ impl<T: Unpin> Future for RecvFut<T> {
             }
             None => core::task::Poll::Pending,
         }
+    }
+}
+
+/// Future that resolves to the next [Input] item or to `None` on
+/// timeout. Returned by [InputConsumer::recv_with_timeout].
+pub struct RecvTimeoutFut<T> {
+    consumer: InputConsumer<T>,
+    deadline: Instant,
+    /// `schedule_at` registers a heap entry; calling it on every poll
+    /// would create stale entries. Track whether we've already armed
+    /// the timer.
+    scheduled: bool,
+}
+
+impl<T: Unpin> Future for RecvTimeoutFut<T> {
+    type Output = Result<Option<Input<T>>, Error>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
+        let deadline = self.deadline;
+        let needs_schedule = !self.scheduled;
+        let mut inner = self.consumer.0.borrow_mut();
+
+        if inner.closed {
+            return core::task::Poll::Ready(Err(crate::closed!()));
+        }
+
+        if let Some(item) = inner.buffer.pop_front() {
+            if matches!(item, Input::Flush) {
+                inner.closed = true;
+            }
+            return core::task::Poll::Ready(Ok(Some(item)));
+        }
+
+        if Instant::now() >= deadline {
+            return core::task::Poll::Ready(Ok(None));
+        }
+
+        inner.waker = cx.waker().clone();
+        if needs_schedule {
+            inner.local.schedule_at(deadline);
+        }
+        // Release the inner borrow before mutating self.
+        drop(inner);
+        self.scheduled = true;
+
+        core::task::Poll::Pending
     }
 }
 

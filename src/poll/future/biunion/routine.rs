@@ -43,12 +43,12 @@ where
     F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
-    pub fn new(output_waker: ThreadLocalWaker, factory: F) -> Self {
+    pub fn new(waker: ThreadLocalWaker, factory: F) -> Self {
         let input = Inputs {
-            left: InputQueue::new(),
-            right: InputQueue::new(),
+            left: InputQueue::new(waker.clone()),
+            right: InputQueue::new(waker.clone()),
         };
-        let output = OutputQueue::new(output_waker);
+        let output = OutputQueue::new(waker);
         let future = (factory)(
             input.left.consumer.clone(),
             input.right.consumer.clone(),

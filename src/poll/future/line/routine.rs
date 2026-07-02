@@ -70,7 +70,7 @@ pub type BoxFut<'params> = Pin<Box<dyn Future<Output = Result<(), Error>> + 'par
 /// `OutType`, and the factory `F`.
 pub struct FutureRoutine<'params, InType, OutType, F>
 where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
     input: InputQueue<InType>,
     output: OutputQueue<OutType>,
@@ -80,9 +80,9 @@ where
 
 impl<'params, InType, OutType, F> FutureRoutine<'params, InType, OutType, F>
 where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
-    pub fn new(wakers: LineWakers, factory: F) -> Self {
+    pub fn new(wakers: LineWakers, mut factory: F) -> Self {
         // InputQueue gets the *work* waker so `recv_with_timeout`'s
         // `schedule_at` re-polls the future via the work phase (the
         // one that actually polls the routine). OutputQueue gets the
@@ -117,7 +117,7 @@ where
 
 impl<'params, InType, OutType, F> crate::Send<InType> for FutureRoutine<'params, InType, OutType, F>
 where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
     fn send(&mut self, message: InType) -> Result<(), Error> {
         self.input.producer.push(Input::Data(message));
@@ -128,7 +128,7 @@ where
 impl<'params, InType, OutType, F> crate::Next<OutType>
     for FutureRoutine<'params, InType, OutType, F>
 where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
     fn next(&mut self) -> Result<Option<OutType>, Error> {
         Ok(self.output.consumer.pop())
@@ -137,7 +137,7 @@ where
 
 impl<'params, InType, OutType, F> crate::Flush for FutureRoutine<'params, InType, OutType, F>
 where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
     fn flush(&mut self) -> Result<(), Error> {
         self.input.producer.push(Input::Flush);
@@ -147,7 +147,7 @@ where
 
 impl<'params, InType, OutType, F> crate::Poll for FutureRoutine<'params, InType, OutType, F>
 where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
     fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
         let future = self.future.get_or_insert_with(|| {
@@ -168,14 +168,14 @@ where
 }
 
 impl<'params, InType, OutType, F> Name for FutureRoutine<'params, InType, OutType, F> where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params
 {
 }
 
 impl<'params, InType, OutType, F> LineRoutine<InType, OutType>
     for FutureRoutine<'params, InType, OutType, F>
 where
-    F: Fn(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
 }
 

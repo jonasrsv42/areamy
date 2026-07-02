@@ -30,7 +30,7 @@ struct Inputs<Left, Right> {
 
 pub struct FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
     input: Inputs<Left, Right>,
@@ -41,10 +41,10 @@ where
 
 impl<'params, Left, Right, Out, F> FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
-    pub fn new(wakers: BiunionWakers, factory: F) -> Self {
+    pub fn new(wakers: BiunionWakers, mut factory: F) -> Self {
         // Both InputQueues get the *work* waker so `recv_with_timeout`
         // on either input re-polls the routine via the work phase.
         let input = Inputs {
@@ -78,7 +78,7 @@ where
 impl<'params, Left, Right, Out, F> crate::Send<Left, biunion::Left>
     for FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
     fn send(&mut self, message: Left) -> Result<(), Error> {
@@ -90,7 +90,7 @@ where
 impl<'params, Left, Right, Out, F> crate::Send<Right, biunion::Right>
     for FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
     fn send(&mut self, message: Right) -> Result<(), Error> {
@@ -101,7 +101,7 @@ where
 
 impl<'params, Left, Right, Out, F> crate::Next<Out> for FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
     fn next(&mut self) -> Result<Option<Out>, Error> {
@@ -111,7 +111,7 @@ where
 
 impl<'params, Left, Right, Out, F> crate::Flush for FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
     fn flush(&mut self) -> Result<(), Error> {
@@ -123,7 +123,7 @@ where
 
 impl<'params, Left, Right, Out, F> crate::Poll for FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
     fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
@@ -150,7 +150,7 @@ where
 }
 
 impl<'params, Left, Right, Out, F> Name for FutureRoutine<'params, Left, Right, Out, F> where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params
 {
 }
@@ -158,7 +158,7 @@ impl<'params, Left, Right, Out, F> Name for FutureRoutine<'params, Left, Right, 
 impl<'params, Left, Right, Out, F> BiunionRoutine<Left, Right, Out>
     for FutureRoutine<'params, Left, Right, Out, F>
 where
-    F: Fn(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
+    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
 }

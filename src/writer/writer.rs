@@ -1,11 +1,11 @@
-//! Graph source traits with lifecycle management.
+//! Graph writer traits with lifecycle management.
 //!
 //! # Shutdown Flow
 //!
 //! Areamy graphs shut down gracefully through the [`crate::error::ErrorKind::Closed`] error.
 //! The shutdown flow works as follows:
 //!
-//! 1. **Close the source**: Call [`GraphPushSource::close`] (or let a reader drop, which
+//! 1. **Close the writer**: Call [`crate::Closeable::close`] (or let a reader drop, which
 //!    calls close automatically). This marks the underlying edge as closed.
 //!
 //! 2. **Buffered data drains**: Any data already in the edge's buffer can still be read.
@@ -58,26 +58,16 @@
 //!
 //! # Automatic Close on Drop
 //!
-//! The reader types ([`crate::LineReader`], [`crate::BiunionReader`], [`crate::BifurcationReader`])
+//! The I/O types ([`crate::LineIo`], [`crate::BiunionIo`], [`crate::BifurcationIo`])
 //! implement [`Drop`] to call `close()` automatically. This ensures that worker threads
 //! are signaled to exit even if you forget to close explicitly.
 
-use crate::Pullable;
-use crate::error::Error;
+use crate::{Closeable, Pullable};
 
-/// Alias for [`crate::Closeable`]. Prefer using `Closeable` directly.
-pub use crate::Closeable as GraphPushSource;
-
-/// A [GraphPullSource] is a data source that can be pulled from, typically implementing a Read
-/// interface. It implements [crate::Pullable] to be consumed by pullable components in a graph.
-/// A prototypical usecase is for a File input reader.
+/// A [PullWriter] is a data source that can be pulled from, typically implementing a Read
+/// interface. It is [Pullable] (consumed by pullable components) and [Closeable] (signals no
+/// more data). A prototypical usecase is a File input reader.
 ///
 /// See the [module documentation](self) for details on shutdown flow.
-pub trait GraphPullSource: Pullable {
-    /// Close this source, signaling no more data will be produced.
-    ///
-    /// After closing:
-    /// - Further pulls may return [`crate::error::ErrorKind::Closed`]
-    /// - The exact semantics depend on the implementation
-    fn close(&mut self) -> Result<(), Error>;
-}
+pub trait PullWriter: Pullable + Closeable {}
+impl<T: Pullable + Closeable> PullWriter for T {}

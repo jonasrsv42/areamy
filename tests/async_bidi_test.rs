@@ -163,8 +163,8 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 /// Multi-segment: flush resets the future, reconnects.
 #[test]
 fn bidi_with_join() -> Result<(), Error> {
-    let mut source_node = areamy::work::make_line(Double::new());
-    let mut source = areamy::work::Source::<usize>::of(&source_node)?;
+    let mut writer_node = areamy::work::make_line(Double::new());
+    let mut writer = areamy::work::Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
@@ -208,7 +208,7 @@ fn bidi_with_join() -> Result<(), Error> {
         .line(routine)
         .input::<areamy::poll::Sync>()
         .output::<areamy::poll::Sync>();
-    make_push(&mut source_node, &node)?;
+    make_push(&mut writer_node, &node)?;
 
     let output = Receiver::new();
     make_push(&mut node, &output)?;
@@ -216,7 +216,7 @@ fn bidi_with_join() -> Result<(), Error> {
     async_thread.add(node);
 
     let mut sync_thread = ThreadStream::<'_, areamy::DefaultThread>::new();
-    make_work(source_node, &mut sync_thread)?;
+    make_work(writer_node, &mut sync_thread)?;
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -225,22 +225,22 @@ fn bidi_with_join() -> Result<(), Error> {
         let handle = bundle.start(s);
 
         // 5 → Double → 10 → writer(×3) → 30 → reader(+1) → 31
-        source.push(Message::Data(5))?;
-        source.push(Message::Data(2))?;
-        source.push(Message::Flush("s1".into()))?;
+        writer.push(Message::Data(5))?;
+        writer.push(Message::Data(2))?;
+        writer.push(Message::Flush("s1".into()))?;
 
         assert_eq!(output.read_front()?, Message::Data(31));
         assert_eq!(output.read_front()?, Message::Data(13)); // 2→4→12→13
         assert_eq!(output.read_front()?, Message::Flush("s1".into()));
 
         // Second segment — future recreated, new socket
-        source.push(Message::Data(1))?;
-        source.push(Message::Flush("s2".into()))?;
+        writer.push(Message::Data(1))?;
+        writer.push(Message::Flush("s2".into()))?;
 
         assert_eq!(output.read_front()?, Message::Data(7)); // 1→2→6→7
         assert_eq!(output.read_front()?, Message::Flush("s2".into()));
 
-        source.close()?;
+        writer.close()?;
         let errors = handle.join().errors();
         assert!(errors.is_empty());
         Ok(())

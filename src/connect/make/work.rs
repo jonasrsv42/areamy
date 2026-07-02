@@ -1,6 +1,6 @@
 //! Utility functions for typed [make_bidi] and [make_push]
 use crate::{
-    Closeable, Origin, Trackable, Workable,
+    Origin, Sink, Trackable, Workable,
     error::Error,
     graph::{Add, Get},
     make_bidi, make_push,
@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 /// [`Connect`] is a utility that serves no purpose beyond improving readability
 /// it provides no additional functionality beyond what [make_push] and [make_bidi] does.
 ///
-/// What it does provide is the ability to annotate the data that is [Closeable::push]ed through
+/// What it does provide is the ability to annotate the data that is [Pushable::push]ed through
 /// the connection. It has been deemed to reduce cognitive overhead when it comes to reading
 /// the graph declaration if typing is more visible.
 ///
@@ -70,11 +70,11 @@ where
         ChildType: 'params
             + Add<dyn Workable<ThreadId = ThreadIdType> + 'params, ChildMultiplicity>
             + Get<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 ChildMultiplicity,
             >,
         ParentType: Add<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 ParentMultiplicity,
             > + Workable<ThreadId = ThreadIdType>
             + 'params,
@@ -87,11 +87,11 @@ where
     /// Exactly the same as [make_push] but with ability to ergonomically annotate the DataType.
     pub fn push<'params, AddMultiplicity: Multiplicity, GetMultiplicity: Multiplicity>(
         parent: &mut impl Add<
-            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+            dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
             AddMultiplicity,
         >,
         child: &impl Get<
-            dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+            dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
             GetMultiplicity,
         >,
     ) -> Result<(), Error> {

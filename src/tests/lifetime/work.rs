@@ -4,7 +4,7 @@ use super::mock::{BorrowingBifurcation, BorrowingBiunion, BorrowingLine, Lifetim
 use crate::connect::sync::Receiver;
 use crate::marker::Unary;
 use crate::thread::{ThreadBundle, ThreadStream};
-use crate::work::{Connect, Source, make_bifurcation, make_biunion, make_line};
+use crate::work::{Connect, Writer, make_bifurcation, make_biunion, make_line};
 use crate::{Closeable, Message, Pushable, bifurcation, biunion, make_push, make_work};
 use std::collections::VecDeque;
 
@@ -13,7 +13,7 @@ fn line_work_borrowed() {
     let multiplier: usize = 3;
     let mut line = make_line(BorrowingLine::new(&multiplier));
 
-    let mut input = Source::new(line.as_ref()).unwrap();
+    let mut input = Writer::new(line.as_ref()).unwrap();
     let output = Receiver::new();
     make_push(line.as_mut(), &output).unwrap();
 
@@ -49,7 +49,7 @@ fn multi_thread_shared_borrow() {
     let mut line_a = make_line(BorrowingLine::new(&multiplier));
     let mut line_b = make_line(BorrowingLine::new(&multiplier));
 
-    let mut input = Source::new(line_a.as_ref()).unwrap();
+    let mut input = Writer::new(line_a.as_ref()).unwrap();
     make_push(line_a.as_mut(), line_b.as_ref()).unwrap();
     let output = Receiver::new();
     make_push(line_b.as_mut(), &output).unwrap();
@@ -88,8 +88,8 @@ fn biunion_work_borrowed() {
         out: VecDeque::new(),
     });
 
-    let mut left = Source::new::<biunion::Left>(biun.as_ref()).unwrap();
-    let mut right = Source::new::<biunion::Right>(biun.as_ref()).unwrap();
+    let mut left = Writer::new::<biunion::Left>(biun.as_ref()).unwrap();
+    let mut right = Writer::new::<biunion::Right>(biun.as_ref()).unwrap();
     let output = Receiver::new();
     make_push(biun.as_mut(), &output).unwrap();
 
@@ -125,7 +125,7 @@ fn bifurcation_work_borrowed() {
         right: VecDeque::new(),
     });
 
-    let mut source = Source::new(bif.as_ref()).unwrap();
+    let mut writer = Writer::new(bif.as_ref()).unwrap();
     let low = Receiver::new();
     let high = Receiver::new();
     Connect::<usize>::push::<bifurcation::Left, Unary>(bif.as_mut(), &low).unwrap();
@@ -140,13 +140,13 @@ fn bifurcation_work_borrowed() {
     std::thread::scope(|s| {
         let handle = bundle.start(s);
 
-        source.push(Message::Data(3)).unwrap();
-        source.push(Message::Data(7)).unwrap();
+        writer.push(Message::Data(3)).unwrap();
+        writer.push(Message::Data(7)).unwrap();
 
         assert_eq!(low.read_front().unwrap(), Message::Data(3));
         assert_eq!(high.read_front().unwrap(), Message::Data(7));
 
-        source.close().unwrap();
+        writer.close().unwrap();
         assert!(handle.join().errors().is_empty());
     });
 

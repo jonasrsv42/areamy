@@ -10,7 +10,7 @@ use crate::marker::Unary;
 use crate::poll;
 use crate::poll::future::OutputQueue;
 use crate::thread::{ThreadBundle, ThreadStream};
-use crate::work::{Source, make_line};
+use crate::work::{Writer, make_line};
 use crate::{Closeable, Message, Pushable, biunion, make_push, make_work};
 
 #[test]
@@ -27,7 +27,7 @@ fn line_poll_borrowed() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input = Source::new(&node).unwrap();
+    let mut input = Writer::new(&node).unwrap();
     let output = Receiver::new();
     make_push(&mut node, &output).unwrap();
 
@@ -67,8 +67,8 @@ fn biunion_poll_borrowed() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut left = Source::new::<biunion::Left>(&node).unwrap();
-    let mut right = Source::new::<biunion::Right>(&node).unwrap();
+    let mut left = Writer::new::<biunion::Left>(&node).unwrap();
+    let mut right = Writer::new::<biunion::Right>(&node).unwrap();
     let output = Receiver::new();
     make_push(&mut node, &output).unwrap();
 
@@ -111,7 +111,7 @@ fn poll_async_parent_chain_borrowed() {
         })
         .input::<poll::Sync>();
 
-    let mut input = Source::new(&a).unwrap();
+    let mut input = Writer::new(&a).unwrap();
 
     let mut b = thread
         .line(move |w: poll::LineWakers| PollBorrowingLine {
@@ -146,7 +146,7 @@ fn poll_async_parent_chain_borrowed() {
     let _ = multiplier;
 }
 
-/// Add a `Box<dyn Closeable + 'params>` directly onto a Sync poll line
+/// Add a `Box<dyn Sink + 'params>` directly onto a Sync poll line
 /// node's output `Vec`. The sink holds `&config`; without `'params` on
 /// `Edge::Output` and the matching `Add` impl this would not compile.
 #[test]
@@ -164,7 +164,7 @@ fn poll_borrowed_output_sink() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input = Source::new(&node).unwrap();
+    let mut input = Writer::new(&node).unwrap();
     let output = Receiver::new();
     let forward = Get::get(&output).unwrap();
     let sink = BorrowingSink {
@@ -192,7 +192,7 @@ fn poll_borrowed_output_sink() {
 }
 
 /// `make_push(borrowed_parent_node, &poll_node)` — exercises the poll
-/// node's `Get<dyn Closeable + 'params>` impl from the *child* side. If
+/// node's `Get<dyn Sink + 'params>` impl from the *child* side. If
 /// the impl is `'static`-defaulted, `'params` collapses and the borrowed
 /// parent fails to compile.
 #[test]
@@ -210,7 +210,7 @@ fn poll_node_input_from_borrowed_parent() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input = Source::new(work_line.as_ref()).unwrap();
+    let mut input = Writer::new(work_line.as_ref()).unwrap();
     make_push(work_line.as_mut(), &poll_node).unwrap();
 
     let output = Receiver::new();

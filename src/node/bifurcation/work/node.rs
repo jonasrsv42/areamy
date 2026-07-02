@@ -3,7 +3,7 @@ use crate::connect::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::{
-    Closeable, Message, Origin, Pushable, Workable,
+    Closeable, Message, Origin, Pushable, Sink, Workable,
     graph::{Add, Get},
     marker::Connection,
 };
@@ -16,8 +16,8 @@ pub trait BifurcationTrait<'params>:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync + 'params, bifurcation::Left>
-    + Add<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync + 'params, bifurcation::Right>
+    + Add<dyn Sink<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync + 'params, bifurcation::Left>
+    + Add<dyn Sink<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync + 'params, bifurcation::Right>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
@@ -26,7 +26,7 @@ pub trait BifurcationTrait<'params>:
     + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal> + 'params>
 
     // We can retrieve a Closeable for closing the input edge.
-    + Get<dyn Closeable<DataType = Self::In, SignalType = Self::Signal> + Send + Sync + 'params>
+    + Get<dyn Sink<DataType = Self::In, SignalType = Self::Signal> + Send + Sync + 'params>
 {
     // The input data entering it.
     type In: Send + Sync + 'static;
@@ -57,10 +57,9 @@ where
     Right: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
 {
-    pub left:
-        Vec<Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>>,
+    pub left: Vec<Box<dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>>,
     pub right:
-        Vec<Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>>,
+        Vec<Box<dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>>,
 }
 
 impl<'params, Left, Right, SignalType> Default for Pushes<'params, Left, Right, SignalType>
@@ -326,9 +325,9 @@ where
     }
 }
 
-/// Get a [Closeable] for this node's input edge.
+/// Get a [Sink] for this node's input edge.
 impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync + 'params>
+    Get<dyn Sink<DataType = In, SignalType = SignalType> + Send + Sync + 'params>
     for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync + 'static,
@@ -340,17 +339,15 @@ where
 {
     fn get(
         &self,
-    ) -> Result<
-        Box<dyn Closeable<DataType = In, SignalType = SignalType> + Send + Sync + 'params>,
-        Error,
-    > {
+    ) -> Result<Box<dyn Sink<DataType = In, SignalType = SignalType> + Send + Sync + 'params>, Error>
+    {
         Get::get(&self.input)
     }
 }
 
 impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Add<
-        dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync + 'params,
+        dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params,
         bifurcation::Left,
     > for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
@@ -363,9 +360,7 @@ where
 {
     fn add(
         &mut self,
-        closeable: Box<
-            dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync + 'params,
-        >,
+        closeable: Box<dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
         Ok(self.pushes.left.push(closeable))
     }
@@ -373,7 +368,7 @@ where
 
 impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
     Add<
-        dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync + 'params,
+        dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params,
         bifurcation::Right,
     > for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
@@ -386,9 +381,7 @@ where
 {
     fn add(
         &mut self,
-        closeable: Box<
-            dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync + 'params,
-        >,
+        closeable: Box<dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
         Ok(self.pushes.right.push(closeable))
     }
@@ -418,51 +411,51 @@ pub mod tests {
     use super::*;
     use crate::closed;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{Pushable, sink::work::tee, work::Source, work::make_bifurcation};
+    use crate::{Pushable, reader::work::tee, work::Writer, work::make_bifurcation};
 
     #[test]
     fn run_bifurcation() {
         let mut bifur = make_bifurcation(MockBifurcation::new());
 
-        let mut source = Source::new(&bifur).unwrap();
+        let mut writer = Writer::new(&bifur).unwrap();
 
-        let mut left_sink = tee::Sink::new::<bifurcation::Left>(&mut bifur).unwrap();
-        let mut right_sink = tee::Sink::new::<bifurcation::Right>(&mut bifur).unwrap();
+        let mut left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
+        let mut right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
 
         // Add one flush
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
 
         workable.work().unwrap();
         workable.work().unwrap();
 
-        assert_eq!(left_sink.read().unwrap(), Message::Data(2));
-        assert_eq!(left_sink.read().unwrap(), Message::Data(5));
+        assert_eq!(left_reader.read().unwrap(), Message::Data(2));
+        assert_eq!(left_reader.read().unwrap(), Message::Data(5));
 
-        source.push(Message::Flush("hi".into())).unwrap();
+        writer.push(Message::Flush("hi".into())).unwrap();
         workable.work().unwrap();
 
-        assert_eq!(right_sink.read().unwrap(), Message::Data(3));
-        assert_eq!(right_sink.read().unwrap(), Message::Data(7));
+        assert_eq!(right_reader.read().unwrap(), Message::Data(3));
+        assert_eq!(right_reader.read().unwrap(), Message::Data(7));
 
         // Now comes the flush
-        match right_sink.read().unwrap() {
+        match right_reader.read().unwrap() {
             Message::Flush(_) => assert!(true),
             _ => assert!(false),
         }
 
-        match left_sink.read().unwrap() {
+        match left_reader.read().unwrap() {
             Message::Flush(_) => assert!(true),
             _ => assert!(false),
         }
 
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
         workable.work().unwrap();
 
-        assert_eq!(left_sink.read().unwrap(), Message::Data(4));
-        assert_eq!(right_sink.read().unwrap(), Message::Data(6));
+        assert_eq!(left_reader.read().unwrap(), Message::Data(4));
+        assert_eq!(right_reader.read().unwrap(), Message::Data(6));
     }
 
     #[test]
@@ -473,12 +466,12 @@ pub mod tests {
         let right_output = Receiver::<usize, &'static str>::new();
 
         Add::<
-            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
             bifurcation::Left,
         >::add(&mut bifur, Box::new(left_output.sender()))
         .unwrap();
         Add::<
-            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
             bifurcation::Right,
         >::add(&mut bifur, Box::new(right_output.sender()))
         .unwrap();
@@ -520,12 +513,12 @@ pub mod tests {
         let right_output = Receiver::<usize, &'static str>::new();
 
         Add::<
-            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
             bifurcation::Left,
         >::add(&mut bifur, Box::new(left_output.sender()))
         .unwrap();
         Add::<
-            dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
             bifurcation::Right,
         >::add(&mut bifur, Box::new(right_output.sender()))
         .unwrap();

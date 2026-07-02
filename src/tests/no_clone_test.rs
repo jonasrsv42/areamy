@@ -8,8 +8,8 @@ use crate::Origin;
 use crate::connect::graph::{Pullable, Pushable};
 use crate::error::Error;
 use crate::node::line::LineRoutine;
-use crate::pull::{Sink, SourceBuffer, make_pull};
-use crate::work::Source;
+use crate::pull::{Reader, WriterBuffer, make_pull};
+use crate::work::Writer;
 use crate::{Message, Next, Send};
 use std::collections::VecDeque;
 
@@ -67,32 +67,32 @@ impl From<Box<usize>> for BoxedOrigin {
 
 #[test]
 fn test_non_cloneable_pull_pipeline() {
-    let buffer = SourceBuffer::new();
-    let mut source = Source::new(&buffer).unwrap();
+    let buffer = WriterBuffer::new();
+    let mut writer = Writer::new(&buffer).unwrap();
 
     // Box<1> → +1 → +1 → +1 → Box<4>
     let line1 = make_pull(buffer, BoxIncrementer::new());
     let line2 = make_pull(line1, BoxIncrementer::new());
     let line3 = make_pull(line2, BoxIncrementer::new());
-    let mut sink = Sink::new(line3);
+    let mut reader = Reader::new(line3);
 
-    source.push(Message::Data(Box::new(1))).unwrap();
+    writer.push(Message::Data(Box::new(1))).unwrap();
 
-    let result = Pullable::pull(&mut sink).unwrap();
+    let result = Pullable::pull(&mut reader).unwrap();
     assert!(matches!(result.data().map(|b| *b), Some(4)));
 }
 
 #[test]
 fn test_non_cloneable_pull_signal() {
-    let buffer: SourceBuffer<Box<usize>, BoxedOrigin, _> = SourceBuffer::new();
-    let mut source = Source::of(&buffer).unwrap();
+    let buffer: WriterBuffer<Box<usize>, BoxedOrigin, _> = WriterBuffer::new();
+    let mut writer = Writer::of(&buffer).unwrap();
 
     let line1 = make_pull(buffer, BoxIncrementer::new());
     let line2 = make_pull(line1, BoxIncrementer::new());
-    let mut sink = Sink::new(line2);
+    let mut reader = Reader::new(line2);
 
-    source.push(Message::Data(Box::new(42))).unwrap();
+    writer.push(Message::Data(Box::new(42))).unwrap();
 
-    let result = Pullable::pull(&mut sink).unwrap();
+    let result = Pullable::pull(&mut reader).unwrap();
     assert!(matches!(result.data().map(|b| *b), Some(44)));
 }

@@ -13,7 +13,7 @@ pub mod biunion;
 pub mod line;
 pub mod routine;
 
-pub use bifurcation::{BifurcationReader, BifurcationRoutine};
-pub use biunion::{BiunionReader, BiunionRoutine};
-pub use line::{LineReader, LineRoutine};
+pub use bifurcation::{BifurcationIo, BifurcationRoutine};
+pub use biunion::{BiunionIo, BiunionRoutine};
+pub use line::{LineIo, LineRoutine};
 pub use routine::{Flush, Name, Next, Poll, Send};

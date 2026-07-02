@@ -1,11 +1,9 @@
 use crate::connect::sync::Receiver;
 use crate::error::Error;
-use crate::{
-    Closeable, DefaultThread, ThreadId, Trackable, Workable, graph::Add, marker::Multiplicity,
-};
+use crate::{DefaultThread, Sink, ThreadId, Trackable, Workable, graph::Add, marker::Multiplicity};
 use crate::{Message, Origin};
 
-pub struct Sink<
+pub struct Reader<
     'params,
     DataType,
     SignalType = Trackable<&'static str>,
@@ -19,7 +17,7 @@ pub struct Sink<
     buffer: Receiver<DataType, SignalType>,
 }
 
-impl<'params, DataType, SignalType> Sink<'params, DataType, SignalType, DefaultThread>
+impl<'params, DataType, SignalType> Reader<'params, DataType, SignalType, DefaultThread>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -28,7 +26,7 @@ where
         mut workable: Box<
             impl Workable<ThreadId = DefaultThread>
             + Add<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 MultiplicityType,
             > + 'params,
         >,
@@ -39,7 +37,8 @@ where
     }
 }
 
-impl<'params, DataType, SignalType, ThreadIdType> Sink<'params, DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType>
+    Reader<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -49,7 +48,7 @@ where
         mut workable: Box<
             impl Workable<ThreadId = ThreadIdType>
             + Add<
-                dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 MultiplicityType,
             > + 'params,
         >,
@@ -75,8 +74,8 @@ where
     }
 }
 
-impl<'params, DataType, SignalType, ThreadIdType> crate::sink::GraphSink
-    for Sink<'params, DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType> crate::reader::Reader
+    for Reader<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
@@ -87,7 +86,7 @@ where
     type SignalType = SignalType;
 
     fn read(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
-        Sink::read(self)
+        Reader::read(self)
     }
 
     fn poll(&mut self) -> Result<Option<Message<Self::DataType, Self::SignalType>>, Error> {
@@ -103,8 +102,7 @@ mod tests {
 
     struct MockNode {
         output: Message<usize, &'static str>,
-        pushable:
-            Vec<Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>>,
+        pushable: Vec<Box<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>>,
     }
 
     impl Connection for MockNode {}
@@ -125,70 +123,68 @@ mod tests {
         }
     }
 
-    impl Add<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync> for MockNode {
+    impl Add<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync> for MockNode {
         fn add(
             &mut self,
-            closeable: Box<
-                dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync,
-            >,
+            closeable: Box<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>,
         ) -> Result<(), Error> {
             Ok(self.pushable.push(closeable))
         }
     }
 
     #[test]
-    fn sink_basic() {
+    fn reader_basic() {
         let mock_node = Arc::new(Mutex::new(MockNode {
             output: Message::Data(5),
             pushable: Vec::new(),
         }));
-        let mut sink = Sink::new(Box::new(mock_node.clone())).unwrap();
+        let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
 
-        assert_eq!(sink.read().unwrap(), Message::Data(5));
-        assert_eq!(sink.read().unwrap(), Message::Data(5));
+        assert_eq!(reader.read().unwrap(), Message::Data(5));
+        assert_eq!(reader.read().unwrap(), Message::Data(5));
 
         mock_node.lock().unwrap().output = Message::Data(8);
 
-        assert_eq!(sink.read().unwrap(), Message::Data(8));
-        assert_eq!(sink.read().unwrap(), Message::Data(8));
+        assert_eq!(reader.read().unwrap(), Message::Data(8));
+        assert_eq!(reader.read().unwrap(), Message::Data(8));
 
         mock_node.lock().unwrap().output = Message::Data(10);
 
-        assert_eq!(sink.read().unwrap(), Message::Data(10));
-        assert_eq!(sink.read().unwrap(), Message::Data(10));
+        assert_eq!(reader.read().unwrap(), Message::Data(10));
+        assert_eq!(reader.read().unwrap(), Message::Data(10));
     }
 
     #[test]
-    fn sink_flush() {
+    fn reader_flush() {
         let mock_node = Arc::new(Mutex::new(MockNode {
             output: Message::Flush("hi"),
             pushable: Vec::new(),
         }));
-        let mut sink = Sink::new(Box::new(mock_node.clone())).unwrap();
+        let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
 
-        assert_eq!(sink.read().unwrap(), Message::Flush("hi"));
-        assert_eq!(sink.read().unwrap(), Message::Flush("hi"));
+        assert_eq!(reader.read().unwrap(), Message::Flush("hi"));
+        assert_eq!(reader.read().unwrap(), Message::Flush("hi"));
 
         mock_node.lock().unwrap().output = Message::Flush("bye");
 
-        assert_eq!(sink.read().unwrap(), Message::Flush("bye"));
-        assert_eq!(sink.read().unwrap(), Message::Flush("bye"));
+        assert_eq!(reader.read().unwrap(), Message::Flush("bye"));
+        assert_eq!(reader.read().unwrap(), Message::Flush("bye"));
     }
 
     #[test]
-    fn sink_mark() {
+    fn reader_mark() {
         let mock_node = Arc::new(Mutex::new(MockNode {
             output: Message::Marker("hi"),
             pushable: Vec::new(),
         }));
-        let mut sink = Sink::new(Box::new(mock_node.clone())).unwrap();
+        let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
 
-        assert_eq!(sink.read().unwrap(), Message::Marker("hi"));
-        assert_eq!(sink.read().unwrap(), Message::Marker("hi"));
+        assert_eq!(reader.read().unwrap(), Message::Marker("hi"));
+        assert_eq!(reader.read().unwrap(), Message::Marker("hi"));
 
         mock_node.lock().unwrap().output = Message::Marker("bye");
 
-        assert_eq!(sink.read().unwrap(), Message::Marker("bye"));
-        assert_eq!(sink.read().unwrap(), Message::Marker("bye"));
+        assert_eq!(reader.read().unwrap(), Message::Marker("bye"));
+        assert_eq!(reader.read().unwrap(), Message::Marker("bye"));
     }
 }

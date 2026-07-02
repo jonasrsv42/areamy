@@ -1,8 +1,8 @@
 use crate::Message;
 use crate::error::Error;
-use crate::{DefaultThread, Origin, Pullable, ThreadId, Trackable, marker::Connection, sink};
+use crate::{DefaultThread, Origin, Pullable, ThreadId, Trackable, marker::Connection, reader};
 
-pub struct Sink<
+pub struct Reader<
     'params,
     DataType,
     SignalType = Trackable<&'static str>,
@@ -21,7 +21,7 @@ pub struct Sink<
 }
 
 impl<'params, DataType, SignalType, ThreadIdType> Connection
-    for Sink<'params, DataType, SignalType, ThreadIdType>
+    for Reader<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send,
     SignalType: Origin,
@@ -29,7 +29,7 @@ where
 {
 }
 
-impl<'params, DataType, SignalType> Sink<'params, DataType, SignalType, DefaultThread>
+impl<'params, DataType, SignalType> Reader<'params, DataType, SignalType, DefaultThread>
 where
     DataType: Sync + Send,
     SignalType: Origin,
@@ -38,16 +38,16 @@ where
         pullable: impl Pullable<ThreadId = DefaultThread, DataType = DataType, SignalType = SignalType>
         + 'params,
     ) -> Self {
-        let sink = Self {
+        let reader = Self {
             pullable: Box::new(pullable),
         };
 
-        return sink;
+        return reader;
     }
 }
 
 impl<'params, DataType, SignalType, ThreadIdType> Pullable
-    for Sink<'params, DataType, SignalType, ThreadIdType>
+    for Reader<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send,
     SignalType: Origin,
@@ -62,8 +62,8 @@ where
     }
 }
 
-impl<'params, DataType, SignalType, ThreadIdType> sink::GraphSink
-    for Sink<'params, DataType, SignalType, ThreadIdType>
+impl<'params, DataType, SignalType, ThreadIdType> reader::Reader
+    for Reader<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: Sync + Send,
     SignalType: Origin,
@@ -74,10 +74,10 @@ where
     type SignalType = SignalType;
 
     fn read(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
-        Sink::pull(self)
+        Reader::pull(self)
     }
 
-    /// [Pullable] [sink::GraphSink] is not [sink::GraphSink::poll]able since it
+    /// [Pullable] [reader::Reader] is not [reader::Reader::poll]able since it
     /// maintains no buffer.
     fn poll(&mut self) -> Result<Option<Message<Self::DataType, Self::SignalType>>, Error> {
         Ok(None)

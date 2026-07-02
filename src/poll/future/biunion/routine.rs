@@ -179,7 +179,7 @@ mod tests {
     use crate::poll;
     use crate::poll::Join;
     use crate::thread::ThreadBundle;
-    use crate::work::Source;
+    use crate::work::Writer;
     use crate::{Closeable, Message, Pushable, ThreadId, biunion as biu, make_push};
 
     #[derive(Debug, Clone)]
@@ -224,8 +224,8 @@ mod tests {
             .input::<biu::Right, poll::Sync>()
             .output::<poll::Sync>();
 
-        let mut left_input = Source::new::<biu::Left>(&node).unwrap();
-        let mut right_input = Source::new::<biu::Right>(&node).unwrap();
+        let mut left_input = Writer::new::<biu::Left>(&node).unwrap();
+        let mut right_input = Writer::new::<biu::Right>(&node).unwrap();
         let output = Receiver::new();
         make_push(&mut node, &output).unwrap();
 

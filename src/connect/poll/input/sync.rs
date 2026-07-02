@@ -14,7 +14,7 @@ use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::{Closeable, Pushable, Receivable, closed, fatal, graph::Get};
+use crate::{Closeable, Pushable, Receivable, Sink, closed, fatal, graph::Get};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
@@ -224,7 +224,7 @@ where
 }
 
 impl<'params, DataType, SignalType>
-    Get<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
+    Get<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
     for Sender<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
@@ -233,7 +233,7 @@ where
     fn get(
         &self,
     ) -> Result<
-        Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
+        Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
         Error,
     > {
         Ok(Box::new(self.clone()))
@@ -258,7 +258,7 @@ where
 }
 
 impl<'params, DataType, SignalType>
-    Get<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
+    Get<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
     for Receiver<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
@@ -267,7 +267,7 @@ where
     fn get(
         &self,
     ) -> Result<
-        Box<dyn Closeable<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
+        Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
         Error,
     > {
         Ok(Box::new(self.sender()))

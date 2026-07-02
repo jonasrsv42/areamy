@@ -3,7 +3,7 @@ use crate::connect::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::{
-    Closeable, Message, Origin, Pushable, Workable,
+    Closeable, Message, Origin, Pushable, Sink, Workable,
     graph::{Add, Get},
 };
 use crate::{DefaultThread, ThreadId, marker::Connection};
@@ -15,7 +15,7 @@ pub trait BiunionTrait<'params>:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Closeable<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync + 'params>
+    + Add<dyn Sink<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync + 'params>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params, biunion::Left>
@@ -26,8 +26,8 @@ pub trait BiunionTrait<'params>:
     + Get<dyn Pushable<DataType = Self::Right, SignalType = Self::Signal> + 'params, biunion::Right>
 
     // We can retrieve Closeable for closing the input edges.
-    + Get<dyn Closeable<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync + 'params, biunion::Left>
-    + Get<dyn Closeable<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync + 'params, biunion::Right>
+    + Get<dyn Sink<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync + 'params, biunion::Left>
+    + Get<dyn Sink<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync + 'params, biunion::Right>
 {
     // The input data going into the line.
     type Left:  Send + Sync + 'static;
@@ -109,9 +109,8 @@ where
     /// Parent workables, grouped by side.
     pub worker: Worker<'params, ThreadIdType>,
 
-    /// Output connections. Uses Closeable to support shutdown propagation.
-    pub pushes:
-        Vec<Box<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>>,
+    /// Output connections. Uses Sink to support shutdown propagation.
+    pub pushes: Vec<Box<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>>,
 
     /// Input edges, grouped by side.
     pub input: Input<Left, Right, SignalType>,
@@ -362,12 +361,10 @@ where
     }
 }
 
-/// Get a [Closeable] for the left input edge.
+/// Get a [Sink] for the left input edge.
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<
-        dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync + 'params,
-        biunion::Left,
-    > for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params, biunion::Left>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
@@ -379,19 +376,17 @@ where
     fn get(
         &self,
     ) -> Result<
-        Box<dyn Closeable<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>,
+        Box<dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>,
         Error,
     > {
         Get::get(&self.input.left)
     }
 }
 
-/// Get a [Closeable] for the right input edge.
+/// Get a [Sink] for the right input edge.
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Get<
-        dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync + 'params,
-        biunion::Right,
-    > for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+    Get<dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params, biunion::Right>
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
     Right: Send + Sync + 'static,
@@ -403,7 +398,7 @@ where
     fn get(
         &self,
     ) -> Result<
-        Box<dyn Closeable<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>,
+        Box<dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>,
         Error,
     > {
         Get::get(&self.input.right)
@@ -449,7 +444,7 @@ where
 }
 
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>
+    Add<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>
     for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
 where
     Left: Send + Sync + 'static,
@@ -461,9 +456,7 @@ where
 {
     fn add(
         &mut self,
-        closeable: Box<
-            dyn Closeable<DataType = Out, SignalType = SignalType> + Send + Sync + 'params,
-        >,
+        closeable: Box<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
         Ok(self.pushes.push(closeable))
     }
@@ -473,34 +466,34 @@ where
 pub mod tests {
     use super::*;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{Pushable, work::Sink, work::Source, work::make_biunion};
+    use crate::{Pushable, work::Reader, work::Writer, work::make_biunion};
 
     #[test]
     fn run_biunion() {
         let biun = make_biunion(MockBiunion::new());
 
-        let mut left_source = Source::new::<biunion::Left>(&biun).unwrap();
-        let mut right_source = Source::new::<biunion::Right>(&biun).unwrap();
+        let mut left_writer = Writer::new::<biunion::Left>(&biun).unwrap();
+        let mut right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
 
-        let mut sink = Sink::new(biun).unwrap();
+        let mut reader = Reader::new(biun).unwrap();
 
-        left_source.push(Message::Data(1)).unwrap();
-        right_source.push(Message::Data(2)).unwrap();
+        left_writer.push(Message::Data(1)).unwrap();
+        right_writer.push(Message::Data(2)).unwrap();
 
-        assert_eq!(sink.read().unwrap(), Message::Data(2));
-        assert_eq!(sink.read().unwrap(), Message::Data(7));
+        assert_eq!(reader.read().unwrap(), Message::Data(2));
+        assert_eq!(reader.read().unwrap(), Message::Data(7));
 
-        left_source.push(Message::Flush("left".into())).unwrap();
-        right_source.push(Message::Flush("right".into())).unwrap();
+        left_writer.push(Message::Flush("left".into())).unwrap();
+        right_writer.push(Message::Flush("right".into())).unwrap();
 
-        assert_eq!(sink.read().unwrap(), Message::Flush("left".into()));
-        assert_eq!(sink.read().unwrap(), Message::Flush("right".into()));
+        assert_eq!(reader.read().unwrap(), Message::Flush("left".into()));
+        assert_eq!(reader.read().unwrap(), Message::Flush("right".into()));
 
-        left_source.push(Message::Data(2)).unwrap();
-        right_source.push(Message::Data(1)).unwrap();
+        left_writer.push(Message::Data(2)).unwrap();
+        right_writer.push(Message::Data(1)).unwrap();
 
-        assert_eq!(sink.read().unwrap(), Message::Data(4));
-        assert_eq!(sink.read().unwrap(), Message::Data(4));
+        assert_eq!(reader.read().unwrap(), Message::Data(4));
+        assert_eq!(reader.read().unwrap(), Message::Data(4));
     }
 
     #[test]
@@ -508,7 +501,7 @@ pub mod tests {
         let mut biun = Biunion::new(MockBiunion::new());
 
         let output_edge = Receiver::<usize, &'static str>::new();
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
+        Add::<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.sender()),
         )
@@ -530,7 +523,7 @@ pub mod tests {
         let mut biun = Biunion::new(MockBiunion::new());
 
         let output_edge = Receiver::<usize, &'static str>::new();
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
+        Add::<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.sender()),
         )
@@ -572,7 +565,7 @@ pub mod tests {
         .unwrap();
 
         let output_edge = Receiver::<usize, &'static str>::new();
-        Add::<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
+        Add::<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.sender()),
         )

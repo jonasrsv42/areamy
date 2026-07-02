@@ -6,12 +6,12 @@ pub mod connect;
 pub mod error;
 pub mod message;
 pub mod node;
+pub mod reader;
 mod signal;
-pub mod sink;
-pub mod source;
 pub mod thread;
 pub mod work;
-pub use source::source::{GraphPullSource, GraphPushSource};
+pub mod writer;
+pub use writer::writer::PullWriter;
 mod contains;
 mod generates;
 
@@ -26,19 +26,19 @@ pub use generates::Generates;
 pub use crate::connect::graph;
 pub use connect::sync;
 pub use connect::{
-    Closeable, PolicyEdge, Pollable, Pullable, Pushable, Receivable, SignalPolicy, Workable,
+    Closeable, PolicyEdge, Pollable, Pullable, Pushable, Receivable, SignalPolicy, Sink, Workable,
     make_bidi, make_push, make_work, marker::Connection,
 };
 pub use message::Message;
 pub use node::{
-    BifurcationReader, BifurcationRoutine, BiunionReader, BiunionRoutine, Flush, LineReader,
-    LineRoutine, Next, Poll, Send,
+    BifurcationIo, BifurcationRoutine, BiunionIo, BiunionRoutine, Flush, LineIo, LineRoutine, Next,
+    Poll, Send,
 };
 pub use node::{bifurcation, biunion};
 pub use signal::{Origin, Trackable};
 
 pub mod poll;
-pub use sink::GraphSink;
+pub use reader::Reader;
 pub use thread::{
     DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream, ThreadStreamHandle,
 };

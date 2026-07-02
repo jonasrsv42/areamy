@@ -191,7 +191,7 @@ mod tests {
     use crate::marker::Unary;
     use crate::poll;
     use crate::thread::{ThreadBundle, ThreadStream};
-    use crate::work::{Source, make_line};
+    use crate::work::{Writer, make_line};
     use crate::{Closeable, Message, Pushable, ThreadId, make_push, make_work};
 
     #[derive(Debug, Clone)]
@@ -225,7 +225,7 @@ mod tests {
         // own poll thread; we feed it from a sync line so the test
         // doesn't need to manage two source/sink wakers).
         let mut driver = make_line(crate::poll::future::line::routine::tests::PassThrough::new());
-        let mut input = Source::new(driver.as_ref()).unwrap();
+        let mut input = Writer::new(driver.as_ref()).unwrap();
         make_push(driver.as_mut(), &node).unwrap();
 
         let output = Receiver::new();

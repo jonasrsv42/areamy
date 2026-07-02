@@ -94,26 +94,26 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::{Message, work::Sink, work::Source};
+    use crate::{Message, work::Reader, work::Writer};
 
     #[test]
     fn line_basic_bridge() {
-        let buffer = crate::pull::SourceBuffer::new();
-        let mut source = Source::new(&buffer).unwrap();
+        let buffer = crate::pull::WriterBuffer::new();
+        let mut writer = Writer::new(&buffer).unwrap();
 
         let line = from_pull(buffer, MockLine::new());
-        let mut sink = Sink::new(line).unwrap();
+        let mut reader = Reader::new(line).unwrap();
 
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
 
-        assert_eq!(sink.read().unwrap(), Message::Data(2));
-        assert_eq!(sink.read().unwrap(), Message::Data(6));
+        assert_eq!(reader.read().unwrap(), Message::Data(2));
+        assert_eq!(reader.read().unwrap(), Message::Data(6));
 
-        source.push(Message::Flush("hi".into())).unwrap();
-        assert_eq!(sink.read().unwrap(), Message::Flush("hi".into()));
+        writer.push(Message::Flush("hi".into())).unwrap();
+        assert_eq!(reader.read().unwrap(), Message::Flush("hi".into()));
 
-        source.push(Message::Data(2)).unwrap();
-        assert_eq!(sink.read().unwrap(), Message::Data(4));
+        writer.push(Message::Data(2)).unwrap();
+        assert_eq!(reader.read().unwrap(), Message::Data(4));
     }
 }

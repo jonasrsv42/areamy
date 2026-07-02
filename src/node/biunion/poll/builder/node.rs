@@ -21,7 +21,7 @@ use crate::marker::Connection;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
-use crate::{Closeable, ThreadId};
+use crate::{Sink, ThreadId};
 
 /// Builder still holds `&'alloc mut WakerAllocator` — one or both inputs deferred.
 pub struct Allocating<'alloc>(pub(crate) &'alloc mut WakerAllocator);
@@ -219,7 +219,7 @@ where
 }
 
 // ============================================================
-// Get<dyn Closeable, Left/Right> — Sync inputs with multiplicity
+// Get<dyn Sink, Left/Right> — Sync inputs with multiplicity
 // ============================================================
 
 // `'params` on the dyn bound is required (not the object-lifetime default
@@ -238,10 +238,7 @@ impl<
     FactoryType,
 >
     Get<
-        dyn Closeable<DataType = Left, SignalType = SignalType>
-            + Send
-            + std::marker::Sync
-            + 'params,
+        dyn Sink<DataType = Left, SignalType = SignalType> + Send + std::marker::Sync + 'params,
         biunion::Left,
     >
     for Node<
@@ -270,10 +267,7 @@ where
         &self,
     ) -> Result<
         Box<
-            dyn Closeable<DataType = Left, SignalType = SignalType>
-                + Send
-                + std::marker::Sync
-                + 'params,
+            dyn Sink<DataType = Left, SignalType = SignalType> + Send + std::marker::Sync + 'params,
         >,
         Error,
     > {
@@ -294,10 +288,7 @@ impl<
     FactoryType,
 >
     Get<
-        dyn Closeable<DataType = Right, SignalType = SignalType>
-            + Send
-            + std::marker::Sync
-            + 'params,
+        dyn Sink<DataType = Right, SignalType = SignalType> + Send + std::marker::Sync + 'params,
         biunion::Right,
     >
     for Node<
@@ -326,7 +317,7 @@ where
         &self,
     ) -> Result<
         Box<
-            dyn Closeable<DataType = Right, SignalType = SignalType>
+            dyn Sink<DataType = Right, SignalType = SignalType>
                 + Send
                 + std::marker::Sync
                 + 'params,
@@ -338,7 +329,7 @@ where
 }
 
 // ============================================================
-// Add<dyn Closeable> — Sync output
+// Add<dyn Sink> — Sync output
 // ============================================================
 
 impl<
@@ -352,7 +343,7 @@ impl<
     SignalType,
     ThreadIdType,
     FactoryType,
-> Add<dyn Closeable<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params>
+> Add<dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params>
     for Node<
         'params,
         AllocState,
@@ -378,10 +369,7 @@ where
     fn add(
         &mut self,
         connection: Box<
-            dyn Closeable<DataType = Out, SignalType = SignalType>
-                + Send
-                + std::marker::Sync
-                + 'params,
+            dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params,
         >,
     ) -> Result<(), Error> {
         self.output.push(connection);

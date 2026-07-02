@@ -153,141 +153,144 @@ pub mod tests {
     use crate::Pushable;
     use crate::node::line::pull::builder::make_pull;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
-    use crate::pull::Sink;
-    use crate::source::pull::SourceBuffer;
-    use crate::work::Source;
+    use crate::pull::Reader;
+    use crate::work::Writer;
+    use crate::writer::pull::WriterBuffer;
     use std::time::Instant;
 
     #[test]
     fn line_accumulating_node_works() {
-        let buffer = SourceBuffer::new();
-        let mut source = Source::new(&buffer).unwrap();
+        let buffer = WriterBuffer::new();
+        let mut writer = Writer::new(&buffer).unwrap();
         let line = make_pull(buffer, AccMockLine::new());
-        let mut sink = Sink::new(line);
+        let mut reader = Reader::new(line);
 
         // Add one flush
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
 
-        assert_eq!(sink.pull().unwrap(), Message::Data(vec![1, 2]));
+        assert_eq!(reader.pull().unwrap(), Message::Data(vec![1, 2]));
     }
 
     #[test]
     fn line_nosync_basic_run() {
-        let buffer = SourceBuffer::new();
-        let mut source = Source::new(&buffer).unwrap();
+        let buffer = WriterBuffer::new();
+        let mut writer = Writer::new(&buffer).unwrap();
 
         let line = make_pull(buffer, MockLine::new());
-        let mut sink = Sink::new(line);
+        let mut reader = Reader::new(line);
 
         // Add one flush
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
 
-        assert_eq!(sink.pull().unwrap(), Message::Data(2));
-        assert_eq!(sink.pull().unwrap(), Message::Data(6));
+        assert_eq!(reader.pull().unwrap(), Message::Data(2));
+        assert_eq!(reader.pull().unwrap(), Message::Data(6));
 
         // Reset processing
-        source.push(Message::Flush("hi".into())).unwrap();
+        writer.push(Message::Flush("hi".into())).unwrap();
         // Read the Flush
-        assert_eq!(sink.pull().unwrap(), Message::Flush("hi".into()));
+        assert_eq!(reader.pull().unwrap(), Message::Flush("hi".into()));
 
-        source.push(Message::Data(2)).unwrap();
-        assert_eq!(sink.pull().unwrap(), Message::Data(4));
+        writer.push(Message::Data(2)).unwrap();
+        assert_eq!(reader.pull().unwrap(), Message::Data(4));
     }
 
     #[test]
     fn line_wait_node_mark_waits() {
-        let buffer = SourceBuffer::new();
-        let mut source = Source::new(&buffer).unwrap();
+        let buffer = WriterBuffer::new();
+        let mut writer = Writer::new(&buffer).unwrap();
 
         let line = make_pull(buffer, MockWaitLine::new(4));
-        let mut sink = Sink::new(line);
+        let mut reader = Reader::new(line);
 
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
-        source.push(Message::Data(3)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(3)).unwrap();
 
         // Send a marker
-        source.push(Message::Marker("no_output".into())).unwrap();
+        writer.push(Message::Marker("no_output".into())).unwrap();
         // We get marker because no output is ready.
-        assert_eq!(sink.pull().unwrap(), Message::Marker("no_output".into()));
+        assert_eq!(reader.pull().unwrap(), Message::Marker("no_output".into()));
 
         // Send data so that node releases all data.
-        source.push(Message::Data(4)).unwrap();
+        writer.push(Message::Data(4)).unwrap();
 
         // Send marker.
-        source.push(Message::Marker("output!".into())).unwrap();
+        writer.push(Message::Marker("output!".into())).unwrap();
 
         // Now we get all data in order and marker last.
-        assert_eq!(sink.pull().unwrap(), Message::Data(1));
-        assert_eq!(sink.pull().unwrap(), Message::Data(2));
-        assert_eq!(sink.pull().unwrap(), Message::Data(3));
-        assert_eq!(sink.pull().unwrap(), Message::Data(4));
+        assert_eq!(reader.pull().unwrap(), Message::Data(1));
+        assert_eq!(reader.pull().unwrap(), Message::Data(2));
+        assert_eq!(reader.pull().unwrap(), Message::Data(3));
+        assert_eq!(reader.pull().unwrap(), Message::Data(4));
         // The marker will arrive last!
-        assert_eq!(sink.pull().unwrap(), Message::Marker("output!".into()));
+        assert_eq!(reader.pull().unwrap(), Message::Marker("output!".into()));
     }
 
     #[test]
     fn line_wait_node_flush_waits() {
-        let buffer = SourceBuffer::new();
-        let mut source = Source::new(&buffer).unwrap();
+        let buffer = WriterBuffer::new();
+        let mut writer = Writer::new(&buffer).unwrap();
 
         let line = make_pull(buffer, MockWaitLine::new(4));
-        let mut sink = Sink::new(line);
+        let mut reader = Reader::new(line);
 
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
-        source.push(Message::Data(3)).unwrap();
-        source.push(Message::Flush("force_output".into())).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(3)).unwrap();
+        writer.push(Message::Flush("force_output".into())).unwrap();
 
-        assert_eq!(sink.pull().unwrap(), Message::Data(1));
-        assert_eq!(sink.pull().unwrap(), Message::Data(2));
-        assert_eq!(sink.pull().unwrap(), Message::Data(3));
+        assert_eq!(reader.pull().unwrap(), Message::Data(1));
+        assert_eq!(reader.pull().unwrap(), Message::Data(2));
+        assert_eq!(reader.pull().unwrap(), Message::Data(3));
         // The flush will arrive last!
-        assert_eq!(sink.pull().unwrap(), Message::Flush("force_output".into()));
+        assert_eq!(
+            reader.pull().unwrap(),
+            Message::Flush("force_output".into())
+        );
     }
 
     #[test]
     fn line_nosync_basic_stacked() {
-        let buffer = SourceBuffer::new();
-        let mut source = Source::new(&buffer).unwrap();
+        let buffer = WriterBuffer::new();
+        let mut writer = Writer::new(&buffer).unwrap();
 
         let line1 = make_pull(buffer, MockLine::new());
         let line2 = make_pull(line1, MockLine::new());
-        let mut sink = Sink::new(line2);
+        let mut reader = Reader::new(line2);
 
         // Add one flush
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
 
         // 4  =
         // 1 * 2 = 2
         // 2 * 4 = 4
-        assert_eq!(sink.pull().unwrap(), Message::Data(4));
+        assert_eq!(reader.pull().unwrap(), Message::Data(4));
         // 16  =
         // (2 + 1) * 2 = 6
         // (6 + 2) * 2 = 16
-        assert_eq!(sink.pull().unwrap(), Message::Data(16));
+        assert_eq!(reader.pull().unwrap(), Message::Data(16));
 
         // Reset processing
-        source.push(Message::Flush("hi".into())).unwrap();
+        writer.push(Message::Flush("hi".into())).unwrap();
         // Read the Flush
-        assert_eq!(sink.pull().unwrap(), Message::Flush("hi".into()));
+        assert_eq!(reader.pull().unwrap(), Message::Flush("hi".into()));
 
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
 
         // 8 =
         // 2 * 2 = 4
         // 4 * 2 = 8
-        assert_eq!(sink.pull().unwrap(), Message::Data(8));
+        assert_eq!(reader.pull().unwrap(), Message::Data(8));
     }
 
     #[ignore]
     #[test]
     fn line_nosync_basic_many_stack_benchmark() {
-        let buffer = SourceBuffer::new();
-        let mut source = Source::new(&buffer).unwrap();
+        let buffer = WriterBuffer::new();
+        let mut writer = Writer::new(&buffer).unwrap();
 
         let p1 = make_pull(buffer, MockLine::new());
         let p2 = make_pull(p1, MockLine::new());
@@ -300,44 +303,44 @@ pub mod tests {
         let p9 = make_pull(p8, MockLine::new());
         let p10 = make_pull(p9, MockLine::new());
 
-        let mut sink = Sink::new(p10);
+        let mut reader = Reader::new(p10);
 
         let before = Instant::now();
         for _ in 0..10000 {
-            source.push(Message::Data(1)).unwrap();
-            source.push(Message::Flush("hi".into())).unwrap();
+            writer.push(Message::Data(1)).unwrap();
+            writer.push(Message::Flush("hi".into())).unwrap();
 
-            assert_eq!(sink.pull().unwrap(), Message::Data(2048));
-            assert_eq!(sink.pull().unwrap(), Message::Flush("hi".into()));
+            assert_eq!(reader.pull().unwrap(), Message::Data(2048));
+            assert_eq!(reader.pull().unwrap(), Message::Flush("hi".into()));
         }
         println!("Elapsed time: {:.2?}", before.elapsed());
     }
 
     #[test]
     fn line_nosync_respects_signal_ordering() {
-        let buffer = SourceBuffer::new();
-        let mut source = Source::of(&buffer).unwrap();
+        let buffer = WriterBuffer::new();
+        let mut writer = Writer::of(&buffer).unwrap();
 
         let line1 = make_pull(buffer, MockLine::new());
         let line2 = make_pull(line1, MockLine::new());
-        let mut sink = Sink::new(line2);
+        let mut reader = Reader::new(line2);
 
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Flush(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
-        source.push(Message::Flush(2)).unwrap();
-        source.push(Message::Data(3)).unwrap();
-        source.push(Message::Marker(3)).unwrap();
-        source.push(Message::Data(4)).unwrap();
-        source.push(Message::Flush(4)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Flush(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
+        writer.push(Message::Flush(2)).unwrap();
+        writer.push(Message::Data(3)).unwrap();
+        writer.push(Message::Marker(3)).unwrap();
+        writer.push(Message::Data(4)).unwrap();
+        writer.push(Message::Flush(4)).unwrap();
 
-        assert_eq!(sink.pull().unwrap(), Message::Data(4));
-        assert_eq!(sink.pull().unwrap(), Message::Flush(1));
-        assert_eq!(sink.pull().unwrap(), Message::Data(8));
-        assert_eq!(sink.pull().unwrap(), Message::Flush(2));
-        assert_eq!(sink.pull().unwrap(), Message::Data(12));
-        assert_eq!(sink.pull().unwrap(), Message::Marker(3));
-        assert_eq!(sink.pull().unwrap(), Message::Data(40));
-        assert_eq!(sink.pull().unwrap(), Message::Flush(4));
+        assert_eq!(reader.pull().unwrap(), Message::Data(4));
+        assert_eq!(reader.pull().unwrap(), Message::Flush(1));
+        assert_eq!(reader.pull().unwrap(), Message::Data(8));
+        assert_eq!(reader.pull().unwrap(), Message::Flush(2));
+        assert_eq!(reader.pull().unwrap(), Message::Data(12));
+        assert_eq!(reader.pull().unwrap(), Message::Marker(3));
+        assert_eq!(reader.pull().unwrap(), Message::Data(40));
+        assert_eq!(reader.pull().unwrap(), Message::Flush(4));
     }
 }

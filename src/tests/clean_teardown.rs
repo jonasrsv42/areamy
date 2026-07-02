@@ -9,9 +9,9 @@ use crate::node::line::poll::routine::tests::MockLine;
 use crate::sync::Receiver;
 use crate::thread::Join;
 use crate::thread::poll::stream::Thread;
-use crate::work::{Connect, Sink, Source, make_bifurcation, make_line};
+use crate::work::{Connect, Reader, Writer, make_bifurcation, make_line};
 use crate::{
-    BifurcationRoutine, Flush, LineReader, LineRoutine, Next, ThreadBundle, ThreadId, ThreadStream,
+    BifurcationRoutine, Flush, LineIo, LineRoutine, Next, ThreadBundle, ThreadId, ThreadStream,
     Trackable, bifurcation, fatal, make_work,
 };
 use crate::{Closeable, Message, Pushable};
@@ -99,7 +99,7 @@ fn middle_thread_error_does_not_deadlock_drain() {
     let mut middle = make_line(FailingMiddle);
     let sink_node = make_line(PassThrough::new());
 
-    let source: Source<usize> = Source::new(&middle).unwrap();
+    let writer: Writer<usize> = Writer::new(&middle).unwrap();
     Connect::<usize>::push(&mut middle, &sink_node).unwrap();
 
     let mut middle_thread = ThreadStream::<'_, MiddleThread>::new();
@@ -108,8 +108,8 @@ fn middle_thread_error_does_not_deadlock_drain() {
     let mut bundle = ThreadBundle::new();
     bundle.add(middle_thread);
 
-    let sink: Sink<usize> = Sink::new(sink_node).unwrap();
-    let mut reader = LineReader::new(source, sink);
+    let reader: Reader<usize> = Reader::new(sink_node).unwrap();
+    let mut io = LineIo::new(writer, reader);
 
     std::thread::scope(|s| {
         let bundle_handle = bundle.start(s);
@@ -117,7 +117,7 @@ fn middle_thread_error_does_not_deadlock_drain() {
         // Drain in a scoped helper thread so the main thread can join the bundle.
         let drain_handle = s.spawn(move || {
             loop {
-                match reader.read() {
+                match io.read() {
                     Ok(_) => continue,
                     Err(e) if matches!(e.kind, ErrorKind::Closed) => break Ok::<(), Error>(()),
                     Err(other) => break Err(other),
@@ -147,7 +147,7 @@ fn middle_thread_error_does_not_deadlock_drain() {
 /// Cross-thread sync → poll teardown.
 ///
 /// A poll thread holds one node with a `Sync` input edge. The
-/// producer side (held on the main thread as a `Box<dyn Closeable>`)
+/// producer side (held on the main thread as a `Box<dyn Sink>`)
 /// is dropped *without* calling `close()`, simulating a sync
 /// producer that dies mid-graph.
 ///
@@ -164,7 +164,7 @@ fn poll_thread_does_not_deadlock_when_sync_input_drops() {
         .input::<crate::poll::Sync>()
         .output::<crate::poll::Sync>();
 
-    let input = Source::new(&node).unwrap();
+    let input = Writer::new(&node).unwrap();
 
     thread.add(node);
     std::thread::scope(|s| {
@@ -226,7 +226,7 @@ impl BifurcationRoutine<usize, usize, usize> for Tee {}
 
 /// Fan-out: one producer thread runs a bifurcation that duplicates
 /// each value to two consumer threads, each pushing to its own sync
-/// receiver on the main thread. Closing the source cascades through
+/// receiver on the main thread. Closing the writer cascades through
 /// the bifurcation and both consumer threads exit cleanly.
 #[test]
 fn fan_out_bifurcation_into_two_consumer_threads() {
@@ -234,7 +234,7 @@ fn fan_out_bifurcation_into_two_consumer_threads() {
     let mut consumer_a = make_line(PassThrough::new());
     let mut consumer_b = make_line(PassThrough::new());
 
-    let mut source: Source<usize> = Source::new(&tee).unwrap();
+    let mut writer: Writer<usize> = Writer::new(&tee).unwrap();
 
     Connect::<usize>::push::<bifurcation::Left, crate::marker::Unary>(
         tee.as_mut(),
@@ -269,9 +269,9 @@ fn fan_out_bifurcation_into_two_consumer_threads() {
         let handle = bundle.start(s);
 
         for v in 0..4 {
-            source.push(Message::Data(v)).unwrap();
+            writer.push(Message::Data(v)).unwrap();
         }
-        source.close().unwrap();
+        writer.close().unwrap();
 
         let drain = |rx: Receiver<usize, Trackable<&'static str>>| -> Vec<usize> {
             let mut got = Vec::new();

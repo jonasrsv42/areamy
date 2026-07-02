@@ -11,7 +11,7 @@ use crate::connect::poll::input;
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::marker::Connection;
 use crate::signal::Origin;
-use crate::{Closeable, ThreadId};
+use crate::{Sink, ThreadId};
 
 /// Trait for edge markers. Uses GATs to resolve storage types.
 pub trait Edge: Connection {
@@ -47,7 +47,7 @@ impl Edge for Sync {
         input::sync::Input<InType, SignalType>;
     type Output<'params, OutType, SignalType: Origin> = Vec<
         Box<
-            dyn Closeable<DataType = OutType, SignalType = SignalType>
+            dyn Sink<DataType = OutType, SignalType = SignalType>
                 + Send
                 + std::marker::Sync
                 + 'params,

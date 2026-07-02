@@ -1,31 +1,31 @@
 use crate::error::Error;
-use crate::{GraphPushSource, GraphSink, Trackable};
 use crate::{Message, Origin};
+use crate::{Reader, Sink, Trackable};
 use std::fmt::Debug;
 
-pub struct BiunionReader<LeftSourceType, RightSourceType, SinkType>
+pub struct BiunionIo<LeftWriterType, RightWriterType, ReaderType>
 where
-    LeftSourceType: GraphPushSource,
-    RightSourceType: GraphPushSource,
-    SinkType: GraphSink,
+    LeftWriterType: Sink,
+    RightWriterType: Sink,
+    ReaderType: Reader,
 {
-    pub left: LeftSourceType,
-    pub right: RightSourceType,
-    pub output: SinkType,
+    pub left: LeftWriterType,
+    pub right: RightWriterType,
+    pub output: ReaderType,
 }
 
-impl<LeftSourceType, RightSourceType, SinkType>
-    BiunionReader<LeftSourceType, RightSourceType, SinkType>
+impl<LeftWriterType, RightWriterType, ReaderType>
+    BiunionIo<LeftWriterType, RightWriterType, ReaderType>
 where
-    LeftSourceType: GraphPushSource,
-    RightSourceType: GraphPushSource,
-    SinkType: GraphSink,
+    LeftWriterType: Sink,
+    RightWriterType: Sink,
+    ReaderType: Reader,
 {
     pub fn new(
-        left: LeftSourceType,
-        right: RightSourceType,
-        output: SinkType,
-    ) -> BiunionReader<LeftSourceType, RightSourceType, SinkType> {
+        left: LeftWriterType,
+        right: RightWriterType,
+        output: ReaderType,
+    ) -> BiunionIo<LeftWriterType, RightWriterType, ReaderType> {
         Self {
             left,
             right,
@@ -33,13 +33,13 @@ where
         }
     }
 
-    pub fn read(&mut self) -> Result<Message<SinkType::DataType, SinkType::SignalType>, Error> {
+    pub fn read(&mut self) -> Result<Message<ReaderType::DataType, ReaderType::SignalType>, Error> {
         self.output.read()
     }
 
     pub fn left_push(
         &mut self,
-        msg: Message<LeftSourceType::DataType, LeftSourceType::SignalType>,
+        msg: Message<LeftWriterType::DataType, LeftWriterType::SignalType>,
     ) -> Result<(), Error> {
         self.left.push(msg)?;
         Ok(())
@@ -47,41 +47,41 @@ where
 
     pub fn right_push(
         &mut self,
-        msg: Message<RightSourceType::DataType, RightSourceType::SignalType>,
+        msg: Message<RightWriterType::DataType, RightWriterType::SignalType>,
     ) -> Result<(), Error> {
         self.right.push(msg)?;
         Ok(())
     }
 
-    /// Close both left and right sources.
+    /// Close both left and right writers.
     pub fn close(&mut self) -> Result<(), Error> {
         self.left.close()?;
         self.right.close()
     }
 }
 
-impl<LeftSourceType, RightSourceType, SinkType> Drop
-    for BiunionReader<LeftSourceType, RightSourceType, SinkType>
+impl<LeftWriterType, RightWriterType, ReaderType> Drop
+    for BiunionIo<LeftWriterType, RightWriterType, ReaderType>
 where
-    LeftSourceType: GraphPushSource,
-    RightSourceType: GraphPushSource,
-    SinkType: GraphSink,
+    LeftWriterType: Sink,
+    RightWriterType: Sink,
+    ReaderType: Reader,
 {
     fn drop(&mut self) {
         let _ = self.close();
     }
 }
 
-impl<Left, Right, Out, OriginType, LeftSourceType, RightSourceType, SinkType>
-    BiunionReader<LeftSourceType, RightSourceType, SinkType>
+impl<Left, Right, Out, OriginType, LeftWriterType, RightWriterType, ReaderType>
+    BiunionIo<LeftWriterType, RightWriterType, ReaderType>
 where
     Left: Send + Sync,
     Right: Debug + Send + Sync,
     Out: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    LeftSourceType: GraphPushSource<DataType = Left, SignalType = Trackable<OriginType>>,
-    RightSourceType: GraphPushSource<DataType = Right, SignalType = Trackable<OriginType>>,
-    SinkType: GraphSink<DataType = Out, SignalType = Trackable<OriginType>>,
+    LeftWriterType: Sink<DataType = Left, SignalType = Trackable<OriginType>>,
+    RightWriterType: Sink<DataType = Right, SignalType = Trackable<OriginType>>,
+    ReaderType: Reader<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     pub fn mark(&mut self, trackable: Trackable<OriginType>) -> Result<Vec<Out>, Error> {
         let mut datas: Vec<Out> = Vec::new();
@@ -118,18 +118,18 @@ mod tests {
     use super::*;
     use crate::biunion;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{work::Sink, work::Source, work::make_biunion};
+    use crate::{work::Reader, work::Writer, work::make_biunion};
 
     #[test]
     fn readers_biunion_read() {
         let biun = make_biunion(MockBiunion::new());
 
-        let left_source = Source::new::<biunion::Left>(&biun).unwrap();
-        let right_source = Source::new::<biunion::Right>(&biun).unwrap();
+        let left_writer = Writer::new::<biunion::Left>(&biun).unwrap();
+        let right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
 
-        let sink = Sink::new(biun).unwrap();
+        let output = Reader::new(biun).unwrap();
 
-        let mut reader = BiunionReader::new(left_source, right_source, sink);
+        let mut reader = BiunionIo::new(left_writer, right_writer, output);
 
         reader.left_push(Message::Data(1)).unwrap();
         reader.right_push(Message::Data(2)).unwrap();

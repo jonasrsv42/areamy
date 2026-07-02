@@ -19,20 +19,20 @@ let in_node = areamy::work::make_line(AddOne::new());
 let mut middle_node = areamy::work::make_line(AddOne::new());
 let mut out_node = areamy::work::make_line(AddOne::new());
 
-let source = areamy::work::Source::<usize>::of(&in_node)?;
+let writer = areamy::work::Writer::<usize>::of(&in_node)?;
 
 areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
 areamy::work::Connect::<usize>::bidi(middle_node, &mut out_node)?;
 
-let sink = areamy::work::Sink::new(out_node)?;
+let reader = areamy::work::Reader::new(out_node)?;
 
-let mut reader = areamy::LineReader::new(source, sink);
+let mut io = areamy::LineIo::new(writer, reader);
 
-reader.push(areamy::Message::Data(1))?;
-reader.push(areamy::Message::Data(2))?;
+io.push(areamy::Message::Data(1))?;
+io.push(areamy::Message::Data(2))?;
 
-assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
-assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
+assert_eq!(io.read().unwrap(), areamy::Message::Data(4));
+assert_eq!(io.read().unwrap(), areamy::Message::Data(5));
 ```
 
 
@@ -59,7 +59,7 @@ let in_node = areamy::work::make_line(AddOne::new());
 let mut middle_node = areamy::work::make_line(AddOne::new());
 let out_node = areamy::work::make_line(AddOne::new());
 
-let source = areamy::work::Source::<usize>::of(&in_node)?;
+let writer = areamy::work::Writer::<usize>::of(&in_node)?;
 areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
 
 let mut helper_thread = areamy::ThreadStream::<HelperThread>::new();
@@ -70,18 +70,18 @@ areamy::work::Connect::<usize>::push(&mut middle_node, &out_node)?;
 // Move the middle node onto the helper thread.
 areamy::make_work(middle_node, &mut helper_thread)?;
 
-let sink = areamy::work::Sink::new(out_node)?;
-let mut reader = areamy::LineReader::new(source, sink);
+let reader = areamy::work::Reader::new(out_node)?;
+let mut io = areamy::LineIo::new(writer, reader);
 
 // Start the helper thread.
 let _handle = helper_thread.start();
 
-// Helper thread runs the first two nodes; main thread runs the sink.
-reader.push(areamy::Message::Data(1))?;
-reader.push(areamy::Message::Data(2))?;
+// Helper thread runs the first two nodes; main thread reads the output.
+io.push(areamy::Message::Data(1))?;
+io.push(areamy::Message::Data(2))?;
 
-assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
-assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
+assert_eq!(io.read().unwrap(), areamy::Message::Data(4));
+assert_eq!(io.read().unwrap(), areamy::Message::Data(5));
 ```
 
 ### Async poll runtime — drop in where it fits

@@ -58,7 +58,7 @@ pub mod signal_policy;
 pub mod sync;
 pub mod waker;
 
-pub use graph::{Closeable, Pollable, Pullable, Pushable, Receivable, Workable};
+pub use graph::{Closeable, Pollable, Pullable, Pushable, Receivable, Sink, Workable};
 pub use make::work;
 pub use make::{make_bidi, make_push, make_work};
 pub use poll::PollEdge;

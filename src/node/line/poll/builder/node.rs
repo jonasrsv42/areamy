@@ -35,7 +35,7 @@ use crate::marker::Connection;
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
-use crate::{Closeable, ThreadId};
+use crate::{Sink, ThreadId};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -331,7 +331,7 @@ where
 }
 
 // ============================================================
-// Get<dyn Closeable + Send + Sync> — Sync input only
+// Get<dyn Sink + Send + Sync> — Sync input only
 // ============================================================
 
 // `'params` on the dyn bound: without it the object-lifetime default locks
@@ -341,12 +341,7 @@ where
 // `Node<'params>` covariantly at the call site to match the caller's
 // requested lifetime.
 impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Get<
-        dyn Closeable<DataType = InType, SignalType = SignalType>
-            + Send
-            + std::marker::Sync
-            + 'params,
-    >
+    Get<dyn Sink<DataType = InType, SignalType = SignalType> + Send + std::marker::Sync + 'params>
     for Node<
         'static,
         'params,
@@ -370,7 +365,7 @@ where
         &self,
     ) -> Result<
         Box<
-            dyn Closeable<DataType = InType, SignalType = SignalType>
+            dyn Sink<DataType = InType, SignalType = SignalType>
                 + Send
                 + std::marker::Sync
                 + 'params,
@@ -382,16 +377,11 @@ where
 }
 
 // ============================================================
-// Add<dyn Closeable + Send + Sync> — Sync output only
+// Add<dyn Sink + Send + Sync> — Sync output only
 // ============================================================
 
 impl<'params, InEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Add<
-        dyn Closeable<DataType = OutType, SignalType = SignalType>
-            + Send
-            + std::marker::Sync
-            + 'params,
-    >
+    Add<dyn Sink<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync + 'params>
     for Node<'_, 'params, InEdgeType, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InEdgeType: Edge,
@@ -404,7 +394,7 @@ where
     fn add(
         &mut self,
         connection: Box<
-            dyn Closeable<DataType = OutType, SignalType = SignalType>
+            dyn Sink<DataType = OutType, SignalType = SignalType>
                 + Send
                 + std::marker::Sync
                 + 'params,

@@ -39,20 +39,20 @@ fn simple_sync() -> Result<(), areamy::error::Error> {
     let mut middle_node = areamy::work::make_line(AddOne::new());
     let mut out_node = areamy::work::make_line(AddOne::new());
 
-    let source = areamy::work::Source::<usize>::of(&in_node)?;
+    let writer = areamy::work::Writer::<usize>::of(&in_node)?;
 
     areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
     areamy::work::Connect::<usize>::bidi(middle_node, &mut out_node)?;
 
-    let sink = areamy::work::Sink::new(out_node)?;
+    let reader = areamy::work::Reader::new(out_node)?;
 
-    let mut reader = areamy::LineReader::new(source, sink);
+    let mut io = areamy::LineIo::new(writer, reader);
 
-    reader.push(areamy::Message::Data(1))?;
-    reader.push(areamy::Message::Data(2))?;
+    io.push(areamy::Message::Data(1))?;
+    io.push(areamy::Message::Data(2))?;
 
-    assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
-    assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
+    assert_eq!(io.read().unwrap(), areamy::Message::Data(4));
+    assert_eq!(io.read().unwrap(), areamy::Message::Data(5));
 
     Ok(())
 }
@@ -70,7 +70,7 @@ fn sync_multithread() -> Result<(), areamy::error::Error> {
     let mut middle_node = areamy::work::make_line(AddOne::new());
     let out_node = areamy::work::make_line(AddOne::new());
 
-    let source = areamy::work::Source::<usize>::of(&in_node)?;
+    let writer = areamy::work::Writer::<usize>::of(&in_node)?;
     areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
 
     let mut helper_thread = areamy::ThreadStream::<'_, HelperThread>::new();
@@ -81,25 +81,25 @@ fn sync_multithread() -> Result<(), areamy::error::Error> {
     // Now helper thread will work on the middle_node subgraph.
     areamy::make_work(middle_node, &mut helper_thread)?;
 
-    let sink = areamy::work::Sink::new(out_node)?;
-    let mut reader = areamy::LineReader::new(source, sink);
+    let reader = areamy::work::Reader::new(out_node)?;
+    let mut io = areamy::LineIo::new(writer, reader);
 
     std::thread::scope(|s| {
         // Start the helper thread (consumes thread, returns handle).
         let _handle = helper_thread.start(s);
 
         // Helper thread will run the computation in the first two nodes.
-        reader.push(areamy::Message::Data(1)).unwrap();
-        reader.push(areamy::Message::Data(2)).unwrap();
+        io.push(areamy::Message::Data(1)).unwrap();
+        io.push(areamy::Message::Data(2)).unwrap();
 
         // Main thread runs computation in the final output node.
-        assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
-        assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
+        assert_eq!(io.read().unwrap(), areamy::Message::Data(4));
+        assert_eq!(io.read().unwrap(), areamy::Message::Data(5));
 
-        // Close the source so the helper thread can exit before scope
+        // Close the writer so the helper thread can exit before scope
         // waits for it. Without this, scope would deadlock waiting for
         // a helper thread blocked on `wait_front()`.
-        reader.close().unwrap();
+        io.close().unwrap();
     });
 
     Ok(())
@@ -110,22 +110,22 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
     // Nosync is useful to avoid unnecessary mutexes.
     // each connection is lockfree, at the cost of not being `Sync`.
 
-    let root = areamy::pull::SourceBuffer::new();
-    let source = areamy::work::Source::<usize>::of(&root)?;
+    let root = areamy::pull::WriterBuffer::new();
+    let writer = areamy::work::Writer::<usize>::of(&root)?;
 
     let in_node = areamy::pull::Connect::<usize>::pull(root, AddOne::new());
     let middle_node = areamy::pull::Connect::<usize>::pull(in_node, AddOne::new());
     let out_node = areamy::pull::Connect::<usize>::pull(middle_node, AddOne::new());
 
-    let sink = areamy::pull::Sink::new(out_node);
+    let reader = areamy::pull::Reader::new(out_node);
 
-    let mut reader = areamy::LineReader::new(source, sink);
+    let mut io = areamy::LineIo::new(writer, reader);
 
-    reader.push(areamy::Message::Data(1))?;
-    reader.push(areamy::Message::Data(2))?;
+    io.push(areamy::Message::Data(1))?;
+    io.push(areamy::Message::Data(2))?;
 
-    assert_eq!(reader.read().unwrap(), areamy::Message::Data(4));
-    assert_eq!(reader.read().unwrap(), areamy::Message::Data(5));
+    assert_eq!(io.read().unwrap(), areamy::Message::Data(4));
+    assert_eq!(io.read().unwrap(), areamy::Message::Data(5));
 
     Ok(())
 }

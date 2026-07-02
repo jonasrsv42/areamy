@@ -1,41 +1,39 @@
-use crate::GraphSink;
+use crate::Reader;
 use crate::error::Error;
-use crate::{
-    DefaultThread, GraphPushSource, Message, Origin, ThreadId, Trackable, Workable, fatal,
-};
+use crate::{DefaultThread, Message, Origin, Sink, ThreadId, Trackable, Workable, fatal};
 use std::fmt::Debug;
 
-pub struct BifurcationReader<
+pub struct BifurcationIo<
     'params,
-    SourceType,
-    LeftSinkType,
-    RightSinkType,
+    WriterType,
+    LeftReaderType,
+    RightReaderType,
     ThreadIdType = DefaultThread,
 > where
-    SourceType: GraphPushSource,
-    LeftSinkType: GraphSink,
-    RightSinkType: GraphSink,
+    WriterType: Sink,
+    LeftReaderType: Reader,
+    RightReaderType: Reader,
     ThreadIdType: ThreadId,
 {
-    pub input: SourceType,
-    pub left: LeftSinkType,
-    pub right: RightSinkType,
+    pub input: WriterType,
+    pub left: LeftReaderType,
+    pub right: RightReaderType,
     pub workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
 }
 
-impl<'params, SourceType, LeftSinkType, RightSinkType>
-    BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, DefaultThread>
+impl<'params, WriterType, LeftReaderType, RightReaderType>
+    BifurcationIo<'params, WriterType, LeftReaderType, RightReaderType, DefaultThread>
 where
-    SourceType: GraphPushSource,
-    LeftSinkType: GraphSink,
-    RightSinkType: GraphSink,
+    WriterType: Sink,
+    LeftReaderType: Reader,
+    RightReaderType: Reader,
 {
     pub fn new(
-        input: SourceType,
-        left: LeftSinkType,
-        right: RightSinkType,
+        input: WriterType,
+        left: LeftReaderType,
+        right: RightReaderType,
         workable: Box<dyn Workable<ThreadId = DefaultThread> + 'params>,
-    ) -> BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, DefaultThread> {
+    ) -> BifurcationIo<'params, WriterType, LeftReaderType, RightReaderType, DefaultThread> {
         Self {
             input,
             left,
@@ -45,17 +43,17 @@ where
     }
 }
 
-impl<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
-    BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+impl<'params, WriterType, LeftReaderType, RightReaderType, ThreadIdType>
+    BifurcationIo<'params, WriterType, LeftReaderType, RightReaderType, ThreadIdType>
 where
-    SourceType: GraphPushSource,
-    LeftSinkType: GraphSink,
-    RightSinkType: GraphSink,
+    WriterType: Sink,
+    LeftReaderType: Reader,
+    RightReaderType: Reader,
     ThreadIdType: ThreadId,
 {
     pub fn left_read(
         &mut self,
-    ) -> Result<Message<LeftSinkType::DataType, LeftSinkType::SignalType>, Error> {
+    ) -> Result<Message<LeftReaderType::DataType, LeftReaderType::SignalType>, Error> {
         match self.left.poll()? {
             Some(message) => Ok(message),
             None => {
@@ -70,7 +68,7 @@ where
 
     pub fn right_read(
         &mut self,
-    ) -> Result<Message<RightSinkType::DataType, RightSinkType::SignalType>, Error> {
+    ) -> Result<Message<RightReaderType::DataType, RightReaderType::SignalType>, Error> {
         match self.right.poll()? {
             Some(message) => Ok(message),
             None => {
@@ -85,24 +83,24 @@ where
 
     pub fn push(
         &mut self,
-        object: Message<SourceType::DataType, SourceType::SignalType>,
+        object: Message<WriterType::DataType, WriterType::SignalType>,
     ) -> Result<(), Error> {
         self.input.push(object)?;
         Ok(())
     }
 
-    /// Close the input source.
+    /// Close the input writer.
     pub fn close(&mut self) -> Result<(), Error> {
         self.input.close()
     }
 }
 
-impl<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType> Drop
-    for BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+impl<'params, WriterType, LeftReaderType, RightReaderType, ThreadIdType> Drop
+    for BifurcationIo<'params, WriterType, LeftReaderType, RightReaderType, ThreadIdType>
 where
-    SourceType: GraphPushSource,
-    LeftSinkType: GraphSink,
-    RightSinkType: GraphSink,
+    WriterType: Sink,
+    LeftReaderType: Reader,
+    RightReaderType: Reader,
     ThreadIdType: ThreadId,
 {
     fn drop(&mut self) {
@@ -110,16 +108,25 @@ where
     }
 }
 
-impl<'params, In, Left, Right, OriginType, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
-    BifurcationReader<'params, SourceType, LeftSinkType, RightSinkType, ThreadIdType>
+impl<
+    'params,
+    In,
+    Left,
+    Right,
+    OriginType,
+    WriterType,
+    LeftReaderType,
+    RightReaderType,
+    ThreadIdType,
+> BifurcationIo<'params, WriterType, LeftReaderType, RightReaderType, ThreadIdType>
 where
     In: Send + Sync,
     Left: Debug + Send + Sync + 'static,
     Right: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    SourceType: GraphPushSource<DataType = In, SignalType = Trackable<OriginType>>,
-    LeftSinkType: GraphSink<DataType = Left, SignalType = Trackable<OriginType>>,
-    RightSinkType: GraphSink<DataType = Right, SignalType = Trackable<OriginType>>,
+    WriterType: Sink<DataType = In, SignalType = Trackable<OriginType>>,
+    LeftReaderType: Reader<DataType = Left, SignalType = Trackable<OriginType>>,
+    RightReaderType: Reader<DataType = Right, SignalType = Trackable<OriginType>>,
     ThreadIdType: ThreadId,
 {
     pub fn left_mark(&mut self, origin: OriginType) -> Result<Vec<Left>, Error> {
@@ -168,19 +175,19 @@ mod tests {
     use super::*;
     use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{sink::work::tee, work::Source, work::make_bifurcation};
+    use crate::{reader::work::tee, work::Writer, work::make_bifurcation};
 
     #[test]
     fn readers_bifurcation_read() {
         // Same as in sync node.
         let mut bifur = make_bifurcation(MockBifurcation::new());
 
-        let source = Source::new(&bifur).unwrap();
+        let writer = Writer::new(&bifur).unwrap();
 
-        let left_sink = tee::Sink::new::<bifurcation::Left>(&mut bifur).unwrap();
-        let right_sink = tee::Sink::new::<bifurcation::Right>(&mut bifur).unwrap();
+        let left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
+        let right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
 
-        let mut reader = BifurcationReader::new(source, left_sink, right_sink, bifur);
+        let mut reader = BifurcationIo::new(writer, left_reader, right_reader, bifur);
 
         // Add one flush
         reader.push(Message::Data(1)).unwrap();

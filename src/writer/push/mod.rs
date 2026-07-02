@@ -7,34 +7,30 @@ use crate::{
     marker::{Connection, Multiplicity},
 };
 
-/// A `Source` is a convenience type for an input. It forwards data into some inner source.
-pub struct Source<'params, DataType, SignalType = Trackable<&'static str>>
+/// A `Writer` is a convenience type for an input. It forwards data into some inner source.
+pub struct Writer<'params, DataType, SignalType = Trackable<&'static str>>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
-    inner: Box<
-        dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>
-            + Send
-            + Sync
-            + 'params,
-    >,
+    inner:
+        Box<dyn crate::Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
 }
 
-impl<'params, DataType, SignalType> Connection for Source<'params, DataType, SignalType>
+impl<'params, DataType, SignalType> Connection for Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
 }
 
-impl<'params, DataType> Source<'params, DataType, Trackable<&'static str>>
+impl<'params, DataType> Writer<'params, DataType, Trackable<&'static str>>
 where
     DataType: Send + Sync + 'static,
 {
     pub fn new<MultiplicityType: Multiplicity>(
         input: &impl Get<
-            dyn crate::GraphPushSource<DataType = DataType, SignalType = Trackable<&'static str>>
+            dyn crate::Sink<DataType = DataType, SignalType = Trackable<&'static str>>
                 + Send
                 + Sync
                 + 'params,
@@ -46,7 +42,7 @@ where
     }
 }
 
-impl<'params, DataType, SignalType> Source<'params, DataType, SignalType>
+impl<'params, DataType, SignalType> Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
@@ -54,7 +50,7 @@ where
     pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
         Node: Get<
-                dyn crate::GraphPushSource<DataType = DataType, SignalType = SignalType>
+                dyn crate::Sink<DataType = DataType, SignalType = SignalType>
                     + Send
                     + Sync
                     + 'params,
@@ -67,7 +63,7 @@ where
     }
 }
 
-impl<'params, DataType, SignalType> Pushable for Source<'params, DataType, SignalType>
+impl<'params, DataType, SignalType> Pushable for Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -80,7 +76,7 @@ where
     }
 }
 
-impl<'params, DataType, SignalType> crate::GraphPushSource for Source<'params, DataType, SignalType>
+impl<'params, DataType, SignalType> crate::Closeable for Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
@@ -108,18 +104,14 @@ mod tests {
         }
     }
 
-    impl
-        Get<
-            dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>
-                + Send
-                + Sync,
-        > for MockNode
+    impl Get<dyn crate::Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>
+        for MockNode
     {
         fn get(
             &self,
         ) -> Result<
             Box<
-                dyn crate::GraphPushSource<DataType = usize, SignalType = Trackable<&'static str>>
+                dyn crate::Sink<DataType = usize, SignalType = Trackable<&'static str>>
                     + Send
                     + Sync,
             >,
@@ -130,15 +122,15 @@ mod tests {
     }
 
     #[test]
-    fn source_basic() {
+    fn writer_basic() {
         let mock_node = MockNode {
             input: Receiver::new(),
         };
 
-        let mut source = Source::new(&mock_node).unwrap();
+        let mut writer = Writer::new(&mock_node).unwrap();
 
-        source.push(Message::Data(5)).unwrap();
-        source.push(Message::Data(5)).unwrap();
+        writer.push(Message::Data(5)).unwrap();
+        writer.push(Message::Data(5)).unwrap();
 
         assert_eq!(
             mock_node.input.read_all().unwrap(),
@@ -147,14 +139,14 @@ mod tests {
     }
 
     #[test]
-    fn source_can_flush() {
+    fn writer_can_flush() {
         let mock_node = MockNode {
             input: Receiver::new(),
         };
 
-        let mut source = Source::new(&mock_node).unwrap();
+        let mut writer = Writer::new(&mock_node).unwrap();
 
-        source.push(Message::Flush("hi".into())).unwrap();
+        writer.push(Message::Flush("hi".into())).unwrap();
 
         assert_eq!(
             mock_node.input.read_all().unwrap(),
@@ -163,14 +155,14 @@ mod tests {
     }
 
     #[test]
-    fn source_can_mark() {
+    fn writer_can_mark() {
         let mock_node = MockNode {
             input: Receiver::new(),
         };
 
-        let mut source = Source::new(&mock_node).unwrap();
+        let mut writer = Writer::new(&mock_node).unwrap();
 
-        source.push(Message::Marker("hi".into())).unwrap();
+        writer.push(Message::Marker("hi".into())).unwrap();
 
         assert_eq!(
             mock_node.input.read_all().unwrap(),

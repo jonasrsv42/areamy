@@ -3,7 +3,7 @@
 use super::node::{LeftInput, Output, RightInput, Work};
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
-use crate::{Closeable, Receivable, ThreadId};
+use crate::{Receivable, Sink, ThreadId};
 
 /// Both input phases grouped together.
 pub struct Inputs<
@@ -22,7 +22,7 @@ pub struct Inputs<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+    OutputType: Sink<DataType = Out, SignalType = SignalType>,
 {
     pub left: LeftInput<
         Left,
@@ -65,7 +65,7 @@ pub struct Phases<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Closeable<DataType = Out, SignalType = SignalType>,
+    OutputType: Sink<DataType = Out, SignalType = SignalType>,
 {
     pub inputs: Inputs<
         Left,

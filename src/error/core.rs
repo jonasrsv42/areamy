@@ -40,7 +40,7 @@ pub enum ErrorKind {
     /// not an error. ThreadStreams treat this as an exit signal but
     /// can be restarted. Other consumers can interpret as they wish.
     ///
-    /// See [`crate::source::source`] for how sources use this for graceful shutdown.
+    /// See [`crate::writer::writer`] for how writers use this for graceful shutdown.
     Closed,
 }
 

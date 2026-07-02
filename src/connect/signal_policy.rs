@@ -2,7 +2,7 @@
 use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
-use crate::{Closeable, Pushable};
+use crate::{Closeable, Pushable, Sink};
 
 #[derive(Debug)]
 /// Policy for handling signals in the queue
@@ -15,28 +15,28 @@ pub enum SignalPolicy {
     Block,
 }
 
-/// A wrapper around a `Closeable` that applies a signal policy.
+/// A wrapper around a `Sink` that applies a signal policy.
 /// This allows for different signal policies to be applied to the same
 /// underlying queue when pushed to from different parents.
 #[derive(Debug)]
-pub struct PolicyEdge<CloseableType>
+pub struct PolicyEdge<SinkType>
 where
-    CloseableType: Closeable,
+    SinkType: Sink,
 {
     /// The underlying pushable that messages will be sent to
-    inner: CloseableType,
+    inner: SinkType,
     /// The policy to apply when pushing messages
     policy: SignalPolicy,
     /// Tracks if the last message was data (needed for FollowData policy)
     last_was_data: bool,
 }
 
-impl<CloseableType> PolicyEdge<CloseableType>
+impl<SinkType> PolicyEdge<SinkType>
 where
-    CloseableType: Closeable,
+    SinkType: Sink,
 {
     /// Create a new policy wrapper with the specified policy
-    pub fn new(inner: CloseableType, policy: SignalPolicy) -> Self {
+    pub fn new(inner: SinkType, policy: SignalPolicy) -> Self {
         Self {
             inner,
             policy,
@@ -76,14 +76,14 @@ where
     }
 }
 
-impl<CloseableType> Connection for PolicyEdge<CloseableType> where CloseableType: Closeable {}
+impl<SinkType> Connection for PolicyEdge<SinkType> where SinkType: Sink {}
 
-impl<CloseableType> Pushable for PolicyEdge<CloseableType>
+impl<SinkType> Pushable for PolicyEdge<SinkType>
 where
-    CloseableType: Closeable,
+    SinkType: Sink,
 {
-    type DataType = CloseableType::DataType;
-    type SignalType = CloseableType::SignalType;
+    type DataType = SinkType::DataType;
+    type SignalType = SinkType::SignalType;
 
     fn push(&mut self, message: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         // Check if the message is a signal
@@ -101,9 +101,9 @@ where
     }
 }
 
-impl<CloseableType> Closeable for PolicyEdge<CloseableType>
+impl<SinkType> Closeable for PolicyEdge<SinkType>
 where
-    CloseableType: Closeable,
+    SinkType: Sink,
 {
     fn close(&mut self) -> Result<(), Error> {
         self.inner.close()

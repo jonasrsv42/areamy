@@ -1,76 +1,76 @@
-//! [LineReader] is a convenient way to manage a graph input and output in a single place for
+//! [LineIo] is a convenient way to manage a graph input and output in a single place for
 //! linear graphs.
 use crate::error::Error;
-use crate::{GraphPushSource, GraphSink};
 use crate::{Message, Origin, Trackable};
+use crate::{Reader, Sink};
 use std::fmt::Debug;
 
-/// [`LineReader`] provides a type that can accept a [Source] and [Sink] then
+/// [`LineIo`] provides a type that can accept a [Writer](crate::work::Writer) and [Reader] then
 /// expose functions that makes reading and writing into the graph simpler.
 ///
-/// A [LineReader] is not necessary to read or write to the graph as the
+/// A [LineIo] is not necessary to read or write to the graph as the
 /// nodes themselves can be read from and written to in various ways.
-/// But the line reader combines a graph source with a graph [Sink] in
+/// But the [LineIo] combines a graph [Writer](crate::work::Writer) with a graph [Reader] in
 /// a convenient struct.
-pub struct LineReader<SourceType, SinkType>
+pub struct LineIo<WriterType, ReaderType>
 where
-    SourceType: GraphPushSource,
-    SinkType: GraphSink,
+    WriterType: Sink,
+    ReaderType: Reader,
 {
-    pub source: SourceType,
-    pub sink: SinkType,
+    pub writer: WriterType,
+    pub reader: ReaderType,
 }
 
-impl<SourceType, SinkType> LineReader<SourceType, SinkType>
+impl<WriterType, ReaderType> LineIo<WriterType, ReaderType>
 where
-    SourceType: GraphPushSource,
-    SinkType: GraphSink,
+    WriterType: Sink,
+    ReaderType: Reader,
 {
-    /// Create a [LineReader] from a [Source] and [Sink]
-    pub fn new(source: SourceType, sink: SinkType) -> LineReader<SourceType, SinkType> {
-        Self { source, sink }
+    /// Create a [LineIo] from a [Writer](crate::work::Writer) and [Reader]
+    pub fn new(writer: WriterType, reader: ReaderType) -> LineIo<WriterType, ReaderType> {
+        Self { writer, reader }
     }
 
     /// Read a Message from the line.
-    pub fn read(&mut self) -> Result<Message<SinkType::DataType, SinkType::SignalType>, Error> {
-        return self.sink.read();
+    pub fn read(&mut self) -> Result<Message<ReaderType::DataType, ReaderType::SignalType>, Error> {
+        return self.reader.read();
     }
 
     /// Push a Message into the line.
     pub fn push(
         &mut self,
-        object: Message<SourceType::DataType, SourceType::SignalType>,
+        object: Message<WriterType::DataType, WriterType::SignalType>,
     ) -> Result<(), Error> {
-        self.source.push(object)?;
+        self.writer.push(object)?;
 
         Ok(())
     }
 
-    /// Close the source, signaling no more data will be produced.
+    /// Close the writer, signaling no more data will be produced.
     /// This will cause downstream readers to receive [crate::error::ErrorKind::Closed]
     /// when the buffer is empty.
     pub fn close(&mut self) -> Result<(), Error> {
-        self.source.close()
+        self.writer.close()
     }
 }
 
-impl<SourceType, SinkType> Drop for LineReader<SourceType, SinkType>
+impl<WriterType, ReaderType> Drop for LineIo<WriterType, ReaderType>
 where
-    SourceType: GraphPushSource,
-    SinkType: GraphSink,
+    WriterType: Sink,
+    ReaderType: Reader,
 {
     fn drop(&mut self) {
         let _ = self.close();
     }
 }
 
-impl<In, Out, OriginType, SourceType, SinkType> LineReader<SourceType, SinkType>
+impl<In, Out, OriginType, WriterType, ReaderType> LineIo<WriterType, ReaderType>
 where
     In: Send + Sync,
     Out: Debug + Send + Sync + 'static,
     OriginType: Origin + Clone + Send + Sync + 'static,
-    SourceType: GraphPushSource<DataType = In, SignalType = Trackable<OriginType>>,
-    SinkType: GraphSink<DataType = Out, SignalType = Trackable<OriginType>>,
+    WriterType: Sink<DataType = In, SignalType = Trackable<OriginType>>,
+    ReaderType: Reader<DataType = Out, SignalType = Trackable<OriginType>>,
 {
     /// Flush and read operation. It will issue a flush which
     /// will empty and reset the line and then read until
@@ -83,10 +83,10 @@ where
     pub fn flush(&mut self, origin: OriginType) -> Result<Vec<Out>, Error> {
         let trackable = Trackable::new(origin);
 
-        self.source.push(Message::Flush(trackable.clone()))?;
+        self.writer.push(Message::Flush(trackable.clone()))?;
         let mut datas: Vec<Out> = Vec::new();
         loop {
-            let object = self.sink.read()?;
+            let object = self.reader.read()?;
 
             match object {
                 Message::Data(data) => datas.push(data),
@@ -111,10 +111,10 @@ where
     /// cyclical and non linear graphs.
     pub fn mark(&mut self, origin: OriginType) -> Result<Vec<Out>, Error> {
         let trackable = Trackable::new(origin);
-        self.source.push(Message::Marker(trackable.clone()))?;
+        self.writer.push(Message::Marker(trackable.clone()))?;
         let mut datas: Vec<Out> = Vec::new();
         loop {
-            let object = self.sink.read()?;
+            let object = self.reader.read()?;
 
             match object {
                 Message::Data(data) => datas.push(data),
@@ -133,43 +133,43 @@ where
 mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::{work::Sink, work::Source, work::make_line};
+    use crate::{work::Reader, work::Writer, work::make_line};
 
     #[test]
     fn readers_line_objects() {
         let line = make_line(MockLine::new());
-        let source = Source::new(&line).unwrap();
-        let sink = Sink::new(line).unwrap();
+        let writer = Writer::new(&line).unwrap();
+        let reader = Reader::new(line).unwrap();
 
-        let mut reader = LineReader::new(source, sink);
+        let mut io = LineIo::new(writer, reader);
 
-        reader.push(Message::Data(1)).unwrap();
-        reader.push(Message::Data(2)).unwrap();
+        io.push(Message::Data(1)).unwrap();
+        io.push(Message::Data(2)).unwrap();
 
-        assert_eq!(reader.read().unwrap(), Message::Data(2));
-        assert_eq!(reader.read().unwrap(), Message::Data(6));
+        assert_eq!(io.read().unwrap(), Message::Data(2));
+        assert_eq!(io.read().unwrap(), Message::Data(6));
 
         // Reset processing
-        reader.push(Message::Flush("hi".into())).unwrap();
+        io.push(Message::Flush("hi".into())).unwrap();
         // Read the Flush
-        reader.read().unwrap();
+        io.read().unwrap();
 
-        reader.push(Message::Data(2)).unwrap();
-        assert_eq!(reader.read().unwrap(), Message::Data(4));
+        io.push(Message::Data(2)).unwrap();
+        assert_eq!(io.read().unwrap(), Message::Data(4));
     }
 
     #[test]
     fn readers_line_mread() {
         let line = make_line(MockLine::new());
-        let source = Source::new(&line).unwrap();
-        let sink = Sink::new(line).unwrap();
+        let writer = Writer::new(&line).unwrap();
+        let reader = Reader::new(line).unwrap();
 
-        let mut reader = LineReader::new(source, sink);
+        let mut io = LineIo::new(writer, reader);
 
-        reader.push(Message::Data(1)).unwrap();
-        reader.push(Message::Data(2)).unwrap();
+        io.push(Message::Data(1)).unwrap();
+        io.push(Message::Data(2)).unwrap();
 
-        let res: Vec<usize> = reader.mark("unknown").unwrap();
+        let res: Vec<usize> = io.mark("unknown").unwrap();
 
         assert_eq!(res, vec![2, 6]);
     }

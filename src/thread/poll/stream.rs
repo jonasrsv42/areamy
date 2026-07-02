@@ -259,14 +259,13 @@ mod tests {
     use crate::graph::Get;
     use crate::node::line::poll::routine::tests::MockLine;
     use crate::poll;
-    use crate::{Closeable, Message, make_push};
+    use crate::{Closeable, Message, Sink, make_push};
 
     #[derive(Debug)]
     struct IoThread;
     impl ThreadId for IoThread {}
 
-    type InputHandle =
-        Box<dyn Closeable<DataType = usize, SignalType = &'static str> + Send + Sync>;
+    type InputHandle = Box<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>;
 
     #[test]
     fn async_thread_starts_and_stops() {
@@ -385,7 +384,7 @@ mod tests {
         assert_eq!(*order.lock().unwrap(), vec![1, 2, 3]);
     }
 
-    /// Closing the source should propagate through the async chain
+    /// Closing the writer should propagate through the async chain
     /// and close the output edge.
     #[test]
     fn close_propagates_through_chain() {

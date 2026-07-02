@@ -58,18 +58,18 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::pull::Sink;
-    use crate::source::pull::SourceBuffer;
-    use crate::work::Source;
+    use crate::pull::Reader;
+    use crate::work::Writer;
+    use crate::writer::pull::WriterBuffer;
     use crate::{DefaultThread, Message, Pullable, Pushable};
 
     #[test]
-    fn line_builder_reading_source_buffer() {
-        let mut buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
-        let mut source = Source::of(&buffer).unwrap();
+    fn line_builder_reading_writer_buffer() {
+        let mut buffer = WriterBuffer::<usize, usize, DefaultThread>::new();
+        let mut writer = Writer::of(&buffer).unwrap();
 
-        source.push(Message::Data(5)).unwrap();
-        source.push(Message::Data(6)).unwrap();
+        writer.push(Message::Data(5)).unwrap();
+        writer.push(Message::Data(6)).unwrap();
 
         assert_eq!(buffer.pull().unwrap(), Message::Data(5));
         assert_eq!(buffer.pull().unwrap(), Message::Data(6));
@@ -77,16 +77,16 @@ pub mod tests {
 
     #[test]
     fn line_builder_make_pull() {
-        let buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
-        let mut source = Source::of(&buffer).unwrap();
+        let buffer = WriterBuffer::<usize, usize, DefaultThread>::new();
+        let mut writer = Writer::of(&buffer).unwrap();
 
         let line = make_pull(buffer, MockLine::new());
-        let mut sink = Sink::new(line);
+        let mut reader = Reader::new(line);
 
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
 
-        assert_eq!(sink.pull().unwrap(), Message::Data(2));
-        assert_eq!(sink.pull().unwrap(), Message::Data(6));
+        assert_eq!(reader.pull().unwrap(), Message::Data(2));
+        assert_eq!(reader.pull().unwrap(), Message::Data(6));
     }
 }

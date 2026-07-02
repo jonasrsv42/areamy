@@ -31,8 +31,8 @@ where
 pub mod tests {
     use super::*;
     use crate::node::line::pull::builder::make_pull;
-    use crate::source::pull::SourceBuffer;
-    use crate::work::Source;
+    use crate::work::Writer;
+    use crate::writer::pull::WriterBuffer;
     use crate::{DefaultThread, Message, Pushable};
     use crate::{Next, Send};
     use std::collections::VecDeque;
@@ -72,19 +72,19 @@ pub mod tests {
 
     #[test]
     fn line_nosync_readers_basic() {
-        let buffer = SourceBuffer::<usize, usize, DefaultThread>::new();
-        let mut source = Source::of(&buffer).unwrap();
+        let buffer = WriterBuffer::<usize, usize, DefaultThread>::new();
+        let mut writer = Writer::of(&buffer).unwrap();
 
         let mut line = make_pull(buffer, Identity::new());
 
-        source.push(Message::Data(1)).unwrap();
-        source.push(Message::Data(2)).unwrap();
-        source.push(Message::Data(3)).unwrap();
-        source.push(Message::Data(4)).unwrap();
-        source.push(Message::Marker(0)).unwrap();
-        source.push(Message::Data(5)).unwrap();
-        source.push(Message::Data(6)).unwrap();
-        source.push(Message::Marker(0)).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+        writer.push(Message::Data(2)).unwrap();
+        writer.push(Message::Data(3)).unwrap();
+        writer.push(Message::Data(4)).unwrap();
+        writer.push(Message::Marker(0)).unwrap();
+        writer.push(Message::Data(5)).unwrap();
+        writer.push(Message::Data(6)).unwrap();
+        writer.push(Message::Marker(0)).unwrap();
 
         assert_eq!(
             read_until(&mut line, Message::Marker(0)).unwrap(),

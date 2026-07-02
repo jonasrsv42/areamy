@@ -6,5 +6,5 @@ pub use crate::node::biunion::work::builder::make_biunion;
 pub use crate::node::biunion::work::node::Biunion;
 pub use crate::node::line::work::bridge::from_pull;
 pub use crate::node::line::work::node::{Line, make_line};
-pub use crate::sink::work::{Sink, tee};
-pub use crate::source::push::Source;
+pub use crate::reader::work::{Reader, tee};
+pub use crate::writer::push::Writer;

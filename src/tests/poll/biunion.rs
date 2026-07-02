@@ -9,8 +9,8 @@ use crate::error::Error;
 use crate::poll;
 use crate::poll::future;
 use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
-use crate::source::push::Source;
 use crate::sync::Receiver;
+use crate::writer::push::Writer;
 use crate::{Closeable, Message, Pushable, ThreadId, make_push};
 use std::cell::Cell;
 use std::future::Future;
@@ -80,8 +80,8 @@ fn biunion_audio_with_config() {
         .input::<biunion::Right, crate::poll::Sync>()
         .output::<crate::poll::Sync>();
 
-    let mut audio_source = Source::<usize>::of::<_, biunion::Left>(&node).unwrap();
-    let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
+    let mut audio_writer = Writer::<usize>::of::<_, biunion::Left>(&node).unwrap();
+    let mut config_writer = Writer::<Config>::of::<_, biunion::Right>(&node).unwrap();
 
     let output_edge = Receiver::new();
     make_push(&mut node, &output_edge).unwrap();
@@ -91,28 +91,28 @@ fn biunion_audio_with_config() {
         let handle = async_thread.start(s);
 
         // Send audio with default multiplier (1)
-        audio_source.push(Message::Data(10)).unwrap();
+        audio_writer.push(Message::Data(10)).unwrap();
         assert_eq!(output_edge.read_front().unwrap(), Message::Data(10)); // 10 * 1
 
         // Update config: multiplier = 3
-        config_source
+        config_writer
             .push(Message::Data(Config { multiplier: 3 }))
             .unwrap();
 
         // Send marker on config to synchronize — when it arrives on output,
         // we know the config update was processed.
-        config_source.push(Message::Marker("sync".into())).unwrap();
+        config_writer.push(Message::Marker("sync".into())).unwrap();
         assert!(matches!(
             output_edge.read_front().unwrap(),
             Message::Marker(_)
         ));
 
         // Send more audio with new multiplier
-        audio_source.push(Message::Data(10)).unwrap();
+        audio_writer.push(Message::Data(10)).unwrap();
         assert_eq!(output_edge.read_front().unwrap(), Message::Data(30)); // 10 * 3
 
         // Close audio — should close the whole node (wakes right input too)
-        audio_source.close().unwrap();
+        audio_writer.close().unwrap();
 
         assert!(matches!(handle.join(), crate::thread::Join::Ok));
     });
@@ -141,8 +141,8 @@ fn biunion_with_async_parent() {
         ))
         .input::<crate::poll::Sync>();
 
-    // Source pushes into parent
-    let mut audio_source = Source::<usize>::of::<_, crate::marker::Unary>(&parent).unwrap();
+    // Writer pushes into parent
+    let mut audio_writer = Writer::<usize>::of::<_, crate::marker::Unary>(&parent).unwrap();
 
     // Biunion: left from async parent, right from sync config
     let biunion_routine = future::biunion::FutureRoutine::factory(
@@ -188,7 +188,7 @@ fn biunion_with_async_parent() {
         .input::<biunion::Right, crate::poll::Sync>()
         .output::<crate::poll::Sync>();
 
-    let mut config_source = Source::<Config>::of::<_, biunion::Right>(&node).unwrap();
+    let mut config_writer = Writer::<Config>::of::<_, biunion::Right>(&node).unwrap();
 
     let output_edge = Receiver::new();
     make_push(&mut node, &output_edge).unwrap();
@@ -198,24 +198,24 @@ fn biunion_with_async_parent() {
         let handle = async_thread.start(s);
 
         // Audio 5 → parent doubles → 10 → biunion (multiplier=1) → 10
-        audio_source.push(Message::Data(5)).unwrap();
+        audio_writer.push(Message::Data(5)).unwrap();
         assert_eq!(output_edge.read_front().unwrap(), Message::Data(10));
 
         // Update config: multiplier = 3
-        config_source
+        config_writer
             .push(Message::Data(Config { multiplier: 3 }))
             .unwrap();
-        config_source.push(Message::Marker("sync".into())).unwrap();
+        config_writer.push(Message::Marker("sync".into())).unwrap();
         assert!(matches!(
             output_edge.read_front().unwrap(),
             Message::Marker(_)
         ));
 
         // Audio 5 → parent doubles → 10 → biunion (multiplier=3) → 30
-        audio_source.push(Message::Data(5)).unwrap();
+        audio_writer.push(Message::Data(5)).unwrap();
         assert_eq!(output_edge.read_front().unwrap(), Message::Data(30));
 
-        audio_source.close().unwrap();
+        audio_writer.close().unwrap();
         assert!(matches!(handle.join(), crate::thread::Join::Ok));
     });
 }

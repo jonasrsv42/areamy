@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::{Closeable, Pushable, closed, fatal, graph::Get};
+use crate::{Closeable, Pushable, Sink, closed, fatal, graph::Get};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
@@ -315,7 +315,7 @@ where
     }
 }
 
-impl<'params, D, S> Get<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>
+impl<'params, D, S> Get<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>
     for Sender<D, S>
 where
     D: Send + Sync + 'static,
@@ -323,8 +323,7 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>, Error>
-    {
+    ) -> Result<Box<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>, Error> {
         Ok(Box::new(self.clone()))
     }
 }
@@ -341,7 +340,7 @@ where
     }
 }
 
-impl<'params, D, S> Get<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>
+impl<'params, D, S> Get<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>
     for Receiver<D, S>
 where
     D: Send + Sync + 'static,
@@ -349,8 +348,7 @@ where
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Closeable<DataType = D, SignalType = S> + Send + Sync + 'params>, Error>
-    {
+    ) -> Result<Box<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>, Error> {
         Ok(Box::new(self.sender()))
     }
 }
@@ -549,8 +547,7 @@ mod tests {
     fn closeable_trait_closes_edge() {
         let rx = Receiver::<usize, TestSignal>::new();
         let tx = rx.sender();
-        let mut closeable: Box<dyn Closeable<DataType = usize, SignalType = TestSignal>> =
-            Box::new(tx);
+        let mut closeable: Box<dyn Sink<DataType = usize, SignalType = TestSignal>> = Box::new(tx);
         closeable.push(Message::Data(1)).unwrap();
         Closeable::close(closeable.as_mut()).unwrap();
 
@@ -575,7 +572,7 @@ mod tests {
     fn get_dyn_closeable_returns_working_handle() {
         let rx = Receiver::<usize, TestSignal>::new();
         let tx = rx.sender();
-        let handle: Box<dyn Closeable<DataType = usize, SignalType = TestSignal> + Send + Sync> =
+        let handle: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
             Get::get(&tx).unwrap();
         // Original tx still alive — handle is an additional clone.
         drop(handle);

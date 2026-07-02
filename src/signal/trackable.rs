@@ -128,7 +128,7 @@ mod tests {
     use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::{DefaultThread, Message, Pushable, Workable, work::make_bifurcation};
-    use crate::{sink::work::tee, work::Source};
+    use crate::{reader::work::tee, work::Writer};
 
     /// We need many more tests here to ensure Tracking behaves reasonably in semi-complex graphs! :)
 
@@ -136,10 +136,10 @@ mod tests {
     fn trackable_signal_tracks_active() {
         let mut bifur = make_bifurcation(MockBifurcation::new());
 
-        let mut source = Source::new(&bifur).unwrap();
+        let mut writer = Writer::new(&bifur).unwrap();
 
-        let mut left_sink = tee::Sink::new::<bifurcation::Left>(&mut bifur).unwrap();
-        let mut right_sink = tee::Sink::new::<bifurcation::Right>(&mut bifur).unwrap();
+        let mut left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
+        let mut right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
 
@@ -149,13 +149,13 @@ mod tests {
         assert_eq!(hello_track.active(), 1);
 
         // Add one flush
-        source.push(Message::Flush(hello_track.clone())).unwrap();
+        writer.push(Message::Flush(hello_track.clone())).unwrap();
 
         assert_eq!(hello_track.active(), 2);
         workable.work().unwrap();
 
         {
-            let _signal = left_sink.read().unwrap();
+            let _signal = left_reader.read().unwrap();
 
             // There is 3 instances alive now. One inside the signal variable above and one inside
             // the output of the right_sink and the original one.
@@ -166,7 +166,7 @@ mod tests {
         assert_eq!(hello_track.active(), 2);
 
         {
-            let _signal = right_sink.read().unwrap();
+            let _signal = right_reader.read().unwrap();
 
             // There is 2 instances alive now. This one and the original one.
             assert_eq!(hello_track.active(), 2);

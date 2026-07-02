@@ -10,7 +10,7 @@ use crate::error::Error;
 use crate::marker::Connection;
 use crate::poll::future::OutputQueue;
 use crate::{
-    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, ThreadId,
+    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Sink, ThreadId,
     Trackable, bifurcation, biunion,
 };
 use std::collections::VecDeque;
@@ -238,16 +238,16 @@ impl<'a> crate::node::Name for BorrowingBifurcation<'a> {}
 impl<'a> BifurcationRoutine<usize, usize, usize> for BorrowingBifurcation<'a> {}
 
 // ============================================================
-// Borrowed closeable sink (for poll output Vec<Box<dyn ... + 'params>>)
+// Borrowed Sink (for poll output Vec<Box<dyn ... + 'params>>)
 // ============================================================
 
-/// Closeable that holds a non-`'static` borrow. Used by the poll output
+/// Sink that holds a non-`'static` borrow. Used by the poll output
 /// sink test to verify `Edge::Output<'params>` and its `Add` impl really
 /// accept non-`'static` sinks.
 pub(super) struct BorrowingSink<'a> {
     pub(super) _config: &'a usize,
     pub(super) forward:
-        Box<dyn Closeable<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
+        Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
 }
 
 impl<'a> Connection for BorrowingSink<'a> {}
@@ -266,11 +266,11 @@ impl<'a> Closeable for BorrowingSink<'a> {
     }
 }
 
-/// Erase [`BorrowingSink<'a>`] to `Box<dyn Closeable + 'a>`. Hides the
+/// Erase [`BorrowingSink<'a>`] to `Box<dyn Sink + 'a>`. Hides the
 /// object-lifetime default that would otherwise force the coercion to
 /// `'static` at the call site.
 pub(super) fn box_borrowing_sink<'a>(
     s: BorrowingSink<'a>,
-) -> Box<dyn Closeable<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync + 'a> {
+) -> Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync + 'a> {
     Box::new(s)
 }

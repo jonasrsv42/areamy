@@ -2,7 +2,7 @@
 //!
 //! Mixes all three graph paradigms in one graph per generation:
 //!
-//! - **Pull** segment on the main thread: [`SourceBuffer`] →
+//! - **Pull** segment on the main thread: [`WriterBuffer`] →
 //!   [`pull::Connect::pull`] line (identity).
 //! - **Work** segment on a bundled OS thread: [`from_pull`]-wrapped
 //!   line node whose routine ([`FailAfter`]) processes one message
@@ -28,7 +28,7 @@
 //!    with a `GraphEvent { generation: gen, kind: Error }`.
 //! 3. Orchestrator dequeues. Compares `event.generation` to the
 //!    current generation — events from older bundles are discarded;
-//!    matching events trigger teardown (close source, join bundle,
+//!    matching events trigger teardown (close writer, join bundle,
 //!    join drain thread, inspect collected values) and rebuild with
 //!    `gen + 1`.
 //! 4. After [`TARGET_GENERATIONS`] cycles, exit.
@@ -49,9 +49,9 @@ use areamy::connect::sync::Receiver;
 use areamy::error::Error;
 use areamy::node::Name;
 use areamy::pull;
-use areamy::pull::SourceBuffer;
+use areamy::pull::WriterBuffer;
 use areamy::thread::{ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream};
-use areamy::work::{Source, from_pull};
+use areamy::work::{Writer, from_pull};
 use areamy::{
     Closeable, Flush, LineRoutine, Message, Next, Pushable, Send as RoutineSend, fatal, make_push,
     make_work, poll,
@@ -200,7 +200,7 @@ struct GraphEvent {
 /// Everything the orchestrator hangs onto for one generation.
 struct GenerationHandles<'params> {
     bundle: ThreadBundleHandle<'params>,
-    source: Source<'params, usize, areamy::Trackable<&'static str>>,
+    writer: Writer<'params, usize, areamy::Trackable<&'static str>>,
     /// JoinHandle for the helper thread that drains the sink-side
     /// Receiver into `seen`.
     drain: JoinHandle<()>,
@@ -223,8 +223,8 @@ fn build_graph<'params>(
     generation: usize,
 ) -> GenerationHandles<'params> {
     // Pull segment on the main thread.
-    let buffer = SourceBuffer::new();
-    let source = Source::new(&buffer).unwrap();
+    let buffer = WriterBuffer::new();
+    let writer = Writer::new(&buffer).unwrap();
     let pull_line = pull::Connect::pull(buffer, PullIdentity::new());
 
     // Work segment: wrap the pull tail into a work-line that accepts
@@ -280,19 +280,19 @@ fn build_graph<'params>(
 
     GenerationHandles {
         bundle: handle,
-        source,
+        writer,
         drain,
         seen,
     }
 }
 
-/// Tear down the current generation: close the source so the cascade
+/// Tear down the current generation: close the writer so the cascade
 /// propagates through the graph, join the bundle (blocks until every
 /// thread has exited), then join the drain thread (which exits when
 /// it sees Closed on the sink-side Receiver). Returns the values the
 /// drain thread observed.
 fn teardown(mut gen_handles: GenerationHandles<'_>) -> Vec<usize> {
-    let _ = Closeable::close(&mut gen_handles.source);
+    let _ = Closeable::close(&mut gen_handles.writer);
     let _ = gen_handles.bundle.join();
     let _ = gen_handles.drain.join();
     let observed = gen_handles.seen.lock().unwrap().clone();
@@ -315,8 +315,8 @@ fn restart_loop_with_generation_dedup_and_real_data_flow() {
 
         // Push two items: the first flows all the way through (sink sees
         // 1 * 2 = 2); the second triggers the work-line failure path.
-        gen_handles.source.push(Message::Data(1)).unwrap();
-        gen_handles.source.push(Message::Data(2)).unwrap();
+        gen_handles.writer.push(Message::Data(1)).unwrap();
+        gen_handles.writer.push(Message::Data(2)).unwrap();
 
         loop {
             let event = match event_rx.recv_timeout(Duration::from_secs(5)) {
@@ -355,8 +355,8 @@ fn restart_loop_with_generation_dedup_and_real_data_flow() {
 
                     current_gen += 1;
                     gen_handles = build_graph(s, event_tx.clone(), current_gen);
-                    gen_handles.source.push(Message::Data(1)).unwrap();
-                    gen_handles.source.push(Message::Data(2)).unwrap();
+                    gen_handles.writer.push(Message::Data(1)).unwrap();
+                    gen_handles.writer.push(Message::Data(2)).unwrap();
                 }
             }
         }

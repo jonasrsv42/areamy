@@ -40,18 +40,24 @@ pub trait Pushable: Connection {
     fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error>;
 }
 
-/// A [`Closeable`] is a [Pushable] that can be closed to signal no more data will be sent.
+/// A [`Closeable`] can be closed to signal no more data will be sent.
 ///
 /// When a node receives an error from upstream (via pull/work connections), it should
-/// close all its [Closeable] outputs to propagate the shutdown through push connections.
+/// close all its [Sink] outputs to propagate the shutdown through push connections.
 /// This enables clean shutdown cascade through the entire graph.
 ///
 /// The exact semantics of close (e.g., first-close-wins vs refcounted) are up to the
 /// implementation.
-pub trait Closeable: Pushable {
+pub trait Closeable: Connection {
     /// Close this connection, signaling no more data will be sent.
     fn close(&mut self) -> Result<(), Error>;
 }
+
+/// A [`Sink`] is the fundamental data output: something you can [Pushable::push] into
+/// and [Closeable::close]. Nodes hold their outputs as [`Sink`]s and real terminal sinks
+/// inherit it.
+pub trait Sink: Pushable + Closeable {}
+impl<T: Pushable + Closeable> Sink for T {}
 
 /// [`Pullable`] combines [Workable] and [Pushable] in being both a scheduling and dataflow
 /// [Connection]. As with [Workable] the [Pullable] connection has a unique [Pullable::ThreadId] associated
@@ -192,7 +198,7 @@ pub mod tests {
         >,
 
         /// Outgoing data connections. Lets us shovel data into our child nodes.
-        pub outputs: Vec<Box<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync>>,
+        pub outputs: Vec<Box<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync>>,
     }
 
     impl Node {
@@ -250,20 +256,20 @@ pub mod tests {
     }
 
     /// Get Closeable for input edge.
-    impl Get<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync> for Node {
+    impl Get<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync> for Node {
         fn get(
             &self,
-        ) -> Result<Box<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync>, Error>
+        ) -> Result<Box<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync>, Error>
         {
             Ok(Box::new(self.input.sender()))
         }
     }
 
     /// Method adding something to output.
-    impl Add<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync> for Node {
+    impl Add<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync> for Node {
         fn add(
             &mut self,
-            connection: Box<dyn Closeable<DataType = usize, SignalType = usize> + Send + Sync>,
+            connection: Box<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync>,
         ) -> Result<(), Error> {
             Ok(self.outputs.push(connection))
         }

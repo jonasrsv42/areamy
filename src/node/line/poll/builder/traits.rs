@@ -48,7 +48,7 @@ where
 {
     fn resolve() -> Vec<
         Box<
-            dyn crate::Closeable<DataType = OutType, SignalType = SignalType>
+            dyn crate::Sink<DataType = OutType, SignalType = SignalType>
                 + Send
                 + std::marker::Sync
                 + 'params,

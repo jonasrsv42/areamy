@@ -13,9 +13,9 @@ use crate::error::Error;
 use crate::node::{bifurcation, biunion};
 use crate::work::make_line;
 use crate::{
-    BifurcationRoutine, BiunionRoutine, LineReader, Message, make_bidi,
+    BifurcationRoutine, BiunionRoutine, LineIo, Message, make_bidi,
     work::Connect,
-    work::{Sink, Source, make_bifurcation, make_biunion},
+    work::{Reader, Writer, make_bifurcation, make_biunion},
 };
 use std::collections::VecDeque;
 
@@ -123,7 +123,7 @@ fn test_cycle_with_signal_policies() {
     let biunion = make_biunion(IncrementBiunion::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
-    let source = Source::new::<biunion::Right>(&biunion).unwrap();
+    let writer = Writer::new::<biunion::Right>(&biunion).unwrap();
 
     // bifurcation.left → biunion.left (back-edge, FollowData)
     Connect::<usize>::push::<bifurcation::Left, biunion::Left>(
@@ -135,11 +135,11 @@ fn test_cycle_with_signal_policies() {
     // biunion → bifurcation (forward, Forward policy via make_bidi)
     make_bidi(biunion, &mut bifurcation).unwrap();
 
-    let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
-    let mut reader = LineReader::new(source, sink);
+    let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
+    let mut io = LineIo::new(writer, reader);
 
-    reader.push(Message::Data(1)).unwrap();
-    assert_eq!(reader.flush("hello".into()).unwrap(), vec![6]);
+    io.push(Message::Data(1)).unwrap();
+    assert_eq!(io.flush("hello".into()).unwrap(), vec![6]);
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn test_cycle_with_multiple_values() {
     let biunion = make_biunion(IncrementBiunion::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
-    let source = Source::new::<biunion::Right>(&biunion).unwrap();
+    let writer = Writer::new::<biunion::Right>(&biunion).unwrap();
 
     Connect::<usize>::push::<bifurcation::Left, biunion::Left>(
         bifurcation.as_mut(),
@@ -157,17 +157,17 @@ fn test_cycle_with_multiple_values() {
 
     make_bidi(biunion, &mut bifurcation).unwrap();
 
-    let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
-    let mut reader = LineReader::new(source, sink);
+    let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
+    let mut io = LineIo::new(writer, reader);
 
     for i in 1..=6 {
-        reader.push(Message::Data(i)).unwrap();
+        io.push(Message::Data(i)).unwrap();
     }
 
     // Biunion prioritizes the left (feedback) input, so values 1-5 each
     // fully cycle (becoming 6) before value 6 is processed (becoming 7).
     assert_eq!(
-        reader.flush("flush-test".into()).unwrap(),
+        io.flush("flush-test".into()).unwrap(),
         vec![6, 6, 6, 6, 6, 7]
     );
 }
@@ -216,7 +216,7 @@ fn test_cycle_with_line_node() {
     let line = make_line(IncrementLine::new());
     let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
 
-    let source = Source::new(&line).unwrap();
+    let writer = Writer::new(&line).unwrap();
 
     // Connect bifurcation's left output back to line's input (backward connection)
     // This creates a cycle where values <= 5 go back to the line
@@ -229,11 +229,11 @@ fn test_cycle_with_line_node() {
     // Connect line's output to bifurcation's input (forward connection)
     make_bidi(line, &mut bifurcation).unwrap();
 
-    let sink = Sink::new::<bifurcation::Right>(bifurcation).unwrap();
-    let mut reader = LineReader::new(source, sink);
+    let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
+    let mut io = LineIo::new(writer, reader);
 
     for i in 1..=6 {
-        reader.push(Message::Data(i)).unwrap();
+        io.push(Message::Data(i)).unwrap();
     }
 
     // The expected results for line node: [6, 7, 6, 6, 6, 6]
@@ -272,7 +272,7 @@ fn test_cycle_with_line_node() {
     // This test demonstrates how the same cycle logic with different node types
     // produces different behaviors due to their internal scheduling mechanisms.
     assert_eq!(
-        reader.flush("line-cycle-test".into()).unwrap(),
+        io.flush("line-cycle-test".into()).unwrap(),
         vec![6, 7, 6, 6, 6, 6]
     );
 }

@@ -1,20 +1,24 @@
 //! Integration tests for mixed sync + async graphs.
 
 use crate::error::Error;
+use crate::marker::Connection;
 use crate::node::Name;
 use crate::poll;
+use crate::signal::Trackable;
 use crate::sync::Receiver;
 use crate::{
     Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
 };
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Routine that queues input in send via waker-aware Queue, then
 /// doubles it in poll. Send wakes Work via the queue's waker.
 use crate::connect::waker::{self as waker};
 use crate::poll::LineWakers;
-use crate::poll::future::queue::{Input, InputQueue, OutputQueue};
+use crate::poll::future::line::FutureRoutine;
+use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
 
 struct PollDouble {
     input: InputQueue<usize>,
@@ -1115,5 +1119,90 @@ fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
             crate::thread::Join::Ok => Ok(()),
             other => panic!("async thread did not exit cleanly: {:?}", other),
         }
+    })
+}
+
+// ============================================================
+// Tests for direct sink output (`.sink(...)`)
+// ============================================================
+
+/// Deliberately not `Clone` — a `Sync` output could not carry it.
+struct Moved(&'static str);
+
+/// A caller-provided sink: forwards moved data and signals its close, so a
+/// test blocks on the channels instead of polling shared state.
+struct Collect {
+    items: std::sync::mpsc::Sender<Moved>,
+    closed: std::sync::mpsc::Sender<()>,
+}
+
+impl Connection for Collect {}
+
+impl Pushable for Collect {
+    type DataType = Moved;
+    type SignalType = Trackable<&'static str>;
+
+    fn push(&mut self, msg: Message<Moved, Self::SignalType>) -> Result<(), Error> {
+        if let Message::Data(data) = msg {
+            self.items.send(data).unwrap();
+        }
+        Ok(())
+    }
+}
+
+impl Closeable for Collect {
+    fn close(&mut self) -> Result<(), Error> {
+        self.closed.send(()).unwrap();
+        Ok(())
+    }
+}
+
+/// A direct sink is the node's single consumer: output moves into it — no
+/// `Clone` on the data type — and node teardown closes it.
+#[test]
+fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
+    let (items, received) = std::sync::mpsc::channel();
+    let (closed, close_signal) = std::sync::mpsc::channel();
+
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let node = async_thread
+        .line(FutureRoutine::factory(
+            |input: InputConsumer<Moved>, output: OutputProducer<Moved>| {
+                Box::pin(async move {
+                    loop {
+                        match input.recv().await? {
+                            Input::Data(data) => output.push(data),
+                            Input::Flush => return Ok(()),
+                        }
+                    }
+                })
+            },
+        ))
+        .input::<crate::poll::Sync>()
+        .sink(Collect { items, closed });
+    let mut writer = crate::work::Writer::<Moved>::new(&node)?;
+    async_thread.add(node);
+
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = async_thread.start(s);
+
+        writer.push(Message::Data(Moved("a")))?;
+        writer.push(Message::Data(Moved("b")))?;
+
+        // Wait for delivery before closing: close is a fast close, so
+        // in-flight input would be dropped, not flushed.
+        let timeout = Duration::from_secs(5);
+        assert_eq!(received.recv_timeout(timeout).unwrap().0, "a");
+        assert_eq!(received.recv_timeout(timeout).unwrap().0, "b");
+
+        writer.close()?;
+        assert!(
+            matches!(handle.join(), crate::thread::Join::Ok),
+            "clean node exit",
+        );
+        close_signal
+            .recv_timeout(timeout)
+            .expect("node teardown closes the sink");
+        Ok(())
     })
 }

@@ -24,7 +24,7 @@
 //! thread and does NOT need to be [Send].
 
 use super::traits::{ResolveInput, ResolveOutput};
-use crate::connect::poll::edge::{Async, Deferred, Edge, Null, PollEdge, Sync};
+use crate::connect::poll::edge::{Async, Deferred, Direct, Edge, Null, PollEdge, Sync};
 use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::connect::poll::input;
 use crate::connect::poll::traits::AsyncParent;
@@ -213,6 +213,23 @@ where
             _phantom: std::marker::PhantomData,
         }
     }
+
+    /// Resolve output to a caller-provided [`Sink`] — the value-resolving
+    /// mirror of [`parent`](Self::parent) on the output side. Single
+    /// consumer: pushes move into the sink, so `OutType` needs no `Clone`.
+    pub fn sink(
+        self,
+        sink: impl Sink<DataType = OutType, SignalType = SignalType> + Send + 'params,
+    ) -> Node<'static, 'params, Sync, Direct, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    {
+        Node {
+            alloc: (),
+            factory: self.factory,
+            input: self.input,
+            output: Box::new(sink),
+            _phantom: std::marker::PhantomData,
+        }
+    }
 }
 
 // ============================================================
@@ -290,6 +307,23 @@ where
             factory: self.factory,
             input: self.input,
             output: E::resolve(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Resolve output to a caller-provided [`Sink`] — the value-resolving
+    /// mirror of [`parent`](Self::parent) on the output side. Single
+    /// consumer: pushes move into the sink, so `OutType` needs no `Clone`.
+    pub fn sink(
+        self,
+        sink: impl Sink<DataType = OutType, SignalType = SignalType> + Send + 'params,
+    ) -> Node<'static, 'params, Async, Direct, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    {
+        Node {
+            alloc: (),
+            factory: self.factory,
+            input: self.input,
+            output: Box::new(sink),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -406,6 +440,130 @@ where
 }
 
 // ============================================================
+// Build — shared phase assembly
+// ============================================================
+
+/// Build the three phase pollables for a node with a resolved [`Sync`]
+/// input, draining into `output` — any [`Sink`]; pushes move into it.
+fn sync_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
+    factory: FactoryType,
+    input: input::sync::Input<InType, SignalType>,
+    output: OutputType,
+    mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+) -> Result<Graph<'params, ThreadIdType>, Error>
+where
+    InType: Send + std::marker::Sync + 'static,
+    OutType: 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
+    OutputType: Sink<DataType = OutType, SignalType = SignalType> + 'params,
+{
+    let work = allocator.next();
+    let output_slot = allocator.next();
+    let input_waker = allocator.local_waker(input.slot.id);
+    let routine = factory.create(LineWakers {
+        input: input_waker.clone(),
+        work: work.value.local.clone(),
+        output: output_slot.value.local.clone(),
+    });
+    let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+        routine,
+        input.edge,
+        output,
+        input_waker,
+        work.value.local,
+        output_slot.value.local,
+    );
+    let nodes = vec![
+        GraphNode {
+            id: input.slot.id,
+            pollable: Box::new(input_phase),
+        },
+        GraphNode {
+            id: work.id,
+            pollable: Box::new(work_phase),
+        },
+        GraphNode {
+            id: output_slot.id,
+            pollable: Box::new(output_phase),
+        },
+    ];
+    Ok(Graph { allocator, nodes })
+}
+
+/// Build the parent graphs and the three phase pollables for a node with an
+/// [`Async`] input, draining into `output` — any [`Sink`]; pushes move into
+/// it.
+fn async_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
+    factory: FactoryType,
+    parents: Vec<
+        Box<
+            dyn AsyncParent<
+                    'params,
+                    OutType = InType,
+                    SignalType = SignalType,
+                    ThreadIdType = ThreadIdType,
+                > + 'params,
+        >,
+    >,
+    output: OutputType,
+    mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+) -> Result<Graph<'params, ThreadIdType>, Error>
+where
+    InType: 'static,
+    OutType: 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
+    OutputType: Sink<DataType = OutType, SignalType = SignalType> + 'params,
+{
+    let input = allocator.next();
+    let edge_waker = input.value.local.clone();
+    let mut edges = Vec::new();
+    let mut nodes = Vec::new();
+
+    for parent in parents {
+        let edge = Rc::new(RefCell::new(PollEdge::new(edge_waker.clone())));
+        let parent_graph = parent.build(edge.clone(), allocator)?;
+        allocator = parent_graph.allocator;
+        nodes.extend(parent_graph.nodes);
+        edges.push(edge);
+    }
+
+    let work = allocator.next();
+    let output_slot = allocator.next();
+    let routine = factory.create(LineWakers {
+        input: input.value.local.clone(),
+        work: work.value.local.clone(),
+        output: output_slot.value.local.clone(),
+    });
+    let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+        routine,
+        edges,
+        output,
+        input.value.local,
+        work.value.local,
+        output_slot.value.local,
+    );
+    nodes.push(GraphNode {
+        id: input.id,
+        pollable: Box::new(input_phase),
+    });
+    nodes.push(GraphNode {
+        id: work.id,
+        pollable: Box::new(work_phase),
+    });
+    nodes.push(GraphNode {
+        id: output_slot.id,
+        pollable: Box::new(output_phase),
+    });
+    Ok(Graph { allocator, nodes })
+}
+
+// ============================================================
 // Spawnable — calls factory.create() on async thread
 // ============================================================
 
@@ -423,39 +581,9 @@ where
 {
     fn build(
         self: Box<Self>,
-        mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let work = allocator.next();
-        let output = allocator.next();
-        let input_waker = allocator.local_waker(self.input.slot.id);
-        let routine = self.factory.create(LineWakers {
-            input: input_waker.clone(),
-            work: work.value.local.clone(),
-            output: output.value.local.clone(),
-        });
-        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
-            routine,
-            self.input.edge,
-            self.output,
-            input_waker,
-            work.value.local,
-            output.value.local,
-        );
-        let nodes = vec![
-            GraphNode {
-                id: self.input.slot.id,
-                pollable: Box::new(input_phase),
-            },
-            GraphNode {
-                id: work.id,
-                pollable: Box::new(work_phase),
-            },
-            GraphNode {
-                id: output.id,
-                pollable: Box::new(output_phase),
-            },
-        ];
-        Ok(Graph { allocator, nodes })
+        sync_input(self.factory, self.input, self.output, allocator)
     }
 }
 
@@ -473,49 +601,59 @@ where
 {
     fn build(
         self: Box<Self>,
-        mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let input = allocator.next();
-        let edge_waker = input.value.local.clone();
-        let mut edges = Vec::new();
-        let mut nodes = Vec::new();
+        async_input(self.factory, self.input.parents, self.output, allocator)
+    }
+}
 
-        for parent in self.input.parents {
-            let edge = Rc::new(RefCell::new(PollEdge::new(edge_waker.clone())));
-            let parent_graph = parent.build(edge.clone(), allocator)?;
-            allocator = parent_graph.allocator;
-            nodes.extend(parent_graph.nodes);
-            edges.push(edge);
-        }
+/// Terminal with a caller-provided sink: Node<Sync, Direct>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<'static, 'params, Sync, Direct, InType, OutType, SignalType, ThreadIdType, FactoryType>
+where
+    InType: Send + std::marker::Sync + 'static,
+    OutType: 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
+{
+    fn build(
+        self: Box<Self>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        sync_input(self.factory, self.input, self.output, allocator)
+    }
+}
 
-        let work = allocator.next();
-        let output = allocator.next();
-        let routine = self.factory.create(LineWakers {
-            input: input.value.local.clone(),
-            work: work.value.local.clone(),
-            output: output.value.local.clone(),
-        });
-        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
-            routine,
-            edges,
-            self.output,
-            input.value.local,
-            work.value.local,
-            output.value.local,
-        );
-        nodes.push(GraphNode {
-            id: input.id,
-            pollable: Box::new(input_phase),
-        });
-        nodes.push(GraphNode {
-            id: work.id,
-            pollable: Box::new(work_phase),
-        });
-        nodes.push(GraphNode {
-            id: output.id,
-            pollable: Box::new(output_phase),
-        });
-        Ok(Graph { allocator, nodes })
+/// Child with a caller-provided sink: Node<Async, Direct>
+impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    GraphBuilder<'params, ThreadIdType>
+    for Node<
+        'static,
+        'params,
+        Async,
+        Direct,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
+where
+    InType: 'static,
+    OutType: 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
+{
+    fn build(
+        self: Box<Self>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        async_input(self.factory, self.input.parents, self.output, allocator)
     }
 }
 
@@ -543,39 +681,9 @@ where
 {
     fn build(
         self: Box<Self>,
-        mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let work = allocator.next();
-        let output = allocator.next();
-        let input_waker = allocator.local_waker(self.input.slot.id);
-        let routine = self.factory.create(LineWakers {
-            input: input_waker.clone(),
-            work: work.value.local.clone(),
-            output: output.value.local.clone(),
-        });
-        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
-            routine,
-            self.input.edge,
-            self.output,
-            input_waker,
-            work.value.local,
-            output.value.local,
-        );
-        let nodes = vec![
-            GraphNode {
-                id: self.input.slot.id,
-                pollable: Box::new(input_phase),
-            },
-            GraphNode {
-                id: work.id,
-                pollable: Box::new(work_phase),
-            },
-            GraphNode {
-                id: output.id,
-                pollable: Box::new(output_phase),
-            },
-        ];
-        Ok(Graph { allocator, nodes })
+        sync_input(self.factory, self.input, self.output, allocator)
     }
 }
 
@@ -603,49 +711,9 @@ where
 {
     fn build(
         self: Box<Self>,
-        mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let input = allocator.next();
-        let edge_waker = input.value.local.clone();
-        let mut edges = Vec::new();
-        let mut nodes = Vec::new();
-
-        for parent in self.input.parents {
-            let edge = Rc::new(RefCell::new(PollEdge::new(edge_waker.clone())));
-            let parent_graph = parent.build(edge.clone(), allocator)?;
-            allocator = parent_graph.allocator;
-            nodes.extend(parent_graph.nodes);
-            edges.push(edge);
-        }
-
-        let work = allocator.next();
-        let output = allocator.next();
-        let routine = self.factory.create(LineWakers {
-            input: input.value.local.clone(),
-            work: work.value.local.clone(),
-            output: output.value.local.clone(),
-        });
-        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
-            routine,
-            edges,
-            self.output,
-            input.value.local,
-            work.value.local,
-            output.value.local,
-        );
-        nodes.push(GraphNode {
-            id: input.id,
-            pollable: Box::new(input_phase),
-        });
-        nodes.push(GraphNode {
-            id: work.id,
-            pollable: Box::new(work_phase),
-        });
-        nodes.push(GraphNode {
-            id: output.id,
-            pollable: Box::new(output_phase),
-        });
-        Ok(Graph { allocator, nodes })
+        async_input(self.factory, self.input.parents, self.output, allocator)
     }
 }
 
@@ -681,39 +749,9 @@ where
     fn build(
         self: Box<Self>,
         edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
-        mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let work = allocator.next();
-        let output = allocator.next();
-        let input_waker = allocator.local_waker(self.input.slot.id);
-        let routine = self.factory.create(LineWakers {
-            input: input_waker.clone(),
-            work: work.value.local.clone(),
-            output: output.value.local.clone(),
-        });
-        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
-            routine,
-            self.input.edge,
-            edge,
-            input_waker,
-            work.value.local,
-            output.value.local,
-        );
-        let nodes = vec![
-            GraphNode {
-                id: self.input.slot.id,
-                pollable: Box::new(input_phase),
-            },
-            GraphNode {
-                id: work.id,
-                pollable: Box::new(work_phase),
-            },
-            GraphNode {
-                id: output.id,
-                pollable: Box::new(output_phase),
-            },
-        ];
-        Ok(Graph { allocator, nodes })
+        sync_input(self.factory, self.input, edge, allocator)
     }
 }
 
@@ -745,48 +783,8 @@ where
     fn build(
         self: Box<Self>,
         output_edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
-        mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let input = allocator.next();
-        let edge_waker = input.value.local.clone();
-        let mut input_edges = Vec::new();
-        let mut nodes = Vec::new();
-
-        for parent in self.input.parents {
-            let edge = Rc::new(RefCell::new(PollEdge::new(edge_waker.clone())));
-            let parent_graph = parent.build(edge.clone(), allocator)?;
-            allocator = parent_graph.allocator;
-            nodes.extend(parent_graph.nodes);
-            input_edges.push(edge);
-        }
-
-        let work = allocator.next();
-        let output = allocator.next();
-        let routine = self.factory.create(LineWakers {
-            input: input.value.local.clone(),
-            work: work.value.local.clone(),
-            output: output.value.local.clone(),
-        });
-        let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
-            routine,
-            input_edges,
-            output_edge,
-            input.value.local,
-            work.value.local,
-            output.value.local,
-        );
-        nodes.push(GraphNode {
-            id: input.id,
-            pollable: Box::new(input_phase),
-        });
-        nodes.push(GraphNode {
-            id: work.id,
-            pollable: Box::new(work_phase),
-        });
-        nodes.push(GraphNode {
-            id: output.id,
-            pollable: Box::new(output_phase),
-        });
-        Ok(Graph { allocator, nodes })
+        async_input(self.factory, self.input.parents, output_edge, allocator)
     }
 }

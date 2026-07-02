@@ -2,7 +2,7 @@
 
 use super::node::Node;
 use crate::ThreadId;
-use crate::connect::poll::edge::{PollEdge, Sync};
+use crate::connect::poll::edge::{Null, PollEdge, Sync};
 use crate::connect::poll::graph::GraphBuilder;
 use crate::connect::poll::queue::PollQueue;
 use crate::connect::poll::traits::AsyncParent;
@@ -156,6 +156,28 @@ fn async_deferred_as_parent() {
     let local = to_local(alloc);
     let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
     let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
+    assert_eq!(graph.nodes.len(), 3);
+}
+
+// ============================================================
+// GraphBuilder — direct sink output
+// ============================================================
+
+#[test]
+fn input_sync_direct_sink() {
+    let (mut alloc, to_local) = make_allocators();
+    let node = deferred!(&mut alloc).input::<Sync>().sink(Null::new());
+    let local = to_local(alloc);
+    let graph = Box::new(node).build(local).unwrap();
+    assert_eq!(graph.nodes.len(), 3);
+}
+
+#[test]
+fn parent_direct_sink() {
+    let (mut alloc, to_local) = make_allocators();
+    let node = deferred!(&mut alloc).parent(MockParent).sink(Null::new());
+    let local = to_local(alloc);
+    let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
 }
 

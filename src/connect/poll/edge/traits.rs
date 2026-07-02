@@ -38,9 +38,13 @@ pub struct Linktime;
 /// Deferred edge — resolves to [`Sync`] or [`Async`] based on wiring.
 pub struct Deferred;
 
+/// Direct output edge — a caller-provided [`Sink`] stored in the builder.
+pub struct Direct;
+
 impl Connection for Sync {}
 impl Connection for Async {}
 impl Connection for Deferred {}
+impl Connection for Direct {}
 
 impl Edge for Sync {
     type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
@@ -68,4 +72,12 @@ impl Edge for Deferred {
         Null<InType, SignalType>;
     type Output<'params, OutType, SignalType: Origin> = Null<OutType, SignalType>;
     type Alloc<'alloc> = &'alloc mut WakerAllocator;
+}
+
+impl Edge for Direct {
+    type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
+        Null<InType, SignalType>;
+    type Output<'params, OutType, SignalType: Origin> =
+        Box<dyn Sink<DataType = OutType, SignalType = SignalType> + Send + 'params>;
+    type Alloc<'alloc> = ();
 }

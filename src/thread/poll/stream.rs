@@ -124,9 +124,10 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     }
 
     /// Run the poll loop synchronously on the current thread, with
-    /// PanicGuard + on_done callbacks. Used by [`start`](Self::start)
-    /// (via `scope.spawn`) and the type-erase layer.
-    pub(crate) fn run(self) -> Result<(), Error> {
+    /// PanicGuard + on_done callbacks, until every node closes.
+    /// [`start`](Self::start) spawns this into a scope; a host that already
+    /// owns a thread dedicated to this graph calls it directly.
+    pub fn run(self) -> Result<(), Error> {
         let Self {
             builders,
             waker_allocator,

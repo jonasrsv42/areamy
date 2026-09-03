@@ -19,13 +19,13 @@
 //!
 //! ```ignore
 //! use areamy::poll::future::{FutureRoutine, Input, InputConsumer, OutputProducer};
-//! use areamy::poll::Join;
+//! use areamy::poll::try_join;
 //!
 //! let routine = |output_waker| FutureRoutine::new(output_waker, |input, output| {
 //!     Box::pin(async move {
 //!         let socket = connect("server").await;
 //!
-//!         let writer = Box::pin(async {
+//!         let writer = async {
 //!             loop {
 //!                 match input.recv().await? {
 //!                     Input::Data(val) => socket.write(val).await,
@@ -33,16 +33,17 @@
 //!                 }
 //!             }
 //!             Ok(())
-//!         });
+//!         };
 //!
-//!         let reader = Box::pin(async {
+//!         let reader = async {
 //!             while let Some(val) = socket.read().await {
 //!                 output.push(val);
 //!             }
 //!             Ok(())
-//!         });
+//!         };
 //!
-//!         Join::pair(writer, reader).await
+//!         try_join(writer, reader).await?;
+//!         Ok(())
 //!     })
 //! });
 //!

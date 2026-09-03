@@ -31,6 +31,17 @@ pub fn sleep(duration: Duration) -> SleepFut {
     }
 }
 
+/// Sleep until `deadline`. Absolute-deadline variant of [sleep] —
+/// use for drift-free cadences (`next += period; sleep_until(next)`).
+/// Same contract as [sleep], resolving immediately if `deadline` has
+/// passed.
+pub fn sleep_until(deadline: Instant) -> SleepFut {
+    SleepFut {
+        deadline,
+        timer: None,
+    }
+}
+
 /// Future returned by [sleep]. Resolves once its deadline has passed.
 ///
 /// The armed [TimerGuard] owns the waker captured at first poll and

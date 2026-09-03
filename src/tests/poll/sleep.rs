@@ -4,9 +4,9 @@
 
 use crate::error::Error;
 use crate::poll;
-use crate::poll::Join;
 use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use crate::poll::try_join;
 use crate::sync::Receiver;
 use crate::work::Writer;
 use crate::{Closeable, Message, Pushable, ThreadBundle, ThreadId, make_push};
@@ -80,18 +80,17 @@ fn concurrent_sleeps_wake_independently() {
                 // per-timer wakes (last-wins clobbering would misorder)
                 // and total elapsed proves concurrency (serial would
                 // need the 6×STEP sum, concurrent only the 3×STEP max).
-                let sleepers: Vec<poll::join::BoxFut<'_>> = (1..=3u32)
-                    .map(|n| -> poll::join::BoxFut<'_> {
-                        let out = output.clone();
-                        Box::pin(async move {
-                            poll::sleep(STEP * n).await?;
-                            out.push(n as usize);
-                            Ok(())
-                        })
-                    })
-                    .collect();
+                let sleeper = |n: u32| {
+                    let out = output.clone();
+                    async move {
+                        poll::sleep(STEP * n).await?;
+                        out.push(n as usize);
+                        Ok::<_, Error>(())
+                    }
+                };
+                let all = try_join(sleeper(1), try_join(sleeper(2), sleeper(3)));
                 Box::pin(async move {
-                    Join::join(sleepers).await?;
+                    all.await?;
                     loop {
                         match input.recv().await? {
                             Input::Data(_) => {}

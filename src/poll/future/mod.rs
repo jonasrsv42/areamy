@@ -3,7 +3,8 @@
 //! - [line::FutureRoutine] — single input, single output
 //! - [biunion::FutureRoutine] — two inputs, single output
 //!
-//! For concurrent sub-tasks, use [Join](super::Join) or [Select](super::Select).
+//! For concurrent sub-tasks, use [try_join](super::try_join) or
+//! [race](super::race).
 
 pub mod biunion;
 pub mod line;

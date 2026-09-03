@@ -69,7 +69,8 @@ fn biunion_audio_with_config() {
                         Ok(())
                     });
 
-                crate::poll::Join::join([audio_task, config_task]).await
+                crate::poll::try_join(audio_task, config_task).await?;
+                Ok(())
             })
         },
     );
@@ -177,7 +178,8 @@ fn biunion_with_async_parent() {
                         Ok(())
                     });
 
-                crate::poll::Join::join([audio_task, config_task]).await
+                crate::poll::try_join(audio_task, config_task).await?;
+                Ok(())
             })
         },
     );

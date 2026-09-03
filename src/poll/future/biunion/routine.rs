@@ -2,7 +2,8 @@
 //! [BiunionRoutine](crate::node::biunion::poll::routine::BiunionRoutine).
 //!
 //! The async fn receives two [InputConsumer]s (left + right) and one
-//! [OutputProducer]. Use [Select](crate::poll::Select) to await either input.
+//! [OutputProducer]. Use [race](crate::poll::race) to await either
+//! input, or [try_join](crate::poll::try_join) to serve both.
 
 use crate::biunion;
 use crate::connect::waker;
@@ -177,7 +178,7 @@ mod tests {
     use super::*;
     use crate::connect::sync::Receiver;
     use crate::poll;
-    use crate::poll::Join;
+    use crate::poll::try_join;
     use crate::thread::ThreadBundle;
     use crate::work::Writer;
     use crate::{Closeable, Message, Pushable, ThreadId, biunion as biu, make_push};
@@ -199,25 +200,28 @@ mod tests {
                       output: OutputProducer<usize>| {
                     let left_out = output.clone();
                     let right_out = output;
-                    let left_fut: poll::join::BoxFut<'_> = Box::pin(async move {
+                    let left_fut = async move {
                         loop {
                             match left.recv().await? {
                                 Input::Data(n) => left_out.push(n + *bias_ref),
                                 Input::Flush => break,
                             }
                         }
-                        Ok(())
-                    });
-                    let right_fut: poll::join::BoxFut<'_> = Box::pin(async move {
+                        Ok::<_, Error>(())
+                    };
+                    let right_fut = async move {
                         loop {
                             match right.recv().await? {
                                 Input::Data(n) => right_out.push(n * *bias_ref),
                                 Input::Flush => break,
                             }
                         }
+                        Ok::<_, Error>(())
+                    };
+                    Box::pin(async move {
+                        try_join(left_fut, right_fut).await?;
                         Ok(())
-                    });
-                    Box::pin(async move { Join::join([left_fut, right_fut]).await })
+                    })
                 },
             ))
             .input::<biu::Left, poll::Sync>()

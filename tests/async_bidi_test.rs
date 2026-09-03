@@ -1,14 +1,14 @@
 //! Bidi streaming integration test using [areamy::poll::FutureRoutine].
 //!
 //! Demonstrates async connect → concurrent writer + reader via
-//! [areamy::poll::Join], with flush triggering half-close and
+//! [areamy::poll::try_join], with flush triggering half-close and
 //! reconnect per segment.
 
 use areamy::error::Error;
 use areamy::poll;
-use areamy::poll::Join;
 use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use areamy::poll::try_join;
 use areamy::sync::Receiver;
 use areamy::{
     Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
@@ -199,7 +199,8 @@ fn bidi_with_join() -> Result<(), Error> {
                         Ok(())
                     });
 
-                Join::join([writer, reader]).await
+                try_join(writer, reader).await?;
+                Ok(())
             })
         },
     );

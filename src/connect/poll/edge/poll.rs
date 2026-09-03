@@ -110,38 +110,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::waker::ThreadLocalWake;
+    use crate::connect::waker::mock::{noop_local_waker, tracking_local_waker};
     use crate::error::ErrorKind;
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    struct TestWake(Rc<Cell<bool>>);
-
-    impl ThreadLocalWake for TestWake {
-        fn wake(&self) {
-            self.0.set(true);
-        }
-        fn schedule_at(&self, _: std::time::Instant) {}
-    }
-
-    fn test_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {
-        let woken = Rc::new(Cell::new(false));
-        let waker = ThreadLocalWaker::new(TestWake(woken.clone()));
-        (waker, woken)
-    }
-
-    fn noop_waker() -> ThreadLocalWaker {
-        struct NoopWake;
-        impl ThreadLocalWake for NoopWake {
-            fn wake(&self) {}
-            fn schedule_at(&self, _: std::time::Instant) {}
-        }
-        ThreadLocalWaker::new(NoopWake)
-    }
 
     #[test]
     fn push_and_try_recv() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
 
         edge.push(Message::Data(42)).unwrap();
         assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(42)));
@@ -150,13 +124,13 @@ mod tests {
 
     #[test]
     fn try_recv_empty_returns_none() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
         assert_eq!(edge.try_recv().unwrap(), None);
     }
 
     #[test]
     fn closed_try_recv_returns_error() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
         edge.close().unwrap();
 
         assert!(matches!(
@@ -167,7 +141,7 @@ mod tests {
 
     #[test]
     fn closed_push_returns_error() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
         edge.close().unwrap();
 
         assert!(matches!(
@@ -178,7 +152,7 @@ mod tests {
 
     #[test]
     fn buffered_data_readable_after_close() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_waker());
+        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
         edge.push(Message::Data(1)).unwrap();
         edge.push(Message::Data(2)).unwrap();
 
@@ -191,7 +165,7 @@ mod tests {
 
     #[test]
     fn push_fires_waker() {
-        let (waker, woken) = test_waker();
+        let (waker, woken) = tracking_local_waker();
         let mut edge = PollEdge::<usize, &str>::new(waker);
 
         assert!(!woken.get());
@@ -201,7 +175,7 @@ mod tests {
 
     #[test]
     fn close_fires_waker() {
-        let (waker, woken) = test_waker();
+        let (waker, woken) = tracking_local_waker();
         let mut edge = PollEdge::<usize, &str>::new(waker);
 
         edge.close().unwrap();

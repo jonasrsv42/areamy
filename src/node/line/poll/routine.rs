@@ -76,7 +76,7 @@ pub trait LineRoutine<In, Out>:
 #[cfg(test)]
 pub mod tests {
     use super::LineRoutine;
-    use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
+    use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
     use crate::{Next, Send};
@@ -135,14 +135,8 @@ pub mod tests {
     impl crate::node::Name for MockLine {}
     impl LineRoutine<usize, usize> for MockLine {}
 
-    struct NoopWake;
-    impl ThreadLocalWake for NoopWake {
-        fn wake(&self) {}
-        fn schedule_at(&self, _: std::time::Instant) {}
-    }
-
     pub fn noop_local_waker() -> ThreadLocalWaker {
-        ThreadLocalWaker::new(NoopWake)
+        mock::noop_local_waker()
     }
 
     pub fn noop_line_wakers() -> crate::poll::LineWakers {
@@ -156,7 +150,7 @@ pub mod tests {
     fn noop_waker() -> Waker {
         Waker {
             sync: std::task::Waker::noop().clone(),
-            local: ThreadLocalWaker::new(NoopWake),
+            local: noop_local_waker(),
         }
     }
 

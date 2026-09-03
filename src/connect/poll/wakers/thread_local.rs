@@ -5,6 +5,7 @@
 
 use crate::connect::poll::marker::NodeId;
 use crate::connect::poll::queue::ThreadLocalProducer;
+use crate::connect::poll::queue::TimerKey;
 use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker};
 
 use std::time::Instant;
@@ -19,8 +20,11 @@ impl ThreadLocalWake for Wake {
     fn wake(&self) {
         self.producer.push(self.id);
     }
-    fn schedule_at(&self, deadline: Instant) {
-        self.producer.schedule(self.id, deadline);
+    fn schedule_at(&self, deadline: Instant) -> Option<TimerKey> {
+        Some(self.producer.schedule(self.id, deadline))
+    }
+    fn cancel(&self, key: TimerKey) {
+        self.producer.cancel(key);
     }
 }
 
@@ -55,7 +59,7 @@ mod tests {
         let (mut consumer, local) = q.local();
         let waker = ThreadLocalWaker::from_producer(42, &local);
         let past = Instant::now() - Duration::from_millis(50);
-        waker.schedule_at(past);
+        let _ = waker.schedule_at(past);
         // schedule_at routes through Wake → ThreadLocalProducer →
         // Scheduler::schedule, pushing the sentinel + heap entry.
         // Consumer's next() picks up the expired entry.

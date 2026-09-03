@@ -13,6 +13,7 @@
 
 use super::core::{Item, VyukovQueue, Wait};
 use super::deadline::DeadlineHeap;
+use super::timers::TimerKey;
 use crate::connect::poll::marker::NodeId;
 use crate::error::Error;
 
@@ -43,12 +44,26 @@ impl Scheduler {
         self.queue.push(id);
     }
 
-    /// Register a deadline; push the sentinel iff none is in flight.
-    pub(super) fn schedule(&mut self, node_id: NodeId, deadline: Instant) {
-        self.deadline.register(node_id, deadline);
+    /// Push the sentinel iff none is in flight — the single
+    /// enforcement point of the "at most one sentinel live" invariant.
+    fn arm(&mut self) {
         if !mem::replace(&mut self.pending, true) {
             self.queue.push_value(Item::DeadlinePending);
         }
+    }
+
+    /// Register a deadline; arm the sentinel.
+    pub(super) fn schedule(&mut self, node_id: NodeId, deadline: Instant) -> TimerKey {
+        let key = self.deadline.register(node_id, deadline);
+        self.arm();
+        key
+    }
+
+    /// Release a timer before it fires. Dead keys are a no-op. Any
+    /// in-flight sentinel resolves itself: `on_deadline` peeks, finds
+    /// nothing live, drops the coupon.
+    pub(super) fn cancel(&mut self, key: TimerKey) {
+        self.deadline.cancel(key);
     }
 
     /// Fast path: pop, dispatch, park. Delegates to [Self::timer_dispatch]
@@ -94,9 +109,7 @@ impl Scheduler {
                 Some(Item::Id(id)) => {
                     // Real wake in timer mode: re-arm so next next()
                     // re-enters and re-bounds its park.
-                    if !mem::replace(&mut self.pending, true) {
-                        self.queue.push_value(Item::DeadlinePending);
-                    }
+                    self.arm();
                     return Ok(Some(id));
                 }
                 Some(Item::DeadlinePending) => {
@@ -130,10 +143,12 @@ impl Scheduler {
         while let Some(id) = self.deadline.pop(now) {
             self.queue.push_value(Item::Id(id));
         }
-        // Future entries remain: re-arm so the next next() re-enters
-        // timer mode and re-bounds its park.
-        if !self.deadline.is_empty() && !mem::replace(&mut self.pending, true) {
-            self.queue.push_value(Item::DeadlinePending);
+        // Live entries remain: re-arm so the next next() re-enters
+        // timer mode and re-bounds its park. peek is the liveness
+        // truth — the heap has no is_empty (its raw len counts dead
+        // entries).
+        if self.deadline.peek().is_some() {
+            self.arm();
         }
         Some(first)
     }
@@ -264,6 +279,41 @@ mod tests {
             }
         }
         panic!("deadline node 999 was never served despite past deadline");
+    }
+
+    #[test]
+    fn same_node_earliest_of_two_deadlines_fires() {
+        // Regression: per-node supersede semantics let a later
+        // registration silently cancel an earlier one — the earlier
+        // deadline fired late (or never). Timers are now independent.
+        let mut s = sched();
+        s.schedule(5, Instant::now() + Duration::from_millis(20));
+        s.schedule(5, Instant::now() + Duration::from_secs(60));
+        let start = Instant::now();
+        assert_eq!(s.next().unwrap(), 5);
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn cancelled_deadline_never_wakes() {
+        let mut s = sched();
+        let key = s.schedule(13, Instant::now() - Duration::from_millis(50));
+        s.cancel(key);
+        // Sentinel is still queued; on_deadline finds an empty heap,
+        // drops the coupon, and the real wake surfaces.
+        s.queue.push(7);
+        assert_eq!(s.next().unwrap(), 7);
+        assert_eq!(s.deadline.peek(), None);
+    }
+
+    #[test]
+    fn cancel_one_of_two_leaves_other_firing() {
+        let mut s = sched();
+        let key = s.schedule(1, Instant::now() + Duration::from_secs(60));
+        s.schedule(2, Instant::now() - Duration::from_millis(50));
+        s.cancel(key);
+        assert_eq!(s.next().unwrap(), 2);
+        assert_eq!(s.deadline.peek(), None);
     }
 
     #[test]

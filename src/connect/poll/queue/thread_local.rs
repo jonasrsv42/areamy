@@ -4,6 +4,7 @@
 //! waker that wants same-thread wake/schedule.
 
 use super::scheduler::Scheduler;
+use super::timers::TimerKey;
 use crate::connect::poll::marker::NodeId;
 
 use alloc::rc::Rc;
@@ -37,7 +38,13 @@ impl ThreadLocalProducer {
     }
 
     /// Register a wake at `deadline` for `node_id`.
-    pub fn schedule(&self, node_id: NodeId, deadline: Instant) {
-        self.inner.borrow_mut().schedule(node_id, deadline);
+    #[must_use]
+    pub fn schedule(&self, node_id: NodeId, deadline: Instant) -> TimerKey {
+        self.inner.borrow_mut().schedule(node_id, deadline)
+    }
+
+    /// Release a timer before it fires. Dead keys are a no-op.
+    pub fn cancel(&self, key: TimerKey) {
+        self.inner.borrow_mut().cancel(key);
     }
 }

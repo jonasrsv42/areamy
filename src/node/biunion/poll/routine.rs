@@ -22,7 +22,7 @@ pub trait BiunionRoutine<Left, Right, Out>:
 #[cfg(test)]
 pub mod tests {
     use crate::biunion;
-    use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
+    use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
 
@@ -96,20 +96,14 @@ pub mod tests {
     impl crate::node::Name for MockBiunion {}
     impl super::BiunionRoutine<usize, usize, usize> for MockBiunion {}
 
-    struct NoopWake;
-    impl ThreadLocalWake for NoopWake {
-        fn wake(&self) {}
-        fn schedule_at(&self, _: std::time::Instant) {}
-    }
-
     pub fn noop_local_waker() -> ThreadLocalWaker {
-        ThreadLocalWaker::new(NoopWake)
+        mock::noop_local_waker()
     }
 
     pub fn noop_waker() -> Waker {
         Waker {
             sync: std::task::Waker::noop().clone(),
-            local: ThreadLocalWaker::new(NoopWake),
+            local: noop_local_waker(),
         }
     }
 }

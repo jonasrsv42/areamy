@@ -429,10 +429,8 @@ mod tests {
     use crate::DefaultThread;
     use crate::connect::poll::input;
     use crate::connect::sync::Receiver;
-    use crate::connect::waker::{self, ThreadLocalWake, ThreadLocalWaker};
+    use crate::connect::waker::{self, ThreadLocalWaker, mock};
     use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
-    use std::cell::Cell;
-    use std::rc::Rc;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -444,12 +442,6 @@ mod tests {
         }
     }
 
-    struct NoopLocalWake;
-    impl ThreadLocalWake for NoopLocalWake {
-        fn wake(&self) {}
-        fn schedule_at(&self, _: std::time::Instant) {}
-    }
-
     fn test_waker() -> (std::task::Waker, Arc<AtomicBool>) {
         let woken = Arc::new(AtomicBool::new(false));
         let waker = std::task::Waker::from(Arc::new(TestWaker(woken.clone())));
@@ -457,7 +449,7 @@ mod tests {
     }
 
     fn noop_local_waker() -> ThreadLocalWaker {
-        ThreadLocalWaker::new(NoopLocalWake)
+        mock::noop_local_waker()
     }
 
     fn noop_waker() -> waker::Waker {
@@ -744,17 +736,7 @@ mod tests {
         let input = input_recv.sender();
         let output = Receiver::new();
 
-        let input_woken = Rc::new(Cell::new(false));
-        let input_waker = ThreadLocalWaker::new({
-            struct Wake(Rc<Cell<bool>>);
-            impl crate::connect::waker::ThreadLocalWake for Wake {
-                fn wake(&self) {
-                    self.0.set(true);
-                }
-                fn schedule_at(&self, _: std::time::Instant) {}
-            }
-            Wake(input_woken.clone())
-        });
+        let (input_waker, input_woken) = mock::tracking_local_waker();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
             new_phases::<usize, usize, &str, DefaultThread, _, _, _>(

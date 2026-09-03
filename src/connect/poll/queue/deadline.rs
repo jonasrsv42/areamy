@@ -1,28 +1,28 @@
 //! Per-thread deadline heap.
 //!
-//! [DeadlineHeap] is a min-heap of `(deadline, node_id, generation)`
-//! entries. It records "node N wants to be polled at instant T"
-//! requests and surfaces the earliest such request via
-//! [DeadlineHeap::peek], or pops expired requests via
-//! [DeadlineHeap::pop].
+//! [DeadlineHeap] is a min-heap of `(deadline, slot, generation)`
+//! entries, each backed by a slot in a slot table. [Self::register]
+//! returns a [TimerKey] identifying one timer; many timers per node
+//! coexist. [Self::cancel] releases a timer early.
 //!
 //! Pure data structure. Coordination with the poll queue (sentinel
 //! push, re-arm, etc.) lives in the [Scheduler](super::scheduler)
 //! above — this module knows nothing about wakers, queues, or threads.
 //!
-//! # Why a generation counter
+//! # Slots and lazy removal
 //!
 //! [BinaryHeap] cannot remove arbitrary entries in better than O(n).
-//! When a node re-registers with a new deadline, we don't try to find
-//! and remove its old entry — instead we bump the node's current
-//! generation and tag the new entry with it. When an old entry
-//! bubbles to the top, [DeadlineHeap::peek] / [DeadlineHeap::pop]
-//! compare its tag against the live generation and discard stale
-//! ones.
+//! Cancel and fire instead vacate the timer's slot (bumping its
+//! generation); the heap entry stays behind and is discarded when it
+//! bubbles to the top and [Self::peek] / [Self::pop] see the mismatch.
+//! The generation is a pure reuse guard: a recycled slot never matches
+//! entries (or [TimerKey]s) from its previous life.
 //!
-//! Common case (one deadline per node, fired before any
-//! re-registration) is O(log n) per op with no skipped entries.
+//! Dead entries linger until their deadline reaches the heap top, so
+//! transient heap size ~ cancel rate × deadline horizon. Accepted:
+//! compaction deferred until long-timeout churn hurts in practice.
 
+use super::timers::{Generation, SlotId, TimerKey};
 use crate::connect::poll::marker::NodeId;
 
 use alloc::vec::Vec;
@@ -36,19 +36,19 @@ use std::time::Instant;
 #[derive(Clone, Copy)]
 struct DeadlineEntry {
     deadline: Instant,
-    node_id: NodeId,
-    /// Snapshot of `generations[node_id]` at register time. Compared
-    /// against the live value on pop to detect stale entries.
-    generation: u64,
+    slot: SlotId,
+    /// Snapshot of the slot's generation at register time. Compared
+    /// against the live value on peek/pop to detect dead entries.
+    generation: Generation,
 }
 
 impl Ord for DeadlineEntry {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Tie-break by node_id then generation purely for determinism;
+        // Tie-break by slot then generation purely for determinism;
         // neither field carries semantic meaning at the same deadline.
         self.deadline
             .cmp(&other.deadline)
-            .then_with(|| self.node_id.cmp(&other.node_id))
+            .then_with(|| self.slot.cmp(&other.slot))
             .then_with(|| self.generation.cmp(&other.generation))
     }
 }
@@ -67,96 +67,142 @@ impl PartialEq for DeadlineEntry {
     }
 }
 
+/// One timer slot. `node_id: None` = vacant.
+struct Slot {
+    /// Bumped on every vacate — a stale key or heap entry addressing
+    /// this slot after reuse fails the generation match instead of
+    /// cancelling/firing the new occupant.
+    generation: Generation,
+    // If this node is occupied. Can be vacant post a deadline and
+    // before a new deadline is allocated in this slot.
+    node_id: Option<NodeId>,
+}
+
 /// Per-thread min-heap of pending deadlines. See module docs.
 pub struct DeadlineHeap {
     heap: BinaryHeap<Reverse<DeadlineEntry>>,
-    /// Per-node current generation. Grows on demand in [Self::register]
-    /// and [Self::invalidate]. An entry is fresh iff its generation
-    /// equals `generations[node_id]`.
-    generations: Vec<u64>,
+    /// Grows to the peak count of concurrently awaiting timers and
+    /// stays there — vacated slots are recycled, never freed. Design
+    /// choice: the high-water mark is small (~24 bytes/slot) and
+    /// bounded by tasks, not churn, so shrinking isn't worth the code.
+    slots: Vec<Slot>,
+    /// Vacant slot indices, reused before growing `slots`. Same
+    /// high-water bound as `slots`.
+    free: Vec<SlotId>,
 }
 
 impl DeadlineHeap {
     pub fn new() -> Self {
         Self {
             heap: BinaryHeap::new(),
-            generations: Vec::new(),
+            slots: Vec::new(),
+            free: Vec::new(),
         }
     }
 
-    /// Register a wake request for `node_id` at `deadline`. Any prior
-    /// request for the same node is superseded — the old entry remains
-    /// in the heap but is now stale; it gets dropped when it bubbles up.
-    pub fn register(&mut self, node_id: NodeId, deadline: Instant) {
-        let generation = self.bump_generation(node_id);
+    /// Register a wake request for `node_id` at `deadline`. Independent
+    /// of any other timer — including others for the same node. The
+    /// returned key cancels it; dropping the key just means the timer
+    /// fires and is reclaimed then.
+    pub fn register(&mut self, node_id: NodeId, deadline: Instant) -> TimerKey {
+        // Recycle before growing: `slots` stays bounded by peak
+        // concurrent timers, not by churn.
+        let slot = match self.free.pop() {
+            Some(slot) => {
+                self.slots[slot.index()].node_id = Some(node_id);
+                slot
+            }
+            None => {
+                // len before push == index after push.
+                let slot = SlotId(self.slots.len());
+                self.slots.push(Slot {
+                    generation: Generation::first(),
+                    node_id: Some(node_id),
+                });
+                slot
+            }
+        };
+        // Snapshot the occupancy's generation into both the heap entry
+        // and the key — they address this timer only, never a later
+        // occupant of the same slot.
+        let generation = self.slots[slot.index()].generation;
         self.heap.push(Reverse(DeadlineEntry {
             deadline,
-            node_id,
+            slot,
             generation,
         }));
+        TimerKey { slot, generation }
     }
 
-    /// Returns the earliest active deadline. Drains stale entries off
-    /// the top of the heap as a side effect. `None` if no fresh
-    /// entries remain.
+    /// Release a timer before it fires. No-op if the key is dead
+    /// (already fired or already cancelled). The heap entry dies
+    /// lazily when it bubbles up.
+    pub fn cancel(&mut self, key: TimerKey) {
+        // Result dropped: a dead key (fired, cancelled, recycled) is a
+        // legal no-op, guarded by the generation match inside.
+        self.take_live(key.slot, key.generation);
+    }
+
+    /// Returns the earliest live deadline. Drains dead entries off the
+    /// top of the heap as a side effect. `None` if no live entries
+    /// remain.
     pub fn peek(&mut self) -> Option<Instant> {
         while let Some(&Reverse(top)) = self.heap.peek() {
-            if self.is_fresh(&top) {
+            if self.is_live(top.slot, top.generation) {
                 return Some(top.deadline);
             }
-            // Stale — discard. peek just returned Some so pop is also
+            // Dead — discard. peek just returned Some so pop is also
             // Some; we discard the return value, no unwrap needed.
             self.heap.pop();
         }
         None
     }
 
-    /// Pop one fresh entry whose deadline is `<= now`. `None` once no
-    /// such entry exists (heap drained, or earliest fresh is in the
-    /// future). Caller drains by looping until `None`.
+    /// Pop one live entry whose deadline is `<= now`, vacating its
+    /// slot. `None` once no such entry exists (heap drained, or
+    /// earliest live is in the future). Caller drains by looping
+    /// until `None`.
     pub fn pop(&mut self, now: Instant) -> Option<NodeId> {
         while let Some(&Reverse(top)) = self.heap.peek() {
+            if !self.is_live(top.slot, top.generation) {
+                // Dead — discard and keep looking.
+                self.heap.pop();
+                continue;
+            }
             if top.deadline > now {
                 return None;
             }
-            // Past deadline — physically pop. peek just returned Some
-            // so pop is also Some; we destructure with let-else to
-            // avoid unwrap. The unreachable branch is genuinely
-            // unreachable: peek and pop see the same heap state under
-            // &mut self.
-            let Some(Reverse(entry)) = self.heap.pop() else {
-                return None;
-            };
-            if self.is_fresh(&entry) {
-                return Some(entry.node_id);
-            }
-            // Stale — continue draining.
+            // Live and expired — physically pop and fire. peek just
+            // returned Some so pop is also Some; `?` avoids unwrap.
+            let Reverse(entry) = self.heap.pop()?;
+            return self.take_live(entry.slot, entry.generation);
         }
         None
     }
 
-    /// True iff the heap holds no entries (including stale ones).
-    /// Reflects raw count; stale entries are still counted until they
-    /// reach the top and are drained by peek/pop.
-    pub fn is_empty(&self) -> bool {
-        self.heap.is_empty()
-    }
-
-    fn bump_generation(&mut self, node_id: NodeId) -> u64 {
-        if node_id >= self.generations.len() {
-            self.generations.resize(node_id + 1, 0);
+    /// True iff `(slot, generation)` addresses an occupied slot of the
+    /// same generation.
+    fn is_live(&self, slot: SlotId, generation: Generation) -> bool {
+        match self.slots.get(slot.index()) {
+            Some(slot) => slot.generation == generation && slot.node_id.is_some(),
+            None => false,
         }
-        // Wrap on overflow rather than panic. `is_fresh` does exact
-        // match, so a wrap (after 2^64 re-registers — ~584 years at
-        // 1 GHz) just means the new entry uses a recycled tag. Any
-        // long-lingering entry from the previous cycle through that
-        // tag would be falsely fresh — astronomically unlikely.
-        self.generations[node_id] = self.generations[node_id].wrapping_add(1);
-        self.generations[node_id]
     }
 
-    fn is_fresh(&self, entry: &DeadlineEntry) -> bool {
-        self.generations.get(entry.node_id).copied() == Some(entry.generation)
+    /// Release a live slot: bump generation (invalidating lingering
+    /// heap entries and [TimerKey]s), mark vacant, recycle. Returns
+    /// the occupant; `None` if `(slot, generation)` was dead.
+    fn take_live(&mut self, slot_id: SlotId, generation: Generation) -> Option<NodeId> {
+        if !self.is_live(slot_id, generation) {
+            return None;
+        }
+        let slot = &mut self.slots[slot_id.index()];
+        let node_id = slot.node_id.take();
+        // Bump at release, not at register: one step kills the spent
+        // key AND its lingering heap entry before the slot recycles.
+        slot.generation = slot.generation.next();
+        self.free.push(slot_id);
+        node_id
     }
 }
 
@@ -169,6 +215,10 @@ mod tests {
         Instant::now() + Duration::from_millis(offset_ms)
     }
 
+    fn past(offset_ms: u64) -> Instant {
+        Instant::now() - Duration::from_millis(offset_ms)
+    }
+
     // ---- empty / basic ----
 
     #[test]
@@ -176,7 +226,6 @@ mod tests {
         let mut heap = DeadlineHeap::new();
         assert_eq!(heap.peek(), None);
         assert_eq!(heap.pop(Instant::now()), None);
-        assert!(heap.is_empty());
     }
 
     #[test]
@@ -185,14 +234,6 @@ mod tests {
         let deadline = at(100);
         heap.register(7, deadline);
         assert_eq!(heap.peek(), Some(deadline));
-        assert!(!heap.is_empty());
-    }
-
-    #[test]
-    fn register_grows_generations_on_demand() {
-        let mut heap = DeadlineHeap::new();
-        heap.register(42, at(10));
-        assert_eq!(heap.generations.len(), 43);
     }
 
     // ---- min-heap ordering ----
@@ -201,36 +242,31 @@ mod tests {
     fn peek_returns_earliest_deadline() {
         let mut heap = DeadlineHeap::new();
         let early = at(10);
-        let mid = at(50);
-        let late = at(100);
-        heap.register(0, late);
+        heap.register(0, at(100));
         heap.register(1, early);
-        heap.register(2, mid);
+        heap.register(2, at(50));
         assert_eq!(heap.peek(), Some(early));
     }
 
     #[test]
     fn pop_expired_drains_in_deadline_order() {
         let mut heap = DeadlineHeap::new();
-        let t0 = Instant::now() - Duration::from_millis(30);
-        let t1 = Instant::now() - Duration::from_millis(20);
-        let t2 = Instant::now() - Duration::from_millis(10);
-        heap.register(2, t2);
-        heap.register(0, t0);
-        heap.register(1, t1);
+        heap.register(2, past(10));
+        heap.register(0, past(30));
+        heap.register(1, past(20));
         let now = Instant::now();
         assert_eq!(heap.pop(now), Some(0));
         assert_eq!(heap.pop(now), Some(1));
         assert_eq!(heap.pop(now), Some(2));
         assert_eq!(heap.pop(now), None);
+        assert_eq!(heap.peek(), None);
     }
 
     #[test]
     fn pop_expired_leaves_future_entries() {
         let mut heap = DeadlineHeap::new();
-        let past = Instant::now() - Duration::from_millis(10);
         let future = at(60_000);
-        heap.register(0, past);
+        heap.register(0, past(10));
         heap.register(1, future);
         let now = Instant::now();
         assert_eq!(heap.pop(now), Some(0));
@@ -238,35 +274,110 @@ mod tests {
         assert_eq!(heap.peek(), Some(future));
     }
 
-    // ---- staleness via generations ----
+    // ---- many timers per node ----
 
     #[test]
-    fn reregister_supersedes_prior_entry() {
+    fn same_node_holds_independent_timers() {
         let mut heap = DeadlineHeap::new();
-        let old = Instant::now() - Duration::from_millis(50);
-        let new = at(60_000);
-        heap.register(0, old);
-        heap.register(0, new);
-        // peek_deadline drains the stale (old, generation 1) entry
-        // and surfaces the fresh one (generation 2).
-        assert_eq!(heap.peek(), Some(new));
-        // The stale-past entry must not surface as expired.
+        let early = at(10);
+        heap.register(5, at(60_000));
+        heap.register(5, early);
+        heap.register(5, at(30_000));
+        // All three live; earliest bounds the park.
+        assert_eq!(heap.peek(), Some(early));
+    }
+
+    #[test]
+    fn same_node_expired_timers_all_fire() {
+        let mut heap = DeadlineHeap::new();
+        heap.register(5, past(30));
+        heap.register(5, past(20));
+        heap.register(5, past(10));
+        let now = Instant::now();
+        assert_eq!(heap.pop(now), Some(5));
+        assert_eq!(heap.pop(now), Some(5));
+        assert_eq!(heap.pop(now), Some(5));
+        assert_eq!(heap.pop(now), None);
+    }
+
+    // ---- cancellation ----
+
+    #[test]
+    fn cancelled_timer_never_fires() {
+        let mut heap = DeadlineHeap::new();
+        let key = heap.register(0, past(10));
+        heap.cancel(key);
+        assert_eq!(heap.peek(), None);
         assert_eq!(heap.pop(Instant::now()), None);
     }
 
     #[test]
-    fn peek_drains_many_stale_entries_above_fresh_one() {
+    fn cancel_leaves_other_timers_live() {
         let mut heap = DeadlineHeap::new();
-        let earliest = Instant::now() - Duration::from_millis(100);
-        // Same node, many re-registrations — only the last is fresh.
-        for _ in 0..5 {
-            heap.register(0, earliest);
-        }
-        let later = at(50_000);
-        heap.register(1, later);
-        let now = Instant::now();
-        assert_eq!(heap.pop(now), Some(0));
-        assert_eq!(heap.pop(now), None);
-        assert_eq!(heap.peek(), Some(later));
+        let keep = at(50_000);
+        let key = heap.register(0, at(10));
+        heap.register(1, keep);
+        heap.cancel(key);
+        // Dead earliest entry is drained; live one surfaces.
+        assert_eq!(heap.peek(), Some(keep));
+    }
+
+    #[test]
+    fn cancel_is_idempotent() {
+        let mut heap = DeadlineHeap::new();
+        let key = heap.register(0, at(10));
+        heap.cancel(key);
+        heap.cancel(key);
+        assert_eq!(heap.peek(), None);
+    }
+
+    #[test]
+    fn cancel_after_fire_is_noop() {
+        let mut heap = DeadlineHeap::new();
+        let key = heap.register(0, past(10));
+        assert_eq!(heap.pop(Instant::now()), Some(0));
+        heap.cancel(key);
+        assert_eq!(heap.peek(), None);
+    }
+
+    // ---- slot reuse / ABA ----
+
+    #[test]
+    fn recycled_slot_ignores_stale_key_and_entry() {
+        let mut heap = DeadlineHeap::new();
+        let stale = heap.register(0, past(10));
+        heap.cancel(stale);
+        // Reuses the slot with a bumped generation.
+        let fresh = heap.register(1, at(50_000));
+        assert_eq!(stale.slot, fresh.slot);
+        assert_ne!(stale.generation, fresh.generation);
+        // Stale key must not kill the new occupant.
+        heap.cancel(stale);
+        assert!(heap.peek().is_some());
+        // Stale heap entry (expired!) must not fire as the new node.
+        assert_eq!(heap.pop(Instant::now()), None);
+    }
+
+    #[test]
+    fn fired_slot_is_reused() {
+        let mut heap = DeadlineHeap::new();
+        let first = heap.register(0, past(10));
+        assert_eq!(heap.pop(Instant::now()), Some(0));
+        let second = heap.register(1, past(10));
+        assert_eq!(second.slot, first.slot);
+        assert_eq!(heap.pop(Instant::now()), Some(1));
+    }
+
+    // ---- dead entries ----
+
+    #[test]
+    fn heap_of_corpses_peeks_none() {
+        let mut heap = DeadlineHeap::new();
+        let a = heap.register(0, at(10_000));
+        let b = heap.register(1, at(20_000));
+        heap.cancel(a);
+        heap.cancel(b);
+        // Heap still physically holds both entries; peek sees through.
+        assert_eq!(heap.peek(), None);
     }
 }

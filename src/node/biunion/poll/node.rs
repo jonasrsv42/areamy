@@ -787,7 +787,7 @@ mod tests {
     use crate::DefaultThread;
     use crate::connect::poll::input;
     use crate::connect::sync::{Receiver, Sender};
-    use crate::connect::waker::ThreadLocalWaker;
+    use crate::connect::waker::mock::tracking_local_waker;
     use crate::node::biunion::poll::routine::tests::{
         MockBiunion, noop_biunion_wakers, noop_waker,
     };
@@ -806,19 +806,6 @@ mod tests {
     fn sync_waker() -> std::task::Waker {
         let flag = Arc::new(AtomicBool::new(false));
         std::task::Waker::from(Arc::new(TestWaker(flag)))
-    }
-
-    struct TrackWake(Rc<Cell<bool>>);
-    impl crate::connect::waker::ThreadLocalWake for TrackWake {
-        fn wake(&self) {
-            self.0.set(true);
-        }
-        fn schedule_at(&self, _: std::time::Instant) {}
-    }
-
-    fn track_local_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {
-        let woken = Rc::new(Cell::new(false));
-        (ThreadLocalWaker::new(TrackWake(woken.clone())), woken)
     }
 
     type TestLeftInput = LeftInput<
@@ -890,10 +877,10 @@ mod tests {
             let output_edge = Receiver::new();
             let output_sender = output_edge.sender();
 
-            let (left_local, left_woken) = track_local_waker();
-            let (right_local, right_woken) = track_local_waker();
-            let (work_local, work_woken) = track_local_waker();
-            let (output_local, output_woken) = track_local_waker();
+            let (left_local, left_woken) = tracking_local_waker();
+            let (right_local, right_woken) = tracking_local_waker();
+            let (work_local, work_woken) = tracking_local_waker();
+            let (output_local, output_woken) = tracking_local_waker();
 
             let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
                 InputPhases {

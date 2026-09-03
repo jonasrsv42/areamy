@@ -10,6 +10,7 @@
 //!
 //! All types are `!Send` — they live on the async thread.
 
+use crate::connect::poll::queue::TimerKey;
 use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
 use core::task::Poll;
@@ -37,10 +38,26 @@ struct InputInner<T> {
     /// Std waker set by the future's `cx` on first poll; fired by
     /// [InputProducer::push] when data arrives.
     waker: Waker,
-    /// Areamy local waker for the owning node. [RecvDeadlineFut] uses
+    /// Areamy local waker for the owning node. [RecvTimeoutFut] uses
     /// this to call [ThreadLocalWaker::schedule_at] so the node is
     /// re-polled when its deadline elapses.
     local: ThreadLocalWaker,
+}
+
+impl<T> InputInner<T> {
+    /// Resolve-or-not, shared by both recv futures: closed → `Err`,
+    /// buffered item → `Ok` (a Flush closes the queue), empty → `None`
+    /// (caller parks).
+    fn try_take(&mut self) -> Option<Result<Input<T>, Error>> {
+        if self.closed {
+            return Some(Err(crate::closed!()));
+        }
+        let item = self.buffer.pop_front()?;
+        if matches!(item, Input::Flush) {
+            self.closed = true;
+        }
+        Some(Ok(item))
+    }
 }
 
 /// Pushes input data into the queue. Held by the node's Input phase.
@@ -130,7 +147,7 @@ impl<T> InputConsumer<T> {
         RecvTimeoutFut {
             consumer: self.clone(),
             deadline: Instant::now() + timeout,
-            scheduled: false,
+            timer: None,
         }
     }
 }
@@ -145,24 +162,13 @@ impl<T: Unpin> Future for RecvFut<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
         let mut inner = self.0.0.borrow_mut();
-
-        // After Flush, the queue is single-use — subsequent recv()s
-        // surface Closed until reset() is called by the Input phase.
-        if inner.closed {
-            return Poll::Ready(Err(crate::closed!()));
-        }
-
-        // Refresh the registered std waker every poll: the executor
-        // may have handed us a different one this round.
+        // Register on every poll, Ready included: the queue outlives
+        // this future across flush cycles (reset() keeps the waker),
+        // so a Ready-only first batch must still leave a live waker
+        // behind for the next push.
         inner.waker = cx.waker().clone();
-
-        match inner.buffer.pop_front() {
-            Some(item) => {
-                if matches!(item, Input::Flush) {
-                    inner.closed = true;
-                }
-                Poll::Ready(Ok(item))
-            }
+        match inner.try_take() {
+            Some(result) => Poll::Ready(result),
             None => Poll::Pending,
         }
     }
@@ -170,49 +176,62 @@ impl<T: Unpin> Future for RecvFut<T> {
 
 /// Future that resolves to the next [Input] item or to `None` on
 /// timeout. Returned by [InputConsumer::recv_with_timeout].
+///
+/// Holds its [TimerKey] while armed and cancels it on every resolve
+/// path and on drop — the heap never keeps a dead deadline for a
+/// finished recv.
 pub struct RecvTimeoutFut<T> {
     consumer: InputConsumer<T>,
     deadline: Instant,
-    /// `schedule_at` registers a heap entry; calling it on every poll
-    /// would create stale entries. Track whether we've already armed
-    /// the timer.
-    scheduled: bool,
+    /// Armed timer, registered on first pending poll.
+    timer: Option<TimerKey>,
 }
 
 impl<T: Unpin> Future for RecvTimeoutFut<T> {
     type Output = Result<Option<Input<T>>, Error>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
-        // Snapshot self fields up front. Below we'll hold a borrow on
-        // `self.consumer.0` (via `inner`); that borrow chain keeps
-        // self immutably borrowed, blocking writes to `self.scheduled`
-        // until after `drop(inner)`. So: read scheduled now, write it
-        // after the inner borrow is released.
-        let deadline = self.deadline;
-        let needs_schedule = !self.scheduled;
-        let mut inner = self.consumer.0.borrow_mut();
-
-        if inner.closed {
-            return Poll::Ready(Err(crate::closed!()));
-        }
-        if let Some(item) = inner.buffer.pop_front() {
-            if matches!(item, Input::Flush) {
-                inner.closed = true;
-            }
-            return Poll::Ready(Ok(Some(item)));
-        }
-        if Instant::now() >= deadline {
-            return Poll::Ready(Ok(None));
-        }
-
-        // Empty + deadline still future: arm both wake sources, park.
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+        // Unpin: get_mut gives disjoint field borrows, so `inner`
+        // (via consumer) and `timer` coexist without snapshots.
+        let this = self.get_mut();
+        let mut inner = this.consumer.0.borrow_mut();
+        // Register on every poll, Ready included — see RecvFut.
         inner.waker = cx.waker().clone();
-        if needs_schedule {
-            inner.local.schedule_at(deadline);
+
+        // Buffered item / closed beats an expired deadline.
+        let poll = match inner.try_take() {
+            Some(result) => Poll::Ready(result.map(Some)),
+            None if Instant::now() >= this.deadline => Poll::Ready(Ok(None)),
+            None => Poll::Pending,
+        };
+
+        // Timer transition
+        this.timer = match poll {
+            // Cancel outstanding timer if we have a data.
+            Poll::Ready(_) => {
+                if let Some(key) = this.timer {
+                    inner.local.cancel(key);
+                }
+                None
+            }
+            // Arm a timer if we have no data and no timer yet.
+            Poll::Pending => this
+                .timer
+                .or_else(|| inner.local.schedule_at(this.deadline)),
+        };
+
+        poll
+    }
+}
+
+impl<T> Drop for RecvTimeoutFut<T> {
+    /// A dropped-while-armed future (lost `Select` race, cancelled
+    /// routine) releases its heap slot instead of leaving a dead
+    /// deadline to fire a spurious poll.
+    fn drop(&mut self) {
+        if let Some(key) = self.timer.take() {
+            self.consumer.0.borrow_mut().local.cancel(key);
         }
-        drop(inner);
-        self.scheduled = true;
-        Poll::Pending
     }
 }
 
@@ -306,6 +325,39 @@ mod tests {
         Pin::new(fut).poll(&mut cx)
     }
 
+    // ---- waker registration ----
+
+    #[test]
+    fn ready_poll_still_registers_waker() {
+        // Regression: a first batch resolving every recv() Ready must
+        // still install the task waker — reset() keeps the waker
+        // across flush cycles, so leaving the initial noop in place
+        // stalls the node on the next push.
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct Flag(AtomicBool);
+        impl std::task::Wake for Flag {
+            fn wake(self: Arc<Self>) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let q = InputQueue::<usize>::new(local_waker());
+        q.producer.push(Input::Data(1));
+        let flag = Arc::new(Flag(AtomicBool::new(false)));
+        let waker = std::task::Waker::from(flag.clone());
+        let mut cx = Context::from_waker(&waker);
+        let mut fut = q.consumer.recv();
+        assert!(matches!(
+            Pin::new(&mut fut).poll(&mut cx),
+            Poll::Ready(Ok(Input::Data(1)))
+        ));
+        // The Ready poll installed our waker: the next push fires it.
+        q.producer.push(Input::Data(2));
+        assert!(flag.0.load(Ordering::SeqCst));
+    }
+
     // ---- recv_with_timeout: data / flush / closed paths ----
 
     #[test]
@@ -339,7 +391,10 @@ mod tests {
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
         // The future armed the timer on first poll.
-        assert!(fut.scheduled, "schedule_at should have armed the timer");
+        assert!(
+            fut.timer.is_some(),
+            "schedule_at should have armed the timer"
+        );
     }
 
     #[test]
@@ -347,11 +402,12 @@ mod tests {
         let q = InputQueue::<usize>::new(local_waker());
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
-        assert!(fut.scheduled);
-        // Spurious re-poll: still Pending, scheduled stays true (no
-        // second schedule_at call).
+        let key = fut.timer;
+        assert!(key.is_some());
+        // Spurious re-poll: still Pending, same key (no second
+        // schedule_at call).
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
-        assert!(fut.scheduled);
+        assert_eq!(fut.timer, key);
     }
 
     #[test]
@@ -363,7 +419,7 @@ mod tests {
         let mut fut = RecvTimeoutFut {
             consumer: q.consumer.clone(),
             deadline: Instant::now() - Duration::from_millis(50),
-            scheduled: false,
+            timer: None,
         };
         assert!(matches!(poll_once(&mut fut), Poll::Ready(Ok(None))));
     }
@@ -376,12 +432,24 @@ mod tests {
         let mut fut = RecvTimeoutFut {
             consumer: q.consumer.clone(),
             deadline: Instant::now() - Duration::from_millis(50),
-            scheduled: false,
+            timer: None,
         };
         let Poll::Ready(Ok(Some(Input::Data(n)))) = poll_once(&mut fut) else {
             panic!("expected Ready(Some(Data)) — item beats timeout");
         };
         assert_eq!(n, 99);
+    }
+
+    #[test]
+    fn timeout_resolving_with_data_releases_timer() {
+        let q = InputQueue::<usize>::new(local_waker());
+        let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
+        assert!(matches!(poll_once(&mut fut), Poll::Pending));
+        assert!(fut.timer.is_some());
+        q.producer.push(Input::Data(5));
+        assert!(matches!(poll_once(&mut fut), Poll::Ready(Ok(Some(_)))));
+        // Armed timer cancelled on resolve — no dead deadline left.
+        assert!(fut.timer.is_none());
     }
 
     #[test]

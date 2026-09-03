@@ -10,3 +10,4 @@ pub mod wakers;
 pub use edge::{Async, Deferred, Edge, Linktime, Null, PollEdge, Sync};
 pub use graph::{GraphBuilder, GraphNode};
 pub use marker::NodeId;
+pub use queue::TimerKey;

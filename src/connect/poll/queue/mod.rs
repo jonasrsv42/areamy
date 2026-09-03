@@ -16,10 +16,12 @@ mod deadline;
 mod producer;
 mod scheduler;
 mod thread_local;
+mod timers;
 
 pub use consumer::Consumer;
 pub use producer::Producer;
 pub use thread_local::ThreadLocalProducer;
+pub use timers::TimerKey;
 
 use ::core::cell::RefCell;
 use alloc::rc::Rc;

@@ -450,13 +450,7 @@ pub mod tests {
     /// A `Pollable` node that processes input non-blockingly.
     #[test]
     fn pollable_processes_available_input() {
-        use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
-
-        struct NoopWake;
-        impl ThreadLocalWake for NoopWake {
-            fn wake(&self) {}
-            fn schedule_at(&self, _: std::time::Instant) {}
-        }
+        use crate::connect::waker::{Waker, mock};
 
         let mut node = AsyncNode::new();
         let mut input = node.input.sender();
@@ -466,7 +460,7 @@ pub mod tests {
 
         let mut waker = Waker {
             sync: std::task::Waker::noop().clone(),
-            local: ThreadLocalWaker::new(NoopWake),
+            local: mock::noop_local_waker(),
         };
 
         // First poll processes first message
@@ -514,13 +508,7 @@ pub mod tests {
 
     #[test]
     fn pollable_returns_ready_on_close() {
-        use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
-
-        struct NoopWake;
-        impl ThreadLocalWake for NoopWake {
-            fn wake(&self) {}
-            fn schedule_at(&self, _: std::time::Instant) {}
-        }
+        use crate::connect::waker::{Waker, mock};
 
         let mut node = ClosingAsyncNode {
             input: Receiver::new(),
@@ -530,7 +518,7 @@ pub mod tests {
 
         let mut waker = Waker {
             sync: std::task::Waker::noop().clone(),
-            local: ThreadLocalWaker::new(NoopWake),
+            local: mock::noop_local_waker(),
         };
 
         assert!(matches!(

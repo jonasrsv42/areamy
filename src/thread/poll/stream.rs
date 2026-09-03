@@ -1,6 +1,7 @@
 //! Async thread that runs [Pollable] nodes driven by wakers.
 
 use super::runtime::ClosableRuntime;
+use super::tls;
 use crate::connect::poll::graph::GraphBuilder;
 use crate::connect::poll::queue::{Consumer, PollQueue};
 use crate::connect::poll::runtime::Node as RuntimeNode;
@@ -229,6 +230,8 @@ fn poll_loop<ThreadIdType: ThreadId>(
             continue;
         };
 
+        // Ambient waker for handle-free leaf futures (poll::sleep).
+        let _current = tls::ThreadLocalGuard::set(waker.local.clone());
         match pollable.poll(waker) {
             Ok(core::task::Poll::Pending) => {}
             Ok(core::task::Poll::Ready(()))

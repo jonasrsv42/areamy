@@ -3,6 +3,7 @@
 pub mod future;
 pub mod join;
 pub mod select;
+pub mod sleep;
 
 pub use crate::connect::poll::edge::{
     Async, Deferred, Direct, Edge, Linktime, Null, PollEdge, Sync,
@@ -17,3 +18,4 @@ pub use crate::node::line::poll::routine::LineRoutine;
 pub use crate::thread::poll::stream::{Thread, ThreadHandle};
 pub use join::Join;
 pub use select::Select;
+pub use sleep::{SleepFut, sleep};

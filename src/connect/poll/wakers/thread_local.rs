@@ -20,8 +20,8 @@ impl ThreadLocalWake for Wake {
     fn wake(&self) {
         self.producer.push(self.id);
     }
-    fn schedule_at(&self, deadline: Instant) -> Option<TimerKey> {
-        Some(self.producer.schedule(self.id, deadline))
+    fn schedule_at(&self, deadline: Instant) -> TimerKey {
+        self.producer.schedule(self.id, deadline)
     }
     fn cancel(&self, key: TimerKey) {
         self.producer.cancel(key);

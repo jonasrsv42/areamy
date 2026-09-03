@@ -10,7 +10,8 @@
 //!
 //! All types are `!Send` — they live on the async thread.
 
-use crate::connect::poll::queue::TimerKey;
+use crate::connect::poll::limit::deadline_after;
+use crate::connect::poll::wakers::TimerGuard;
 use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
 use core::task::Poll;
@@ -146,12 +147,9 @@ impl<T> InputConsumer<T> {
     /// "never") saturate to a far-future deadline instead of
     /// panicking on `Instant` overflow.
     pub fn recv_with_timeout(&self, timeout: Duration) -> RecvTimeoutFut<T> {
-        // ~30 years: far beyond any process lifetime, safely addable.
-        const FAR_FUTURE: Duration = Duration::from_secs(60 * 60 * 24 * 365 * 30);
-        let now = Instant::now();
         RecvTimeoutFut {
             consumer: self.clone(),
-            deadline: now.checked_add(timeout).unwrap_or(now + FAR_FUTURE),
+            deadline: deadline_after(timeout),
             timer: None,
         }
     }
@@ -182,14 +180,13 @@ impl<T: Unpin> Future for RecvFut<T> {
 /// Future that resolves to the next [Input] item or to `None` on
 /// timeout. Returned by [InputConsumer::recv_with_timeout].
 ///
-/// Holds its [TimerKey] while armed and cancels it on every resolve
-/// path and on drop — the heap never keeps a dead deadline for a
-/// finished recv.
+/// The armed [TimerGuard] cancels on every resolve path and on drop
+/// — the heap never keeps a dead deadline for a finished recv.
 pub struct RecvTimeoutFut<T> {
     consumer: InputConsumer<T>,
     deadline: Instant,
     /// Armed timer, registered on first pending poll.
-    timer: Option<TimerKey>,
+    timer: Option<TimerGuard>,
 }
 
 impl<T: Unpin> Future for RecvTimeoutFut<T> {
@@ -210,33 +207,18 @@ impl<T: Unpin> Future for RecvTimeoutFut<T> {
             None => Poll::Pending,
         };
 
-        // Timer transition
-        this.timer = match poll {
-            // Cancel outstanding timer if we have a data.
-            Poll::Ready(_) => {
-                if let Some(key) = this.timer {
-                    inner.local.cancel(key);
+        // Timer transition: resolving drops the guard (eager release;
+        // a fired key cancels as a no-op), parking arms once.
+        match &poll {
+            Poll::Ready(_) => this.timer = None,
+            Poll::Pending => {
+                if this.timer.is_none() {
+                    this.timer = Some(TimerGuard::arm(&inner.local, this.deadline));
                 }
-                None
             }
-            // Arm a timer if we have no data and no timer yet.
-            Poll::Pending => this
-                .timer
-                .or_else(|| inner.local.schedule_at(this.deadline)),
-        };
+        }
 
         poll
-    }
-}
-
-impl<T> Drop for RecvTimeoutFut<T> {
-    /// A dropped-while-armed future (lost `Select` race, cancelled
-    /// routine) releases its heap slot instead of leaving a dead
-    /// deadline to fire a spurious poll.
-    fn drop(&mut self) {
-        if let Some(key) = self.timer.take() {
-            self.consumer.0.borrow_mut().local.cancel(key);
-        }
     }
 }
 
@@ -415,12 +397,12 @@ mod tests {
         let q = InputQueue::<usize>::new(local_waker());
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
-        let key = fut.timer;
+        let key = fut.timer.as_ref().map(TimerGuard::key);
         assert!(key.is_some());
         // Spurious re-poll: still Pending, same key (no second
         // schedule_at call).
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
-        assert_eq!(fut.timer, key);
+        assert_eq!(fut.timer.as_ref().map(TimerGuard::key), key);
     }
 
     #[test]

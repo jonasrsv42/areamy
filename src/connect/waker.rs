@@ -21,9 +21,10 @@ pub trait ThreadLocalWake {
     fn wake(&self);
     /// Schedule the owning node to be polled at `deadline`. The key
     /// cancels the timer; dropping it means the timer just fires.
-    /// `None` from impls without a timer source — nothing is armed.
+    /// Infallible: every waker must be backed by a timer source
+    /// (tests use [mock], which carries a private scheduler).
     #[must_use]
-    fn schedule_at(&self, deadline: Instant) -> Option<TimerKey>;
+    fn schedule_at(&self, deadline: Instant) -> TimerKey;
     /// Release a timer before it fires. Dead keys are a no-op.
     fn cancel(&self, key: TimerKey);
 }
@@ -49,12 +50,18 @@ impl ThreadLocalWaker {
     }
 
     #[must_use]
-    pub fn schedule_at(&self, deadline: Instant) -> Option<TimerKey> {
+    pub fn schedule_at(&self, deadline: Instant) -> TimerKey {
         self.inner.schedule_at(deadline)
     }
 
     pub fn cancel(&self, key: TimerKey) {
         self.inner.cancel(key);
+    }
+
+    /// True iff `other` wakes the same target (same underlying wake
+    /// impl). Mirrors `std::task::Waker::will_wake`.
+    pub fn will_wake(&self, other: &ThreadLocalWaker) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
@@ -74,7 +81,7 @@ impl Waker {
     /// Schedule the owning node to be polled at `deadline`. Delegates
     /// to [`ThreadLocalWaker::schedule_at`].
     #[must_use]
-    pub fn schedule_at(&self, deadline: Instant) -> Option<TimerKey> {
+    pub fn schedule_at(&self, deadline: Instant) -> TimerKey {
         self.local.schedule_at(deadline)
     }
 
@@ -89,40 +96,52 @@ impl Waker {
 #[cfg(test)]
 pub mod mock {
     use super::{ThreadLocalWake, ThreadLocalWaker};
-    use crate::connect::poll::queue::TimerKey;
+    use crate::connect::poll::queue::{PollQueue, ThreadLocalProducer, TimerKey};
 
     use std::cell::Cell;
     use std::rc::Rc;
     use std::time::Instant;
 
-    struct NoopWake;
-    impl ThreadLocalWake for NoopWake {
-        fn wake(&self) {}
-        fn schedule_at(&self, _: Instant) -> Option<TimerKey> {
-            None
-        }
-        fn cancel(&self, _: TimerKey) {}
+    /// Test wake with real timer support: schedule/cancel go to a
+    /// private scheduler nobody drains (keys are real, deadlines
+    /// register, nothing fires); `wake` sets the optional flag.
+    struct MockWake {
+        woken: Option<Rc<Cell<bool>>>,
+        producer: ThreadLocalProducer,
     }
 
-    struct TrackWake(Rc<Cell<bool>>);
-    impl ThreadLocalWake for TrackWake {
+    impl MockWake {
+        fn new(woken: Option<Rc<Cell<bool>>>) -> Self {
+            let (_consumer, producer) = PollQueue::new().local();
+            Self { woken, producer }
+        }
+    }
+
+    impl ThreadLocalWake for MockWake {
         fn wake(&self) {
-            self.0.set(true);
+            if let Some(woken) = &self.woken {
+                woken.set(true);
+            }
         }
-        fn schedule_at(&self, _: Instant) -> Option<TimerKey> {
-            None
+        fn schedule_at(&self, deadline: Instant) -> TimerKey {
+            self.producer.schedule(0, deadline)
         }
-        fn cancel(&self, _: TimerKey) {}
+        fn cancel(&self, key: TimerKey) {
+            self.producer.cancel(key);
+        }
     }
 
-    /// Waker that does nothing.
+    /// Waker whose `wake()` does nothing.
     pub fn noop_local_waker() -> ThreadLocalWaker {
-        ThreadLocalWaker::new(NoopWake)
+        ThreadLocalWaker::new(MockWake::new(None))
     }
 
     /// Waker plus the flag its `wake()` sets.
     pub fn tracking_local_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {
         let woken = Rc::new(Cell::new(false));
-        (ThreadLocalWaker::new(TrackWake(woken.clone())), woken)
+        (
+            ThreadLocalWaker::new(MockWake::new(Some(woken.clone()))),
+            woken,
+        )
     }
 }

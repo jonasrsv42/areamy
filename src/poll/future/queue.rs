@@ -12,6 +12,7 @@
 
 use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
+use core::task::Poll;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -142,16 +143,13 @@ pub struct RecvFut<T>(InputConsumer<T>);
 impl<T: Unpin> Future for RecvFut<T> {
     type Output = Result<Input<T>, Error>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
         let mut inner = self.0.0.borrow_mut();
 
         // After Flush, the queue is single-use — subsequent recv()s
         // surface Closed until reset() is called by the Input phase.
         if inner.closed {
-            return core::task::Poll::Ready(Err(crate::closed!()));
+            return Poll::Ready(Err(crate::closed!()));
         }
 
         // Refresh the registered std waker every poll: the executor
@@ -163,9 +161,9 @@ impl<T: Unpin> Future for RecvFut<T> {
                 if matches!(item, Input::Flush) {
                     inner.closed = true;
                 }
-                core::task::Poll::Ready(Ok(item))
+                Poll::Ready(Ok(item))
             }
-            None => core::task::Poll::Pending,
+            None => Poll::Pending,
         }
     }
 }
@@ -184,10 +182,7 @@ pub struct RecvTimeoutFut<T> {
 impl<T: Unpin> Future for RecvTimeoutFut<T> {
     type Output = Result<Option<Input<T>>, Error>;
 
-    fn poll(
-        mut self: Pin<&mut Self>,
-        cx: &mut core::task::Context<'_>,
-    ) -> core::task::Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
         // Snapshot self fields up front. Below we'll hold a borrow on
         // `self.consumer.0` (via `inner`); that borrow chain keeps
         // self immutably borrowed, blocking writes to `self.scheduled`
@@ -198,16 +193,16 @@ impl<T: Unpin> Future for RecvTimeoutFut<T> {
         let mut inner = self.consumer.0.borrow_mut();
 
         if inner.closed {
-            return core::task::Poll::Ready(Err(crate::closed!()));
+            return Poll::Ready(Err(crate::closed!()));
         }
         if let Some(item) = inner.buffer.pop_front() {
             if matches!(item, Input::Flush) {
                 inner.closed = true;
             }
-            return core::task::Poll::Ready(Ok(Some(item)));
+            return Poll::Ready(Ok(Some(item)));
         }
         if Instant::now() >= deadline {
-            return core::task::Poll::Ready(Ok(None));
+            return Poll::Ready(Ok(None));
         }
 
         // Empty + deadline still future: arm both wake sources, park.
@@ -217,7 +212,7 @@ impl<T: Unpin> Future for RecvTimeoutFut<T> {
         }
         drop(inner);
         self.scheduled = true;
-        core::task::Poll::Pending
+        Poll::Pending
     }
 }
 
@@ -295,7 +290,7 @@ impl<T> OutputConsumer<T> {
 mod tests {
     use super::*;
     use crate::connect::poll::queue::PollQueue;
-    use std::task::{Context, Poll};
+    use std::task::Context;
 
     fn local_waker() -> ThreadLocalWaker {
         // A real ThreadLocalWaker bound to a real Scheduler. Node id

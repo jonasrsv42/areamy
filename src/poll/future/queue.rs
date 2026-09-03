@@ -142,11 +142,16 @@ impl<T> InputConsumer<T> {
     /// subsequent calls return `Err(Closed)` (same as [recv]).
     ///
     /// The deadline is fixed at call time (`Instant::now() + timeout`),
-    /// not at first poll.
+    /// not at first poll. Huge timeouts (e.g. `Duration::MAX` as
+    /// "never") saturate to a far-future deadline instead of
+    /// panicking on `Instant` overflow.
     pub fn recv_with_timeout(&self, timeout: Duration) -> RecvTimeoutFut<T> {
+        // ~30 years: far beyond any process lifetime, safely addable.
+        const FAR_FUTURE: Duration = Duration::from_secs(60 * 60 * 24 * 365 * 30);
+        let now = Instant::now();
         RecvTimeoutFut {
             consumer: self.clone(),
-            deadline: Instant::now() + timeout,
+            deadline: now.checked_add(timeout).unwrap_or(now + FAR_FUTURE),
             timer: None,
         }
     }
@@ -356,6 +361,14 @@ mod tests {
         // The Ready poll installed our waker: the next push fires it.
         q.producer.push(Input::Data(2));
         assert!(flag.0.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn timeout_duration_max_saturates() {
+        // Duration::MAX as "never" must not panic on Instant overflow.
+        let q = InputQueue::<usize>::new(local_waker());
+        let mut fut = q.consumer.recv_with_timeout(Duration::MAX);
+        assert!(matches!(poll_once(&mut fut), Poll::Pending));
     }
 
     // ---- recv_with_timeout: data / flush / closed paths ----

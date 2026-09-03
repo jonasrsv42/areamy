@@ -136,7 +136,8 @@ impl DeadlineHeap {
 
     /// Release a timer before it fires. No-op if the key is dead
     /// (already fired or already cancelled). The heap entry dies
-    /// lazily when it bubbles up.
+    /// lazily when it bubbles up. Key possession is authorization —
+    /// a key names exactly one timer, whichever waker carries it.
     pub fn cancel(&mut self, key: TimerKey) {
         // Result dropped: a dead key (fired, cancelled, recycled) is a
         // legal no-op, guarded by the generation match inside.

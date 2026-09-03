@@ -92,8 +92,10 @@ impl Waker {
     }
 }
 
-/// Shared timer-less [ThreadLocalWake] mocks for the crate's tests.
-#[cfg(test)]
+/// Shared timer-backed [ThreadLocalWake] mocks for tests — this
+/// crate's, and downstream crates' via the `testing` feature (enable
+/// from `[dev-dependencies]` only).
+#[cfg(any(test, feature = "testing"))]
 pub mod mock {
     use super::{ThreadLocalWake, ThreadLocalWaker};
     use crate::connect::poll::queue::{PollQueue, ThreadLocalProducer, TimerKey};
@@ -104,23 +106,23 @@ pub mod mock {
 
     /// Test wake with real timer support: schedule/cancel go to a
     /// private scheduler nobody drains (keys are real, deadlines
-    /// register, nothing fires); `wake` sets the optional flag.
+    /// register, nothing fires); `wake` runs the optional observer.
     struct MockWake {
-        woken: Option<Rc<Cell<bool>>>,
+        on_wake: Option<Rc<dyn Fn()>>,
         producer: ThreadLocalProducer,
     }
 
     impl MockWake {
-        fn new(woken: Option<Rc<Cell<bool>>>) -> Self {
+        fn new(on_wake: Option<Rc<dyn Fn()>>) -> Self {
             let (_consumer, producer) = PollQueue::new().local();
-            Self { woken, producer }
+            Self { on_wake, producer }
         }
     }
 
     impl ThreadLocalWake for MockWake {
         fn wake(&self) {
-            if let Some(woken) = &self.woken {
-                woken.set(true);
+            if let Some(on_wake) = &self.on_wake {
+                on_wake();
             }
         }
         fn schedule_at(&self, deadline: Instant) -> TimerKey {
@@ -139,9 +141,22 @@ pub mod mock {
     /// Waker plus the flag its `wake()` sets.
     pub fn tracking_local_waker() -> (ThreadLocalWaker, Rc<Cell<bool>>) {
         let woken = Rc::new(Cell::new(false));
+        let flag = woken.clone();
         (
-            ThreadLocalWaker::new(MockWake::new(Some(woken.clone()))),
+            ThreadLocalWaker::new(MockWake::new(Some(Rc::new(move || flag.set(true))))),
             woken,
+        )
+    }
+
+    /// Waker plus the counter its `wake()` increments.
+    pub fn counting_local_waker() -> (ThreadLocalWaker, Rc<Cell<usize>>) {
+        let count = Rc::new(Cell::new(0));
+        let counter = count.clone();
+        (
+            ThreadLocalWaker::new(MockWake::new(Some(Rc::new(move || {
+                counter.set(counter.get() + 1)
+            })))),
+            count,
         )
     }
 }

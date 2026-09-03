@@ -10,4 +10,7 @@ default = []
 # if the caller doesn't properly join. This can make debugging silent failures
 # very difficult. Enable this feature to suppress these prints.
 silent = []
+# Exposes `connect::waker::mock` (timer-backed test wakers) to
+# downstream crates. Enable from [dev-dependencies] only.
+testing = []
 

@@ -11,8 +11,16 @@
 //! [futures-lite]: https://docs.rs/futures-lite
 
 use std::future::{Future, poll_fn};
+use std::mem;
 use std::pin::pin;
 use std::task::Poll;
+
+/// The arm that finished first, held until the other resolves.
+enum Partial<LeftValue, RightValue> {
+    Neither,
+    Left(LeftValue),
+    Right(RightValue),
+}
 
 /// Run two fallible futures concurrently; resolve with both values,
 /// or with the first error (dropping the other future eagerly).
@@ -22,28 +30,39 @@ pub async fn try_join<LeftValue, RightValue, ErrorType>(
 ) -> Result<(LeftValue, RightValue), ErrorType> {
     let mut left = pin!(left);
     let mut right = pin!(right);
-    let mut left_value = None;
-    let mut right_value = None;
+    let mut partial = Partial::Neither;
     poll_fn(|cx| {
-        if left_value.is_none() {
-            match left.as_mut().poll(cx) {
-                Poll::Ready(Ok(value)) => left_value = Some(value),
+        partial = match mem::replace(&mut partial, Partial::Neither) {
+            Partial::Neither => match left.as_mut().poll(cx) {
+                Poll::Ready(Ok(left_value)) => match right.as_mut().poll(cx) {
+                    Poll::Ready(Ok(right_value)) => {
+                        return Poll::Ready(Ok((left_value, right_value)));
+                    }
+                    Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                    Poll::Pending => Partial::Left(left_value),
+                },
                 Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
-                Poll::Pending => {}
-            }
-        }
-        if right_value.is_none() {
-            match right.as_mut().poll(cx) {
-                Poll::Ready(Ok(value)) => right_value = Some(value),
+                Poll::Pending => match right.as_mut().poll(cx) {
+                    Poll::Ready(Ok(right_value)) => Partial::Right(right_value),
+                    Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                    Poll::Pending => Partial::Neither,
+                },
+            },
+            Partial::Left(left_value) => match right.as_mut().poll(cx) {
+                Poll::Ready(Ok(right_value)) => {
+                    return Poll::Ready(Ok((left_value, right_value)));
+                }
                 Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
-                Poll::Pending => {}
-            }
-        }
-        if left_value.is_some() && right_value.is_some() {
-            if let (Some(left), Some(right)) = (left_value.take(), right_value.take()) {
-                return Poll::Ready(Ok((left, right)));
-            }
-        }
+                Poll::Pending => Partial::Left(left_value),
+            },
+            Partial::Right(right_value) => match left.as_mut().poll(cx) {
+                Poll::Ready(Ok(left_value)) => {
+                    return Poll::Ready(Ok((left_value, right_value)));
+                }
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Pending => Partial::Right(right_value),
+            },
+        };
         Poll::Pending
     })
     .await

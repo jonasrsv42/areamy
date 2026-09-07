@@ -1,7 +1,8 @@
 use crate::biunion;
-use crate::connect::sync::Receiver;
+use crate::connect::sync::multiedge::{self, Notify};
 use crate::error::{Error, ErrorKind};
 use crate::node::biunion::routine::BiunionRoutine;
+use crate::node::work::work_each;
 use crate::{
     Closeable, Message, Origin, Pushable, Sink, Workable,
     graph::{Add, Get},
@@ -74,10 +75,23 @@ pub struct Input<Left, Right, SignalType>
 where
     Left: Send + Sync,
     Right: Send + Sync,
-    SignalType: Origin + Clone,
+    SignalType: Origin + Clone + Send + Sync,
 {
-    pub left: Receiver<Left, SignalType>,
-    pub right: Receiver<Right, SignalType>,
+    pub left: multiedge::Receiver<Left, SignalType>,
+    pub right: multiedge::Receiver<Right, SignalType>,
+    notify: Arc<Notify>,
+}
+
+impl<Left, Right, SignalType> Input<Left, Right, SignalType>
+where
+    Left: Send + Sync,
+    Right: Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+{
+    /// Block until either side has data; `Closed` when neither can.
+    fn wait_any(&self) -> Result<(), Error> {
+        self.notify.wait_any(&[&self.left, &self.right])
+    }
 }
 
 impl<Left, Right, SignalType> Default for Input<Left, Right, SignalType>
@@ -87,9 +101,11 @@ where
     SignalType: Origin + Clone + Send + Sync,
 {
     fn default() -> Self {
+        let notify = Notify::new();
         Self {
-            left: Receiver::new(),
-            right: Receiver::new(),
+            left: multiedge::Receiver::new(notify.clone()),
+            right: multiedge::Receiver::new(notify.clone()),
+            notify,
         }
     }
 }
@@ -152,26 +168,15 @@ where
                     match self.propagate_if_closed(right_poll)? {
                         Some(message) => push_ok = self.do_right_input(message)?,
                         None => {
-                            // We always work left and right. This is problematic if
-                            // one workable is much more active than the other. If there is a use-case for this
-                            // we may need to make workables limited blocking.. or adaptive.. or throw more threads
-                            // at it.
-                            //
-                            // However the primary use-case for biunion now involves connecting one
-                            // input only as pushable to send reset signals. So won't fix now.
-                            //
-                            // Future me may complain.
-                            //
-                            // If Workables are emtpy we also do spinlocking for now. Need to think about that.
-                            for i in 0..self.worker.left.len() {
-                                let result = self.worker.left[i].work();
-                                self.propagate_if_closed(result)?;
+                            // No parents left: block until either edge has data.
+                            // With parents, work both sides once; one side being
+                            // much busier than the other is not handled.
+                            if self.worker.left.is_empty() && self.worker.right.is_empty() {
+                                let waited = self.input.wait_any();
+                                self.propagate_if_closed(waited)?;
                             }
-
-                            for i in 0..self.worker.right.len() {
-                                let result = self.worker.right[i].work();
-                                self.propagate_if_closed(result)?;
-                            }
+                            work_each(&mut self.worker.left)?;
+                            work_each(&mut self.worker.right)?;
                         }
                     }
                 }
@@ -465,6 +470,7 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::connect::sync::Receiver;
     use crate::node::biunion::routine::tests::MockBiunion;
     use crate::{Pushable, work::Reader, work::Writer, work::make_biunion};
 

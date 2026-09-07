@@ -2,6 +2,7 @@ use crate::bifurcation;
 use crate::connect::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::node::bifurcation::routine::BifurcationRoutine;
+use crate::node::work::work_each;
 use crate::{
     Closeable, Message, Origin, Pushable, Sink, Workable,
     graph::{Add, Get},
@@ -161,16 +162,15 @@ where
                 },
 
                 None => {
+                    // No parents left: block on the edge. Closed once it can never fill.
                     if self.workers.is_empty() {
                         let wait_result = self.input.wait_front();
                         self.propagate_if_closed(wait_result)?;
                     }
 
-                    // Then we work input from each source once.
-                    for i in 0..self.workers.len() {
-                        let result = self.workers[i].work();
-                        self.propagate_if_closed(result)?;
-                    }
+                    // Work each parent once, dropping finished ones. The
+                    // edge closes itself once every producer is gone.
+                    work_each(&mut self.workers)?;
                 }
             }
         }

@@ -140,17 +140,17 @@ fn bridged_line_flush_then_close() -> Result<(), Error> {
     Ok(())
 }
 
-/// Known gap: with two bridges on one line, the second bridge closing
-/// tears down the node while the first bridge's Flush is still queued.
+/// A bridge closing only drops that bridge; the Flush the other bridge
+/// queued still goes out before the edge closes.
 #[test]
-fn bridged_line_two_bridges_drop_pending_flush() -> Result<(), Error> {
+fn bridged_line_two_bridges_keep_pending_flush() -> Result<(), Error> {
     let first = Script::new(vec![Message::Flush("f".into())]);
     let mut line = from_pull(first, Hold::new());
     let second = Bridge::new(Script::new(vec![]), line.input.sender());
     line.workers.push(Box::new(second));
     let mut reader = Reader::new(line)?;
 
-    assert_eq!(drain(&mut reader)?, vec![]);
+    assert_eq!(drain(&mut reader)?, vec![Message::Flush("f".into())]);
     Ok(())
 }
 

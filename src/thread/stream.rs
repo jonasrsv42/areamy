@@ -14,14 +14,15 @@
 use super::callback::{self, OnDone, PanicGuard};
 use super::done::Done;
 use super::join::Join;
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
+use crate::node::work::work_each;
 use crate::{ThreadId, Workable, fatal, graph::Add};
 use std::thread::{Scope, ScopedJoinHandle};
 
 type Workables<'params, ThreadIdType> = Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>;
 
 /// Drive workables until the vec drains. A workable returning
-/// [`ErrorKind::Closed`] is dropped immediately — its outgoing
+/// [`crate::error::ErrorKind::Closed`] is dropped immediately — its outgoing
 /// `Sender`/`Receiver` handles drop with it and the close-on-drop
 /// cascade fires within this work loop, so other workables in the
 /// same thread that share edges with it observe `Closed` on their
@@ -30,27 +31,15 @@ fn work_loop<'params, ThreadIdType: ThreadId>(
     workables: &mut Workables<'params, ThreadIdType>,
 ) -> Result<(), Error> {
     while !workables.is_empty() {
-        let mut i = 0;
-        while i < workables.len() {
-            match workables[i].work() {
-                Ok(()) => i += 1,
-                Err(error) if matches!(error.kind, ErrorKind::Closed) => {
-                    // Drop the closed workable here — fires cascade.
-                    // swap_remove is O(1) and the iteration order
-                    // doesn't matter for fairness.
-                    workables.swap_remove(i);
-                }
-                Err(error) => {
-                    #[cfg(not(feature = "silent"))]
-                    eprintln!(
-                        "In thread {} error: {}",
-                        std::any::type_name::<ThreadIdType>(),
-                        error
-                    );
-                    return Err(error);
-                }
-            }
-        }
+        work_each(workables).map_err(|error| {
+            #[cfg(not(feature = "silent"))]
+            eprintln!(
+                "In thread {} error: {}",
+                std::any::type_name::<ThreadIdType>(),
+                error
+            );
+            error
+        })?;
     }
     Ok(())
 }

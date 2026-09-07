@@ -10,7 +10,18 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+
+/// What a waiter can do with an edge right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    /// Has buffered data.
+    Ready,
+    /// Empty, but open with a live producer so data may still arrive.
+    Idle,
+    /// Empty and nothing can ever arrive: closed, or no producer left.
+    Exhausted,
+}
 
 struct Inner<DataType, SignalType>
 where
@@ -64,11 +75,9 @@ where
     /// [`Receiver::sender`]. The edge auto-closes when all minted
     /// senders are dropped.
     ///
-    /// A receiver that never mints a sender has nothing that can
-    /// wake it, so [`read_front`](Self::read_front) /
-    /// [`read_all`](Self::read_all) / [`wait_front`](Self::wait_front)
-    /// will block forever — mint at least one sender before blocking,
-    /// or call [`close`](Self::close) to unblock.
+    /// Blocking reads on a receiver with no senders return `Closed`
+    /// at once, since nothing could ever wake them. Mint senders
+    /// before reading.
     pub fn new() -> Self {
         let shared = Arc::new(Shared {
             inner: Mutex::new(Inner {
@@ -196,16 +205,35 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    /// Block until a message is available, then pop it. Returns
-    /// `Closed` if the edge is closed and the buffer is empty.
-    pub fn read_front(&self) -> Result<Message<D, S>, Error> {
+    /// One-lock readout of what a waiter can do with this edge.
+    pub(crate) fn state(&self) -> Result<State, Error> {
+        let inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
+        if !inner.buffer.is_empty() {
+            return Ok(State::Ready);
+        }
+        if inner.closed || self.shared.producer_count.load(Ordering::Acquire) == 0 {
+            return Ok(State::Exhausted);
+        }
+        Ok(State::Idle)
+    }
+
+    /// Block until the buffer is non-empty. `Closed` if nothing could
+    /// ever wake us.
+    fn wait_nonempty(&self) -> Result<MutexGuard<'_, Inner<D, S>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         while inner.buffer.is_empty() {
-            if inner.closed {
+            if inner.closed || self.shared.producer_count.load(Ordering::Acquire) == 0 {
                 return Err(closed!());
             }
             inner = self.shared.signal.wait(inner).map_err(|e| fatal!(e))?;
         }
+        Ok(inner)
+    }
+
+    /// Block until a message is available, then pop it. `Closed` if
+    /// nothing could ever wake us: closed and empty, or no producer.
+    pub fn read_front(&self) -> Result<Message<D, S>, Error> {
+        let mut inner = self.wait_nonempty()?;
         match inner.buffer.pop_front() {
             Some(msg) => Ok(msg),
             None => fatal!("non-empty queue with no element").into(),
@@ -213,21 +241,16 @@ where
     }
 
     /// Block until at least one message is available, then drain the
-    /// whole buffer. Returns `Closed` if the edge is closed and the
-    /// buffer is empty.
+    /// whole buffer. `Closed` if nothing could ever wake us: closed and
+    /// empty, or no producer.
     pub fn read_all(&self) -> Result<Vec<Message<D, S>>, Error> {
-        let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
-        while inner.buffer.is_empty() {
-            if inner.closed {
-                return Err(closed!());
-            }
-            inner = self.shared.signal.wait(inner).map_err(|e| fatal!(e))?;
-        }
+        let mut inner = self.wait_nonempty()?;
         Ok(inner.buffer.drain(..).collect())
     }
 
-    /// Non-blocking pop. Returns `Ok(None)` when open and empty,
-    /// `Err(Closed)` when closed and empty.
+    /// Non-blocking pop. `Ok(None)` when open and empty, `Err(Closed)`
+    /// when closed and empty. Unlike the blocking reads this ignores
+    /// the producer count, so an unconnected edge stays `Ok(None)`.
     pub fn poll(&self) -> Result<Option<Message<D, S>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         match inner.buffer.pop_front() {
@@ -237,17 +260,10 @@ where
         }
     }
 
-    /// Block until the buffer is non-empty without popping. Returns
-    /// `Closed` if the edge is closed while the buffer is empty.
+    /// Block until the buffer is non-empty without popping. `Closed` if
+    /// nothing could ever wake us: closed and empty, or no producer.
     pub fn wait_front(&self) -> Result<(), Error> {
-        let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
-        while inner.buffer.is_empty() {
-            if inner.closed {
-                return Err(closed!());
-            }
-            inner = self.shared.signal.wait(inner).map_err(|e| fatal!(e))?;
-        }
-        Ok(())
+        self.wait_nonempty().map(|_| ())
     }
 
     /// Mark the edge closed. Idempotent.

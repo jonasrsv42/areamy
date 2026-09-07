@@ -2,6 +2,7 @@
 use crate::connect::sync::Receiver;
 use crate::error::Error;
 use crate::node::line::LineRoutine;
+use crate::node::work::work_each;
 use crate::{Closeable, Pushable, Sink, Workable};
 use crate::{
     DefaultThread, ThreadId,
@@ -160,18 +161,14 @@ where
 
                 // If no input make parents work in hopes of producing input.
                 None => {
-                    // If there's no parents we just wait forever hoping someone gives us smt.
+                    // No parents left: block on the edge. Closed once it can never fill.
                     if self.workers.is_empty() {
                         self.propagate_if_closed(self.input.wait_front())?;
                     }
 
-                    // Then we work input from each source once.
-                    // Propagate close to push outputs if parent work returns closed.
-                    // Use index-based loop to avoid borrow conflict with propagate_if_closed.
-                    for i in 0..self.workers.len() {
-                        let result = self.workers[i].work();
-                        self.propagate_if_closed(result)?;
-                    }
+                    // Work each parent once, dropping finished ones. The
+                    // edge closes itself once every producer is gone.
+                    work_each(&mut self.workers)?;
                 }
             }
         }

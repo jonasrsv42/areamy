@@ -8,7 +8,11 @@
 //! blocked [`Receiver`] read is woken with
 //! [`crate::error::ErrorKind::Closed`]. When the [`Receiver`] is
 //! dropped, further [`Sender::push_back`] calls return `Closed`.
+//!
+//! Multi-input nodes use [`multiedge`], whose receivers share one wake
+//! flag so a single waiter can block on all of them.
 
 pub mod edge;
+pub mod multiedge;
 
 pub use edge::{Receiver, Sender};

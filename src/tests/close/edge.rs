@@ -60,6 +60,14 @@ fn sync_edge_read_all() -> Result<(), Error> {
     Ok(())
 }
 
+/// No producer can ever wake a blocking read, so it reports Closed.
+#[test]
+fn sync_edge_read_without_producers_is_closed() {
+    let rx = Receiver::<usize, Signal>::new();
+    assert_closed(rx.read_front());
+    assert_closed(rx.wait_front());
+}
+
 #[test]
 fn sync_edge_close_by_drop() -> Result<(), Error> {
     let rx = Receiver::<usize, Signal>::new();

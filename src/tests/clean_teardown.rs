@@ -160,7 +160,7 @@ fn middle_thread_error_does_not_deadlock_drain() {
 fn poll_thread_does_not_deadlock_when_sync_input_drops() {
     let mut thread = Thread::<'_, PollThread>::new();
     let node = thread
-        .line(|w| MockLine::new(w))
+        .line(MockLine::new)
         .input::<crate::poll::Sync>()
         .output::<crate::poll::Sync>();
 

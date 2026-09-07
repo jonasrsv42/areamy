@@ -201,20 +201,14 @@ mod tests {
                     let left_out = output.clone();
                     let right_out = output;
                     let left_fut = async move {
-                        loop {
-                            match left.recv().await? {
-                                Input::Data(n) => left_out.push(n + *bias_ref),
-                                Input::Flush => break,
-                            }
+                        while let Input::Data(n) = left.recv().await? {
+                            left_out.push(n + *bias_ref);
                         }
                         Ok::<_, Error>(())
                     };
                     let right_fut = async move {
-                        loop {
-                            match right.recv().await? {
-                                Input::Data(n) => right_out.push(n * *bias_ref),
-                                Input::Flush => break,
-                            }
+                        while let Input::Data(n) = right.recv().await? {
+                            right_out.push(n * *bias_ref);
                         }
                         Ok::<_, Error>(())
                     };

@@ -64,7 +64,7 @@ pub trait Poll {
 
 /// [`Name`] trait is used to name routines for logging purposes.
 pub trait Name {
-    fn name<'a>(&'a self) -> &'a str {
+    fn name(&self) -> &str {
         "unknown"
     }
 }
@@ -91,7 +91,8 @@ pub mod tests {
 
     impl Send<usize> for AddOne {
         fn send(&mut self, message: usize) -> Result<(), Error> {
-            Ok(self.out.push_back(message + 1))
+            self.out.push_back(message + 1);
+            Ok(())
         }
     }
 
@@ -128,13 +129,15 @@ pub mod tests {
 
     impl Send<usize, Left> for CrossAdder {
         fn send(&mut self, message: usize) -> Result<(), Error> {
-            Ok(self.right.push_back(message + 1))
+            self.right.push_back(message + 1);
+            Ok(())
         }
     }
 
     impl Send<usize, Right> for CrossAdder {
         fn send(&mut self, message: usize) -> Result<(), Error> {
-            Ok(self.left.push_back(message + 1))
+            self.left.push_back(message + 1);
+            Ok(())
         }
     }
 

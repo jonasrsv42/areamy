@@ -234,9 +234,9 @@ where
             Some(message) => {
                 self.push_left(Message::Data(message))?;
 
-                return Ok(true);
+                Ok(true)
             }
-            None => return Ok(false),
+            None => Ok(false),
         }
     }
 
@@ -247,9 +247,9 @@ where
             Some(message) => {
                 self.push_right(Message::Data(message))?;
 
-                return Ok(true);
+                Ok(true)
             }
-            None => return Ok(false),
+            None => Ok(false),
         }
     }
 
@@ -362,7 +362,8 @@ where
         &mut self,
         closeable: Box<dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.pushes.left.push(closeable))
+        self.pushes.left.push(closeable);
+        Ok(())
     }
 }
 
@@ -383,7 +384,8 @@ where
         &mut self,
         closeable: Box<dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.pushes.right.push(closeable))
+        self.pushes.right.push(closeable);
+        Ok(())
     }
 }
 
@@ -402,13 +404,15 @@ where
         &mut self,
         workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.workers.push(workable))
+        self.workers.push(workable);
+        Ok(())
     }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::Trackable;
     use crate::closed;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::{Pushable, reader::work::tee, work::Writer, work::make_bifurcation};
@@ -441,15 +445,8 @@ pub mod tests {
         assert_eq!(right_reader.read().unwrap(), Message::Data(7));
 
         // Now comes the flush
-        match right_reader.read().unwrap() {
-            Message::Flush(_) => assert!(true),
-            _ => assert!(false),
-        }
-
-        match left_reader.read().unwrap() {
-            Message::Flush(_) => assert!(true),
-            _ => assert!(false),
-        }
+        assert!(matches!(right_reader.read().unwrap(), Message::Flush(_)));
+        assert!(matches!(left_reader.read().unwrap(), Message::Flush(_)));
 
         writer.push(Message::Data(2)).unwrap();
         workable.work().unwrap();
@@ -462,16 +459,16 @@ pub mod tests {
     fn close_propagates_through_push_when_input_closed() {
         let mut bifur = Bifurcation::new(MockBifurcation::new());
 
-        let left_output = Receiver::<usize, &'static str>::new();
-        let right_output = Receiver::<usize, &'static str>::new();
+        let left_output = Receiver::<usize, Trackable<&'static str>>::new();
+        let right_output = Receiver::<usize, Trackable<&'static str>>::new();
 
         Add::<
-            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
             bifurcation::Left,
         >::add(&mut bifur, Box::new(left_output.sender()))
         .unwrap();
         Add::<
-            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
             bifurcation::Right,
         >::add(&mut bifur, Box::new(right_output.sender()))
         .unwrap();
@@ -509,16 +506,16 @@ pub mod tests {
         Add::<dyn Workable<ThreadId = DefaultThread>>::add(&mut bifur, Box::new(ClosingWorkable))
             .unwrap();
 
-        let left_output = Receiver::<usize, &'static str>::new();
-        let right_output = Receiver::<usize, &'static str>::new();
+        let left_output = Receiver::<usize, Trackable<&'static str>>::new();
+        let right_output = Receiver::<usize, Trackable<&'static str>>::new();
 
         Add::<
-            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
             bifurcation::Left,
         >::add(&mut bifur, Box::new(left_output.sender()))
         .unwrap();
         Add::<
-            dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync,
+            dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
             bifurcation::Right,
         >::add(&mut bifur, Box::new(right_output.sender()))
         .unwrap();

@@ -12,6 +12,7 @@ impl<PullableType: Pullable + ?Sized> Pullable for Box<PullableType> {
 
 #[cfg(test)]
 mod tests {
+    use crate::Trackable;
     use crate::{Connection, DefaultThread, Message, Pullable, error::Error};
 
     struct Root {
@@ -23,7 +24,7 @@ mod tests {
     impl Pullable for Root {
         type ThreadId = DefaultThread;
         type DataType = usize;
-        type SignalType = usize;
+        type SignalType = Trackable<&'static str>;
 
         fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
             self.value += 1;
@@ -43,7 +44,11 @@ mod tests {
     #[test]
     fn box_pullable_can_pull() {
         let mut pullable: Box<
-            dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>,
+            dyn Pullable<
+                    ThreadId = DefaultThread,
+                    DataType = usize,
+                    SignalType = Trackable<&'static str>,
+                >,
         > = Box::new(Root { value: 0 });
 
         assert_eq!(pullable.pull().unwrap(), Message::Data(1));

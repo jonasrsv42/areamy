@@ -38,11 +38,9 @@ where
         pullable: impl Pullable<ThreadId = DefaultThread, DataType = DataType, SignalType = SignalType>
         + 'params,
     ) -> Self {
-        let reader = Self {
+        Self {
             pullable: Box::new(pullable),
-        };
-
-        return reader;
+        }
     }
 }
 

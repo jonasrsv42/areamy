@@ -146,6 +146,7 @@ pub trait Get<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicit
 #[cfg(any(test, doc))]
 pub mod tests {
     use super::*;
+    use crate::Trackable;
     use crate::connect::sync::Receiver;
     use crate::{DefaultThread, Message, make_bidi, make_push};
 
@@ -160,8 +161,8 @@ pub mod tests {
     /// it as a stateful function
     impl Routine {
         fn process(&mut self, v: usize) -> usize {
-            self.state = self.state + 1;
-            return v * 2 + self.state;
+            self.state += 1;
+            v * 2 + self.state
         }
     }
 
@@ -184,7 +185,7 @@ pub mod tests {
     ///
     pub struct Node {
         /// Incoming data connection(s), `Pushable`(s).
-        pub input: Receiver<usize, usize>,
+        pub input: Receiver<usize, Trackable<&'static str>>,
         /// The underyling routine of the node.
         pub routine: Routine,
 
@@ -194,11 +195,25 @@ pub mod tests {
 
         /// Incoming combo `Pullable` that we can invoke for data and scheduling.
         pub pullable: Option<
-            Box<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>,
+            Box<
+                dyn Pullable<
+                        ThreadId = DefaultThread,
+                        DataType = usize,
+                        SignalType = Trackable<&'static str>,
+                    >,
+            >,
         >,
 
         /// Outgoing data connections. Lets us shovel data into our child nodes.
-        pub outputs: Vec<Box<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync>>,
+        pub outputs: Vec<
+            Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
+        >,
+    }
+
+    impl Default for Node {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl Node {
@@ -242,36 +257,44 @@ pub mod tests {
         type ThreadId = DefaultThread;
     }
 
-    /// To enable graph building we must implement factory methods for it
-    ///
-    /// 1. For `get`ing its input to give to something else.
-    /// 2. For `add`ing something elses input to its output.
-    /// 3. For `add`ing something elses `Workable` for scheduling.
+    // To enable graph building we must implement factory methods for it
+    //
+    // 1. For `get`ing its input to give to something else.
+    // 2. For `add`ing something elses input to its output.
+    // 3. For `add`ing something elses `Workable` for scheduling.
 
     /// Method for fetching input. We put it in a `Box` for dynamic dispatch.
-    impl Get<dyn Pushable<DataType = usize, SignalType = usize>> for Node {
-        fn get(&self) -> Result<Box<dyn Pushable<DataType = usize, SignalType = usize>>, Error> {
-            Ok(Box::new(self.input.sender()))
-        }
-    }
-
-    /// Get Closeable for input edge.
-    impl Get<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync> for Node {
+    impl Get<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>> for Node {
         fn get(
             &self,
-        ) -> Result<Box<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync>, Error>
+        ) -> Result<Box<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>, Error>
         {
             Ok(Box::new(self.input.sender()))
         }
     }
 
+    /// Get Closeable for input edge.
+    impl Get<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync> for Node {
+        fn get(
+            &self,
+        ) -> Result<
+            Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
+            Error,
+        > {
+            Ok(Box::new(self.input.sender()))
+        }
+    }
+
     /// Method adding something to output.
-    impl Add<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync> for Node {
+    impl Add<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync> for Node {
         fn add(
             &mut self,
-            connection: Box<dyn Sink<DataType = usize, SignalType = usize> + Send + Sync>,
+            connection: Box<
+                dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
+            >,
         ) -> Result<(), Error> {
-            Ok(self.outputs.push(connection))
+            self.outputs.push(connection);
+            Ok(())
         }
     }
     /// Method for adding a schedulable node to be worked on.
@@ -280,7 +303,8 @@ pub mod tests {
             &mut self,
             connection: Box<dyn Workable<ThreadId = DefaultThread>>,
         ) -> Result<(), Error> {
-            Ok(self.workers.push(connection))
+            self.workers.push(connection);
+            Ok(())
         }
     }
 
@@ -294,7 +318,10 @@ pub mod tests {
         let mut node_3 = Box::new(Node::new());
 
         let mut input =
-            Get::<dyn Pushable<DataType = usize, SignalType = usize>>::get(&node_1).unwrap();
+            Get::<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>::get(
+                &node_1,
+            )
+            .unwrap();
 
         make_bidi(node_1, node_2.as_mut()).unwrap();
         make_bidi(node_2, node_3.as_mut()).unwrap();
@@ -331,7 +358,7 @@ pub mod tests {
         );
     }
 
-    /// Now we can make out Node usable in a `Pull` graph with a few additional methods.
+    // Now we can make out Node usable in a `Pull` graph with a few additional methods.
 
     /// Such a variant of a graph can be used to connect `Workers` without
     /// synchronization such as condvars, arcs and mutexes
@@ -350,7 +377,7 @@ pub mod tests {
     impl Pullable for Node {
         type ThreadId = DefaultThread;
         type DataType = usize;
-        type SignalType = usize;
+        type SignalType = Trackable<&'static str>;
 
         fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
             let value = match &mut self.pullable {
@@ -359,20 +386,32 @@ pub mod tests {
             };
 
             match value {
-                Message::Data(d) => return Ok(Message::Data(self.routine.process(d))),
-                Message::Flush(signal) => return Ok(Message::Flush(signal)),
-                Message::Marker(signal) => return Ok(Message::Marker(signal)),
+                Message::Data(d) => Ok(Message::Data(self.routine.process(d))),
+                Message::Flush(signal) => Ok(Message::Flush(signal)),
+                Message::Marker(signal) => Ok(Message::Marker(signal)),
             }
         }
     }
 
     /// Graph building for `Pullable`
     /// Method adding something to output.
-    impl Add<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>> for Node {
+    impl
+        Add<
+            dyn Pullable<
+                    ThreadId = DefaultThread,
+                    DataType = usize,
+                    SignalType = Trackable<&'static str>,
+                >,
+        > for Node
+    {
         fn add(
             &mut self,
             connection: Box<
-                dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>,
+                dyn Pullable<
+                        ThreadId = DefaultThread,
+                        DataType = usize,
+                        SignalType = Trackable<&'static str>,
+                    >,
             >,
         ) -> Result<(), Error> {
             self.pullable = Some(connection);
@@ -390,15 +429,21 @@ pub mod tests {
 
         let mut input = node_1.input.sender();
 
-        Add::<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>::add(
-            node_2.as_mut(),
-            node_1,
-        )
+        Add::<
+            dyn Pullable<
+                    ThreadId = DefaultThread,
+                    DataType = usize,
+                    SignalType = Trackable<&'static str>,
+                >,
+        >::add(node_2.as_mut(), node_1)
         .unwrap();
-        Add::<dyn Pullable<ThreadId = DefaultThread, DataType = usize, SignalType = usize>>::add(
-            node_3.as_mut(),
-            node_2,
-        )
+        Add::<
+            dyn Pullable<
+                    ThreadId = DefaultThread,
+                    DataType = usize,
+                    SignalType = Trackable<&'static str>,
+                >,
+        >::add(node_3.as_mut(), node_2)
         .unwrap();
 
         input.push(Message::Data(0)).unwrap();
@@ -413,7 +458,7 @@ pub mod tests {
     /// A simple async node that processes input via `Pollable`.
     /// It polls its input edge non-blockingly and processes data.
     struct AsyncNode {
-        input: Receiver<usize, usize>,
+        input: Receiver<usize, Trackable<&'static str>>,
         routine: Routine,
         outputs: Vec<usize>,
     }
@@ -487,7 +532,7 @@ pub mod tests {
 
     /// A `Pollable` node that returns `Ready` when closed.
     struct ClosingAsyncNode {
-        input: Receiver<usize, usize>,
+        input: Receiver<usize, Trackable<&'static str>>,
     }
 
     impl Connection for ClosingAsyncNode {}

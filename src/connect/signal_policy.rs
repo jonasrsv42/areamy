@@ -113,13 +113,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Message;
+    use crate::Trackable;
     use crate::connect::sync::Receiver;
-    use crate::{Message, Origin};
 
-    #[derive(Debug, PartialEq, Eq, Hash)]
-    struct TestSignal(u32);
-
-    impl Origin for TestSignal {}
+    type TestSignal = Trackable<&'static str>;
 
     #[test]
     fn test_policy_edge_forward() {
@@ -127,17 +125,17 @@ mod tests {
         let mut policy_edge = PolicyEdge::new(edge.sender(), SignalPolicy::Forward);
 
         // Forward policy should allow all signals
-        policy_edge.push(Message::Flush(TestSignal(1))).unwrap();
-        policy_edge.push(Message::Marker(TestSignal(2))).unwrap();
+        policy_edge.push(Message::Flush("1".into())).unwrap();
+        policy_edge.push(Message::Marker("2".into())).unwrap();
         policy_edge.push(Message::Data(3.5)).unwrap();
-        policy_edge.push(Message::Flush(TestSignal(3))).unwrap();
+        policy_edge.push(Message::Flush("3".into())).unwrap();
 
         let messages = edge.read_all().unwrap();
         assert_eq!(messages.len(), 4);
-        assert_eq!(messages[0], Message::Flush(TestSignal(1)));
-        assert_eq!(messages[1], Message::Marker(TestSignal(2)));
+        assert_eq!(messages[0], Message::Flush("1".into()));
+        assert_eq!(messages[1], Message::Marker("2".into()));
         assert_eq!(messages[2], Message::Data(3.5));
-        assert_eq!(messages[3], Message::Flush(TestSignal(3)));
+        assert_eq!(messages[3], Message::Flush("3".into()));
     }
 
     #[test]
@@ -146,29 +144,29 @@ mod tests {
         let mut policy_edge = PolicyEdge::new(edge.sender(), SignalPolicy::FollowData);
 
         // First signal should be dropped (no data yet)
-        policy_edge.push(Message::Flush(TestSignal(1))).unwrap();
+        policy_edge.push(Message::Flush("1".into())).unwrap();
 
         // Add data
         policy_edge.push(Message::Data(3.5)).unwrap();
 
         // Now signal should be forwarded
-        policy_edge.push(Message::Marker(TestSignal(2))).unwrap();
+        policy_edge.push(Message::Marker("2".into())).unwrap();
 
         // This signal should be dropped (previous was a signal)
-        policy_edge.push(Message::Flush(TestSignal(3))).unwrap();
+        policy_edge.push(Message::Flush("3".into())).unwrap();
 
         // Add more data
         policy_edge.push(Message::Data(4.0)).unwrap();
 
         // Now signal should be forwarded again
-        policy_edge.push(Message::Flush(TestSignal(4))).unwrap();
+        policy_edge.push(Message::Flush("4".into())).unwrap();
 
         let messages = edge.read_all().unwrap();
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[0], Message::Data(3.5));
-        assert_eq!(messages[1], Message::Marker(TestSignal(2)));
+        assert_eq!(messages[1], Message::Marker("2".into()));
         assert_eq!(messages[2], Message::Data(4.0));
-        assert_eq!(messages[3], Message::Flush(TestSignal(4)));
+        assert_eq!(messages[3], Message::Flush("4".into()));
     }
 
     #[test]
@@ -177,15 +175,15 @@ mod tests {
         let mut policy_edge = PolicyEdge::new(edge.sender(), SignalPolicy::Block);
 
         // All signals should be blocked
-        policy_edge.push(Message::Flush(TestSignal(1))).unwrap();
-        policy_edge.push(Message::Marker(TestSignal(2))).unwrap();
+        policy_edge.push(Message::Flush("1".into())).unwrap();
+        policy_edge.push(Message::Marker("2".into())).unwrap();
 
         // Data should still go through
         policy_edge.push(Message::Data(3.5)).unwrap();
         policy_edge.push(Message::Data(4.0)).unwrap();
 
         // More signals should be blocked
-        policy_edge.push(Message::Flush(TestSignal(3))).unwrap();
+        policy_edge.push(Message::Flush("3".into())).unwrap();
 
         let messages = edge.read_all().unwrap();
         assert_eq!(messages.len(), 2);

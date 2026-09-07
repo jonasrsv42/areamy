@@ -4,7 +4,6 @@
 /// [LineRoutine::send] and produce a stream of output with [LineRoutine::next].
 ///
 /// [std::ops::Coroutine] was not stable at time of development.
-
 /// [LineRoutine] implements a [crate::Send] for a single input and a [crate::Next] for a single
 /// output.
 ///

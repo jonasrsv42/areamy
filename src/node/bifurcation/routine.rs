@@ -25,6 +25,12 @@ pub mod tests {
         right_out: VecDeque<usize>,
     }
 
+    impl Default for MockBifurcation {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl MockBifurcation {
         pub fn new() -> Self {
             MockBifurcation {
@@ -66,7 +72,7 @@ pub mod tests {
     }
 
     impl crate::node::Name for MockBifurcation {
-        fn name<'a>(&'a self) -> &'a str {
+        fn name(&self) -> &str {
             "MockBifurcation"
         }
     }

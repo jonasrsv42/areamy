@@ -37,12 +37,13 @@ impl WakerAllocator {
     }
 
     /// Pre-allocate a sync waker.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Slot<core::task::Waker> {
         let id = self.count;
         self.count += 1;
         Slot {
             id,
-            value: sync::Waker::new(id, &self.producer),
+            value: sync::Waker::task(id, &self.producer),
         }
     }
 
@@ -70,6 +71,7 @@ pub struct ThreadLocalWakerAllocator<ThreadIdType: ThreadId> {
 
 impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
     /// Allocate a waker pair (sync + local) for the next node.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Slot<waker::Waker> {
         let id = self.count;
         self.count += 1;
@@ -118,7 +120,7 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
             match slot {
                 Some(pollable) => {
                     let waker = waker::Waker {
-                        sync: sync::Waker::new(i, &self.producer),
+                        sync: sync::Waker::task(i, &self.producer),
                         local: ThreadLocalWaker::from_producer(i, &self.local_producer),
                     };
                     result.push(Node { pollable, waker });
@@ -137,7 +139,7 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
 
     fn make_waker(&self, id: NodeId) -> waker::Waker {
         waker::Waker {
-            sync: sync::Waker::new(id, &self.producer),
+            sync: sync::Waker::task(id, &self.producer),
             local: ThreadLocalWaker::from_producer(id, &self.local_producer),
         }
     }

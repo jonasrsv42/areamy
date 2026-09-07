@@ -60,12 +60,9 @@ where
     /// [Line::pullable] input.
     fn pull(&mut self) -> Result<Message<Self::DataType, Self::SignalType>, Error> {
         // Push anything from our outstanding buffer.
-        match self.next_output()? {
-            Some(message) => {
-                // Push to any potential connected pushable
-                return Ok(message);
-            }
-            None => (),
+        if let Some(message) = self.next_output()? {
+            // Push to any potential connected pushable
+            return Ok(message);
         }
 
         loop {
@@ -74,12 +71,9 @@ where
                 Message::Data(data) => {
                     self.worker.send(data)?;
 
-                    match self.next_output()? {
-                        Some(message) => {
-                            // Return to output connections.
-                            return Ok(message);
-                        }
-                        None => (),
+                    if let Some(message) = self.next_output()? {
+                        // Return to output connections.
+                        return Ok(message);
                     }
                 }
                 Message::Flush(origin) => {
@@ -128,22 +122,16 @@ where
     /// [Pullable::pull] parents.
     fn next_output(&mut self) -> Result<Option<Message<Out, SignalType>>, Error> {
         // If we have output in our worker queue just immediately return it.
-        match self.worker.next()? {
-            Some(next_data) => {
-                return Ok(Some(Message::Data(next_data)));
-            }
-            None => (),
+        if let Some(next_data) = self.worker.next()? {
+            return Ok(Some(Message::Data(next_data)));
         }
 
         // If we have messages left in the node buffer, return it.
-        match self.buffer.pop_front() {
-            Some(next_msg) => {
-                return Ok(Some(next_msg));
-            }
-            None => (),
+        if let Some(next_msg) = self.buffer.pop_front() {
+            return Ok(Some(next_msg));
         }
 
-        return Ok(None);
+        Ok(None)
     }
 }
 

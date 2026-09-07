@@ -51,7 +51,8 @@ pub mod tests {
 
     impl Send<usize> for Identity {
         fn send(&mut self, message: usize) -> Result<(), Error> {
-            Ok(self.output.push_back(message))
+            self.output.push_back(message);
+            Ok(())
         }
     }
 

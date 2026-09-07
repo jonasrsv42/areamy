@@ -62,12 +62,11 @@ where
     {
         let mut a: Vec<DataType> = Vec::new();
         for item in messages {
-            match item {
-                Message::Data(data) => a.push(data),
-                _ => (),
+            if let Message::Data(data) = item {
+                a.push(data)
             };
         }
-        return a;
+        a
     }
 }
 
@@ -89,14 +88,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Trackable;
 
     #[test]
     fn message_datas_from_iter() {
-        let iter = vec![
+        let iter: Vec<Message<i32, Trackable<&'static str>>> = vec![
             Message::Data(1),
             Message::Data(2),
-            Message::Flush(3),
-            Message::Marker(1),
+            Message::Flush("3".into()),
+            Message::Marker("1".into()),
             Message::Data(5),
         ];
         assert_eq!(Message::data_from_iter(iter.into_iter()), vec![1, 2, 5]);
@@ -104,8 +104,19 @@ mod tests {
 
     #[test]
     fn data_from_message() {
-        assert!(matches!(Message::<i32, usize>::Data(5).data(), Some(5)));
-        assert!(matches!(Message::<i32, usize>::Flush(5).data(), None));
-        assert!(matches!(Message::<i32, usize>::Marker(5).data(), None));
+        assert!(matches!(
+            Message::<i32, Trackable<&'static str>>::Data(5).data(),
+            Some(5)
+        ));
+        assert!(
+            Message::<i32, Trackable<&'static str>>::Flush("5".into())
+                .data()
+                .is_none()
+        );
+        assert!(
+            Message::<i32, Trackable<&'static str>>::Marker("5".into())
+                .data()
+                .is_none()
+        );
     }
 }

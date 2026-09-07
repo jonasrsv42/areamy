@@ -70,7 +70,7 @@ where
         }
 
         let output = self.buffer.read_front()?;
-        return Ok(output);
+        Ok(output)
     }
 }
 
@@ -101,8 +101,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     struct MockNode {
-        output: Message<usize, &'static str>,
-        pushable: Vec<Box<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>>,
+        output: Message<usize, Trackable<&'static str>>,
+        pushable: Vec<
+            Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
+        >,
     }
 
     impl Connection for MockNode {}
@@ -123,12 +125,17 @@ mod tests {
         }
     }
 
-    impl Add<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync> for MockNode {
+    impl Add<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>
+        for MockNode
+    {
         fn add(
             &mut self,
-            closeable: Box<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>,
+            closeable: Box<
+                dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
+            >,
         ) -> Result<(), Error> {
-            Ok(self.pushable.push(closeable))
+            self.pushable.push(closeable);
+            Ok(())
         }
     }
 
@@ -157,34 +164,34 @@ mod tests {
     #[test]
     fn reader_flush() {
         let mock_node = Arc::new(Mutex::new(MockNode {
-            output: Message::Flush("hi"),
+            output: Message::Flush("hi".into()),
             pushable: Vec::new(),
         }));
         let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
 
-        assert_eq!(reader.read().unwrap(), Message::Flush("hi"));
-        assert_eq!(reader.read().unwrap(), Message::Flush("hi"));
+        assert_eq!(reader.read().unwrap(), Message::Flush("hi".into()));
+        assert_eq!(reader.read().unwrap(), Message::Flush("hi".into()));
 
-        mock_node.lock().unwrap().output = Message::Flush("bye");
+        mock_node.lock().unwrap().output = Message::Flush("bye".into());
 
-        assert_eq!(reader.read().unwrap(), Message::Flush("bye"));
-        assert_eq!(reader.read().unwrap(), Message::Flush("bye"));
+        assert_eq!(reader.read().unwrap(), Message::Flush("bye".into()));
+        assert_eq!(reader.read().unwrap(), Message::Flush("bye".into()));
     }
 
     #[test]
     fn reader_mark() {
         let mock_node = Arc::new(Mutex::new(MockNode {
-            output: Message::Marker("hi"),
+            output: Message::Marker("hi".into()),
             pushable: Vec::new(),
         }));
         let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
 
-        assert_eq!(reader.read().unwrap(), Message::Marker("hi"));
-        assert_eq!(reader.read().unwrap(), Message::Marker("hi"));
+        assert_eq!(reader.read().unwrap(), Message::Marker("hi".into()));
+        assert_eq!(reader.read().unwrap(), Message::Marker("hi".into()));
 
-        mock_node.lock().unwrap().output = Message::Marker("bye");
+        mock_node.lock().unwrap().output = Message::Marker("bye".into());
 
-        assert_eq!(reader.read().unwrap(), Message::Marker("bye"));
-        assert_eq!(reader.read().unwrap(), Message::Marker("bye"));
+        assert_eq!(reader.read().unwrap(), Message::Marker("bye".into()));
+        assert_eq!(reader.read().unwrap(), Message::Marker("bye".into()));
     }
 }

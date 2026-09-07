@@ -9,5 +9,5 @@ use crate::error::Error;
 /// Trait to mark that [self] contains `Item`.
 pub trait Contains<Item> {
     // Get a reference to Item
-    fn get<'a>(&'a self) -> Result<&'a Item, Error>;
+    fn get(&self) -> Result<&Item, Error>;
 }

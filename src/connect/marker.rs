@@ -9,6 +9,12 @@ pub struct PhantomNode<Type> {
     phaton_data: PhantomData<Type>,
 }
 
+impl<Type> Default for PhantomNode<Type> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<Type> PhantomNode<Type> {
     pub fn new() -> Self {
         PhantomNode {

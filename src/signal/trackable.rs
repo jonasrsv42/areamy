@@ -92,9 +92,9 @@ where
     }
 }
 
-impl Into<Trackable<&'static str>> for &'static str {
-    fn into(self) -> Trackable<&'static str> {
-        Trackable::new(self)
+impl From<&'static str> for Trackable<&'static str> {
+    fn from(val: &'static str) -> Self {
+        Trackable::new(val)
     }
 }
 

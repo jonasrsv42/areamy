@@ -20,6 +20,7 @@ where
 mod tests {
     use super::*;
     use crate::Message;
+    use crate::Trackable;
     use crate::connect::graph::tests::Node;
     use crate::connect::sync::Receiver;
 
@@ -28,7 +29,7 @@ mod tests {
         let mut node = Node::new();
 
         let input = node.input.sender();
-        let output = Receiver::<usize, usize>::new();
+        let output = Receiver::<usize, Trackable<&'static str>>::new();
 
         node.outputs.push(Box::new(output.sender()));
 
@@ -54,7 +55,7 @@ mod tests {
         let mut node = Arc::new(Mutex::new(Node::new()));
 
         let input = node.lock().unwrap().input.sender();
-        let output = Receiver::<usize, usize>::new();
+        let output = Receiver::<usize, Trackable<&'static str>>::new();
 
         node.lock().unwrap().outputs.push(Box::new(output.sender()));
 

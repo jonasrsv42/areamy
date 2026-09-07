@@ -10,18 +10,10 @@ use crate::thread::type_erase::TypeErasedInternalThreadStream;
 use std::thread::{Scope, ScopedJoinHandle};
 
 /// A bundle of idle threads that can be started together.
+#[derive(Default)]
 pub struct ThreadBundle<'params> {
     threads: Vec<Box<dyn TypeErasedInternalThreadStream<'params> + 'params>>,
     on_first_error: Vec<OnFirstError>,
-}
-
-impl<'params> Default for ThreadBundle<'params> {
-    fn default() -> Self {
-        Self {
-            threads: Vec::new(),
-            on_first_error: Vec::new(),
-        }
-    }
 }
 
 /// A scoped join handle paired with its thread name (for panic diagnostics).

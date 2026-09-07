@@ -235,7 +235,7 @@ fn build_graph<'params>(
     // sync→poll bridge on input and a sync edge on output.
     let mut poll_thread = poll::Thread::<'_, PollThread>::new();
     let mut poll_node = poll_thread
-        .line(|w| PollDouble::new(w))
+        .line(PollDouble::new)
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
@@ -295,8 +295,8 @@ fn teardown(mut gen_handles: GenerationHandles<'_>) -> Vec<usize> {
     let _ = Closeable::close(&mut gen_handles.writer);
     let _ = gen_handles.bundle.join();
     let _ = gen_handles.drain.join();
-    let observed = gen_handles.seen.lock().unwrap().clone();
-    observed
+
+    gen_handles.seen.lock().unwrap().clone()
 }
 
 const TARGET_GENERATIONS: usize = 3;

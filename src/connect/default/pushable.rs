@@ -47,15 +47,19 @@ where
 mod tests {
     use super::*;
     use crate::Message;
+    use crate::Trackable;
     use crate::connect::sync::{Receiver, Sender};
 
-    fn push(pushable: &mut impl Pushable<DataType = usize, SignalType = usize>, value: usize) {
+    fn push(
+        pushable: &mut impl Pushable<DataType = usize, SignalType = Trackable<&'static str>>,
+        value: usize,
+    ) {
         pushable.push(Message::Data(value)).unwrap();
     }
 
     #[test]
     fn pushable_sender_can_push() {
-        let rx = Receiver::<usize, usize>::new();
+        let rx = Receiver::<usize, Trackable<&'static str>>::new();
         let mut tx = rx.sender();
         push(&mut tx, 5);
         assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
@@ -63,17 +67,18 @@ mod tests {
 
     #[test]
     fn pushable_boxed_dyn_can_push() {
-        let rx = Receiver::<usize, usize>::new();
-        let mut pushable: Box<dyn Pushable<DataType = usize, SignalType = usize>> =
-            Box::new(rx.sender());
+        let rx = Receiver::<usize, Trackable<&'static str>>::new();
+        let mut pushable: Box<
+            dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>,
+        > = Box::new(rx.sender());
         push(&mut pushable, 5);
         assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
     }
 
     #[test]
     fn pushable_boxed_concrete_can_push() {
-        let rx = Receiver::<usize, usize>::new();
-        let mut pushable: Box<Sender<usize, usize>> = Box::new(rx.sender());
+        let rx = Receiver::<usize, Trackable<&'static str>>::new();
+        let mut pushable: Box<Sender<usize, Trackable<&'static str>>> = Box::new(rx.sender());
         push(&mut pushable, 5);
         assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
     }

@@ -29,18 +29,20 @@ mod tests {
     use crate::Message;
     use crate::Pushable;
     use crate::Sink;
+    use crate::Trackable;
     use crate::connect::sync::{Receiver, Sender};
 
-    fn close(closeable: &mut impl Sink<DataType = usize, SignalType = usize>) {
+    fn close(closeable: &mut impl Sink<DataType = usize, SignalType = Trackable<&'static str>>) {
         closeable.close().unwrap();
     }
 
     #[test]
     fn closeable_boxed_dyn_can_close() {
-        let rx = Receiver::<usize, usize>::new();
+        let rx = Receiver::<usize, Trackable<&'static str>>::new();
         let tx = rx.sender();
 
-        let mut closeable: Box<dyn Sink<DataType = usize, SignalType = usize>> = Box::new(tx);
+        let mut closeable: Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>>> =
+            Box::new(tx);
 
         closeable.push(Message::Data(5)).unwrap();
         close(&mut closeable);
@@ -54,9 +56,9 @@ mod tests {
 
     #[test]
     fn closeable_boxed_concrete_can_close() {
-        let rx = Receiver::<usize, usize>::new();
+        let rx = Receiver::<usize, Trackable<&'static str>>::new();
         let tx = rx.sender();
-        let mut closeable: Box<Sender<usize, usize>> = Box::new(tx);
+        let mut closeable: Box<Sender<usize, Trackable<&'static str>>> = Box::new(tx);
 
         closeable.push(Message::Data(5)).unwrap();
         close(&mut closeable);

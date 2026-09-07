@@ -427,6 +427,7 @@ where
 mod tests {
     use super::*;
     use crate::DefaultThread;
+    use crate::Trackable;
     use crate::connect::poll::input;
     use crate::connect::sync::Receiver;
     use crate::connect::waker::{self, ThreadLocalWaker, mock};
@@ -467,7 +468,7 @@ mod tests {
         let output = Receiver::new();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
-            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+            new_phases::<usize, usize, Trackable<&'static str>, DefaultThread, _, _, _>(
                 MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
@@ -504,12 +505,12 @@ mod tests {
     #[test]
     fn poll_returns_closed_on_closed_input() {
         let (waker, _) = test_waker();
-        let input_recv = input::sync::Receiver::<usize, &str>::new(waker);
+        let input_recv = input::sync::Receiver::<usize, Trackable<&'static str>>::new(waker);
         let input = input_recv.sender();
         let output = Receiver::new();
 
         let (mut input_phase, _work_phase, mut output_phase) =
-            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+            new_phases::<usize, usize, Trackable<&'static str>, DefaultThread, _, _, _>(
                 MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
@@ -541,11 +542,11 @@ mod tests {
     #[test]
     fn poll_calls_routine_poll() {
         let (waker, _) = test_waker();
-        let input_recv = input::sync::Receiver::<usize, &str>::new(waker);
+        let input_recv = input::sync::Receiver::<usize, Trackable<&'static str>>::new(waker);
         let output = Receiver::new();
 
         let (_input_phase, mut work_phase, _output_phase) =
-            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+            new_phases::<usize, usize, Trackable<&'static str>, DefaultThread, _, _, _>(
                 MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
@@ -595,7 +596,7 @@ mod tests {
     #[test]
     fn routine_returning_closed_becomes_fatal() {
         let (waker, _) = test_waker();
-        let input_recv = input::sync::Receiver::<usize, &str>::new(waker);
+        let input_recv = input::sync::Receiver::<usize, Trackable<&'static str>>::new(waker);
         let output = Receiver::new();
 
         let (_input_phase, mut work_phase, _output_phase) =
@@ -621,7 +622,7 @@ mod tests {
     #[test]
     fn routine_returning_closed_during_flush_becomes_fatal() {
         let (waker, _) = test_waker();
-        let input_recv = input::sync::Receiver::new(waker);
+        let input_recv = input::sync::Receiver::<usize, Trackable<&'static str>>::new(waker);
         let input = input_recv.sender();
         let output = Receiver::new();
 
@@ -635,7 +636,7 @@ mod tests {
                 noop_local_waker(),
             );
 
-        input.push_back(Message::Flush("s1")).unwrap();
+        input.push_back(Message::Flush("s1".into())).unwrap();
 
         let mut wkr = noop_waker();
 
@@ -657,7 +658,7 @@ mod tests {
         let output = Receiver::new();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
-            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+            new_phases::<usize, usize, Trackable<&'static str>, DefaultThread, _, _, _>(
                 MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
@@ -687,7 +688,7 @@ mod tests {
         let output = Receiver::new();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
-            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+            new_phases::<usize, usize, Trackable<&'static str>, DefaultThread, _, _, _>(
                 MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
@@ -698,7 +699,7 @@ mod tests {
 
         // Data then Marker then more Data
         input.push_back(Message::Data(1)).unwrap();
-        input.push_back(Message::Marker("m1")).unwrap();
+        input.push_back(Message::Marker("m1".into())).unwrap();
         input.push_back(Message::Data(2)).unwrap();
 
         let mut wkr = noop_waker();
@@ -717,7 +718,7 @@ mod tests {
 
         // Data(1) output arrives before Marker — ordering preserved
         assert_eq!(output.poll().unwrap(), Some(Message::Data(2))); // 1*2=2
-        assert_eq!(output.poll().unwrap(), Some(Message::Marker("m1")));
+        assert_eq!(output.poll().unwrap(), Some(Message::Marker("m1".into())));
         // Data(2) must NOT have leaked through during the extra Input polls
         assert_eq!(output.poll().unwrap(), None);
 
@@ -739,7 +740,7 @@ mod tests {
         let (input_waker, input_woken) = mock::tracking_local_waker();
 
         let (mut input_phase, mut work_phase, mut output_phase) =
-            new_phases::<usize, usize, &str, DefaultThread, _, _, _>(
+            new_phases::<usize, usize, Trackable<&'static str>, DefaultThread, _, _, _>(
                 MockLine::new(noop_line_wakers()),
                 input_recv,
                 output.sender(),
@@ -749,7 +750,7 @@ mod tests {
             );
 
         input.push_back(Message::Data(1)).unwrap();
-        input.push_back(Message::Flush("s1")).unwrap();
+        input.push_back(Message::Flush("s1".into())).unwrap();
         input.push_back(Message::Data(2)).unwrap();
 
         let mut wkr = noop_waker();

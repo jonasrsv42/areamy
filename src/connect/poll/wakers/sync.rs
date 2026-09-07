@@ -18,7 +18,7 @@ pub(crate) struct Waker {
 }
 
 impl Waker {
-    pub(crate) fn new(id: NodeId, producer: &Producer) -> core::task::Waker {
+    pub(crate) fn task(id: NodeId, producer: &Producer) -> core::task::Waker {
         core::task::Waker::from(Arc::new(Self {
             id,
             producer: producer.clone(),

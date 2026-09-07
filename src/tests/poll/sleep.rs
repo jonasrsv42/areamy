@@ -33,14 +33,9 @@ fn sleep_in_routine_delays_output() {
         .line(FutureRoutine::factory(
             |input: InputConsumer<usize>, output: OutputProducer<usize>| -> BoxFut {
                 Box::pin(async move {
-                    loop {
-                        match input.recv().await? {
-                            Input::Data(n) => {
-                                poll::sleep(STEP).await?;
-                                output.push(n);
-                            }
-                            Input::Flush => break,
-                        }
+                    while let Input::Data(n) = input.recv().await? {
+                        poll::sleep(STEP).await?;
+                        output.push(n);
                     }
                     Ok(())
                 })
@@ -91,12 +86,7 @@ fn concurrent_sleeps_wake_independently() {
                 let all = try_join(sleeper(1), try_join(sleeper(2), sleeper(3)));
                 Box::pin(async move {
                     all.await?;
-                    loop {
-                        match input.recv().await? {
-                            Input::Data(_) => {}
-                            Input::Flush => break,
-                        }
-                    }
+                    while let Input::Data(_) = input.recv().await? {}
                     Ok(())
                 })
             },

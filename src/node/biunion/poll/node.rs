@@ -785,6 +785,7 @@ where
 mod tests {
     use super::*;
     use crate::DefaultThread;
+    use crate::Trackable;
     use crate::connect::poll::input;
     use crate::connect::sync::{Receiver, Sender};
     use crate::connect::waker::mock::tracking_local_waker;
@@ -812,51 +813,51 @@ mod tests {
         usize,
         usize,
         usize,
-        &'static str,
+        Trackable<&'static str>,
         DefaultThread,
         MockBiunion,
-        input::sync::Receiver<usize, &'static str>,
-        input::sync::Receiver<usize, &'static str>,
-        Sender<usize, &'static str>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        Sender<usize, Trackable<&'static str>>,
     >;
     type TestRightInput = RightInput<
         usize,
         usize,
         usize,
-        &'static str,
+        Trackable<&'static str>,
         DefaultThread,
         MockBiunion,
-        input::sync::Receiver<usize, &'static str>,
-        input::sync::Receiver<usize, &'static str>,
-        Sender<usize, &'static str>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        Sender<usize, Trackable<&'static str>>,
     >;
     type TestWork = Work<
         usize,
         usize,
         usize,
-        &'static str,
+        Trackable<&'static str>,
         DefaultThread,
         MockBiunion,
-        input::sync::Receiver<usize, &'static str>,
-        input::sync::Receiver<usize, &'static str>,
-        Sender<usize, &'static str>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        Sender<usize, Trackable<&'static str>>,
     >;
     type TestOutput = Output<
         usize,
         usize,
         usize,
-        &'static str,
+        Trackable<&'static str>,
         DefaultThread,
         MockBiunion,
-        input::sync::Receiver<usize, &'static str>,
-        input::sync::Receiver<usize, &'static str>,
-        Sender<usize, &'static str>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        input::sync::Receiver<usize, Trackable<&'static str>>,
+        Sender<usize, Trackable<&'static str>>,
     >;
 
     struct Harness {
-        left_edge: input::sync::Sender<usize, &'static str>,
-        right_edge: input::sync::Sender<usize, &'static str>,
-        output_edge: Receiver<usize, &'static str>,
+        left_edge: input::sync::Sender<usize, Trackable<&'static str>>,
+        right_edge: input::sync::Sender<usize, Trackable<&'static str>>,
+        output_edge: Receiver<usize, Trackable<&'static str>>,
         left: TestLeftInput,
         right: TestRightInput,
         work: TestWork,
@@ -882,7 +883,17 @@ mod tests {
             let (work_local, work_woken) = tracking_local_waker();
             let (output_local, output_woken) = tracking_local_waker();
 
-            let phases = new_phases::<usize, usize, usize, &str, DefaultThread, _, _, _, _>(
+            let phases = new_phases::<
+                usize,
+                usize,
+                usize,
+                Trackable<&'static str>,
+                DefaultThread,
+                _,
+                _,
+                _,
+                _,
+            >(
                 InputPhases {
                     left: Phase {
                         target: left_recv,
@@ -942,7 +953,7 @@ mod tests {
             self.output.poll(&mut self.waker)
         }
 
-        fn read_output(&self) -> Option<Message<usize, &'static str>> {
+        fn read_output(&self) -> Option<Message<usize, Trackable<&'static str>>> {
             self.output_edge.poll().unwrap()
         }
     }
@@ -987,41 +998,43 @@ mod tests {
     #[test]
     fn flush_from_left_forwards() {
         let mut h = Harness::new();
-        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        h.left_edge.push_back(Message::Flush("s1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         let _ = h.poll_work().unwrap();
         let _ = h.poll_output().unwrap();
-        assert_eq!(h.read_output(), Some(Message::Flush("s1")));
+        assert_eq!(h.read_output(), Some(Message::Flush("s1".into())));
     }
 
     #[test]
     fn flush_from_right_forwards() {
         let mut h = Harness::new();
-        h.right_edge.push_back(Message::Flush("s1")).unwrap();
+        h.right_edge.push_back(Message::Flush("s1".into())).unwrap();
         let _ = h.poll_right().unwrap();
         let _ = h.poll_work().unwrap();
         let _ = h.poll_output().unwrap();
-        assert_eq!(h.read_output(), Some(Message::Flush("s1")));
+        assert_eq!(h.read_output(), Some(Message::Flush("s1".into())));
     }
 
     #[test]
     fn marker_from_left_forwards() {
         let mut h = Harness::new();
-        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        h.left_edge.push_back(Message::Marker("m1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         let _ = h.poll_work().unwrap();
         let _ = h.poll_output().unwrap();
-        assert_eq!(h.read_output(), Some(Message::Marker("m1")));
+        assert_eq!(h.read_output(), Some(Message::Marker("m1".into())));
     }
 
     #[test]
     fn marker_from_right_forwards() {
         let mut h = Harness::new();
-        h.right_edge.push_back(Message::Marker("m1")).unwrap();
+        h.right_edge
+            .push_back(Message::Marker("m1".into()))
+            .unwrap();
         let _ = h.poll_right().unwrap();
         let _ = h.poll_work().unwrap();
         let _ = h.poll_output().unwrap();
-        assert_eq!(h.read_output(), Some(Message::Marker("m1")));
+        assert_eq!(h.read_output(), Some(Message::Marker("m1".into())));
     }
 
     // --- Close propagation ---
@@ -1104,7 +1117,7 @@ mod tests {
     fn flush_from_left_wakes_work() {
         let mut h = Harness::new();
         h.reset_woken();
-        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        h.left_edge.push_back(Message::Flush("s1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         assert!(h.work_woken.get(), "flush from left must wake work phase");
     }
@@ -1113,7 +1126,7 @@ mod tests {
     fn flush_from_right_wakes_work() {
         let mut h = Harness::new();
         h.reset_woken();
-        h.right_edge.push_back(Message::Flush("s1")).unwrap();
+        h.right_edge.push_back(Message::Flush("s1".into())).unwrap();
         let _ = h.poll_right().unwrap();
         assert!(h.work_woken.get(), "flush from right must wake work phase");
     }
@@ -1122,7 +1135,7 @@ mod tests {
     fn marker_from_left_wakes_work() {
         let mut h = Harness::new();
         h.reset_woken();
-        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        h.left_edge.push_back(Message::Marker("m1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         assert!(h.work_woken.get(), "marker from left must wake work phase");
     }
@@ -1131,7 +1144,9 @@ mod tests {
     fn marker_from_right_wakes_work() {
         let mut h = Harness::new();
         h.reset_woken();
-        h.right_edge.push_back(Message::Marker("m1")).unwrap();
+        h.right_edge
+            .push_back(Message::Marker("m1".into()))
+            .unwrap();
         let _ = h.poll_right().unwrap();
         assert!(h.work_woken.get(), "marker from right must wake work phase");
     }
@@ -1141,7 +1156,7 @@ mod tests {
     #[test]
     fn flush_ready_wakes_output() {
         let mut h = Harness::new();
-        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        h.left_edge.push_back(Message::Flush("s1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         h.reset_woken();
         let _ = h.poll_work().unwrap();
@@ -1165,7 +1180,7 @@ mod tests {
     #[test]
     fn marker_ready_wakes_output() {
         let mut h = Harness::new();
-        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        h.left_edge.push_back(Message::Marker("m1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         h.reset_woken();
         let _ = h.poll_work().unwrap();
@@ -1180,7 +1195,7 @@ mod tests {
     #[test]
     fn flush_forwarded_wakes_both_inputs() {
         let mut h = Harness::new();
-        h.left_edge.push_back(Message::Flush("s1")).unwrap();
+        h.left_edge.push_back(Message::Flush("s1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         let _ = h.poll_work().unwrap();
         h.reset_woken();
@@ -1198,7 +1213,7 @@ mod tests {
     #[test]
     fn marker_forwarded_wakes_both_inputs() {
         let mut h = Harness::new();
-        h.left_edge.push_back(Message::Marker("m1")).unwrap();
+        h.left_edge.push_back(Message::Marker("m1".into())).unwrap();
         let _ = h.poll_left().unwrap();
         let _ = h.poll_work().unwrap();
         h.reset_woken();

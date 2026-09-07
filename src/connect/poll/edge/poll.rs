@@ -110,12 +110,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Trackable;
     use crate::connect::waker::mock::{noop_local_waker, tracking_local_waker};
     use crate::error::ErrorKind;
 
     #[test]
     fn push_and_try_recv() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
 
         edge.push(Message::Data(42)).unwrap();
         assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(42)));
@@ -124,13 +125,13 @@ mod tests {
 
     #[test]
     fn try_recv_empty_returns_none() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
         assert_eq!(edge.try_recv().unwrap(), None);
     }
 
     #[test]
     fn closed_try_recv_returns_error() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
         edge.close().unwrap();
 
         assert!(matches!(
@@ -141,7 +142,7 @@ mod tests {
 
     #[test]
     fn closed_push_returns_error() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
         edge.close().unwrap();
 
         assert!(matches!(
@@ -152,7 +153,7 @@ mod tests {
 
     #[test]
     fn buffered_data_readable_after_close() {
-        let mut edge = PollEdge::<usize, &str>::new(noop_local_waker());
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
         edge.push(Message::Data(1)).unwrap();
         edge.push(Message::Data(2)).unwrap();
 
@@ -166,7 +167,7 @@ mod tests {
     #[test]
     fn push_fires_waker() {
         let (waker, woken) = tracking_local_waker();
-        let mut edge = PollEdge::<usize, &str>::new(waker);
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(waker);
 
         assert!(!woken.get());
         edge.push(Message::Data(1)).unwrap();
@@ -176,7 +177,7 @@ mod tests {
     #[test]
     fn close_fires_waker() {
         let (waker, woken) = tracking_local_waker();
-        let mut edge = PollEdge::<usize, &str>::new(waker);
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(waker);
 
         edge.close().unwrap();
         assert!(woken.get());

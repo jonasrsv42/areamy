@@ -233,7 +233,7 @@ where
             Message::Data(data) => {
                 crate::Send::<Left, biunion::Left>::send(&mut self.routine, data)?;
                 // If left or right is OK push is OK.
-                return self.try_push();
+                self.try_push()
             }
             Message::Flush(origin) => {
                 self.routine.flush()?;
@@ -241,11 +241,11 @@ where
                 self.try_push()?;
 
                 self.push(Message::Flush(origin.clone()))?;
-                return Ok(true);
+                Ok(true)
             }
             Message::Marker(origin) => {
                 self.push(Message::Marker(origin.clone()))?;
-                return Ok(true);
+                Ok(true)
             }
         }
     }
@@ -257,7 +257,7 @@ where
                 crate::Send::<Right, biunion::Right>::send(&mut self.routine, data)?;
 
                 // If right is OK push is OK.
-                return self.try_push();
+                self.try_push()
             }
             Message::Flush(origin) => {
                 self.routine.flush()?;
@@ -265,12 +265,12 @@ where
                 self.try_push()?;
 
                 self.push(Message::Flush(origin.clone()))?;
-                return Ok(true);
+                Ok(true)
             }
             Message::Marker(origin) => {
                 self.push(Message::Marker(origin.clone()))?;
 
-                return Ok(true);
+                Ok(true)
             }
         }
     }
@@ -281,7 +281,7 @@ where
             Some(message) => {
                 self.push(Message::Data(message))?;
 
-                return Ok(true);
+                Ok(true)
             }
             None => Ok(false),
         }
@@ -425,7 +425,8 @@ where
         &mut self,
         workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.worker.left.push(workable))
+        self.worker.left.push(workable);
+        Ok(())
     }
 }
 
@@ -444,7 +445,8 @@ where
         &mut self,
         workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.worker.right.push(workable))
+        self.worker.right.push(workable);
+        Ok(())
     }
 }
 
@@ -463,13 +465,15 @@ where
         &mut self,
         closeable: Box<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.pushes.push(closeable))
+        self.pushes.push(closeable);
+        Ok(())
     }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::Trackable;
     use crate::connect::sync::Receiver;
     use crate::node::biunion::routine::tests::MockBiunion;
     use crate::{Pushable, work::Reader, work::Writer, work::make_biunion};
@@ -506,8 +510,8 @@ pub mod tests {
     fn close_propagates_through_push_when_left_input_closed() {
         let mut biun = Biunion::new(MockBiunion::new());
 
-        let output_edge = Receiver::<usize, &'static str>::new();
-        Add::<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
+        let output_edge = Receiver::<usize, Trackable<&'static str>>::new();
+        Add::<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.sender()),
         )
@@ -528,8 +532,8 @@ pub mod tests {
     fn close_propagates_through_push_when_right_input_closed() {
         let mut biun = Biunion::new(MockBiunion::new());
 
-        let output_edge = Receiver::<usize, &'static str>::new();
-        Add::<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
+        let output_edge = Receiver::<usize, Trackable<&'static str>>::new();
+        Add::<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.sender()),
         )
@@ -570,8 +574,8 @@ pub mod tests {
         )
         .unwrap();
 
-        let output_edge = Receiver::<usize, &'static str>::new();
-        Add::<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>::add(
+        let output_edge = Receiver::<usize, Trackable<&'static str>>::new();
+        Add::<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>::add(
             &mut biun,
             Box::new(output_edge.sender()),
         )

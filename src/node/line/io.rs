@@ -33,7 +33,7 @@ where
 
     /// Read a Message from the line.
     pub fn read(&mut self) -> Result<Message<ReaderType::DataType, ReaderType::SignalType>, Error> {
-        return self.reader.read();
+        self.reader.read()
     }
 
     /// Push a Message into the line.

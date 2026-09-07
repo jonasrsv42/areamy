@@ -103,6 +103,16 @@ where
     }
 }
 
+impl<DataType, SignalType> Default for Receiver<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<D, S> Clone for Sender<D, S>
 where
     D: Send + Sync,
@@ -372,16 +382,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Origin;
+    use crate::Trackable;
     use crate::error::ErrorKind;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
 
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct TestSignal(u32);
-    impl Origin for TestSignal {}
+    type TestSignal = Trackable<&'static str>;
 
     fn _assert_sender_send_sync() {
         fn require_send_sync<T: Send + Sync>() {}
@@ -395,13 +403,13 @@ mod tests {
 
     /// ```compile_fail
     /// fn require_clone<T: Clone>() {}
-    /// require_clone::<areamy::connect::sync::Receiver<usize, &'static str>>();
+    /// require_clone::<areamy::connect::sync::Receiver<usize, Trackable<&'static str>>>();
     /// ```
     fn _receiver_not_clone() {}
 
     /// ```compile_fail
     /// fn require_sync<T: Sync>() {}
-    /// require_sync::<areamy::connect::sync::Receiver<usize, &'static str>>();
+    /// require_sync::<areamy::connect::sync::Receiver<usize, Trackable<&'static str>>>();
     /// ```
     fn _receiver_not_sync() {}
 

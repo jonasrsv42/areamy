@@ -209,11 +209,8 @@ mod tests {
             .line(FutureRoutine::factory(
                 move |input: InputConsumer<usize>, output: OutputProducer<usize>| {
                     Box::pin(async move {
-                        loop {
-                            match input.recv().await? {
-                                Input::Data(n) => output.push(n * *mult_ref),
-                                Input::Flush => break,
-                            }
+                        while let Input::Data(n) = input.recv().await? {
+                            output.push(n * *mult_ref);
                         }
                         Ok(())
                     })

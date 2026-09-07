@@ -2,6 +2,7 @@
 
 use super::node::Node;
 use crate::ThreadId;
+use crate::Trackable;
 use crate::connect::poll::edge::PollEdge;
 use crate::connect::poll::graph::GraphBuilder;
 use crate::connect::poll::queue::PollQueue;
@@ -36,12 +37,12 @@ struct MockParent;
 
 impl AsyncParent<'static> for MockParent {
     type OutType = usize;
-    type SignalType = &'static str;
+    type SignalType = Trackable<&'static str>;
     type ThreadIdType = TestThread;
 
     fn build(
         self: Box<Self>,
-        _edge: Rc<RefCell<PollEdge<usize, &'static str>>>,
+        _edge: Rc<RefCell<PollEdge<usize, Trackable<&'static str>>>>,
         allocator: ThreadLocalWakerAllocator<TestThread>,
     ) -> Result<crate::connect::poll::graph::Graph<'static, TestThread>, Error> {
         Ok(crate::connect::poll::graph::Graph {
@@ -54,7 +55,7 @@ impl AsyncParent<'static> for MockParent {
 /// Macro to create a deferred biunion node with correct type annotation.
 macro_rules! deferred {
     ($alloc:expr) => {
-        Node::<_, _, _, _, usize, usize, usize, &str, TestThread, _>::deferred(
+        Node::<_, _, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::deferred(
             mock_factory(),
             $alloc,
         )

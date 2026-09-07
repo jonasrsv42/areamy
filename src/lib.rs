@@ -1,3 +1,6 @@
+// Graph types are deep by nature.
+#![allow(clippy::type_complexity)]
+
 extern crate alloc;
 
 mod combine;

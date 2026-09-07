@@ -15,11 +15,11 @@ use crate::{
 /// back into the child.
 ///
 /// * `parent` - A [Workable] that we can [Add] a [Sink] into. The
-///     [Workable] will be [Add] to the child so the child can schedule the [Workable::work]. The
-///     [Sink] will be [Add]ed as output for the child so it can [Pushable::push] into the parent.
+///   [Workable] will be [Add] to the child so the child can schedule the [Workable::work]. The
+///   [Sink] will be [Add]ed as output for the child so it can [Pushable::push] into the parent.
 ///
 /// * `child` - A type that we can [Add] the parent [Workable] into to grab ownership and from which we can [Get] the
-///     [Sink] and give to the parent.
+///   [Sink] and give to the parent.
 ///
 ///
 /// The function takes the parent by value as its ownership will be transferred into the child.
@@ -84,10 +84,10 @@ where
 /// The parent [Pushable::push]es Message data to the child
 ///
 /// * `parent` - A node that we can [Add] a [Sink] too. The parent will [Pushable::push] data into
-///     it when the parent is scheduled.
+///   it when the parent is scheduled.
 ///
 /// * `child` - A node that we [Get] the [Sink] from. It will recieve the data when the parent
-///     is scheduled.
+///   is scheduled.
 ///
 /// The parent is &mut because we mutate it by adding a `Sink` edge to it. The child
 /// does not need to be mut so we take an implementation reference to it to avoid
@@ -129,7 +129,7 @@ pub fn make_push<
 /// work.
 ///
 /// * `parent` - A [Workable]. The parent will be [Add]ed to the child so the
-///     child can schedule the work.
+///   child can schedule the work.
 ///
 /// * `child` - A type that we can [Add] the parent [Workable] to for scheduling.
 ///

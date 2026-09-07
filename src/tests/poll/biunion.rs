@@ -44,13 +44,8 @@ fn biunion_audio_with_config() {
                 let audio_out = output.clone();
                 let audio_task: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
-                        loop {
-                            match audio.recv().await? {
-                                Input::Data(frame) => {
-                                    audio_out.push(frame * audio_mul.get());
-                                }
-                                Input::Flush => break,
-                            }
+                        while let Input::Data(frame) = audio.recv().await? {
+                            audio_out.push(frame * audio_mul.get());
                         }
                         Ok(())
                     });
@@ -58,13 +53,8 @@ fn biunion_audio_with_config() {
                 let config_mul = multiplier;
                 let config_task: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
-                        loop {
-                            match config.recv().await {
-                                Ok(Input::Data(cfg)) => {
-                                    config_mul.set(cfg.multiplier);
-                                }
-                                _ => break,
-                            }
+                        while let Ok(Input::Data(cfg)) = config.recv().await {
+                            config_mul.set(cfg.multiplier);
                         }
                         Ok(())
                     });
@@ -130,11 +120,8 @@ fn biunion_with_async_parent() {
         .line(future::line::FutureRoutine::factory(
             |input: InputConsumer<usize>, output: OutputProducer<usize>| {
                 Box::pin(async move {
-                    loop {
-                        match input.recv().await? {
-                            Input::Data(v) => output.push(v * 2),
-                            Input::Flush => break,
-                        }
+                    while let Input::Data(v) = input.recv().await? {
+                        output.push(v * 2);
                     }
                     Ok(())
                 })
@@ -157,11 +144,8 @@ fn biunion_with_async_parent() {
                 let audio_out = output.clone();
                 let audio_task: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
-                        loop {
-                            match audio.recv().await? {
-                                Input::Data(frame) => audio_out.push(frame * audio_mul.get()),
-                                Input::Flush => break,
-                            }
+                        while let Input::Data(frame) = audio.recv().await? {
+                            audio_out.push(frame * audio_mul.get());
                         }
                         Ok(())
                     });
@@ -169,11 +153,8 @@ fn biunion_with_async_parent() {
                 let config_mul = multiplier;
                 let config_task: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
-                        loop {
-                            match config.recv().await {
-                                Ok(Input::Data(cfg)) => config_mul.set(cfg.multiplier),
-                                _ => break,
-                            }
+                        while let Ok(Input::Data(cfg)) = config.recv().await {
+                            config_mul.set(cfg.multiplier);
                         }
                         Ok(())
                     });

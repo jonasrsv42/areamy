@@ -277,15 +277,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Origin;
+    use crate::Trackable;
     use crate::error::ErrorKind;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct TestSignal;
-    impl Origin for TestSignal {}
+    type TestSignal = Trackable<&'static str>;
 
     fn _assert_sender_send_sync() {
         fn require_send_sync<T: Send + Sync>() {}

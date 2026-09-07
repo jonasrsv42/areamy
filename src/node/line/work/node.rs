@@ -26,7 +26,6 @@ use std::sync::{Arc, Mutex};
 /// Areamy provides a default implementation [Line], but users are
 /// encouraged to implement [LineTrait] whenever [Line] does not
 /// suit their needs.
-
 pub trait LineTrait<'params>:
     // We can work on the line to produce output.
     Workable
@@ -114,11 +113,8 @@ where
     /// to recieve additional input.
     fn work(&mut self) -> Result<(), Error> {
         // First we try to push any available output from our workers buffer.
-        match self.next_output()? {
-            Some(message) => {
-                return self.push(message);
-            }
-            None => (),
+        if let Some(message) = self.next_output()? {
+            return self.push(message);
         }
 
         let mut push_ok = false;
@@ -311,7 +307,8 @@ where
         &mut self,
         workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.workers.push(workable))
+        self.workers.push(workable);
+        Ok(())
     }
 }
 
@@ -332,7 +329,8 @@ where
         &mut self,
         closeable: Box<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
-        Ok(self.pushes.push(closeable))
+        self.pushes.push(closeable);
+        Ok(())
     }
 }
 

@@ -65,7 +65,7 @@ pub mod tests {
     }
 
     impl crate::node::Name for MockBiunion {
-        fn name<'a>(&'a self) -> &'a str {
+        fn name(&self) -> &str {
             "MockBiunion"
         }
     }

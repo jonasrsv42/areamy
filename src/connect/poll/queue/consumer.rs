@@ -30,6 +30,7 @@ pub struct Consumer {
 }
 
 impl Consumer {
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<NodeId, Error> {
         self.inner.borrow_mut().next()
     }

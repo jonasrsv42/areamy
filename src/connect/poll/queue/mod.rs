@@ -31,6 +31,12 @@ pub struct PollQueue {
     inner: Arc<core::VyukovQueue>,
 }
 
+impl Default for PollQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PollQueue {
     pub fn new() -> Self {
         Self {

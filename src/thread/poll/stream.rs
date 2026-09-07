@@ -34,6 +34,12 @@ pub struct ThreadHandle<'threads> {
     thread: ScopedJoinHandle<'threads, Result<(), Error>>,
 }
 
+impl<'params, ThreadIdType: ThreadId> Default for Thread<'params, ThreadIdType> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     pub fn new() -> Self {
         let queue = PollQueue::new();
@@ -259,6 +265,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Trackable;
     use crate::connect::sync::Receiver;
     use crate::graph::Get;
     use crate::node::line::poll::routine::tests::MockLine;
@@ -269,14 +276,15 @@ mod tests {
     struct IoThread;
     impl ThreadId for IoThread {}
 
-    type InputHandle = Box<dyn Sink<DataType = usize, SignalType = &'static str> + Send + Sync>;
+    type InputHandle =
+        Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>;
 
     #[test]
     fn async_thread_starts_and_stops() {
         let mut thread = Thread::<'_, IoThread>::new();
 
         let node = thread
-            .line(|w| MockLine::new(w))
+            .line(MockLine::new)
             .input::<poll::Sync>()
             .output::<poll::Sync>();
 
@@ -295,7 +303,7 @@ mod tests {
         let mut thread = Thread::<'_, IoThread>::new();
 
         let mut node = thread
-            .line(|w| MockLine::new(w))
+            .line(MockLine::new)
             .input::<poll::Sync>()
             .output::<poll::Sync>();
 
@@ -341,7 +349,7 @@ mod tests {
     fn on_done_fires_close_on_clean_exit() {
         let mut thread = Thread::<'_, IoThread>::new();
         let node = thread
-            .line(|w| MockLine::new(w))
+            .line(MockLine::new)
             .input::<poll::Sync>()
             .output::<poll::Sync>();
 
@@ -364,7 +372,7 @@ mod tests {
     fn on_done_multiple_callbacks_fire_in_registration_order() {
         let mut thread = Thread::<'_, IoThread>::new();
         let node = thread
-            .line(|w| MockLine::new(w))
+            .line(MockLine::new)
             .input::<poll::Sync>()
             .output::<poll::Sync>();
 
@@ -394,12 +402,12 @@ mod tests {
     fn close_propagates_through_chain() {
         let mut thread = Thread::<'_, IoThread>::new();
 
-        let parent = thread.line(|w| MockLine::new(w)).input::<poll::Sync>();
+        let parent = thread.line(MockLine::new).input::<poll::Sync>();
 
         let mut input: InputHandle = Get::get(&parent).unwrap();
 
         let mut child = thread
-            .line(|w| MockLine::new(w))
+            .line(MockLine::new)
             .parent(parent)
             .output::<poll::Sync>();
 

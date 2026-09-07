@@ -4,6 +4,12 @@ pub struct AddOne {
     output: VecDeque<usize>,
 }
 
+impl Default for AddOne {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AddOne {
     pub fn new() -> Self {
         Self {
@@ -14,7 +20,8 @@ impl AddOne {
 
 impl areamy::Send<usize> for AddOne {
     fn send(&mut self, message: usize) -> Result<(), areamy::error::Error> {
-        Ok(self.output.push_back(message + 1))
+        self.output.push_back(message + 1);
+        Ok(())
     }
 }
 

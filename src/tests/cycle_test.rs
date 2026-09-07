@@ -139,7 +139,7 @@ fn test_cycle_with_signal_policies() {
     let mut io = LineIo::new(writer, reader);
 
     io.push(Message::Data(1)).unwrap();
-    assert_eq!(io.flush("hello".into()).unwrap(), vec![6]);
+    assert_eq!(io.flush("hello").unwrap(), vec![6]);
 }
 
 #[test]
@@ -166,10 +166,7 @@ fn test_cycle_with_multiple_values() {
 
     // Biunion prioritizes the left (feedback) input, so values 1-5 each
     // fully cycle (becoming 6) before value 6 is processed (becoming 7).
-    assert_eq!(
-        io.flush("flush-test".into()).unwrap(),
-        vec![6, 6, 6, 6, 6, 7]
-    );
+    assert_eq!(io.flush("flush-test").unwrap(), vec![6, 6, 6, 6, 6, 7]);
 }
 
 struct IncrementLine {
@@ -271,8 +268,5 @@ fn test_cycle_with_line_node() {
     //
     // This test demonstrates how the same cycle logic with different node types
     // produces different behaviors due to their internal scheduling mechanisms.
-    assert_eq!(
-        io.flush("line-cycle-test".into()).unwrap(),
-        vec![6, 7, 6, 6, 6, 6]
-    );
+    assert_eq!(io.flush("line-cycle-test").unwrap(), vec![6, 7, 6, 6, 6, 6]);
 }

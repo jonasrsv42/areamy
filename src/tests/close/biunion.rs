@@ -61,6 +61,22 @@ fn work_biunion_close_left() -> Result<(), Error> {
     Ok(())
 }
 
+/// Left never gets a writer. The node must still run on right, then
+/// close when right does.
+#[test]
+fn work_biunion_unconnected_left() -> Result<(), Error> {
+    let node = make_biunion(HoldBiunion::new());
+    let mut right = Writer::new::<biunion::Right>(&node)?;
+    let mut reader = Reader::new(node)?;
+
+    right.push(Message::Data(5))?;
+    right.push(Message::Flush("f".into()))?;
+    right.close()?;
+
+    right_flushed(drain(&mut reader)?);
+    Ok(())
+}
+
 #[test]
 fn work_biunion_close_right() -> Result<(), Error> {
     right_flushed(work_biunion(false)?);

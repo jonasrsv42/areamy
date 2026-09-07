@@ -3,35 +3,34 @@
 use crate::Origin;
 use std::fmt::Debug;
 
-/// [`Message`] data types that flow through our computational graph.
-/// A [Message] will either hold [Message::Data] or a signal variant.
+/// A unit of traffic in the computation graph.
 ///
-/// The [Message] will be transformed through computation
-/// signals such as [Message::Flush] or [Message::Marker] can
-/// be used for synchronization or message passing and will
-/// not be transformed by computation routines.
+/// [Message::Data] is transformed by node routines.
+/// [Message::Flush] and [Message::Marker] are signals: nodes pass them
+/// through and routines never transform them.
 ///
-/// The SignalType Generic of the [Message::Flush] and [Message::Marker] can be used
-/// for message passing. It is usually of instance [crate::Trackable] to allow proper
-/// signal passing even in loopy graphs.
+/// `SignalType` is usually [crate::Trackable], which keeps signals
+/// safe in graphs with cycles.
 #[derive(Debug, PartialEq)]
 pub enum Message<DataType, SignalType>
 where
     SignalType: Origin,
 {
-    /// [Message::Data] will be traversing through the graph and be transformed
+    /// Payload transformed by each node's routine.
     Data(DataType),
-    /// [Message::Flush] is a signal for forcing output of accumulated state, if possible, and
-    /// clearing the state of the graph in the signals path.
+    /// Emit accumulated output, forward the signal, reset state.
+    /// Flushing a whole graph needs exactly one active Flush at a time.
     ///
-    /// When a node receives [Message::Flush] it should emit any existing result
-    /// it has and reset it's computation state.
-    ///
-    /// [Message::Flush] can be used to flush a whole graph, but will only work properly if
-    /// there's only one active [Message::Flush] in the graph until it is finished.
+    /// Close contract, per edge: a Flush pushed before close is fully
+    /// processed (output, then the Flush, then close) before any node
+    /// sees [crate::error::ErrorKind::Closed]. Close without a Flush
+    /// keeps nothing. Edges from [crate::make_push] use
+    /// [crate::SignalPolicy::FollowData] and drop a signal no data
+    /// preceded. Pinned by `tests::close`.
     Flush(SignalType),
-    /// [Message::Marker] should be passed a long by graph nodes, it will never enter computation routines and
-    /// can be used as a type of message passing and/or synchronization.
+    /// Passed along as-is, never enters a routine.
+    /// For synchronization and message passing.
+    /// Same close ordering as [Message::Flush].
     Marker(SignalType),
 }
 

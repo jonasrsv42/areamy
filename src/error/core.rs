@@ -35,10 +35,12 @@ pub enum ErrorKind {
     /// We leverage `Any` because we cannot possibly
     /// enumerate all possible error types users may define.
     Any(Box<dyn AnyErr>),
-    /// A connection has been closed. Both reads and writes will fail
-    /// on a closed connection. This is a normal termination signal,
-    /// not an error. ThreadStreams treat this as an exit signal but
-    /// can be restarted. Other consumers can interpret as they wish.
+    /// A connection has been closed. Writes fail immediately; reads keep
+    /// succeeding until the connection is drained and only then fail, so
+    /// a [`crate::Message::Flush`] pushed before close is never lost. This
+    /// is a normal termination signal, not an error. ThreadStreams treat
+    /// this as an exit signal but can be restarted. Other consumers can
+    /// interpret as they wish.
     ///
     /// See [`crate::writer::writer`] for how writers use this for graceful shutdown.
     Closed,

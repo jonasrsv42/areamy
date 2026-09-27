@@ -2,6 +2,8 @@
 name = "areamy"
 version = "0.1.0"
 edition = "2024"
+# benches/support.rs is shared code, not a bench target.
+autobenches = false
 
 [features]
 default = []
@@ -13,4 +15,23 @@ silent = []
 # Exposes `poll::waker::mock` (timer-backed test wakers) to
 # downstream crates. Enable from [dev-dependencies] only.
 testing = []
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "edge"
+harness = false
+
+[[bench]]
+name = "work"
+harness = false
+
+[[bench]]
+name = "pull"
+harness = false
+
+[[bench]]
+name = "poll"
+harness = false
 

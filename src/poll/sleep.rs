@@ -1,14 +1,14 @@
 //! Wall-clock sleep for async routine bodies.
 //!
 //! [sleep] needs no handle: the poll loop publishes the current
-//! node's waker (`thread::poll::tls`) and the future captures it on
+//! node's waker (`poll::thread::tls`) and the future captures it on
 //! first poll — a sleep belongs to the node that first polls it,
 //! which is the only node that will ever poll it again.
 
 use crate::error::Error;
 use crate::poll::limit::deadline_after;
+use crate::poll::thread::tls;
 use crate::poll::wakers::TimerGuard;
-use crate::thread::poll::tls;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -101,8 +101,8 @@ impl Future for SleepFut {
 mod tests {
     use super::*;
     use crate::poll::queue::PollQueue;
+    use crate::poll::thread::tls::ThreadLocalGuard;
     use crate::poll::waker::{ThreadLocalWaker, mock};
-    use crate::thread::poll::tls::ThreadLocalGuard;
     use std::task::Context;
     use std::thread;
 

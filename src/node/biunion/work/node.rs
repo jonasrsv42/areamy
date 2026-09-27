@@ -1,8 +1,8 @@
 use crate::biunion;
 use crate::error::{Error, ErrorKind};
 use crate::node::biunion::routine::BiunionRoutine;
-use crate::node::work::work_each;
 use crate::work::multiedge::{self, Notify};
+use crate::work::work_each;
 use crate::{
     Closeable, Message, Origin, Pushable, Sink, Workable,
     graph::{Add, Get},

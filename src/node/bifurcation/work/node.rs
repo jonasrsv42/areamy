@@ -2,7 +2,7 @@ use crate::bifurcation;
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::node::bifurcation::routine::BifurcationRoutine;
-use crate::node::work::work_each;
+use crate::work::work_each;
 use crate::{
     Closeable, Message, Origin, Pushable, Sink, Workable,
     graph::{Add, Get},

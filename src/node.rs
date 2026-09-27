@@ -12,7 +12,6 @@ pub mod bifurcation;
 pub mod biunion;
 pub mod line;
 pub mod routine;
-pub(crate) mod work;
 
 pub use bifurcation::{BifurcationIo, BifurcationRoutine};
 pub use biunion::{BiunionIo, BiunionRoutine};

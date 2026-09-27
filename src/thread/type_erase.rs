@@ -1,7 +1,7 @@
 //! Internal type-erasure for [`ThreadBundle`].
 //!
 //! Lets the bundle store a mixed bag of [`ThreadStream`] (sync) and
-//! [`poll::Thread`](crate::thread::poll::stream::Thread) (async)
+//! [`poll::Thread`](crate::poll::Thread) (async)
 //! behind a uniform `Box<dyn ...>` interface.
 //!
 //! Each erased thread exposes a `run()` that drives its work loop
@@ -9,12 +9,13 @@
 //! spawns each `run()` into the user-provided scope.
 //!
 //! [`ThreadBundle`]: crate::thread::ThreadBundle
-//! [`ThreadStream`]: crate::thread::ThreadStream
+//! [`ThreadStream`]: crate::work::ThreadStream
 
+use super::ThreadId;
 use super::callback::OnDone;
-use super::poll::stream as poll;
-use super::{ThreadId, ThreadStream};
 use crate::error::Error;
+use crate::poll::thread as poll;
+use crate::work::ThreadStream;
 
 /// Trait for type-erased idle threads. Bundle owns these and calls
 /// [`run`](Self::run) inside `scope.spawn(...)` at start time.

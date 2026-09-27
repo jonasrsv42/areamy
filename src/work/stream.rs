@@ -11,11 +11,11 @@
 //! thread see `Closed` immediately, instead of waiting until the
 //! caller reaches this thread in a sequential `bundle.join()`.
 
-use super::callback::{self, OnDone, PanicGuard};
-use super::done::Done;
-use super::join::Join;
 use crate::error::Error;
-use crate::node::work::work_each;
+use crate::thread::callback::{self, OnDone, PanicGuard};
+use crate::thread::done::Done;
+use crate::thread::join::Join;
+use crate::work::work_each;
 use crate::{ThreadId, Workable, fatal, graph::Add};
 use std::thread::{Scope, ScopedJoinHandle};
 

@@ -2,8 +2,8 @@
 
 use super::mock::{BorrowingBifurcation, BorrowingBiunion, BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
-use crate::thread::{ThreadBundle, ThreadStream};
-use crate::work::{Connect, Writer, make_bifurcation, make_biunion, make_line};
+use crate::thread::ThreadBundle;
+use crate::work::{Connect, ThreadStream, Writer, make_bifurcation, make_biunion, make_line};
 use crate::{Closeable, Message, Pushable, bifurcation, biunion, make_push};
 use std::collections::VecDeque;
 

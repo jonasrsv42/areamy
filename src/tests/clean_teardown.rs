@@ -6,9 +6,9 @@
 use crate::error::{Error, ErrorKind};
 use crate::node::line::poll::routine::tests::MockLine;
 use crate::poll;
+use crate::poll::thread::Thread;
 use crate::sync::Receiver;
 use crate::thread::Join;
-use crate::thread::poll::stream::Thread;
 use crate::work::{Connect, Reader, Writer, make_bifurcation, make_line};
 use crate::{
     BifurcationRoutine, Flush, LineIo, LineRoutine, Next, ThreadBundle, ThreadStream, Trackable,

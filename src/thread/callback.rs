@@ -15,8 +15,8 @@
 //! callback's panic is swallowed (and logged unless the `silent`
 //! feature is set), and the next callback still gets a turn.
 //!
-//! [`ThreadStream`]: crate::thread::ThreadStream
-//! [`Thread`]: crate::thread::poll::stream::Thread
+//! [`ThreadStream`]: crate::work::ThreadStream
+//! [`Thread`]: crate::poll::Thread
 
 use super::done::Done;
 use std::panic::{AssertUnwindSafe, catch_unwind};

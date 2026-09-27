@@ -19,6 +19,7 @@ use crate::graph::{Add, Get};
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
+use crate::poll::thread::Thread;
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 use crate::{Sink, ThreadId};
@@ -115,6 +116,38 @@ where
 // ============================================================
 // Constructor — both inputs deferred
 // ============================================================
+
+impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
+    /// Create a biunion node with two deferred inputs and deferred output.
+    ///
+    /// Resolve inputs and output via wiring methods:
+    /// - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
+    /// - `.parent::<Left>(node)` / `.parent::<Right>(node)` → Async input
+    /// - `.output::<Sync>()` → Sync output
+    pub fn biunion<Left, Right, Out, SignalType, FactoryType>(
+        &mut self,
+        factory: FactoryType,
+    ) -> Node<
+        'params,
+        Allocating<'_>,
+        Deferred,
+        Deferred,
+        Deferred,
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
+    where
+        SignalType: Origin,
+        FactoryType: BiunionRoutineFactory<'params>,
+        FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    {
+        Node::deferred(factory, self.waker_allocator())
+    }
+}
 
 impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<

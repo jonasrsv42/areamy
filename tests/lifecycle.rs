@@ -49,8 +49,8 @@ use areamy::edge::sync::Receiver;
 use areamy::error::Error;
 use areamy::pull;
 use areamy::pull::WriterBuffer;
-use areamy::thread::{ThreadBundle, ThreadBundleHandle, ThreadStream};
-use areamy::work::{Writer, from_pull};
+use areamy::thread::{ThreadBundle, ThreadBundleHandle};
+use areamy::work::{ThreadStream, Writer, from_pull};
 use areamy::{
     Closeable, Flush, LineRoutine, Message, Next, Pushable, Send as RoutineSend, fatal, make_push,
     poll,

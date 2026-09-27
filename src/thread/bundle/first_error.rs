@@ -61,7 +61,8 @@ pub(super) fn inject<'params>(
 mod tests {
     use super::super::ThreadBundle;
     use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
-    use crate::thread::{Failure, ThreadStream};
+    use crate::thread::Failure;
+    use crate::work::ThreadStream;
     use std::sync::Arc;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};

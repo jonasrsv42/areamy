@@ -33,6 +33,7 @@ use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::edge::{Async, Deferred, Direct, Edge, Null, PollEdge, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::input;
+use crate::poll::thread::Thread;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::signal::Origin;
@@ -98,6 +99,27 @@ where
 // ============================================================
 // Constructors
 // ============================================================
+
+impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
+    /// Create a node with deferred edge kinds.
+    ///
+    /// Resolve input and output via wiring methods:
+    /// - `.input::<Sync>()` → resolve input to Sync
+    /// - `.output::<Sync>()` → resolve output to Sync
+    /// - `.parent(node)` → Async input (adds parent)
+    /// - consumed by `.parent()` → Deferred output (AsyncParent)
+    pub fn line<InType, OutType, SignalType, FactoryType>(
+        &mut self,
+        factory: FactoryType,
+    ) -> Node<'_, 'params, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    where
+        SignalType: Origin,
+        FactoryType: LineRoutineFactory<'params>,
+        FactoryType::Routine: LineRoutine<InType, OutType>,
+    {
+        Node::deferred(factory, self.waker_allocator())
+    }
+}
 
 /// Node<Deferred, Deferred> — unresolved, no allocation yet.
 impl<'alloc, 'params, InType, OutType, SignalType, ThreadIdType, FactoryType>

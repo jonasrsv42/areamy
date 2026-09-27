@@ -1,6 +1,6 @@
 //! Exit notification passed to [`on_done`] callbacks.
 //!
-//! [`on_done`]: crate::thread::ThreadStream::on_done
+//! [`on_done`]: crate::work::ThreadStream::on_done
 //!
 //! Constructed inside the spawn closure right before the thread
 //! terminates. This is distinct from [`Join`](crate::thread::Join),

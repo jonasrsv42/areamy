@@ -11,6 +11,7 @@ pub mod queue;
 pub mod race;
 pub mod runtime;
 pub mod sleep;
+pub mod thread;
 pub mod traits;
 pub mod try_join;
 pub mod waker;
@@ -22,6 +23,7 @@ pub use marker::NodeId;
 pub use pollable::Pollable;
 pub use race::{Either, race};
 pub use sleep::{SleepFut, sleep, sleep_until};
+pub use thread::{Thread, ThreadHandle};
 pub use try_join::try_join;
 pub use waker::TimerKey;
 
@@ -30,4 +32,3 @@ pub use crate::node::biunion::poll::factory::{
 };
 pub use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 pub use crate::node::line::poll::routine::LineRoutine;
-pub use crate::thread::poll::stream::{Thread, ThreadHandle};

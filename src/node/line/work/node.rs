@@ -2,7 +2,7 @@
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::node::line::LineRoutine;
-use crate::node::work::work_each;
+use crate::work::work_each;
 use crate::{Closeable, Pushable, Sink, Workable};
 use crate::{
     DefaultThread, ThreadId,

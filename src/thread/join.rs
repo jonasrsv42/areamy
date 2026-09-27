@@ -1,5 +1,5 @@
-//! Outcome of joining a thread spawned by [`ThreadStream`] or
-//! [`poll::Thread`](crate::thread::poll::stream::Thread).
+//! Outcome of joining a thread spawned by [`ThreadStream`](crate::work::ThreadStream) or
+//! [`poll::Thread`](crate::poll::Thread).
 //!
 //! [`Join`] distinguishes clean exit, work-loop error, and OS-thread
 //! panic at the type level so callers don't have to pattern-match on

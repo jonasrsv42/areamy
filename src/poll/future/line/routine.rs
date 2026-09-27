@@ -184,8 +184,8 @@ mod tests {
     use super::*;
     use crate::edge::sync::Receiver;
     use crate::poll;
-    use crate::thread::{ThreadBundle, ThreadStream};
-    use crate::work::{Writer, make_line};
+    use crate::thread::ThreadBundle;
+    use crate::work::{ThreadStream, Writer, make_line};
     use crate::{Closeable, Message, Pushable, make_push};
 
     crate::thread_id!(LineFutureThread);

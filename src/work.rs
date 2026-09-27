@@ -3,10 +3,14 @@
 mod connect;
 mod make;
 pub(crate) mod multiedge;
+mod stream;
+mod work_each;
 mod workable;
 
 pub use connect::Connect;
 pub use make::{make_bidi, make_work};
+pub use stream::{ThreadStream, ThreadStreamHandle};
+pub(crate) use work_each::work_each;
 pub use workable::Workable;
 
 pub use crate::node::bifurcation::work::builder::make_bifurcation;

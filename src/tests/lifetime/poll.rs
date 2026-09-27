@@ -8,8 +8,8 @@ use crate::edge::sync::Receiver;
 use crate::graph::{Add, Get};
 use crate::poll;
 use crate::poll::future::OutputQueue;
-use crate::thread::{ThreadBundle, ThreadStream};
-use crate::work::{Writer, make_line};
+use crate::thread::ThreadBundle;
+use crate::work::{ThreadStream, Writer, make_line};
 use crate::{Closeable, Message, Pushable, biunion, make_push};
 
 #[test]

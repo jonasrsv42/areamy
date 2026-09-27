@@ -1,15 +1,9 @@
 //! Async thread that runs [Pollable](crate::Pollable) nodes driven by wakers.
 
-use super::runtime::ClosableRuntime;
-use super::tls;
+mod runtime;
+pub(crate) mod tls;
+
 use crate::error::{Error, ErrorKind};
-use crate::node::biunion::poll::builder::node::{Allocating, Node as BiunionNode};
-use crate::node::biunion::poll::factory::BiunionRoutineFactory;
-use crate::node::biunion::poll::routine::BiunionRoutine;
-use crate::node::line::poll::builder::node::Node;
-use crate::node::line::poll::factory::LineRoutineFactory;
-use crate::node::line::poll::routine::LineRoutine;
-use crate::poll::Deferred;
 use crate::poll::graph::GraphBuilder;
 use crate::poll::queue::{Consumer, PollQueue};
 use crate::poll::runtime::Node as RuntimeNode;
@@ -17,7 +11,8 @@ use crate::poll::wakers::WakerAllocator;
 use crate::thread::Join;
 use crate::thread::callback::{self, OnDone, PanicGuard};
 use crate::thread::done::Done;
-use crate::{Origin, ThreadId, fatal};
+use crate::{ThreadId, fatal};
+use runtime::ClosableRuntime;
 use std::thread::{Scope, ScopedJoinHandle};
 
 /// An idle async thread. Add builders via [Thread::add], then
@@ -53,7 +48,7 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     }
 
     /// Register a callback to fire when the thread exits. See
-    /// [`ThreadStream::on_done`](crate::thread::ThreadStream::on_done)
+    /// [`ThreadStream::on_done`](crate::work::ThreadStream::on_done)
     /// for the full contract — same semantics here.
     pub fn on_done<F>(&mut self, callback: F) -> &mut Self
     where
@@ -74,55 +69,6 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     /// empty."
     pub fn waker_allocator(&mut self) -> &mut WakerAllocator {
         &mut self.waker_allocator
-    }
-
-    /// Create a node with deferred edge kinds.
-    ///
-    /// Resolve input and output via wiring methods:
-    /// - `.input::<Sync>()` → resolve input to Sync
-    /// - `.output::<Sync>()` → resolve output to Sync
-    /// - `.parent(node)` → Async input (adds parent)
-    /// - consumed by `.parent()` → Deferred output (AsyncParent)
-    pub fn line<InType, OutType, SignalType, FactoryType>(
-        &mut self,
-        factory: FactoryType,
-    ) -> Node<'_, 'params, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    where
-        SignalType: Origin,
-        FactoryType: LineRoutineFactory<'params>,
-        FactoryType::Routine: LineRoutine<InType, OutType>,
-    {
-        Node::deferred(factory, &mut self.waker_allocator)
-    }
-
-    /// Create a biunion node with two deferred inputs and deferred output.
-    ///
-    /// Resolve inputs and output via wiring methods:
-    /// - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
-    /// - `.parent::<Left>(node)` / `.parent::<Right>(node)` → Async input
-    /// - `.output::<Sync>()` → Sync output
-    pub fn biunion<Left, Right, Out, SignalType, FactoryType>(
-        &mut self,
-        factory: FactoryType,
-    ) -> BiunionNode<
-        'params,
-        Allocating<'_>,
-        Deferred,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-    where
-        SignalType: Origin,
-        FactoryType: BiunionRoutineFactory<'params>,
-        FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    {
-        BiunionNode::deferred(factory, &mut self.waker_allocator)
     }
 
     /// Add a node to the thread. It will be built when the thread starts.

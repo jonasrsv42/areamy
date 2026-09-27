@@ -5,8 +5,8 @@ use super::mock::{BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
 use crate::node::line::work::bridge::from_pull;
 use crate::pull::Connect as PullConnect;
-use crate::thread::{ThreadBundle, ThreadStream};
-use crate::work::Writer;
+use crate::thread::ThreadBundle;
+use crate::work::{ThreadStream, Writer};
 use crate::writer::pull::WriterBuffer;
 use crate::{Closeable, Message, Pushable, make_push};
 

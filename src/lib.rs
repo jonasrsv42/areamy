@@ -40,13 +40,11 @@ pub use node::{bifurcation, biunion};
 pub use poll::Pollable;
 pub use pull::Pullable;
 pub use signal::{Origin, Trackable};
-pub use work::{Workable, make_bidi, make_work};
+pub use work::{ThreadStream, ThreadStreamHandle, Workable, make_bidi, make_work};
 
 pub mod poll;
 pub use reader::Reader;
-pub use thread::{
-    DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream, ThreadStreamHandle,
-};
+pub use thread::{DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId};
 
 #[cfg(test)]
 pub mod tests;

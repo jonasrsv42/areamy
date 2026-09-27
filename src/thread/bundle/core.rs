@@ -50,7 +50,7 @@ impl<'params> ThreadBundle<'params> {
     /// simultaneously, exactly one wins the mutex/take and drains
     /// the callback list. Which thread "wins" is non-deterministic.
     /// Callbacks run on the winning thread, same constraints as
-    /// [`ThreadStream::on_done`](crate::thread::ThreadStream::on_done)
+    /// [`ThreadStream::on_done`](crate::work::ThreadStream::on_done)
     /// (no block, no panic). Panics are caught and logged so one
     /// misbehaving callback cannot abort the process or prevent its
     /// siblings from firing.
@@ -124,7 +124,8 @@ impl<'threads> ThreadBundleHandle<'threads> {
 mod tests {
     use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use super::ThreadBundle;
-    use crate::thread::{Join, ThreadStream};
+    use crate::thread::Join;
+    use crate::work::ThreadStream;
 
     #[test]
     fn start_and_join_empty() {

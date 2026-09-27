@@ -396,7 +396,7 @@ pub mod tests {
     use crate::closed;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::work::{Writer, tee};
-    use crate::{DefaultThread, Trackable};
+    use crate::{At, DefaultThread, Trackable};
 
     #[test]
     fn run_bifurcation() {
@@ -404,8 +404,8 @@ pub mod tests {
 
         let mut writer = Writer::new(&bifur).unwrap();
 
-        let mut left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
-        let mut right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
+        let mut left_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Left>()).unwrap();
+        let mut right_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Right>()).unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(bifur);
 

@@ -118,16 +118,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biunion;
     use crate::node::biunion::routine::tests::MockBiunion;
     use crate::work::{self, Reader, Writer};
+    use crate::{At, biunion};
 
     #[test]
     fn readers_biunion_read() {
-        let biun = work::Biunion::of(MockBiunion::new());
+        let mut biun = work::Biunion::of(MockBiunion::new());
 
-        let left_writer = Writer::new::<biunion::Left>(&biun).unwrap();
-        let right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
+        let left_writer = Writer::new(&biun.at::<biunion::Left>()).unwrap();
+        let right_writer = Writer::new(&biun.at::<biunion::Right>()).unwrap();
 
         let output = Reader::new(biun).unwrap();
 

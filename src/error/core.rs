@@ -20,7 +20,11 @@ impl std::fmt::Display for Location {
 ///
 /// Since third-parties may implement nodes for Areamy and need to propagate
 /// custom errors through Areamy we support this via the [AnyErr] using reflection.
+///
+/// Every `'static` [std::error::Error] that is [Send] is an [AnyErr].
 pub trait AnyErr: Any + std::error::Error + Send {}
+
+impl<ErrorType: Any + std::error::Error + Send> AnyErr for ErrorType {}
 
 /// [`ErrorKind`] describes the types of errors that can occur in Areamy.
 #[derive(Debug)]
@@ -52,7 +56,7 @@ impl Error {
     ///
     /// # Example
     /// ```
-    /// use areamy::error::{AnyErr, Error, ErrorKind};
+    /// use areamy::error::{Error, ErrorKind};
     /// use std::fmt;
     ///
     /// #[derive(Debug)]
@@ -61,15 +65,13 @@ impl Error {
     ///     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "TensorError") }
     /// }
     /// impl std::error::Error for TensorError {}
-    /// impl AnyErr for TensorError {}
     ///
-    /// #[derive(Debug)]  
+    /// #[derive(Debug)]
     /// struct ChannelDisconnected;
     /// impl fmt::Display for ChannelDisconnected {
     ///     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "ChannelDisconnected") }
     /// }
     /// impl std::error::Error for ChannelDisconnected {}
-    /// impl AnyErr for ChannelDisconnected {}
     ///
     /// fn handle_error(error: Error) {
     ///     // You can chain multiple attempts:
@@ -120,7 +122,7 @@ impl Error {
     ///
     /// # Example
     /// ```
-    /// use areamy::error::{AnyErr, Error};
+    /// use areamy::error::Error;
     /// use std::fmt;
     ///
     /// #[derive(Debug)]
@@ -129,7 +131,6 @@ impl Error {
     ///     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "ChannelDisconnected") }
     /// }
     /// impl std::error::Error for ChannelDisconnected {}
-    /// impl AnyErr for ChannelDisconnected {}
     ///
     /// fn handle_error(error: &Error) {
     ///     if error.is::<ChannelDisconnected>() {
@@ -306,7 +307,6 @@ mod tests {
     }
 
     impl std::error::Error for TestErrorA {}
-    impl AnyErr for TestErrorA {}
 
     #[derive(Debug)]
     struct TestErrorB {
@@ -320,7 +320,6 @@ mod tests {
     }
 
     impl std::error::Error for TestErrorB {}
-    impl AnyErr for TestErrorB {}
 
     fn inside_a_fn() {
         let error: Result<(), Box<dyn std::error::Error>> = fatal!("Invalid").into();

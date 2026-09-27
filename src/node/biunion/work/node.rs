@@ -462,10 +462,10 @@ pub mod tests {
 
     #[test]
     fn run_biunion() {
-        let biun = Biunion::of(MockBiunion::new());
+        let mut biun = Biunion::of(MockBiunion::new());
 
-        let mut left_writer = Writer::new::<biunion::Left>(&biun).unwrap();
-        let mut right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
+        let mut left_writer = Writer::new(&biun.at::<biunion::Left>()).unwrap();
+        let mut right_writer = Writer::new(&biun.at::<biunion::Right>()).unwrap();
 
         let mut reader = Reader::new(biun).unwrap();
 
@@ -493,7 +493,7 @@ pub mod tests {
     fn typed_unfed_left_input_stays_open() {
         let mut biun = Biunion::of(MockBiunion::new());
         Push::<usize>::open(&biun.at::<biunion::Left>());
-        let mut right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
+        let mut right_writer = Writer::new(&biun.at::<biunion::Right>()).unwrap();
         let mut reader = Reader::new(biun).unwrap();
 
         right_writer.push(Message::Data(2)).unwrap();

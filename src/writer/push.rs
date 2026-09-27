@@ -24,6 +24,8 @@ impl<'params, DataType> Writer<'params, DataType, Trackable<&'static str>>
 where
     DataType: Send + Sync + 'static,
 {
+    /// Write into `input`. The side is inferred from the data type, or named with
+    /// [crate::graph::At::at]: `Writer::new(&node.at::<Left>())`.
     pub fn new<MultiplicityType: Multiplicity>(
         input: &impl Get<
             dyn Sink<DataType = DataType, SignalType = Trackable<&'static str>>
@@ -43,14 +45,13 @@ where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
-    pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
-    where
-        Node: Get<
-                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
-                MultiplicityType,
-            >,
-        MultiplicityType: Multiplicity,
-    {
+    /// [Writer::new] with a generic signal type.
+    pub fn of<MultiplicityType: Multiplicity>(
+        node: &impl Get<
+            dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+            MultiplicityType,
+        >,
+    ) -> Result<Self, Error> {
         let inner = node.get()?;
         Ok(Self { inner })
     }

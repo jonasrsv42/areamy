@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::poll::{self, BiunionWakers};
 use crate::sync::Receiver;
 use crate::work::{self, Reader, Writer};
-use crate::{Closeable, Message, Push, Pushable, biunion};
+use crate::{At, Closeable, Message, Push, Pushable, biunion};
 
 /// Whether the still-open right input's data got consumed before the
 /// Flush depends on scheduling; only the closing side is contractual.
@@ -47,9 +47,9 @@ where
 }
 
 fn work_biunion(close_left: bool) -> Result<Vec<Msg>, Error> {
-    let node = work::Biunion::of(HoldBiunion::new());
-    let mut left = Writer::new::<biunion::Left>(&node)?;
-    let mut right = Writer::new::<biunion::Right>(&node)?;
+    let mut node = work::Biunion::of(HoldBiunion::new());
+    let mut left = Writer::new(&node.at::<biunion::Left>())?;
+    let mut right = Writer::new(&node.at::<biunion::Right>())?;
     let mut reader = Reader::new(node)?;
 
     send(close_left, &mut left, &mut right)?;
@@ -66,8 +66,8 @@ fn work_biunion_close_left() -> Result<(), Error> {
 /// close when right does.
 #[test]
 fn work_biunion_unconnected_left() -> Result<(), Error> {
-    let node = work::Biunion::of(HoldBiunion::new());
-    let mut right = Writer::new::<biunion::Right>(&node)?;
+    let mut node = work::Biunion::of(HoldBiunion::new());
+    let mut right = Writer::new(&node.at::<biunion::Right>())?;
     let mut reader = Reader::new(node)?;
 
     right.push(Message::Data(5))?;
@@ -95,8 +95,8 @@ where
         .input::<biunion::Left, poll::Sync>()
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
-    let mut left = Writer::new::<biunion::Left>(&node)?;
-    let mut right = Writer::new::<biunion::Right>(&node)?;
+    let mut left = Writer::new(&node.at::<biunion::Left>())?;
+    let mut right = Writer::new(&node.at::<biunion::Right>())?;
     let output = Receiver::new();
     Push::connect(&mut node, &output)?;
     async_thread.add(node);
@@ -142,7 +142,7 @@ fn poll_biunion_async_parent_flush_then_close() -> Result<(), Error> {
         .parent::<biunion::Left>(parent)
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
-    let mut right = Writer::new::<biunion::Right>(&node)?;
+    let mut right = Writer::new(&node.at::<biunion::Right>())?;
     let output = Receiver::new();
     Push::connect(&mut node, &output)?;
     async_thread.add(node);

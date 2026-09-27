@@ -125,10 +125,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::work::{self, Writer, tee};
-    use crate::{DefaultThread, Message, Pushable, Workable};
+    use crate::{At, DefaultThread, Message, Pushable, Workable, bifurcation};
 
     /// We need many more tests here to ensure Tracking behaves reasonably in semi-complex graphs! :)
 
@@ -138,8 +137,8 @@ mod tests {
 
         let mut writer = Writer::new(&bifur).unwrap();
 
-        let mut left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
-        let mut right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
+        let mut left_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Left>()).unwrap();
+        let mut right_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Right>()).unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(bifur);
 

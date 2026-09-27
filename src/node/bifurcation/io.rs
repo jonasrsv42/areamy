@@ -178,9 +178,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::work::{self, Writer, tee};
+    use crate::{At, bifurcation};
 
     #[test]
     fn readers_bifurcation_read() {
@@ -189,8 +189,8 @@ mod tests {
 
         let writer = Writer::new(&bifur).unwrap();
 
-        let left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
-        let right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
+        let left_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Left>()).unwrap();
+        let right_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Right>()).unwrap();
 
         let mut reader = BifurcationIo::new(writer, left_reader, right_reader, Box::new(bifur));
 

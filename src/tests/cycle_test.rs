@@ -107,7 +107,7 @@ fn test_cycle_with_signal_policies() {
     let mut biunion = work::Biunion::of(IncrementBiunion::new());
     let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
-    let writer = Writer::new::<biunion::Right>(&biunion).unwrap();
+    let writer = Writer::new(&biunion.at::<biunion::Right>()).unwrap();
 
     // bifurcation.left → biunion.left (back-edge, FollowData)
     Push::<usize>::connect(
@@ -131,7 +131,7 @@ fn test_cycle_with_multiple_values() {
     let mut biunion = work::Biunion::of(IncrementBiunion::new());
     let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
-    let writer = Writer::new::<biunion::Right>(&biunion).unwrap();
+    let writer = Writer::new(&biunion.at::<biunion::Right>()).unwrap();
 
     Push::<usize>::connect(
         &mut bifurcation.at::<bifurcation::Left>(),

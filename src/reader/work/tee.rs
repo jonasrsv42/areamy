@@ -19,17 +19,14 @@ where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 {
-    pub fn new<'params, MultiplicityType>(
-        workable: &mut (
-                 impl Add<
+    /// Read `workable`'s output without owning it. The side is inferred from the data type,
+    /// or named with [crate::graph::At::at]: `tee::Reader::new(&mut node.at::<Left>())`.
+    pub fn new<'params, MultiplicityType: Multiplicity>(
+        workable: &mut impl Add<
             dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
             MultiplicityType,
-        > + 'params
-             ),
-    ) -> Result<Self, Error>
-    where
-        MultiplicityType: Multiplicity,
-    {
+        >,
+    ) -> Result<Self, Error> {
         let buffer = Receiver::new();
         Add::add(workable, Box::new(buffer.sender()))?;
         Ok(Self { buffer })

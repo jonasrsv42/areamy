@@ -84,8 +84,8 @@ fn biunion_work_borrowed() {
         out: VecDeque::new(),
     });
 
-    let mut left = Writer::new::<biunion::Left>(&biun).unwrap();
-    let mut right = Writer::new::<biunion::Right>(&biun).unwrap();
+    let mut left = Writer::new(&biun.at::<biunion::Left>()).unwrap();
+    let mut right = Writer::new(&biun.at::<biunion::Right>()).unwrap();
     let output = Receiver::new();
     Push::connect(&mut biun, &output).unwrap();
 

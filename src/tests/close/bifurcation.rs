@@ -2,16 +2,15 @@
 
 use super::mock::{HoldBifurcation, RIGHT, drain, drive_work};
 use crate::error::Error;
-use crate::reader::work::tee;
-use crate::work::{self, Writer};
-use crate::{Closeable, DefaultThread, Message, Pushable, Workable, bifurcation};
+use crate::work::{self, Writer, tee};
+use crate::{At, Closeable, DefaultThread, Message, Pushable, Workable, bifurcation};
 
 #[test]
 fn work_bifurcation_flush_then_close() -> Result<(), Error> {
     let mut node = work::Bifurcation::of(HoldBifurcation::new());
     let mut writer = Writer::new(&node)?;
-    let mut left = tee::Reader::new::<bifurcation::Left>(&mut node)?;
-    let mut right = tee::Reader::new::<bifurcation::Right>(&mut node)?;
+    let mut left = tee::Reader::new(&mut node.at::<bifurcation::Left>())?;
+    let mut right = tee::Reader::new(&mut node.at::<bifurcation::Right>())?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Flush("f".into()))?;

@@ -10,7 +10,7 @@ use crate::poll;
 use crate::poll::future::OutputQueue;
 use crate::thread::ThreadBundle;
 use crate::work::{self, ThreadStream, Writer};
-use crate::{Closeable, Message, Push, Pushable, biunion};
+use crate::{At, Closeable, Message, Push, Pushable, biunion};
 
 #[test]
 fn line_poll_borrowed() {
@@ -66,8 +66,8 @@ fn biunion_poll_borrowed() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut left = Writer::new::<biunion::Left>(&node).unwrap();
-    let mut right = Writer::new::<biunion::Right>(&node).unwrap();
+    let mut left = Writer::new(&node.at::<biunion::Left>()).unwrap();
+    let mut right = Writer::new(&node.at::<biunion::Right>()).unwrap();
     let output = Receiver::new();
     Push::connect(&mut node, &output).unwrap();
 

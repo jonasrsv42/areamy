@@ -11,7 +11,7 @@
 //! Defaults to `'static` for fully-owning routines via lifetime inference
 //! at every call site that doesn't introduce a borrow.
 
-use crate::connect::waker::ThreadLocalWaker;
+use crate::poll::waker::ThreadLocalWaker;
 
 /// Phase wakers the framework hands to a line routine at construction.
 ///

@@ -5,9 +5,9 @@
 //! first poll — a sleep belongs to the node that first polls it,
 //! which is the only node that will ever poll it again.
 
-use crate::connect::poll::limit::deadline_after;
-use crate::connect::poll::wakers::TimerGuard;
 use crate::error::Error;
+use crate::poll::limit::deadline_after;
+use crate::poll::wakers::TimerGuard;
 use crate::thread::poll::tls;
 
 use std::future::Future;
@@ -100,8 +100,8 @@ impl Future for SleepFut {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::poll::queue::PollQueue;
-    use crate::connect::waker::{ThreadLocalWaker, mock};
+    use crate::poll::queue::PollQueue;
+    use crate::poll::waker::{ThreadLocalWaker, mock};
     use crate::thread::poll::tls::ThreadLocalGuard;
     use std::task::Context;
     use std::thread;

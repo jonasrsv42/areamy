@@ -13,13 +13,13 @@
 
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::biunion;
-use crate::connect::poll::edge::{Async, Deferred, Edge, Null, Sync};
-use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Get};
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
+use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 use crate::{Sink, ThreadId};
 use std::marker::PhantomData;

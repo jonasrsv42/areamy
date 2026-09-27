@@ -18,11 +18,11 @@
 //! Flush from either input triggers Flushing immediately (first-flush-wins).
 
 use crate::biunion;
-use crate::connect::waker::{ThreadLocalWaker, Waker};
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::poll::waker::{ThreadLocalWaker, Waker};
 use crate::signal::Origin;
 use crate::{Pollable, Receivable, Sink, ThreadId, fatal};
 use std::cell::RefCell;
@@ -787,12 +787,12 @@ mod tests {
     use super::*;
     use crate::DefaultThread;
     use crate::Trackable;
-    use crate::connect::poll::input;
-    use crate::connect::waker::mock::tracking_local_waker;
     use crate::edge::sync::{Receiver, Sender};
     use crate::node::biunion::poll::routine::tests::{
         MockBiunion, noop_biunion_wakers, noop_waker,
     };
+    use crate::poll::input;
+    use crate::poll::waker::mock::tracking_local_waker;
     use std::cell::Cell;
     use std::rc::Rc;
     use std::sync::Arc;

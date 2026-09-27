@@ -4,15 +4,15 @@
 //! waker that wants same-thread wake/schedule.
 
 use super::scheduler::Scheduler;
-use super::timers::TimerKey;
-use crate::connect::poll::marker::NodeId;
+use crate::poll::marker::NodeId;
+use crate::poll::waker::TimerKey;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
 use std::time::Instant;
 
 /// ```compile_fail
-/// use areamy::connect::poll::queue::{PollQueue, ThreadLocalProducer};
+/// use areamy::poll::queue::{PollQueue, ThreadLocalProducer};
 /// fn require_send<T: Send>() {}
 /// let q = PollQueue::new();
 /// let (_, local) = q.local();
@@ -20,7 +20,7 @@ use std::time::Instant;
 /// ```
 ///
 /// ```compile_fail
-/// use areamy::connect::poll::queue::{PollQueue, ThreadLocalProducer};
+/// use areamy::poll::queue::{PollQueue, ThreadLocalProducer};
 /// fn require_sync<T: Sync>() {}
 /// let q = PollQueue::new();
 /// let (_, local) = q.local();

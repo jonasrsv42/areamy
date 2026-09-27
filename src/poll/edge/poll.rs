@@ -8,10 +8,10 @@
 //! this will only-ever be owned by a single thread and so its fully cleaned up
 //! one teardown of that thread.
 
-use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::message::Message;
+use crate::poll::waker::ThreadLocalWaker;
 use crate::signal::Origin;
 use crate::{Closeable, Pushable, Receivable, closed};
 use std::collections::VecDeque;
@@ -111,8 +111,8 @@ where
 mod tests {
     use super::*;
     use crate::Trackable;
-    use crate::connect::waker::mock::{noop_local_waker, tracking_local_waker};
     use crate::error::ErrorKind;
+    use crate::poll::waker::mock::{noop_local_waker, tracking_local_waker};
 
     #[test]
     fn push_and_try_recv() {

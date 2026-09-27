@@ -1,7 +1,7 @@
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
-use crate::connect::waker::Waker;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
+use crate::poll::waker::Waker;
 use crate::poll::{BiunionWakers, LineWakers};
 use crate::sync::Receiver;
 use crate::{

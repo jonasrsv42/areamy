@@ -5,7 +5,6 @@ extern crate alloc;
 
 mod combine;
 pub mod composable;
-pub mod connect;
 pub mod edge;
 pub mod error;
 pub mod graph;

@@ -10,7 +10,7 @@
 //! threads. This allows routines to hold non-Send types like `Rc<RefCell<_>>`
 //! for zero-cost shared state with their futures.
 //!
-//! The factory receives a [ThreadLocalWaker](crate::connect::waker::ThreadLocalWaker)
+//! The factory receives a [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker)
 //! for the Output phase. Routines MUST use this to wake Output when they
 //! produce data (e.g. via [OutputProducer](crate::poll::future::queue::OutputProducer)).
 //!
@@ -34,11 +34,11 @@
 //! The node's Output phase calls [crate::Next] to drain output. Output
 //! is NOT polled automatically — the routine MUST wake the Output phase
 //! when it produces data. Use [OutputProducer::push](crate::poll::future::queue::OutputProducer::push)
-//! which wakes Output via [ThreadLocalWaker](crate::connect::waker::ThreadLocalWaker).
+//! which wakes Output via [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker).
 //!
 //! ## [crate::Poll] contract
 //!
-//! [crate::Poll::poll] receives a [Waker](crate::connect::waker::Waker)
+//! [crate::Poll::poll] receives a [Waker](crate::poll::waker::Waker)
 //! carrying both a sync waker (for I/O / standard futures) and a
 //! thread-local waker (for cheap same-thread wake).
 //!
@@ -60,7 +60,7 @@
 //!
 //! ## TL;DR
 //!
-//! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [ThreadLocalWaker](crate::connect::waker::ThreadLocalWaker). Output is NOT polled automatically.
+//! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker). Output is NOT polled automatically.
 //! - Need async work after [crate::Send]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
 //! - After [crate::Flush], return [core::task::Poll::Ready] from [crate::Poll] (immediately or eventually). Deadlock otherwise.
 //! - Never return [core::task::Poll::Ready] outside flush. Fatal error.
@@ -80,9 +80,9 @@ pub trait LineRoutine<In, Out>:
 #[cfg(test)]
 pub mod tests {
     use super::LineRoutine;
-    use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
+    use crate::poll::waker::{ThreadLocalWaker, Waker, mock};
     use crate::{Next, Send};
 
     pub struct MockLine {

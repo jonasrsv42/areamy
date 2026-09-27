@@ -2,15 +2,15 @@
 
 use super::node::{Allocated, Node};
 use crate::ThreadId;
-use crate::connect::poll::edge::{Async, Deferred, PollEdge, Sync};
-use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
-use crate::connect::poll::traits::AsyncParent;
-use crate::connect::poll::wakers::ThreadLocalWakerAllocator;
-use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
 use crate::node::biunion::poll::factory::{BiunionInputs, BiunionRoutineFactory, BiunionWakers};
 use crate::node::biunion::poll::node::{self, InputPhases, Phase};
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::poll::edge::{Async, Deferred, PollEdge, Sync};
+use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
+use crate::poll::traits::AsyncParent;
+use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use std::cell::RefCell;
 use std::rc::Rc;

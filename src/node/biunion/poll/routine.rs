@@ -25,9 +25,9 @@ pub trait BiunionRoutine<Left, Right, Out>:
 #[cfg(test)]
 pub mod tests {
     use crate::biunion;
-    use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
+    use crate::poll::waker::{ThreadLocalWaker, Waker, mock};
 
     /// Mock biunion routine: left input doubled, right input tripled,
     /// both pushed to output. Tracks poll_count.

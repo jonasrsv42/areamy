@@ -1,9 +1,9 @@
 //! Dispatch traits for line builder `.input::<E>()` and `.output::<E>()`.
 
 use crate::ThreadId;
-use crate::connect::poll::edge::{Edge, Sync};
-use crate::connect::poll::input::sync::{Input, Receiver};
-use crate::connect::poll::wakers::WakerAllocator;
+use crate::poll::edge::{Edge, Sync};
+use crate::poll::input::sync::{Input, Receiver};
+use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 
 /// Resolve input edge. Implemented for [`Sync`] — allocates a sync waker.

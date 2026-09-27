@@ -24,7 +24,7 @@
 //! rebuilds a `Context` via plain `from_waker` — a pattern TLS
 //! survives today.
 
-use crate::connect::waker::ThreadLocalWaker;
+use crate::poll::waker::ThreadLocalWaker;
 
 use std::cell::Cell;
 

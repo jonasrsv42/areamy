@@ -12,12 +12,12 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Routine that queues input in send via waker-aware Queue, then
-/// doubles it in poll. Send wakes Work via the queue's waker.
-use crate::connect::waker::{self as waker};
 use crate::poll::LineWakers;
 use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
+/// Routine that queues input in send via waker-aware Queue, then
+/// doubles it in poll. Send wakes Work via the queue's waker.
+use crate::poll::waker::{self as waker};
 
 struct PollDouble {
     input: InputQueue<usize>,

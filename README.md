@@ -2,7 +2,7 @@
 # Areamy
 
 Areamy is a strongly typed runtime for multithreaded streaming graphs. 
-See [src/connect/graph](src/connect/graph.rs) for a brief overview.
+See [src/graph](src/graph.rs) for a brief overview.
 
 It serves a purpose similar to https://github.com/google-ai-edge/mediapipe
 

@@ -5,10 +5,10 @@
 //! flow through the entire cascade (routine → node → thread → bundle).
 
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
-use crate::connect::waker::Waker;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::poll::future::OutputQueue;
+use crate::poll::waker::Waker;
 use crate::{
     BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Sink, Trackable,
     bifurcation, biunion,

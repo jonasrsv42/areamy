@@ -9,10 +9,10 @@
 //! observes `Closed` on its next poll. When the [`Receiver`] is
 //! dropped, further pushes return `Closed`.
 
-use crate::connect::poll::wakers::allocator::Slot;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::message::Message;
+use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
 use crate::{Closeable, Pushable, Receivable, Sink, closed, fatal, graph::Get};
 use std::cell::Cell;

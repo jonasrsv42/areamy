@@ -1,9 +1,9 @@
 //! Async poll runtime.
 //!
 //! [Runtime] holds pollable nodes paired with their wakers for the poll loop.
-//! Built via [ThreadLocalWakerAllocator::build](crate::connect::poll::wakers::ThreadLocalWakerAllocator::build).
+//! Built via [ThreadLocalWakerAllocator::build](crate::poll::wakers::ThreadLocalWakerAllocator::build).
 
-use crate::connect::waker;
+use crate::poll::waker;
 use crate::{Pollable, ThreadId};
 
 use alloc::vec::Vec;

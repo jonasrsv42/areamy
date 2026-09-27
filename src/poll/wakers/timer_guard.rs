@@ -1,7 +1,6 @@
 //! [TimerGuard] — an armed timer owned by a future.
 
-use crate::connect::poll::queue::TimerKey;
-use crate::connect::waker::ThreadLocalWaker;
+use crate::poll::waker::{ThreadLocalWaker, TimerKey};
 
 use std::time::Instant;
 

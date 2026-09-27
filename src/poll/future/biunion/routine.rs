@@ -6,11 +6,11 @@
 //! input, or [try_join](fn@crate::poll::try_join) to serve both.
 
 use crate::biunion;
-use crate::connect::waker;
 use crate::error::Error;
 use crate::node::biunion::poll::factory::BiunionWakers;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
+use crate::poll::waker;
 use std::future::Future;
 use std::pin::Pin;
 

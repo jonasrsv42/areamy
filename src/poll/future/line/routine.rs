@@ -50,11 +50,11 @@
 //! let node = thread.line(routine).input::<Sync>().output::<Sync>();
 //! ```
 
-use crate::connect::waker;
 use crate::error::Error;
 use crate::node::line::poll::factory::LineWakers;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
+use crate::poll::waker;
 use std::future::Future;
 use std::pin::Pin;
 

@@ -1,6 +1,5 @@
 //! Example nodes wiring the connection traits together.
 
-use crate::connect::waker::Waker;
 use crate::edge::push::make_push;
 use crate::edge::sync::Receiver;
 use crate::error::Error;
@@ -8,6 +7,7 @@ use crate::graph::marker::Connection;
 use crate::graph::{Add, Get, Pushable, Sink};
 use crate::message::Message;
 use crate::poll::Pollable;
+use crate::poll::waker::Waker;
 use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
@@ -352,7 +352,7 @@ impl Pollable for AsyncNode {
 /// A `Pollable` node that processes input non-blockingly.
 #[test]
 fn pollable_processes_available_input() {
-    use crate::connect::waker::{Waker, mock};
+    use crate::poll::waker::{Waker, mock};
 
     let mut node = AsyncNode::new();
     let mut input = node.input.sender();
@@ -407,7 +407,7 @@ impl Pollable for ClosingAsyncNode {
 
 #[test]
 fn pollable_returns_ready_on_close() {
-    use crate::connect::waker::{Waker, mock};
+    use crate::poll::waker::{Waker, mock};
 
     let mut node = ClosingAsyncNode {
         input: Receiver::new(),

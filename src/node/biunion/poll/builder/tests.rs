@@ -3,13 +3,13 @@
 use super::node::Node;
 use crate::Trackable;
 use crate::biunion::{Left, Right};
-use crate::connect::poll::edge::{PollEdge, Sync};
-use crate::connect::poll::graph::{Graph, GraphBuilder};
-use crate::connect::poll::queue::PollQueue;
-use crate::connect::poll::traits::AsyncParent;
-use crate::connect::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::error::Error;
 use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_local_waker};
+use crate::poll::edge::{PollEdge, Sync};
+use crate::poll::graph::{Graph, GraphBuilder};
+use crate::poll::queue::PollQueue;
+use crate::poll::traits::AsyncParent;
+use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use std::cell::RefCell;
 use std::rc::Rc;
 

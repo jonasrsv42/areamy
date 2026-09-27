@@ -6,11 +6,11 @@ use super::node::{Allocated, Allocating, BuilderInput, Node};
 use super::traits::ResolveParent;
 use crate::ThreadId;
 use crate::biunion;
-use crate::connect::poll::edge::{Async, Deferred, Null, Sync};
-use crate::connect::poll::input;
-use crate::connect::poll::traits::AsyncParent;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::poll::edge::{Async, Deferred, Null, Sync};
+use crate::poll::input;
+use crate::poll::traits::AsyncParent;
 use crate::signal::Origin;
 use std::marker::PhantomData;
 

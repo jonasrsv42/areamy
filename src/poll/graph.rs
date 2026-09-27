@@ -7,9 +7,9 @@
 //! The `'params` parameter bounds how long the produced pollables may
 //! hold borrows captured from the surrounding scope.
 
-use crate::connect::poll::marker::NodeId;
-use crate::connect::poll::wakers::ThreadLocalWakerAllocator;
 use crate::error::Error;
+use crate::poll::marker::NodeId;
+use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::{Pollable, ThreadId};
 
 use alloc::vec::Vec;

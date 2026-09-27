@@ -24,17 +24,17 @@
 //! thread and does NOT need to be [Send].
 
 use super::traits::{ResolveInput, ResolveOutput};
-use crate::connect::poll::edge::{Async, Deferred, Direct, Edge, Null, PollEdge, Sync};
-use crate::connect::poll::graph::{Graph, GraphBuilder, GraphNode};
-use crate::connect::poll::input;
-use crate::connect::poll::traits::AsyncParent;
-use crate::connect::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Get};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node::new_phases;
 use crate::node::line::poll::routine::LineRoutine;
+use crate::poll::edge::{Async, Deferred, Direct, Edge, Null, PollEdge, Sync};
+use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
+use crate::poll::input;
+use crate::poll::traits::AsyncParent;
+use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::signal::Origin;
 use crate::{Sink, ThreadId};
 use std::cell::RefCell;

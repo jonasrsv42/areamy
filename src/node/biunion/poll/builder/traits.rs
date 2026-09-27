@@ -12,11 +12,11 @@
 use super::node::{Allocated, Allocating, BuilderInput, Node};
 use crate::ThreadId;
 use crate::biunion;
-use crate::connect::poll::edge::{Async, Deferred, Edge, Null, Sync};
-use crate::connect::poll::input::sync::{Input, Receiver};
-use crate::connect::poll::traits::AsyncParent;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
+use crate::poll::input::sync::{Input, Receiver};
+use crate::poll::traits::AsyncParent;
 use crate::signal::Origin;
 use std::marker::PhantomData;
 

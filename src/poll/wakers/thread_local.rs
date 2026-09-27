@@ -3,10 +3,9 @@
 //! Enqueues a node ID without signaling — the consumer is on the
 //! same thread and already awake. `!Send`, `!Sync`.
 
-use crate::connect::poll::marker::NodeId;
-use crate::connect::poll::queue::ThreadLocalProducer;
-use crate::connect::poll::queue::TimerKey;
-use crate::connect::waker::{ThreadLocalWake, ThreadLocalWaker};
+use crate::poll::marker::NodeId;
+use crate::poll::queue::ThreadLocalProducer;
+use crate::poll::waker::{ThreadLocalWake, ThreadLocalWaker, TimerKey};
 
 use std::time::Instant;
 
@@ -41,7 +40,7 @@ impl ThreadLocalWaker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::poll::queue::PollQueue;
+    use crate::poll::queue::PollQueue;
     use std::time::Duration;
 
     #[test]

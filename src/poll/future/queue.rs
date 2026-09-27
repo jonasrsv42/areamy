@@ -10,10 +10,10 @@
 //!
 //! All types are `!Send` — they live on the async thread.
 
-use crate::connect::poll::limit::deadline_after;
-use crate::connect::poll::wakers::TimerGuard;
-use crate::connect::waker::ThreadLocalWaker;
 use crate::error::Error;
+use crate::poll::limit::deadline_after;
+use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::wakers::TimerGuard;
 use core::task::Poll;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -295,7 +295,7 @@ impl<T> OutputConsumer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::poll::queue::PollQueue;
+    use crate::poll::queue::PollQueue;
     use std::task::Context;
 
     fn local_waker() -> ThreadLocalWaker {

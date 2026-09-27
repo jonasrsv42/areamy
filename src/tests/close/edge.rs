@@ -2,11 +2,11 @@
 
 use super::mock::{Signal, is_closed};
 use crate::Message;
-use crate::connect::poll::edge::PollEdge;
-use crate::connect::poll::input;
-use crate::connect::waker::mock;
 use crate::error::Error;
+use crate::poll::edge::PollEdge;
 use crate::poll::future::queue::{Input, InputQueue};
+use crate::poll::input;
+use crate::poll::waker::mock;
 use crate::sync::Receiver;
 use std::pin::Pin;
 

@@ -27,9 +27,9 @@
 //!
 //! Breaking either (cross-thread push without signal) loses items.
 
-use crate::connect::poll::marker::NodeId;
 use crate::error::Error;
 use crate::fatal;
+use crate::poll::marker::NodeId;
 
 use alloc::boxed::Box;
 use core::ptr;

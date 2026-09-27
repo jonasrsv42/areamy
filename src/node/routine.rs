@@ -6,9 +6,9 @@
 //! For example usage of the [crate::node::routine] traits please see the tests in this file.
 //! or the various routine implementations such as [crate::LineRoutine]
 
-use crate::connect::waker::Waker;
 use crate::error::Error;
 use crate::graph::marker::{Multiplicity, Unary};
+use crate::poll::waker::Waker;
 
 /// [`Send`] trait is used to implement an input for a routine.  
 ///

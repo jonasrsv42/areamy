@@ -8,7 +8,10 @@
 //! thread-local waker (for cheap same-thread wake). Passed to
 //! [Pollable::poll](crate::Pollable).
 
-use crate::connect::poll::queue::TimerKey;
+mod timer_key;
+
+pub use timer_key::TimerKey;
+pub(crate) use timer_key::{Generation, SlotId};
 
 use alloc::rc::Rc;
 use std::time::Instant;
@@ -97,8 +100,8 @@ impl Waker {
 /// from `[dev-dependencies]` only).
 #[cfg(any(test, feature = "testing"))]
 pub mod mock {
-    use super::{ThreadLocalWake, ThreadLocalWaker};
-    use crate::connect::poll::queue::{PollQueue, ThreadLocalProducer, TimerKey};
+    use super::{ThreadLocalWake, ThreadLocalWaker, TimerKey};
+    use crate::poll::queue::{PollQueue, ThreadLocalProducer};
 
     use std::cell::Cell;
     use std::rc::Rc;

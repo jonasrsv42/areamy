@@ -4,14 +4,14 @@
 //! invariant: not `Clone`, [Consumer::next] takes `&mut self`.
 
 use super::scheduler::Scheduler;
-use crate::connect::poll::marker::NodeId;
 use crate::error::Error;
+use crate::poll::marker::NodeId;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
 /// ```compile_fail
-/// use areamy::connect::poll::queue::{PollQueue, Consumer};
+/// use areamy::poll::queue::{PollQueue, Consumer};
 /// fn require_send<T: Send>() {}
 /// let q = PollQueue::new();
 /// let (consumer, _) = q.local();
@@ -19,7 +19,7 @@ use core::cell::RefCell;
 /// ```
 ///
 /// ```compile_fail
-/// use areamy::connect::poll::queue::{PollQueue, Consumer};
+/// use areamy::poll::queue::{PollQueue, Consumer};
 /// fn require_sync<T: Sync>() {}
 /// let q = PollQueue::new();
 /// let (consumer, _) = q.local();

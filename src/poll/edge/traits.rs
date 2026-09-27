@@ -7,9 +7,9 @@
 //! to select storage and control which wiring methods are available.
 
 use super::null::Null;
-use crate::connect::poll::input;
-use crate::connect::poll::wakers::WakerAllocator;
 use crate::graph::marker::Connection;
+use crate::poll::input;
+use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 use crate::{Sink, ThreadId};
 

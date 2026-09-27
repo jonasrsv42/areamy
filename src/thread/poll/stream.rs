@@ -2,10 +2,6 @@
 
 use super::runtime::ClosableRuntime;
 use super::tls;
-use crate::connect::poll::graph::GraphBuilder;
-use crate::connect::poll::queue::{Consumer, PollQueue};
-use crate::connect::poll::runtime::Node as RuntimeNode;
-use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::{Error, ErrorKind};
 use crate::node::biunion::poll::builder::node::{Allocating, Node as BiunionNode};
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
@@ -14,6 +10,10 @@ use crate::node::line::poll::builder::node::Node;
 use crate::node::line::poll::factory::LineRoutineFactory;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::Deferred;
+use crate::poll::graph::GraphBuilder;
+use crate::poll::queue::{Consumer, PollQueue};
+use crate::poll::runtime::Node as RuntimeNode;
+use crate::poll::wakers::WakerAllocator;
 use crate::thread::Join;
 use crate::thread::callback::{self, OnDone, PanicGuard};
 use crate::thread::done::Done;

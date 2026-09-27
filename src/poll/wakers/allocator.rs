@@ -7,13 +7,13 @@
 //! Allocates both sync + local wakers. `!Send`. Consumed by
 //! [ThreadLocalWakerAllocator::build] to produce a [Runtime].
 
-use crate::connect::poll::graph::GraphNode;
-use crate::connect::poll::marker::NodeId;
-use crate::connect::poll::queue::{Producer, ThreadLocalProducer};
-use crate::connect::poll::runtime::{Node, Runtime};
-use crate::connect::poll::wakers::sync;
-use crate::connect::waker::{self, ThreadLocalWaker};
 use crate::error::Error;
+use crate::poll::graph::GraphNode;
+use crate::poll::marker::NodeId;
+use crate::poll::queue::{Producer, ThreadLocalProducer};
+use crate::poll::runtime::{Node, Runtime};
+use crate::poll::waker::{self, ThreadLocalWaker};
+use crate::poll::wakers::sync;
 use crate::{Pollable, ThreadId, fatal};
 
 use alloc::vec::Vec;

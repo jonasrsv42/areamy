@@ -34,11 +34,11 @@
 //! poll cycle (e.g. from an in-flight future) may arrive after the marker.
 //! If strict ordering is required with async routines, use Flush instead.
 
-use crate::connect::waker::{ThreadLocalWaker, Waker};
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::node::line::poll::routine::LineRoutine;
+use crate::poll::waker::{ThreadLocalWaker, Waker};
 use crate::signal::Origin;
 use crate::{Pollable, Receivable, Sink, ThreadId, fatal};
 use std::cell::RefCell;
@@ -429,10 +429,10 @@ mod tests {
     use super::*;
     use crate::DefaultThread;
     use crate::Trackable;
-    use crate::connect::poll::input;
-    use crate::connect::waker::{self, ThreadLocalWaker, mock};
     use crate::edge::sync::Receiver;
     use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
+    use crate::poll::input;
+    use crate::poll::waker::{self, ThreadLocalWaker, mock};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 

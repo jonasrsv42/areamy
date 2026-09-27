@@ -22,8 +22,8 @@
 //! transient heap size ~ cancel rate × deadline horizon. Accepted:
 //! compaction deferred until long-timeout churn hurts in practice.
 
-use super::timers::{Generation, SlotId, TimerKey};
-use crate::connect::poll::marker::NodeId;
+use crate::poll::marker::NodeId;
+use crate::poll::waker::{Generation, SlotId, TimerKey};
 
 use alloc::vec::Vec;
 use core::cmp::Ordering;

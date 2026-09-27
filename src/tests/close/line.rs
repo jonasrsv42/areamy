@@ -141,17 +141,16 @@ fn bridged_line_flush_then_close() -> Result<(), Error> {
     Ok(())
 }
 
-/// A bridge closing only drops that bridge; the Flush the other bridge
-/// queued still goes out before the edge closes.
+/// A pulled source closing only drops that source; the edge stays open
+/// for the other one until every producer is gone.
 #[test]
-fn bridged_line_two_bridges_keep_pending_flush() -> Result<(), Error> {
-    let first = Script::new(vec![Message::Flush("f".into())]);
+fn bridged_line_fan_in_first_close_keeps_edge_open() -> Result<(), Error> {
     let mut line = work::Line::of(Hold::new());
-    work::Bidi::connect(work::Pulled::of(first), &mut line)?;
     work::Bidi::connect(work::Pulled::of(Script::new(vec![])), &mut line)?;
+    work::Bidi::connect(work::Pulled::of(script()), &mut line)?;
     let mut reader = Reader::new(line)?;
 
-    assert_eq!(drain(&mut reader)?, vec![Message::Flush("f".into())]);
+    flushed(drain(&mut reader)?);
     Ok(())
 }
 

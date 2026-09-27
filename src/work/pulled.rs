@@ -1,4 +1,4 @@
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Sink};
 use crate::pull::Pullable;
@@ -33,12 +33,6 @@ impl<'params, PullableType: Pullable> Pulled<'params, PullableType> {
             sinks: Vec::new(),
         }
     }
-
-    fn close_sinks(&mut self) {
-        for sink in self.sinks.iter_mut() {
-            let _ = sink.close();
-        }
-    }
 }
 
 impl<PullableType: Pullable> Connection for Pulled<'_, PullableType> {}
@@ -51,12 +45,10 @@ where
 {
     type ThreadId = PullableType::ThreadId;
 
+    /// A closed chain returns `Closed` without closing its sinks: dropping this node drops
+    /// them, and a child's edge closes once every producer is gone (fan-in safe).
     fn work(&mut self) -> Result<(), Error> {
-        let message = self.pullable.pull().inspect_err(|e| {
-            if matches!(e.kind, ErrorKind::Closed) {
-                self.close_sinks();
-            }
-        })?;
+        let message = self.pullable.pull()?;
 
         for sink in self.sinks.iter_mut() {
             sink.push(message.clone())?;

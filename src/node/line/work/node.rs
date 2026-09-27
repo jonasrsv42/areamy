@@ -469,7 +469,7 @@ pub mod tests {
         // This typehint is not needed as exemplified by other tests
         // but it helps readability to be explicit when building
         // the graph.
-        work::Bidi::connect(line_1, &mut line_2).unwrap();
+        work::Bidi::<usize>::connect(line_1, &mut line_2).unwrap();
 
         let mut reader = Reader::<usize>::new(line_2).unwrap();
 

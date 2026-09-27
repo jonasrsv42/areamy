@@ -5,18 +5,14 @@
 //! bifurcation routes values > 5 to its right output (final sink) and
 //! values ≤ 5 back through the cycle.
 //!
-//! - Forward edge (biunion → bifurcation) uses `make_bidi` (Forward policy).
-//! - Back-edge (bifurcation → biunion) uses `make_push` (FollowData policy)
+//! - Forward edge (biunion → bifurcation) uses `work::Bidi` (Forward policy).
+//! - Back-edge (bifurcation → biunion) uses `Push` (FollowData policy)
 //!   so signals don't propagate around the loop forever.
 
 use crate::error::Error;
 use crate::node::{bifurcation, biunion};
-use crate::work::make_line;
-use crate::{
-    BifurcationRoutine, BiunionRoutine, LineIo, Message, make_bidi,
-    work::Connect,
-    work::{Reader, Writer, make_bifurcation, make_biunion},
-};
+use crate::work::{self, Reader, Writer};
+use crate::{At, BifurcationRoutine, BiunionRoutine, LineIo, Message, Push};
 use std::collections::VecDeque;
 
 struct IncrementBiunion {
@@ -108,20 +104,20 @@ impl BifurcationRoutine<usize, usize, usize> for DeciderBifurcation {}
 
 #[test]
 fn test_cycle_with_signal_policies() {
-    let biunion = make_biunion(IncrementBiunion::new());
-    let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
+    let mut biunion = work::Biunion::of(IncrementBiunion::new());
+    let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
     let writer = Writer::new::<biunion::Right>(&biunion).unwrap();
 
     // bifurcation.left → biunion.left (back-edge, FollowData)
-    Connect::<usize>::push::<bifurcation::Left, biunion::Left>(
-        bifurcation.as_mut(),
-        biunion.as_ref(),
+    Push::<usize>::connect(
+        &mut bifurcation.at::<bifurcation::Left>(),
+        &biunion.at::<biunion::Left>(),
     )
     .unwrap();
 
-    // biunion → bifurcation (forward, Forward policy via make_bidi)
-    make_bidi(biunion, &mut bifurcation).unwrap();
+    // biunion → bifurcation (forward, Forward policy via Bidi)
+    work::Bidi::connect(biunion, &mut bifurcation).unwrap();
 
     let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
     let mut io = LineIo::new(writer, reader);
@@ -132,18 +128,18 @@ fn test_cycle_with_signal_policies() {
 
 #[test]
 fn test_cycle_with_multiple_values() {
-    let biunion = make_biunion(IncrementBiunion::new());
-    let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
+    let mut biunion = work::Biunion::of(IncrementBiunion::new());
+    let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
     let writer = Writer::new::<biunion::Right>(&biunion).unwrap();
 
-    Connect::<usize>::push::<bifurcation::Left, biunion::Left>(
-        bifurcation.as_mut(),
-        biunion.as_ref(),
+    Push::<usize>::connect(
+        &mut bifurcation.at::<bifurcation::Left>(),
+        &biunion.at::<biunion::Left>(),
     )
     .unwrap();
 
-    make_bidi(biunion, &mut bifurcation).unwrap();
+    work::Bidi::connect(biunion, &mut bifurcation).unwrap();
 
     let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
     let mut io = LineIo::new(writer, reader);
@@ -192,17 +188,17 @@ impl crate::node::line::LineRoutine<usize, usize> for IncrementLine {}
 
 #[test]
 fn test_cycle_with_line_node() {
-    let line = make_line(IncrementLine::new());
-    let mut bifurcation = make_bifurcation(DeciderBifurcation::new());
+    let line = work::Line::of(IncrementLine::new());
+    let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
     let writer = Writer::new(&line).unwrap();
 
     // Connect bifurcation's left output back to line's input (backward connection)
     // This creates a cycle where values <= 5 go back to the line
-    Connect::<usize>::push::<bifurcation::Left, _>(bifurcation.as_mut(), line.as_ref()).unwrap();
+    Push::<usize>::connect(&mut bifurcation.at::<bifurcation::Left>(), &line).unwrap();
 
     // Connect line's output to bifurcation's input (forward connection)
-    make_bidi(line, &mut bifurcation).unwrap();
+    work::Bidi::connect(line, &mut bifurcation).unwrap();
 
     let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
     let mut io = LineIo::new(writer, reader);

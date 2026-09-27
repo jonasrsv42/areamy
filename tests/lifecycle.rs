@@ -2,10 +2,10 @@
 //!
 //! Mixes all three graph paradigms in one graph per generation:
 //!
-//! - **Pull** segment on the main thread: [`WriterBuffer`] →
-//!   [`pull::Connect::pull`] line (identity).
-//! - **Work** segment on a bundled OS thread: [`from_pull`]-wrapped
-//!   line node whose routine ([`FailAfter`]) processes one message
+//! - **Pull** segment: [`WriterBuffer`] → [`Pullable::then`] line
+//!   (identity).
+//! - **Work** segment on a bundled OS thread: a line node fed by the
+//!   pull chain through [`work::Pulled`], whose routine ([`FailAfter`]) processes one message
 //!   successfully and then errors on the second, so each generation
 //!   actually produces real output before the failure path runs.
 //! - **Poll** segment on a second bundled OS thread: a poll line
@@ -47,13 +47,12 @@
 
 use areamy::edge::sync::Receiver;
 use areamy::error::Error;
-use areamy::pull;
 use areamy::pull::WriterBuffer;
 use areamy::thread::{ThreadBundle, ThreadBundleHandle};
-use areamy::work::{ThreadStream, Writer, from_pull};
+use areamy::work::{self, ThreadStream, Writer};
 use areamy::{
-    Closeable, Flush, LineRoutine, Message, Next, Pushable, Send as RoutineSend, fatal, make_push,
-    poll,
+    Closeable, Flush, LineRoutine, Message, Next, Pullable, Push, Pushable, Send as RoutineSend,
+    fatal, poll,
 };
 use std::collections::VecDeque;
 use std::sync::mpsc;
@@ -215,11 +214,12 @@ fn build_graph<'params>(
     // Pull segment on the main thread.
     let buffer = WriterBuffer::new();
     let writer = Writer::new(&buffer).unwrap();
-    let pull_line = pull::Connect::pull(buffer, PullIdentity::new());
+    let pull_line = buffer.then(PullIdentity::new());
 
-    // Work segment: wrap the pull tail into a work-line that accepts
+    // Work segment: a work-line fed by the pull tail that accepts
     // one message and then errors. Lives on its own OS thread.
-    let mut bridged = from_pull(pull_line, FailAfter::new(1));
+    let mut bridged = work::Line::of(FailAfter::new(1));
+    work::Bidi::connect(work::Pulled::of(pull_line), &mut bridged).unwrap();
 
     // Poll segment: a poll line on a dedicated async thread with a
     // sync→poll bridge on input and a sync edge on output.
@@ -233,8 +233,8 @@ fn build_graph<'params>(
     // thread so the orchestrator can verify real data flowed in
     // each generation.
     let sink_recv = Receiver::new();
-    make_push(&mut bridged, &poll_node).unwrap();
-    make_push(&mut poll_node, &sink_recv).unwrap();
+    Push::connect(&mut bridged, &poll_node).unwrap();
+    Push::connect(&mut poll_node, &sink_recv).unwrap();
 
     poll_thread.add(poll_node);
 

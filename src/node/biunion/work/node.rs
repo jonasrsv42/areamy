@@ -5,7 +5,7 @@ use crate::message::Message;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::node::{biunion, routine};
 use crate::signal::Origin;
-use crate::thread::{DefaultThread, ThreadId};
+use crate::thread::ThreadId;
 use crate::work::multiedge::{self, Notify};
 use crate::work::{Workable, work_each};
 use std::sync::{Arc, Mutex};
@@ -187,25 +187,6 @@ where
     }
 
     type ThreadId = ThreadIdType;
-}
-
-impl<'params, Left, Right, Out, SignalType, RoutineType>
-    Biunion<'params, Left, Right, Out, SignalType, DefaultThread, RoutineType>
-where
-    Left: Send + Sync,
-    Right: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone,
-    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
-{
-    pub fn new(routine: RoutineType) -> Self {
-        Biunion {
-            routine,
-            worker: Worker::default(),
-            pushes: Vec::new(),
-            input: Input::default(),
-        }
-    }
 }
 
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
@@ -473,14 +454,15 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::Trackable;
     use crate::edge::sync::Receiver;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{Pushable, work::Connect, work::Reader, work::Writer, work::make_biunion};
+    use crate::work::{Reader, Writer};
+    use crate::{At, Push, Pushable};
+    use crate::{DefaultThread, Trackable};
 
     #[test]
     fn run_biunion() {
-        let biun = make_biunion(MockBiunion::new());
+        let biun = Biunion::of(MockBiunion::new());
 
         let mut left_writer = Writer::new::<biunion::Left>(&biun).unwrap();
         let mut right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
@@ -509,8 +491,8 @@ pub mod tests {
     /// An input that never had a producer stays open; only a dropped producer closes it.
     #[test]
     fn typed_unfed_left_input_stays_open() {
-        let biun = make_biunion(MockBiunion::new());
-        Connect::<usize>::input::<biunion::Left>(&biun);
+        let mut biun = Biunion::of(MockBiunion::new());
+        Push::<usize>::open(&biun.at::<biunion::Left>());
         let mut right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
         let mut reader = Reader::new(biun).unwrap();
 
@@ -521,7 +503,7 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_push_when_left_input_closed() {
-        let mut biun = Biunion::new(MockBiunion::new());
+        let mut biun = Biunion::<_, _, _, _, DefaultThread, _>::of(MockBiunion::new());
 
         let output_edge = Receiver::<usize, Trackable<&'static str>>::new();
         Add::<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>::add(
@@ -543,7 +525,7 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_push_when_right_input_closed() {
-        let mut biun = Biunion::new(MockBiunion::new());
+        let mut biun = Biunion::<_, _, _, _, DefaultThread, _>::of(MockBiunion::new());
 
         let output_edge = Receiver::<usize, Trackable<&'static str>>::new();
         Add::<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>::add(
@@ -578,7 +560,7 @@ pub mod tests {
             }
         }
 
-        let mut biun = Biunion::new(MockBiunion::new());
+        let mut biun = Biunion::of(MockBiunion::new());
 
         // Add a workable that returns Closed
         Add::<dyn Workable<ThreadId = DefaultThread>, biunion::Left>::add(

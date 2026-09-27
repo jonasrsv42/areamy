@@ -15,14 +15,14 @@ See [tests/example.rs](tests/example.rs)
 
 
 ```rust
-let in_node = areamy::work::make_line(AddOne::new());
-let mut middle_node = areamy::work::make_line(AddOne::new());
-let mut out_node = areamy::work::make_line(AddOne::new());
+let in_node = areamy::work::Line::of(AddOne::new());
+let mut middle_node = areamy::work::Line::of(AddOne::new());
+let mut out_node = areamy::work::Line::of(AddOne::new());
 
 let writer = areamy::work::Writer::<usize>::of(&in_node)?;
 
-areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
-areamy::work::Connect::<usize>::bidi(middle_node, &mut out_node)?;
+areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
+areamy::work::Bidi::<usize>::connect(middle_node, &mut out_node)?;
 
 let reader = areamy::work::Reader::new(out_node)?;
 
@@ -57,15 +57,15 @@ the graph computation is split across two threads.
 ```rust
 areamy::thread_id!(HelperThread);
 
-let in_node = areamy::work::make_line(AddOne::new());
-let mut middle_node = areamy::work::make_line(AddOne::new());
-let out_node = areamy::work::make_line(AddOne::new());
+let in_node = areamy::work::Line::of(AddOne::new());
+let mut middle_node = areamy::work::Line::of(AddOne::new());
+let out_node = areamy::work::Line::of(AddOne::new());
 
 let writer = areamy::work::Writer::<usize>::of(&in_node)?;
-areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
+areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
 
 // Wire the middle node to push into the out node on the main thread.
-areamy::work::Connect::<usize>::push(&mut middle_node, &out_node)?;
+areamy::Push::<usize>::connect(&mut middle_node, &out_node)?;
 
 // Move the middle node onto the helper thread.
 let helper_thread = areamy::ThreadStream::<HelperThread>::of(middle_node);

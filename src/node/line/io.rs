@@ -135,11 +135,11 @@ where
 mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::{work::Reader, work::Writer, work::make_line};
+    use crate::work::{self, Reader, Writer};
 
     #[test]
     fn readers_line_objects() {
-        let line = make_line(MockLine::new());
+        let line = work::Line::of(MockLine::new());
         let writer = Writer::new(&line).unwrap();
         let reader = Reader::new(line).unwrap();
 
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn readers_line_mread() {
-        let line = make_line(MockLine::new());
+        let line = work::Line::of(MockLine::new());
         let writer = Writer::new(&line).unwrap();
         let reader = Reader::new(line).unwrap();
 

@@ -15,7 +15,7 @@
 //! - Multi-thread bundle sharing `&config` (see [`work`])
 //! - Async parent chain in poll (see [`poll`])
 //! - Borrowed Sync poll output sink — exercises `Edge::Output<'params>` (see [`poll`])
-//! - Borrowed parent pushing into a poll node via `make_push` —
+//! - Borrowed parent pushing into a poll node via `Push::connect` —
 //!   exercises `Get<dyn ... + 'params>` selection (see [`poll`])
 
 mod mock;

@@ -2,12 +2,11 @@
 
 use super::mock::{Hold, IoThread, Msg, Script, drain, drain_edge, echo, hold, slow_hold};
 use crate::error::Error;
-use crate::node::line::work::bridge::Bridge;
 use crate::poll::{self, LineWakers};
 use crate::pull;
 use crate::sync::Receiver;
-use crate::work::{Reader, Writer, from_pull, make_line};
-use crate::{Closeable, Message, Pushable, make_bidi, make_push};
+use crate::work::{self, Reader, Writer};
+use crate::{Closeable, Message, Pullable, Push, Pushable};
 
 fn flushed(messages: Vec<Msg>) {
     assert_eq!(
@@ -22,7 +21,7 @@ fn flushed(messages: Vec<Msg>) {
 
 #[test]
 fn work_line_flush_then_close() -> Result<(), Error> {
-    let line = make_line(Hold::new());
+    let line = work::Line::of(Hold::new());
     let mut writer = Writer::new(&line)?;
     let mut reader = Reader::new(line)?;
 
@@ -37,10 +36,10 @@ fn work_line_flush_then_close() -> Result<(), Error> {
 
 #[test]
 fn work_line_stacked_flush_then_close() -> Result<(), Error> {
-    let first = make_line(Hold::new());
-    let mut second = make_line(Hold::new());
+    let first = work::Line::of(Hold::new());
+    let mut second = work::Line::of(Hold::new());
     let mut writer = Writer::new(&first)?;
-    make_bidi(first, &mut second)?;
+    work::Bidi::connect(first, &mut second)?;
     let mut reader = Reader::new(second)?;
 
     writer.push(Message::Data(1))?;
@@ -54,7 +53,7 @@ fn work_line_stacked_flush_then_close() -> Result<(), Error> {
 
 #[test]
 fn work_line_marker_then_close() -> Result<(), Error> {
-    let line = make_line(Hold::echo());
+    let line = work::Line::of(Hold::echo());
     let mut writer = Writer::new(&line)?;
     let mut reader = Reader::new(line)?;
 
@@ -71,7 +70,7 @@ fn work_line_marker_then_close() -> Result<(), Error> {
 
 #[test]
 fn work_line_data_after_flush_then_close() -> Result<(), Error> {
-    let line = make_line(Hold::new());
+    let line = work::Line::of(Hold::new());
     let mut writer = Writer::new(&line)?;
     let mut reader = Reader::new(line)?;
 
@@ -89,7 +88,7 @@ fn work_line_data_after_flush_then_close() -> Result<(), Error> {
 
 #[test]
 fn work_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
-    let line = make_line(Hold::new());
+    let line = work::Line::of(Hold::new());
     let mut writer = Writer::new(&line)?;
     let mut reader = Reader::new(line)?;
 
@@ -103,7 +102,7 @@ fn work_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
 /// One writer closing a fan-in edge closes it for every writer.
 #[test]
 fn work_line_fan_in_close_by_one_writer() -> Result<(), Error> {
-    let line = make_line(Hold::new());
+    let line = work::Line::of(Hold::new());
     let mut a = Writer::new(&line)?;
     let mut b = Writer::new(&line)?;
     let mut reader = Reader::new(line)?;
@@ -128,14 +127,16 @@ fn script() -> Script {
 
 #[test]
 fn pull_line_flush_then_close() -> Result<(), Error> {
-    let mut reader = pull::Reader::new(pull::make_pull(script(), Hold::new()));
+    let mut reader = pull::Reader::new(script().then(Hold::new()));
     flushed(drain(&mut reader)?);
     Ok(())
 }
 
 #[test]
 fn bridged_line_flush_then_close() -> Result<(), Error> {
-    let mut reader = Reader::new(from_pull(script(), Hold::new()))?;
+    let mut line = work::Line::of(Hold::new());
+    work::Bidi::connect(work::Pulled::of(script()), &mut line)?;
+    let mut reader = Reader::new(line)?;
     flushed(drain(&mut reader)?);
     Ok(())
 }
@@ -145,9 +146,9 @@ fn bridged_line_flush_then_close() -> Result<(), Error> {
 #[test]
 fn bridged_line_two_bridges_keep_pending_flush() -> Result<(), Error> {
     let first = Script::new(vec![Message::Flush("f".into())]);
-    let mut line = from_pull(first, Hold::new());
-    let second = Bridge::new(Script::new(vec![]), line.input.sender());
-    line.workers.push(Box::new(second));
+    let mut line = work::Line::of(Hold::new());
+    work::Bidi::connect(work::Pulled::of(first), &mut line)?;
+    work::Bidi::connect(work::Pulled::of(Script::new(vec![])), &mut line)?;
     let mut reader = Reader::new(line)?;
 
     assert_eq!(drain(&mut reader)?, vec![Message::Flush("f".into())]);
@@ -166,7 +167,7 @@ where
         .output::<poll::Sync>();
     let mut writer = Writer::new(&node)?;
     let output = Receiver::new();
-    make_push(&mut node, &output)?;
+    Push::connect(&mut node, &output)?;
     async_thread.add(node);
 
     for message in messages {
@@ -221,7 +222,7 @@ fn poll_line_multi_segment_then_close() -> Result<(), Error> {
     Ok(())
 }
 
-/// Data first: the make_push edge only forwards a signal that follows data.
+/// Data first: the Push edge only forwards a signal that follows data.
 #[test]
 fn poll_line_marker_then_close() -> Result<(), Error> {
     let out = poll_line(echo, vec![Message::Data(1), Message::Marker("m".into())])?;
@@ -260,7 +261,7 @@ fn poll_line_chain_flush_then_close() -> Result<(), Error> {
         .parent(parent)
         .output::<poll::Sync>();
     let output = Receiver::new();
-    make_push(&mut child, &output)?;
+    Push::connect(&mut child, &output)?;
     async_thread.add(child);
 
     for message in flush_script() {

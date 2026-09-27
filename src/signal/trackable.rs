@@ -127,21 +127,21 @@ mod tests {
     use super::*;
     use crate::node::bifurcation;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{DefaultThread, Message, Pushable, Workable, work::make_bifurcation};
-    use crate::{reader::work::tee, work::Writer};
+    use crate::work::{self, Writer, tee};
+    use crate::{DefaultThread, Message, Pushable, Workable};
 
     /// We need many more tests here to ensure Tracking behaves reasonably in semi-complex graphs! :)
 
     #[test]
     fn trackable_signal_tracks_active() {
-        let mut bifur = make_bifurcation(MockBifurcation::new());
+        let mut bifur = work::Bifurcation::of(MockBifurcation::new());
 
         let mut writer = Writer::new(&bifur).unwrap();
 
         let mut left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
         let mut right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
 
-        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
+        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(bifur);
 
         let hello_track = Trackable::new("hello");
 

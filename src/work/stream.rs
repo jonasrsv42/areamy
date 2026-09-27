@@ -114,9 +114,9 @@ where
 
     /// Create an idle thread stream driving `root`. `ThreadStream::<T>::of(root)` assigns
     /// `T` to a thread-generic root; the turbofish can be dropped when the root's type fixes it.
-    pub fn of(root: Box<impl Workable<ThreadId = ThreadIdType> + 'params>) -> Self {
+    pub fn of(root: impl Workable<ThreadId = ThreadIdType> + 'params) -> Self {
         Self {
-            workables: vec![root],
+            workables: vec![Box::new(root)],
             on_done: Vec::new(),
         }
     }
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn of_infers_thread_from_root() {
-        let thread = ThreadStream::of(Box::new(ImmediateClose));
+        let thread = ThreadStream::of(ImmediateClose);
         std::thread::scope(|s| {
             let handle = thread.start(s);
             assert!(matches!(handle.join(), Join::Ok));

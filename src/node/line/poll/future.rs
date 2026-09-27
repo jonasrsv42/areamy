@@ -187,8 +187,8 @@ mod tests {
     use crate::edge::sync::Receiver;
     use crate::poll;
     use crate::thread::ThreadBundle;
-    use crate::work::{ThreadStream, Writer, make_line};
-    use crate::{Closeable, Message, Pushable, make_push};
+    use crate::work::{self, ThreadStream, Writer};
+    use crate::{Closeable, Message, Push, Pushable};
 
     crate::thread_id!(LineFutureThread);
 
@@ -215,12 +215,12 @@ mod tests {
         // Driver work-line on a sibling thread (FutureRoutine wants its
         // own poll thread; we feed it from a sync line so the test
         // doesn't need to manage two source/sink wakers).
-        let mut driver = make_line(PassThrough::new());
-        let mut input = Writer::new(driver.as_ref()).unwrap();
-        make_push(driver.as_mut(), &node).unwrap();
+        let mut driver = work::Line::of(PassThrough::new());
+        let mut input = Writer::new(&driver).unwrap();
+        Push::connect(&mut driver, &node).unwrap();
 
         let output = Receiver::new();
-        make_push(&mut node, &output).unwrap();
+        Push::connect(&mut node, &output).unwrap();
 
         thread.add(node);
         let work_thread = ThreadStream::<LineFutureThread>::of(driver);

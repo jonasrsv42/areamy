@@ -3,7 +3,7 @@
 mod io;
 mod marker;
 pub mod poll;
-mod routine;
+pub(crate) mod routine;
 pub mod work;
 pub use marker::{Left, Right, Side};
 

@@ -6,7 +6,7 @@ use crate::graph::{Add, Closeable, Get, Pushable, Sink};
 use crate::message::Message;
 use crate::node::line::routine::LineRoutine;
 use crate::signal::Origin;
-use crate::thread::{DefaultThread, ThreadId};
+use crate::thread::ThreadId;
 use crate::work::{Workable, work_each};
 use std::sync::{Arc, Mutex};
 
@@ -173,27 +173,6 @@ where
     type ThreadId = ThreadIdType;
 }
 
-impl<'params, In, Out, SignalType, LineRoutineType>
-    Line<'params, In, Out, SignalType, DefaultThread, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
-    /// Create a [Line] owned by the [DefaultThread] with routine [LineRoutine].
-    ///
-    /// * `worker` - A [LineRoutine] that will transform data in this node.
-    pub fn new(worker: LineRoutineType) -> Self {
-        Line {
-            worker,
-            workers: Vec::new(),
-            pushes: Vec::new(),
-            input: Receiver::new(),
-        }
-    }
-}
-
 impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
     Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
 where
@@ -203,7 +182,8 @@ where
     ThreadIdType: ThreadId,
     LineRoutineType: LineRoutine<In, Out> + 'params,
 {
-    /// Create a [Line] with routine [LineRoutine].
+    /// Create a [Line] with routine [LineRoutine]. Wire it with [crate::Push],
+    /// [crate::work::Bidi] and [crate::work::Schedule]; its thread is inferred from them.
     ///
     /// * `worker` - A [LineRoutine] that will transform data in this node.
     pub fn of(worker: LineRoutineType) -> Self {
@@ -332,47 +312,17 @@ where
     }
 }
 
-/// [make_line] creates a [LineTrait] implementation from a [LineRoutine] this
-/// can then be connected to other graph nodes using the functions such as
-/// - [crate::work::make_bidi]
-/// - [crate::edge::push::make_push]
-/// - [crate::work::make_work]
-///
-/// Returns a concrete `Box<Line<...>>` rather than `Box<impl LineTrait + ...>`.
-/// This is intentional — `impl Trait` return types prevent the compiler from
-/// resolving supertrait bounds involving `dyn Trait + Send + Sync`, which
-/// breaks type inference for `make_bidi`/`make_push` in downstream code.
-pub fn make_line<'params, In, Out, SignalType, ThreadIdType, RoutineType>(
-    worker: RoutineType,
-) -> Box<Line<'params, In, Out, SignalType, ThreadIdType, RoutineType>>
-where
-    In: Send + Sync + 'static,
-    Out: Clone + Send + Sync + 'static,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: LineRoutine<In, Out> + 'params,
-{
-    Box::new(Line::<
-        'params,
-        In,
-        Out,
-        SignalType,
-        ThreadIdType,
-        RoutineType,
-    >::of(worker))
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::DefaultThread;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
-    use crate::{make_bidi, work::make_line};
-    use crate::{reader::work::tee, work::Reader, work::Writer};
+    use crate::work::{self, Reader, Writer, tee};
     use std::time::Instant;
 
     #[test]
     fn line_accumulating_node_works() {
-        let line = make_line(AccMockLine::new());
+        let line = Line::of(AccMockLine::new());
         let mut writer = Writer::new(&line).unwrap();
         let mut reader = Reader::new(line).unwrap();
 
@@ -384,7 +334,7 @@ pub mod tests {
 
     #[test]
     fn line_wait_node_mark_waits() {
-        let line = make_line(MockWaitLine::new(4));
+        let line = Line::of(MockWaitLine::new(4));
         let mut writer = Writer::new(&line).unwrap();
         let mut reader = Reader::new(line).unwrap();
 
@@ -414,7 +364,7 @@ pub mod tests {
 
     #[test]
     fn line_wait_node_flush_waits() {
-        let line = make_line(MockWaitLine::new(4));
+        let line = Line::of(MockWaitLine::new(4));
         let mut writer = Writer::new(&line).unwrap();
         let mut reader = Reader::new(line).unwrap();
 
@@ -435,7 +385,7 @@ pub mod tests {
 
     #[test]
     fn line_basic_run() {
-        let line = make_line(MockLine::new());
+        let line = Line::of(MockLine::new());
         let mut writer = Writer::new(&line).unwrap();
         let mut reader = Reader::new(line).unwrap();
 
@@ -457,7 +407,7 @@ pub mod tests {
 
     #[test]
     fn line_can_mark() {
-        let line = make_line(MockLine::new());
+        let line = Line::of(MockLine::new());
         let mut writer = Writer::new(&line).unwrap();
         let mut reader = Reader::new(line).unwrap();
 
@@ -471,7 +421,7 @@ pub mod tests {
 
     #[test]
     fn line_can_flush() {
-        let line = make_line(MockLine::new());
+        let line = Line::of(MockLine::new());
         let mut writer = Writer::new(&line).unwrap();
         let mut reader = Reader::new(line).unwrap();
 
@@ -485,11 +435,11 @@ pub mod tests {
 
     #[test]
     fn line_can_be_stacked() {
-        let line_1 = make_line(MockLine::new());
-        let mut line_2 = make_line(MockLine::new());
+        let line_1 = Line::of(MockLine::new());
+        let mut line_2 = Line::of(MockLine::new());
 
         let mut writer = Writer::new(&line_1).unwrap();
-        make_bidi(line_1, &mut line_2).unwrap();
+        work::Bidi::connect(line_1, &mut line_2).unwrap();
 
         let mut reader = Reader::new(line_2).unwrap();
 
@@ -511,15 +461,15 @@ pub mod tests {
 
     #[test]
     fn line_can_be_stacked_with_type_hints() {
-        let line_1 = make_line(MockLine::new());
-        let mut line_2 = make_line(MockLine::new());
+        let line_1 = Line::of(MockLine::new());
+        let mut line_2 = Line::of(MockLine::new());
 
         let mut writer = Writer::new(&line_1).unwrap();
 
         // This typehint is not needed as exemplified by other tests
         // but it helps readability to be explicit when building
         // the graph.
-        make_bidi(line_1, &mut line_2).unwrap();
+        work::Bidi::connect(line_1, &mut line_2).unwrap();
 
         let mut reader = Reader::<usize>::new(line_2).unwrap();
 
@@ -541,13 +491,13 @@ pub mod tests {
 
     #[test]
     fn line_can_tee() {
-        let mut line = make_line(MockLine::new());
+        let mut line = Line::of(MockLine::new());
 
         let mut writer = Writer::new(&line).unwrap();
-        let mut reader_1 = tee::Reader::new(line.as_mut()).unwrap();
-        let mut reader_2 = tee::Reader::new(line.as_mut()).unwrap();
+        let mut reader_1 = tee::Reader::new(&mut line).unwrap();
+        let mut reader_2 = tee::Reader::new(&mut line).unwrap();
 
-        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = line;
+        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(line);
 
         // Add one flush
         writer.push(Message::Data(1)).unwrap();
@@ -577,7 +527,7 @@ pub mod tests {
 
     #[test]
     fn line_can_merge() {
-        let line = make_line(MockLine::new());
+        let line = Line::of(MockLine::new());
 
         let mut writer_1 = Writer::new(&line).unwrap();
         let mut writer_2 = Writer::new(&line).unwrap();
@@ -609,31 +559,31 @@ pub mod tests {
     #[ignore]
     #[test]
     fn line_basic_many_stack_benchmark() {
-        let line_0 = make_line(MockLine::new());
+        let line_0 = Line::of(MockLine::new());
 
         let mut writer = Writer::new(&line_0).unwrap();
 
-        let mut line_1 = make_line(MockLine::new());
-        let mut line_2 = make_line(MockLine::new());
-        let mut line_3 = make_line(MockLine::new());
-        let mut line_4 = make_line(MockLine::new());
-        let mut line_5 = make_line(MockLine::new());
-        let mut line_6 = make_line(MockLine::new());
-        let mut line_7 = make_line(MockLine::new());
-        let mut line_8 = make_line(MockLine::new());
-        let mut line_9 = make_line(MockLine::new());
-        let mut line_10 = make_line(MockLine::new());
+        let mut line_1 = Line::of(MockLine::new());
+        let mut line_2 = Line::of(MockLine::new());
+        let mut line_3 = Line::of(MockLine::new());
+        let mut line_4 = Line::of(MockLine::new());
+        let mut line_5 = Line::of(MockLine::new());
+        let mut line_6 = Line::of(MockLine::new());
+        let mut line_7 = Line::of(MockLine::new());
+        let mut line_8 = Line::of(MockLine::new());
+        let mut line_9 = Line::of(MockLine::new());
+        let mut line_10 = Line::of(MockLine::new());
 
-        make_bidi(line_0, &mut line_1).unwrap();
-        make_bidi(line_1, &mut line_2).unwrap();
-        make_bidi(line_2, &mut line_3).unwrap();
-        make_bidi(line_3, &mut line_4).unwrap();
-        make_bidi(line_4, &mut line_5).unwrap();
-        make_bidi(line_5, &mut line_6).unwrap();
-        make_bidi(line_6, &mut line_7).unwrap();
-        make_bidi(line_7, &mut line_8).unwrap();
-        make_bidi(line_8, &mut line_9).unwrap();
-        make_bidi(line_9, &mut line_10).unwrap();
+        work::Bidi::connect(line_0, &mut line_1).unwrap();
+        work::Bidi::connect(line_1, &mut line_2).unwrap();
+        work::Bidi::connect(line_2, &mut line_3).unwrap();
+        work::Bidi::connect(line_3, &mut line_4).unwrap();
+        work::Bidi::connect(line_4, &mut line_5).unwrap();
+        work::Bidi::connect(line_5, &mut line_6).unwrap();
+        work::Bidi::connect(line_6, &mut line_7).unwrap();
+        work::Bidi::connect(line_7, &mut line_8).unwrap();
+        work::Bidi::connect(line_8, &mut line_9).unwrap();
+        work::Bidi::connect(line_9, &mut line_10).unwrap();
 
         let mut reader = Reader::<usize>::new(line_10).unwrap();
 
@@ -650,7 +600,7 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_push_when_input_closed() {
-        let line = make_line(MockLine::new());
+        let line = Line::of(MockLine::new());
         let mut writer = Writer::new(&line).unwrap();
         let mut reader = Reader::new(line).unwrap();
 
@@ -671,11 +621,11 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_work_chain() {
-        let line_1 = make_line(MockLine::new());
-        let mut line_2 = make_line(MockLine::new());
+        let line_1 = Line::of(MockLine::new());
+        let mut line_2 = Line::of(MockLine::new());
 
         let mut writer = Writer::new(&line_1).unwrap();
-        make_bidi(line_1, &mut line_2).unwrap();
+        work::Bidi::connect(line_1, &mut line_2).unwrap();
         let mut reader = Reader::<usize>::new(line_2).unwrap();
 
         // Push some data through the chain

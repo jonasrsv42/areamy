@@ -256,7 +256,7 @@ where
 // ============================================================
 
 // `'params` on the dyn bound is required (not the object-lifetime default
-// `'static`) so `make_push` from a parent with shorter `'params` can
+// `'static`) so `Push::connect` from a parent with shorter `'params` can
 // select these impls. See line/poll/builder/node.rs for the full rationale.
 impl<
     'params,

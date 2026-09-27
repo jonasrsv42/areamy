@@ -5,9 +5,8 @@
 //! `'params`, none of them could wrap a borrowed-routine graph node.
 
 use super::mock::BorrowingLine;
-use crate::pull::{self, Connect as PullConnect};
-use crate::reader::work::tee;
-use crate::work::{self, Writer, make_line};
+use crate::pull;
+use crate::work::{self, Writer, tee};
 use crate::writer::pull::WriterBuffer;
 use crate::{LineIo, Message, Pullable, Pushable};
 
@@ -16,9 +15,9 @@ use crate::{LineIo, Message, Pullable, Pushable};
 #[test]
 fn work_reader_owns_borrowed_line() {
     let multiplier: usize = 3;
-    let line = make_line(BorrowingLine::new(&multiplier));
+    let line = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let writer = Writer::<usize>::of(line.as_ref()).unwrap();
+    let writer = Writer::<usize>::of(&line).unwrap();
     let reader = work::Reader::new(line).unwrap();
     let mut io = LineIo::new(writer, reader);
 
@@ -32,10 +31,10 @@ fn work_reader_owns_borrowed_line() {
 #[test]
 fn tee_reader_attached_to_borrowed_line() {
     let multiplier: usize = 5;
-    let mut line = make_line(BorrowingLine::new(&multiplier));
+    let mut line = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let mut tee_reader = tee::Reader::new(line.as_mut()).unwrap();
-    let writer = Writer::new(line.as_ref()).unwrap();
+    let mut tee_reader = tee::Reader::new(&mut line).unwrap();
+    let writer = Writer::new(&line).unwrap();
 
     let mut reader = LineIo::new(writer, work::Reader::new(line).unwrap());
     reader.push(Message::Data(2)).unwrap();
@@ -55,7 +54,7 @@ fn pull_reader_wraps_borrowed_pull_line() {
     let buffer = WriterBuffer::new();
     let mut writer = Writer::new(&buffer).unwrap();
 
-    let pull_line = PullConnect::pull(buffer, BorrowingLine::new(&multiplier));
+    let pull_line = buffer.then(BorrowingLine::new(&multiplier));
     let mut reader = pull::Reader::new(pull_line);
 
     writer.push(Message::Data(2)).unwrap();

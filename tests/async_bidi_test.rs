@@ -10,7 +10,7 @@ use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use areamy::poll::try_join;
 use areamy::sync::Receiver;
-use areamy::{Closeable, Message, Pushable, ThreadBundle, ThreadStream, make_push};
+use areamy::{Closeable, Message, Push, Pushable, ThreadBundle, ThreadStream};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -158,7 +158,7 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 /// Multi-segment: flush resets the future, reconnects.
 #[test]
 fn bidi_with_join() -> Result<(), Error> {
-    let mut writer_node = areamy::work::make_line(Double::new());
+    let mut writer_node = areamy::work::Line::of(Double::new());
     let mut writer = areamy::work::Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
@@ -204,10 +204,10 @@ fn bidi_with_join() -> Result<(), Error> {
         .line(routine)
         .input::<areamy::poll::Sync>()
         .output::<areamy::poll::Sync>();
-    make_push(&mut writer_node, &node)?;
+    Push::connect(&mut writer_node, &node)?;
 
     let output = Receiver::new();
-    make_push(&mut node, &output)?;
+    Push::connect(&mut node, &output)?;
 
     async_thread.add(node);
 

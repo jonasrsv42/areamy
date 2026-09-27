@@ -7,22 +7,20 @@
 
 use super::mock::{BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
-use crate::node::line::work::bridge::from_pull;
-use crate::pull::Connect as PullConnect;
 use crate::thread::ThreadBundle;
-use crate::work::{ThreadStream, Writer, make_line};
+use crate::work::{self, ThreadStream, Writer};
 use crate::writer::pull::WriterBuffer;
-use crate::{Closeable, Message, Pushable, make_push};
+use crate::{Closeable, Message, Pullable, Push, Pushable};
 
 /// [`Writer::of`] on a borrowed work-line node.
 #[test]
 fn work_writer_of_borrowed_line() {
     let multiplier: usize = 3;
-    let mut line = make_line(BorrowingLine::new(&multiplier));
+    let mut line = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let mut writer = Writer::new(line.as_ref()).unwrap();
+    let mut writer = Writer::new(&line).unwrap();
     let output = Receiver::new();
-    make_push(line.as_mut(), &output).unwrap();
+    Push::connect(&mut line, &output).unwrap();
 
     let thread = ThreadStream::<LifetimeThread>::of(line);
 
@@ -50,10 +48,11 @@ fn work_writer_new_from_buffer_with_borrowed_pull() {
     let buffer = WriterBuffer::new();
     let mut writer = Writer::new(&buffer).unwrap();
 
-    let pull_line = PullConnect::pull(buffer, BorrowingLine::new(&multiplier));
-    let mut bridged = from_pull(pull_line, BorrowingLine::new(&multiplier));
+    let pull_line = buffer.then(BorrowingLine::new(&multiplier));
+    let mut bridged = work::Line::of(BorrowingLine::new(&multiplier));
+    work::Bidi::connect(work::Pulled::of(pull_line), &mut bridged).unwrap();
     let output = Receiver::new();
-    make_push(bridged.as_mut(), &output).unwrap();
+    Push::connect(&mut bridged, &output).unwrap();
 
     let thread = ThreadStream::<LifetimeThread>::of(bridged);
 

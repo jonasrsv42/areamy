@@ -27,17 +27,18 @@ where
     SignalType: Origin + Send + Sync + 'static,
 {
     pub fn new<MultiplicityType: Multiplicity>(
-        mut workable: Box<
-            impl Workable<ThreadId = DefaultThread>
-            + Add<
-                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
-                MultiplicityType,
-            > + 'params,
-        >,
+        mut workable: impl Workable<ThreadId = DefaultThread>
+        + Add<
+            dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+            MultiplicityType,
+        > + 'params,
     ) -> Result<Self, Error> {
         let buffer = Receiver::new();
-        Add::add(workable.as_mut(), Box::new(buffer.sender()))?;
-        Ok(Self { workable, buffer })
+        Add::add(&mut workable, Box::new(buffer.sender()))?;
+        Ok(Self {
+            workable: Box::new(workable),
+            buffer,
+        })
     }
 }
 
@@ -49,20 +50,21 @@ where
     ThreadIdType: ThreadId,
 {
     pub fn of<MultiplicityType>(
-        mut workable: Box<
-            impl Workable<ThreadId = ThreadIdType>
-            + Add<
-                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
-                MultiplicityType,
-            > + 'params,
-        >,
+        mut workable: impl Workable<ThreadId = ThreadIdType>
+        + Add<
+            dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+            MultiplicityType,
+        > + 'params,
     ) -> Result<Self, Error>
     where
         MultiplicityType: Multiplicity,
     {
         let buffer = Receiver::new();
-        Add::add(workable.as_mut(), Box::new(buffer.sender()))?;
-        Ok(Self { workable, buffer })
+        Add::add(&mut workable, Box::new(buffer.sender()))?;
+        Ok(Self {
+            workable: Box::new(workable),
+            buffer,
+        })
     }
 
     pub fn read(&mut self) -> Result<Message<DataType, SignalType>, Error> {
@@ -149,7 +151,7 @@ mod tests {
             output: Message::Data(5),
             pushable: Vec::new(),
         }));
-        let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
+        let mut reader = Reader::new(mock_node.clone()).unwrap();
 
         assert_eq!(reader.read().unwrap(), Message::Data(5));
         assert_eq!(reader.read().unwrap(), Message::Data(5));
@@ -171,7 +173,7 @@ mod tests {
             output: Message::Flush("hi".into()),
             pushable: Vec::new(),
         }));
-        let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
+        let mut reader = Reader::new(mock_node.clone()).unwrap();
 
         assert_eq!(reader.read().unwrap(), Message::Flush("hi".into()));
         assert_eq!(reader.read().unwrap(), Message::Flush("hi".into()));
@@ -188,7 +190,7 @@ mod tests {
             output: Message::Marker("hi".into()),
             pushable: Vec::new(),
         }));
-        let mut reader = Reader::new(Box::new(mock_node.clone())).unwrap();
+        let mut reader = Reader::new(mock_node.clone()).unwrap();
 
         assert_eq!(reader.read().unwrap(), Message::Marker("hi".into()));
         assert_eq!(reader.read().unwrap(), Message::Marker("hi".into()));

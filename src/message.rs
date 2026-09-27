@@ -24,7 +24,7 @@ where
     /// Close contract, per edge: a Flush pushed before close is fully
     /// processed (output, then the Flush, then close) before any node
     /// sees [crate::error::ErrorKind::Closed]. Close without a Flush
-    /// keeps nothing. Edges from [crate::edge::push::make_push] use
+    /// keeps nothing. Edges from [crate::Push] use
     /// [crate::edge::policy::SignalPolicy::FollowData] and drop a signal no data
     /// preceded. Pinned by `tests::close`.
     Flush(SignalType),

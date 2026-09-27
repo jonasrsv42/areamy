@@ -8,8 +8,8 @@ use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::Error;
 use crate::poll::{self, BiunionWakers};
 use crate::sync::Receiver;
-use crate::work::{Reader, Writer, make_biunion};
-use crate::{Closeable, Message, Pushable, biunion, make_push};
+use crate::work::{self, Reader, Writer};
+use crate::{Closeable, Message, Push, Pushable, biunion};
 
 /// Whether the still-open right input's data got consumed before the
 /// Flush depends on scheduling; only the closing side is contractual.
@@ -47,7 +47,7 @@ where
 }
 
 fn work_biunion(close_left: bool) -> Result<Vec<Msg>, Error> {
-    let node = make_biunion(HoldBiunion::new());
+    let node = work::Biunion::of(HoldBiunion::new());
     let mut left = Writer::new::<biunion::Left>(&node)?;
     let mut right = Writer::new::<biunion::Right>(&node)?;
     let mut reader = Reader::new(node)?;
@@ -66,7 +66,7 @@ fn work_biunion_close_left() -> Result<(), Error> {
 /// close when right does.
 #[test]
 fn work_biunion_unconnected_left() -> Result<(), Error> {
-    let node = make_biunion(HoldBiunion::new());
+    let node = work::Biunion::of(HoldBiunion::new());
     let mut right = Writer::new::<biunion::Right>(&node)?;
     let mut reader = Reader::new(node)?;
 
@@ -98,7 +98,7 @@ where
     let mut left = Writer::new::<biunion::Left>(&node)?;
     let mut right = Writer::new::<biunion::Right>(&node)?;
     let output = Receiver::new();
-    make_push(&mut node, &output)?;
+    Push::connect(&mut node, &output)?;
     async_thread.add(node);
 
     send(close_left, &mut left, &mut right)?;
@@ -144,7 +144,7 @@ fn poll_biunion_async_parent_flush_then_close() -> Result<(), Error> {
         .output::<poll::Sync>();
     let mut right = Writer::new::<biunion::Right>(&node)?;
     let output = Receiver::new();
-    make_push(&mut node, &output)?;
+    Push::connect(&mut node, &output)?;
     async_thread.add(node);
 
     send(true, &mut left, &mut right)?;

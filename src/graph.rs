@@ -49,6 +49,7 @@
 //! build a [crate::pull::Pullable] subgraph that avoids dynamic dispatch and all synchronization primitives. See [crate::node::line::pull::Line]
 
 mod add;
+mod at;
 mod closeable;
 mod get;
 pub mod marker;
@@ -59,6 +60,7 @@ mod sink;
 pub mod tests;
 
 pub use add::Add;
+pub use at::{At, Select};
 pub use closeable::Closeable;
 pub use get::Get;
 pub use pushable::Pushable;

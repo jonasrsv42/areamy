@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn fires_on_thread_error() {
-        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
         let count = Arc::new(AtomicUsize::new(0));
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn fires_on_panic() {
-        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
         let count = Arc::new(AtomicUsize::new(0));
@@ -105,8 +105,8 @@ mod tests {
 
     #[test]
     fn does_not_fire_on_clean_exit() {
-        let thread_a = ThreadStream::of(Box::new(ImmediateClose::<ThreadA>::new()));
-        let thread_b = ThreadStream::of(Box::new(ImmediateClose::<ThreadB>::new()));
+        let thread_a = ThreadStream::of(ImmediateClose::<ThreadA>::new());
+        let thread_b = ThreadStream::of(ImmediateClose::<ThreadB>::new());
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_cb = count.clone();
@@ -123,8 +123,8 @@ mod tests {
 
     #[test]
     fn fires_at_most_once_even_with_many_errors() {
-        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
-        let thread_b = ThreadStream::of(Box::new(Panicker::<ThreadB>::new()));
+        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
+        let thread_b = ThreadStream::of(Panicker::<ThreadB>::new());
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_cb = count.clone();
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn multiple_registrations_all_fire_in_order() {
-        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
 
         let order = Arc::new(Mutex::new(Vec::<u32>::new()));
         let o1 = order.clone();
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn callback_receives_error_reference() {
-        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
 
         let captured = Arc::new(Mutex::new(None::<String>));
         let cap = captured.clone();
@@ -189,7 +189,7 @@ mod tests {
     /// not prevent its siblings from running.
     #[test]
     fn panicking_callback_does_not_block_siblings() {
-        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
 
         let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
         let s1 = seen.clone();
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn callback_receives_panic_marker() {
-        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
 
         let captured = Arc::new(Mutex::new(None::<&'static str>));
         let cap = captured.clone();

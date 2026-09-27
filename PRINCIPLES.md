@@ -4,9 +4,9 @@ Areamy trades flexibility for compile-time guarantees. A wrong graph shouldn't c
 
 ## Ownership is the scheduling graph
 
-- `make_bidi` / `make_work` / poll `.parent()` **move** the parent into the child. Each node has one owner: a child, or its thread if it's a root.
+- `work::Bidi` / `work::Schedule` / `Pullable::then` / poll `.parent()` **move** the parent into the child. Each node has one owner: a child, or its thread if it's a root.
 - Ownership is a forest rooted at threads, so scheduling cycles can't be written.
-- `make_push` / `.input::<Sync>()` **borrow**: the parent holds a `Sender` to the child's input. Push edges may form cycles; they carry data, never scheduling. Back-edges use `SignalPolicy::FollowData`.
+- `Push` / `.input::<Sync>()` **borrow**: the parent holds a `Sender` to the child's input. Push edges may form cycles; they carry data, never scheduling. Back-edges use `SignalPolicy::FollowData`.
 - Fan-out: one consumer owns the node, the rest get `push`.
 
 This rules out designs that decouple nodes from ownership: arenas, index or handle graphs, and runtime-validated topologies. They turn a type error into a runtime check.
@@ -22,11 +22,11 @@ This rules out designs that decouple nodes from ownership: arenas, index or hand
 
 - The connection kind is chosen at the call site. Ownership, scheduling and edge cost are visible where they happen.
 - Routine traits are implemented explicitly: each impl whitelists a valid In→Out pair. No blanket impls.
-- Data-type annotations (`Connect::<T>`) are welcome; they document the graph.
+- Data-type annotations (`Push::<T>`, `work::Bidi::<T>`) are welcome; they document the graph. Sides are named on the node (`node.at::<Left>()`).
 
 ## Pay at build time, not per message
 
-- Allocation, boxing and binding happen while the graph is built.
+- Allocation, boxing and binding happen while the graph is built. Nodes and parents are passed by value; a `Box` appears only where a node stores a parent as `dyn`.
 - The hot path avoids extra heap allocation, locks and syscalls where placement allows.
 
 ## Small surface

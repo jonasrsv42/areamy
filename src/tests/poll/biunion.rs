@@ -11,7 +11,7 @@ use crate::poll::future;
 use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use crate::sync::Receiver;
 use crate::writer::push::Writer;
-use crate::{Closeable, Message, Pushable, make_push};
+use crate::{Closeable, Message, Push, Pushable};
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
@@ -73,7 +73,7 @@ fn biunion_audio_with_config() {
     let mut config_writer = Writer::<Config>::of(&node).unwrap();
 
     let output_edge = Receiver::new();
-    make_push(&mut node, &output_edge).unwrap();
+    Push::connect(&mut node, &output_edge).unwrap();
 
     async_thread.add(node);
     std::thread::scope(|s| {
@@ -172,7 +172,7 @@ fn biunion_with_async_parent() {
     let mut config_writer = Writer::<Config>::of(&node).unwrap();
 
     let output_edge = Receiver::new();
-    make_push(&mut node, &output_edge).unwrap();
+    Push::connect(&mut node, &output_edge).unwrap();
 
     async_thread.add(node);
     std::thread::scope(|s| {

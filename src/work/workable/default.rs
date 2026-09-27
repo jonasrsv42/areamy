@@ -18,9 +18,19 @@ where
     type ThreadId = ThreadIdType;
 }
 
+/// A boxed [Workable] (including `dyn Workable`) is a [Workable].
+impl<WorkableType: Workable + ?Sized> Workable for Box<WorkableType> {
+    type ThreadId = WorkableType::ThreadId;
+
+    fn work(&mut self) -> Result<(), Error> {
+        self.as_mut().work()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DefaultThread;
     use crate::Message;
     use crate::Trackable;
     use crate::edge::sync::Receiver;
@@ -50,6 +60,32 @@ mod tests {
         node.work().unwrap();
 
         assert_eq!(output.read_all().unwrap(), vec![Message::Data(9)]);
+    }
+
+    fn work_generic(workable: &mut impl Workable) -> Result<(), Error> {
+        workable.work()
+    }
+
+    #[test]
+    fn workable_box_dyn_can_work() {
+        let mut node = Node::new();
+
+        let input = node.input.sender();
+        let output = Receiver::<usize, Trackable<&'static str>>::new();
+
+        node.outputs.push(Box::new(output.sender()));
+        let mut boxed: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(node);
+
+        input.push_back(Message::Data(0)).unwrap();
+        input.push_back(Message::Data(2)).unwrap();
+
+        work_generic(&mut boxed).unwrap();
+        work_generic(&mut boxed).unwrap();
+
+        assert_eq!(
+            output.read_all().unwrap(),
+            vec![Message::Data(1), Message::Data(6)]
+        );
     }
 
     #[test]

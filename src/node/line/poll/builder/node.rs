@@ -393,7 +393,7 @@ where
 // ============================================================
 
 // `'params` on the dyn bound: without it the object-lifetime default locks
-// the impl to `'static`, and `make_push` from a parent with shorter
+// the impl to `'static`, and `Push::connect` from a parent with shorter
 // `'params` would fail to select this impl (`Get<T>` is invariant in `T`).
 // Reusing the node's `'params` is sufficient — the borrow checker shrinks
 // `Node<'params>` covariantly at the call site to match the caller's

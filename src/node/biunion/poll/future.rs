@@ -175,7 +175,7 @@ mod tests {
     use crate::poll::try_join;
     use crate::thread::ThreadBundle;
     use crate::work::Writer;
-    use crate::{Closeable, Message, Pushable, biunion as biu, make_push};
+    use crate::{Closeable, Message, Push, Pushable, biunion as biu};
 
     crate::thread_id!(BiunionFutureThread);
 
@@ -217,7 +217,7 @@ mod tests {
         let mut left_input = Writer::new::<biu::Left>(&node).unwrap();
         let mut right_input = Writer::new::<biu::Right>(&node).unwrap();
         let output = Receiver::new();
-        make_push(&mut node, &output).unwrap();
+        Push::connect(&mut node, &output).unwrap();
 
         thread.add(node);
 

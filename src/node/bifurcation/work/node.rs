@@ -6,7 +6,7 @@ use crate::message::Message;
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::node::{bifurcation, routine};
 use crate::signal::Origin;
-use crate::thread::{DefaultThread, ThreadId};
+use crate::thread::ThreadId;
 use crate::work::{Workable, work_each};
 use std::sync::{Arc, Mutex};
 
@@ -178,25 +178,6 @@ where
     }
 
     type ThreadId = ThreadIdType;
-}
-
-impl<'params, In, Left, Right, SignalType, RoutineType>
-    Bifurcation<'params, In, Left, Right, SignalType, DefaultThread, RoutineType>
-where
-    In: Send + Sync,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
-{
-    pub fn new(routine: RoutineType) -> Self {
-        Bifurcation {
-            routine,
-            workers: Vec::new(),
-            pushes: Pushes::default(),
-            input: Receiver::new(),
-        }
-    }
 }
 
 impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
@@ -411,21 +392,22 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::Trackable;
+    use crate::Pushable;
     use crate::closed;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::{Pushable, reader::work::tee, work::Writer, work::make_bifurcation};
+    use crate::work::{Writer, tee};
+    use crate::{DefaultThread, Trackable};
 
     #[test]
     fn run_bifurcation() {
-        let mut bifur = make_bifurcation(MockBifurcation::new());
+        let mut bifur = Bifurcation::of(MockBifurcation::new());
 
         let mut writer = Writer::new(&bifur).unwrap();
 
         let mut left_reader = tee::Reader::new::<bifurcation::Left>(&mut bifur).unwrap();
         let mut right_reader = tee::Reader::new::<bifurcation::Right>(&mut bifur).unwrap();
 
-        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = bifur;
+        let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(bifur);
 
         // Add one flush
         writer.push(Message::Data(1)).unwrap();
@@ -456,7 +438,7 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_push_when_input_closed() {
-        let mut bifur = Bifurcation::new(MockBifurcation::new());
+        let mut bifur = Bifurcation::<_, _, _, _, DefaultThread, _>::of(MockBifurcation::new());
 
         let left_output = Receiver::<usize, Trackable<&'static str>>::new();
         let right_output = Receiver::<usize, Trackable<&'static str>>::new();
@@ -499,7 +481,7 @@ pub mod tests {
             }
         }
 
-        let mut bifur = Bifurcation::new(MockBifurcation::new());
+        let mut bifur = Bifurcation::of(MockBifurcation::new());
 
         // Add a workable that returns Closed
         Add::<dyn Workable<ThreadId = DefaultThread>>::add(&mut bifur, Box::new(ClosingWorkable))

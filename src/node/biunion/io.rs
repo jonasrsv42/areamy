@@ -120,11 +120,11 @@ mod tests {
     use super::*;
     use crate::biunion;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{work::Reader, work::Writer, work::make_biunion};
+    use crate::work::{self, Reader, Writer};
 
     #[test]
     fn readers_biunion_read() {
-        let biun = make_biunion(MockBiunion::new());
+        let biun = work::Biunion::of(MockBiunion::new());
 
         let left_writer = Writer::new::<biunion::Left>(&biun).unwrap();
         let right_writer = Writer::new::<biunion::Right>(&biun).unwrap();

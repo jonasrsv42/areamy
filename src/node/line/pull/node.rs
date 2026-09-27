@@ -112,8 +112,8 @@ where
     PullableType: Pullable<ThreadId = ThreadIdType, DataType = In, SignalType = SignalType>,
 {
     /// Create a new [Line] from a parent [Pullable] and a [LineRoutine] to operate
-    /// in this node.
-    pub fn new(worker: LineRoutineType, pullable: PullableType) -> Self {
+    /// in this node. Public construction is [Pullable::then].
+    pub(crate) fn new(worker: LineRoutineType, pullable: PullableType) -> Self {
         Line {
             worker,
             pullable,
@@ -143,7 +143,6 @@ where
 pub mod tests {
     use super::*;
     use crate::Pushable;
-    use crate::node::line::pull::builder::make_pull;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::pull::Reader;
     use crate::work::Writer;
@@ -154,7 +153,7 @@ pub mod tests {
     fn line_accumulating_node_works() {
         let buffer = WriterBuffer::new();
         let mut writer = Writer::new(&buffer).unwrap();
-        let line = make_pull(buffer, AccMockLine::new());
+        let line = buffer.then(AccMockLine::new());
         let mut reader = Reader::new(line);
 
         // Add one flush
@@ -169,7 +168,7 @@ pub mod tests {
         let buffer = WriterBuffer::new();
         let mut writer = Writer::new(&buffer).unwrap();
 
-        let line = make_pull(buffer, MockLine::new());
+        let line = buffer.then(MockLine::new());
         let mut reader = Reader::new(line);
 
         // Add one flush
@@ -193,7 +192,7 @@ pub mod tests {
         let buffer = WriterBuffer::new();
         let mut writer = Writer::new(&buffer).unwrap();
 
-        let line = make_pull(buffer, MockWaitLine::new(4));
+        let line = buffer.then(MockWaitLine::new(4));
         let mut reader = Reader::new(line);
 
         writer.push(Message::Data(1)).unwrap();
@@ -225,7 +224,7 @@ pub mod tests {
         let buffer = WriterBuffer::new();
         let mut writer = Writer::new(&buffer).unwrap();
 
-        let line = make_pull(buffer, MockWaitLine::new(4));
+        let line = buffer.then(MockWaitLine::new(4));
         let mut reader = Reader::new(line);
 
         writer.push(Message::Data(1)).unwrap();
@@ -248,8 +247,8 @@ pub mod tests {
         let buffer = WriterBuffer::new();
         let mut writer = Writer::new(&buffer).unwrap();
 
-        let line1 = make_pull(buffer, MockLine::new());
-        let line2 = make_pull(line1, MockLine::new());
+        let line1 = buffer.then(MockLine::new());
+        let line2 = line1.then(MockLine::new());
         let mut reader = Reader::new(line2);
 
         // Add one flush
@@ -284,16 +283,16 @@ pub mod tests {
         let buffer = WriterBuffer::new();
         let mut writer = Writer::new(&buffer).unwrap();
 
-        let p1 = make_pull(buffer, MockLine::new());
-        let p2 = make_pull(p1, MockLine::new());
-        let p3 = make_pull(p2, MockLine::new());
-        let p4 = make_pull(p3, MockLine::new());
-        let p5 = make_pull(p4, MockLine::new());
-        let p6 = make_pull(p5, MockLine::new());
-        let p7 = make_pull(p6, MockLine::new());
-        let p8 = make_pull(p7, MockLine::new());
-        let p9 = make_pull(p8, MockLine::new());
-        let p10 = make_pull(p9, MockLine::new());
+        let p1 = buffer.then(MockLine::new());
+        let p2 = p1.then(MockLine::new());
+        let p3 = p2.then(MockLine::new());
+        let p4 = p3.then(MockLine::new());
+        let p5 = p4.then(MockLine::new());
+        let p6 = p5.then(MockLine::new());
+        let p7 = p6.then(MockLine::new());
+        let p8 = p7.then(MockLine::new());
+        let p9 = p8.then(MockLine::new());
+        let p10 = p9.then(MockLine::new());
 
         let mut reader = Reader::new(p10);
 
@@ -313,8 +312,8 @@ pub mod tests {
         let buffer = WriterBuffer::new();
         let mut writer = Writer::of(&buffer).unwrap();
 
-        let line1 = make_pull(buffer, MockLine::new());
-        let line2 = make_pull(line1, MockLine::new());
+        let line1 = buffer.then(MockLine::new());
+        let line2 = line1.then(MockLine::new());
         let mut reader = Reader::new(line2);
 
         writer.push(Message::Data(1)).unwrap();

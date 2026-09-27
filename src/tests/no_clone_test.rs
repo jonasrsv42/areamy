@@ -8,9 +8,9 @@ use crate::Origin;
 use crate::error::Error;
 use crate::graph::Pushable;
 use crate::node::line::LineRoutine;
-use crate::pull::{Pullable, Reader, WriterBuffer, make_pull};
+use crate::pull::{Reader, WriterBuffer};
 use crate::work::Writer;
-use crate::{Message, Next, Send};
+use crate::{Message, Next, Pullable, Send};
 use std::collections::VecDeque;
 
 struct BoxIncrementer {
@@ -65,9 +65,9 @@ fn test_non_cloneable_pull_pipeline() {
     let mut writer = Writer::new(&buffer).unwrap();
 
     // Box<1> → +1 → +1 → +1 → Box<4>
-    let line1 = make_pull(buffer, BoxIncrementer::new());
-    let line2 = make_pull(line1, BoxIncrementer::new());
-    let line3 = make_pull(line2, BoxIncrementer::new());
+    let line1 = buffer.then(BoxIncrementer::new());
+    let line2 = line1.then(BoxIncrementer::new());
+    let line3 = line2.then(BoxIncrementer::new());
     let mut reader = Reader::new(line3);
 
     writer.push(Message::Data(Box::new(1))).unwrap();
@@ -81,8 +81,8 @@ fn test_non_cloneable_pull_signal() {
     let buffer: WriterBuffer<Box<usize>, BoxedOrigin, _> = WriterBuffer::new();
     let mut writer = Writer::of(&buffer).unwrap();
 
-    let line1 = make_pull(buffer, BoxIncrementer::new());
-    let line2 = make_pull(line1, BoxIncrementer::new());
+    let line1 = buffer.then(BoxIncrementer::new());
+    let line2 = line1.then(BoxIncrementer::new());
     let mut reader = Reader::new(line2);
 
     writer.push(Message::Data(Box::new(42))).unwrap();

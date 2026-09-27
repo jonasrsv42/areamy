@@ -15,6 +15,7 @@ impl<PullableType: Pullable + ?Sized> Pullable for Box<PullableType> {
 #[cfg(test)]
 mod tests {
     use crate::Trackable;
+    use crate::node::line::routine::tests::MockLine;
     use crate::{Connection, DefaultThread, Message, Pullable, error::Error};
 
     struct Root {
@@ -56,5 +57,21 @@ mod tests {
         assert_eq!(pullable.pull().unwrap(), Message::Data(1));
         assert_eq!(pullable.pull().unwrap(), Message::Data(2));
         assert_eq!(pullable.pull().unwrap(), Message::Data(3));
+    }
+
+    #[test]
+    fn box_dyn_pullable_chains_with_then() {
+        let boxed: Box<
+            dyn Pullable<
+                    ThreadId = DefaultThread,
+                    DataType = usize,
+                    SignalType = Trackable<&'static str>,
+                >,
+        > = Box::new(Root { value: 0 }.then(MockLine::new()));
+        let mut chain = boxed.then(MockLine::new());
+
+        // 1 → 2 → 4, then 2 → 6 → 16.
+        assert_eq!(chain.pull().unwrap(), Message::Data(4));
+        assert_eq!(chain.pull().unwrap(), Message::Data(16));
     }
 }

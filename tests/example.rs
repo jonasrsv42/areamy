@@ -1,3 +1,4 @@
+use areamy::Pullable;
 use std::collections::VecDeque;
 
 pub struct AddOne {
@@ -41,14 +42,14 @@ impl areamy::LineRoutine<usize, usize> for AddOne {}
 
 #[test]
 fn simple_sync() -> Result<(), areamy::error::Error> {
-    let in_node = areamy::work::make_line(AddOne::new());
-    let mut middle_node = areamy::work::make_line(AddOne::new());
-    let mut out_node = areamy::work::make_line(AddOne::new());
+    let in_node = areamy::work::Line::of(AddOne::new());
+    let mut middle_node = areamy::work::Line::of(AddOne::new());
+    let mut out_node = areamy::work::Line::of(AddOne::new());
 
     let writer = areamy::work::Writer::<usize>::of(&in_node)?;
 
-    areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
-    areamy::work::Connect::<usize>::bidi(middle_node, &mut out_node)?;
+    areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
+    areamy::work::Bidi::<usize>::connect(middle_node, &mut out_node)?;
 
     let reader = areamy::work::Reader::new(out_node)?;
 
@@ -69,15 +70,15 @@ areamy::thread_id!(HelperThread);
 fn sync_multithread() -> Result<(), areamy::error::Error> {
     // Example of multithreaded graph.
 
-    let in_node = areamy::work::make_line(AddOne::new());
-    let mut middle_node = areamy::work::make_line(AddOne::new());
-    let out_node = areamy::work::make_line(AddOne::new());
+    let in_node = areamy::work::Line::of(AddOne::new());
+    let mut middle_node = areamy::work::Line::of(AddOne::new());
+    let out_node = areamy::work::Line::of(AddOne::new());
 
     let writer = areamy::work::Writer::<usize>::of(&in_node)?;
-    areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
+    areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
 
     // Ensure that middle node, using the `HelperThread` pushes data into out node.
-    areamy::work::Connect::<usize>::push(&mut middle_node, &out_node)?;
+    areamy::Push::<usize>::connect(&mut middle_node, &out_node)?;
 
     // Now helper thread will work on the middle_node subgraph.
     let helper_thread = areamy::ThreadStream::<HelperThread>::of(middle_node);
@@ -114,9 +115,10 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
     let root = areamy::pull::WriterBuffer::new();
     let writer = areamy::work::Writer::<usize>::of(&root)?;
 
-    let in_node = areamy::pull::Connect::<usize>::pull(root, AddOne::new());
-    let middle_node = areamy::pull::Connect::<usize>::pull(in_node, AddOne::new());
-    let out_node = areamy::pull::Connect::<usize>::pull(middle_node, AddOne::new());
+    let out_node = root
+        .then(AddOne::new())
+        .then(AddOne::new())
+        .then(AddOne::new());
 
     let reader = areamy::pull::Reader::new(out_node);
 

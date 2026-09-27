@@ -9,8 +9,8 @@ use crate::graph::{Add, Get};
 use crate::poll;
 use crate::poll::future::OutputQueue;
 use crate::thread::ThreadBundle;
-use crate::work::{ThreadStream, Writer, make_line};
-use crate::{Closeable, Message, Pushable, biunion, make_push};
+use crate::work::{self, ThreadStream, Writer};
+use crate::{Closeable, Message, Push, Pushable, biunion};
 
 #[test]
 fn line_poll_borrowed() {
@@ -28,7 +28,7 @@ fn line_poll_borrowed() {
 
     let mut input = Writer::new(&node).unwrap();
     let output = Receiver::new();
-    make_push(&mut node, &output).unwrap();
+    Push::connect(&mut node, &output).unwrap();
 
     thread.add(node);
 
@@ -69,7 +69,7 @@ fn biunion_poll_borrowed() {
     let mut left = Writer::new::<biunion::Left>(&node).unwrap();
     let mut right = Writer::new::<biunion::Right>(&node).unwrap();
     let output = Receiver::new();
-    make_push(&mut node, &output).unwrap();
+    Push::connect(&mut node, &output).unwrap();
 
     thread.add(node);
 
@@ -121,7 +121,7 @@ fn poll_async_parent_chain_borrowed() {
         .output::<poll::Sync>();
 
     let output = Receiver::new();
-    make_push(&mut b, &output).unwrap();
+    Push::connect(&mut b, &output).unwrap();
 
     thread.add(b);
 
@@ -190,14 +190,14 @@ fn poll_borrowed_output_sink() {
     let _ = (multiplier, config);
 }
 
-/// `make_push(borrowed_parent_node, &poll_node)` — exercises the poll
+/// `Push::connect(borrowed_parent_node, &poll_node)` — exercises the poll
 /// node's `Get<dyn Sink + 'params>` impl from the *child* side. If
 /// the impl is `'static`-defaulted, `'params` collapses and the borrowed
 /// parent fails to compile.
 #[test]
 fn poll_node_input_from_borrowed_parent() {
     let mult: usize = 2;
-    let mut work_line = make_line(BorrowingLine::new(&mult));
+    let mut work_line = work::Line::of(BorrowingLine::new(&mult));
 
     let mut poll_thread = poll::Thread::<'_, LifetimePollThread>::new();
     let mult_ref = &mult;
@@ -209,11 +209,11 @@ fn poll_node_input_from_borrowed_parent() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input = Writer::new(work_line.as_ref()).unwrap();
-    make_push(work_line.as_mut(), &poll_node).unwrap();
+    let mut input = Writer::new(&work_line).unwrap();
+    Push::connect(&mut work_line, &poll_node).unwrap();
 
     let output = Receiver::new();
-    make_push(&mut poll_node, &output).unwrap();
+    Push::connect(&mut poll_node, &output).unwrap();
 
     poll_thread.add(poll_node);
     let work_thread = ThreadStream::<LifetimePollThread>::of(work_line);

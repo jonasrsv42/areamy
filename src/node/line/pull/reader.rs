@@ -31,7 +31,6 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::node::line::pull::builder::make_pull;
     use crate::work::Writer;
     use crate::writer::pull::WriterBuffer;
     use crate::{DefaultThread, Message, Pushable};
@@ -76,7 +75,7 @@ pub mod tests {
         let buffer = WriterBuffer::<usize, usize, DefaultThread>::new();
         let mut writer = Writer::of(&buffer).unwrap();
 
-        let mut line = make_pull(buffer, Identity::new());
+        let mut line = buffer.then(Identity::new());
 
         writer.push(Message::Data(1)).unwrap();
         writer.push(Message::Data(2)).unwrap();

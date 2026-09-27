@@ -9,7 +9,7 @@ use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use crate::poll::try_join;
 use crate::sync::Receiver;
 use crate::work::Writer;
-use crate::{Closeable, Message, Pushable, ThreadBundle, make_push};
+use crate::{Closeable, Message, Push, Pushable, ThreadBundle};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
@@ -44,7 +44,7 @@ fn sleep_in_routine_delays_output() {
 
     let mut writer = Writer::new(&node).unwrap();
     let output = Receiver::new();
-    make_push(&mut node, &output).unwrap();
+    Push::connect(&mut node, &output).unwrap();
     thread.add(node);
 
     let mut bundle = ThreadBundle::new();
@@ -94,7 +94,7 @@ fn concurrent_sleeps_wake_independently() {
 
     let mut writer = Writer::new(&node).unwrap();
     let output = Receiver::new();
-    make_push(&mut node, &output).unwrap();
+    Push::connect(&mut node, &output).unwrap();
     thread.add(node);
 
     let mut bundle = ThreadBundle::new();

@@ -1,6 +1,6 @@
 //! Example nodes wiring the connection traits together.
 
-use crate::edge::push::make_push;
+use crate::Push;
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::graph::marker::Connection;
@@ -11,7 +11,7 @@ use crate::poll::waker::Waker;
 use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
-use crate::work::{Workable, make_bidi};
+use crate::work::{self, Workable};
 
 /// A `Simple` "coroutine". At time of writing, 2024/12/11, coroutines
 /// are still experimental in rust.
@@ -175,20 +175,20 @@ impl Add<dyn Workable<ThreadId = DefaultThread>> for Node {
 /// works across threads — see the multi-threaded graph example above.
 #[test]
 fn connect_push_work_bidi_chain() {
-    let node_1 = Box::new(Node::new());
-    let mut node_2 = Box::new(Node::new());
-    let mut node_3 = Box::new(Node::new());
+    let node_1 = Node::new();
+    let mut node_2 = Node::new();
+    let mut node_3 = Node::new();
 
     let mut input =
         Get::<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>::get(&node_1)
             .unwrap();
 
-    make_bidi(node_1, node_2.as_mut()).unwrap();
-    make_bidi(node_2, node_3.as_mut()).unwrap();
+    work::Bidi::connect(node_1, &mut node_2).unwrap();
+    work::Bidi::connect(node_2, &mut node_3).unwrap();
 
     let sink = Receiver::new();
 
-    make_push(&mut node_3, &sink).unwrap();
+    Push::connect(&mut node_3, &sink).unwrap();
 
     input.push(Message::Data(0)).unwrap();
     input.push(Message::Data(1)).unwrap();

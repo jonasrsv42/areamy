@@ -163,9 +163,9 @@ mod tests {
 
     #[test]
     fn work_error_appears_in_results() {
-        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
 
-        let thread_b = ThreadStream::of(Box::new(ImmediateClose::<ThreadB>::new()));
+        let thread_b = ThreadStream::of(ImmediateClose::<ThreadB>::new());
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn panic_appears_as_panic_variant() {
-        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
 
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
@@ -195,9 +195,9 @@ mod tests {
 
     #[test]
     fn multiple_panics_each_recorded() {
-        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
+        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
 
-        let thread_b = ThreadStream::of(Box::new(Panicker::<ThreadB>::new()));
+        let thread_b = ThreadStream::of(Panicker::<ThreadB>::new());
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);

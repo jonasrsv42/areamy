@@ -37,7 +37,6 @@ impl areamy::Flush for AddOne {
     }
 }
 
-impl areamy::node::Name for AddOne {}
 impl areamy::LineRoutine<usize, usize> for AddOne {}
 
 #[test]

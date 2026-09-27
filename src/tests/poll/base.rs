@@ -2,7 +2,6 @@
 
 use crate::error::Error;
 use crate::marker::Connection;
-use crate::node::Name;
 use crate::poll;
 use crate::poll::Sync;
 use crate::signal::Trackable;
@@ -80,7 +79,6 @@ impl crate::Poll for PollDouble {
     }
 }
 
-impl Name for PollDouble {}
 impl poll::LineRoutine<usize, usize> for PollDouble {}
 
 /// Accumulates input values into a shared Vec. Used to verify sink nodes
@@ -129,7 +127,6 @@ impl crate::Poll for PollAccumulator {
     }
 }
 
-impl Name for PollAccumulator {}
 impl crate::LineRoutine<usize, usize> for PollAccumulator {}
 impl poll::LineRoutine<usize, usize> for PollAccumulator {}
 
@@ -165,7 +162,6 @@ impl crate::Flush for Double {
     }
 }
 
-impl Name for Double {}
 impl crate::LineRoutine<usize, usize> for Double {}
 
 crate::thread_id!(IoThread);
@@ -794,7 +790,6 @@ impl crate::Poll for HalfCloseRoutine {
     }
 }
 
-impl Name for HalfCloseRoutine {}
 impl poll::LineRoutine<usize, usize> for HalfCloseRoutine {}
 
 /// Flush signal is held until the routine's poll() returns Ready.
@@ -923,7 +918,6 @@ impl crate::Poll for BatchRoutine {
     }
 }
 
-impl Name for BatchRoutine {}
 impl poll::LineRoutine<usize, usize> for BatchRoutine {}
 
 /// Multiple flushes then close. BatchRoutine accumulates data between

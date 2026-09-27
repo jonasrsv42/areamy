@@ -147,7 +147,6 @@ impl areamy::Flush for Double {
     }
 }
 
-impl areamy::node::Name for Double {}
 impl areamy::LineRoutine<usize, usize> for Double {}
 
 // ============================================================

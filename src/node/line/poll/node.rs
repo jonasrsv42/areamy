@@ -585,7 +585,6 @@ mod tests {
         }
     }
 
-    impl crate::node::Name for ClosedErrorRoutine {}
     impl LineRoutine<usize, usize> for ClosedErrorRoutine {}
 
     #[test]

@@ -2,7 +2,6 @@ use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::connect::waker::Waker;
 use crate::error::{Error, ErrorKind};
 use crate::marker::{Connection, Multiplicity};
-use crate::node::Name;
 use crate::poll::{BiunionWakers, LineWakers};
 use crate::sync::Receiver;
 use crate::{
@@ -89,7 +88,6 @@ impl crate::Poll for Hold {
     }
 }
 
-impl Name for Hold {}
 impl crate::LineRoutine<usize, usize> for Hold {}
 impl crate::poll::LineRoutine<usize, usize> for Hold {}
 
@@ -153,7 +151,6 @@ impl<R: crate::Poll> crate::Poll for Slow<R> {
     }
 }
 
-impl<R> Name for Slow<R> {}
 impl crate::poll::LineRoutine<usize, usize> for Slow<Hold> {}
 impl PollBiunionRoutine<usize, usize, usize> for Slow<HoldBiunion> {}
 
@@ -202,7 +199,6 @@ impl crate::Poll for HoldBiunion {
     }
 }
 
-impl Name for HoldBiunion {}
 impl crate::BiunionRoutine<usize, usize, usize> for HoldBiunion {}
 impl PollBiunionRoutine<usize, usize, usize> for HoldBiunion {}
 
@@ -259,7 +255,6 @@ impl crate::Flush for HoldBifurcation {
     }
 }
 
-impl Name for HoldBifurcation {}
 impl crate::BifurcationRoutine<usize, usize, usize> for HoldBifurcation {}
 
 /// Scripted pull source: yields its messages, then Closed forever.

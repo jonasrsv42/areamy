@@ -62,14 +62,6 @@ pub trait Poll {
     fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error>;
 }
 
-/// [`Name`] trait is used to name routines for logging purposes.
-/// Defaults to the type name.
-pub trait Name {
-    fn name(&self) -> &str {
-        core::any::type_name::<Self>()
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -205,15 +197,5 @@ pub mod tests {
         assert_eq!(Next::<usize, Right>::next(routine.as_mut()).unwrap(), None);
 
         routine.flush().unwrap();
-    }
-
-    impl Name for AddOne {}
-
-    #[test]
-    fn name_defaults_to_type_name() {
-        let routine = AddOne {
-            out: VecDeque::new(),
-        };
-        assert_eq!(routine.name(), core::any::type_name::<AddOne>());
     }
 }

@@ -68,21 +68,19 @@
 //!
 //! Think this is too many rules? Just use [FutureRoutine](crate::poll::future::line::FutureRoutine) — it handles all of it for you.
 
-use crate::node::Name;
-
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a poll line routine from `{In}` to `{Out}`",
-    note = "needs `areamy::Send<{In}>`, `Next<{Out}>`, `Flush`, `Poll`, `Name` and `impl poll::LineRoutine<{In}, {Out}> for {Self}`",
+    note = "needs `areamy::Send<{In}>`, `Next<{Out}>`, `Flush`, `Poll` and `impl poll::LineRoutine<{In}, {Out}> for {Self}`",
     note = "for async bodies use `FutureRoutine`; for a sync routine use a poll adapter"
 )]
 pub trait LineRoutine<In, Out>:
-    crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + Name
+    crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll
 {
 }
 
 #[cfg(test)]
 pub mod tests {
-    use super::{LineRoutine, Name};
+    use super::LineRoutine;
     use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
@@ -139,7 +137,6 @@ pub mod tests {
         }
     }
 
-    impl Name for MockLine {}
     impl LineRoutine<usize, usize> for MockLine {}
 
     pub fn noop_local_waker() -> ThreadLocalWaker {

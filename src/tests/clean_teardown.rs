@@ -4,7 +4,6 @@
 //! exactly which channel still lacks close-on-drop.
 
 use crate::error::{Error, ErrorKind};
-use crate::node::Name;
 use crate::node::line::poll::routine::tests::MockLine;
 use crate::poll;
 use crate::sync::Receiver;
@@ -43,7 +42,6 @@ impl Flush for FailingMiddle {
     }
 }
 
-impl Name for FailingMiddle {}
 impl LineRoutine<usize, usize> for FailingMiddle {}
 
 struct PassThrough {
@@ -77,7 +75,6 @@ impl Flush for PassThrough {
     }
 }
 
-impl Name for PassThrough {}
 impl LineRoutine<usize, usize> for PassThrough {}
 
 #[test]
@@ -206,7 +203,6 @@ impl Flush for Tee {
         Ok(())
     }
 }
-impl Name for Tee {}
 impl BifurcationRoutine<usize, usize, usize> for Tee {}
 
 /// Fan-out: one producer thread runs a bifurcation that duplicates

@@ -8,11 +8,10 @@
 //! contract (flush, poll, output waking).
 
 use crate::biunion;
-use crate::node::Name;
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a poll biunion routine from (`{Left}`, `{Right}`) to `{Out}`",
-    note = "needs `areamy::Send<{Left}, biunion::Left>`, `areamy::Send<{Right}, biunion::Right>`, `Next<{Out}>`, `Flush`, `Poll`, `Name` and `impl poll::BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`",
+    note = "needs `areamy::Send<{Left}, biunion::Left>`, `areamy::Send<{Right}, biunion::Right>`, `Next<{Out}>`, `Flush`, `Poll` and `impl poll::BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`",
     note = "for async bodies use the biunion `FutureRoutine`"
 )]
 pub trait BiunionRoutine<Left, Right, Out>:
@@ -21,7 +20,6 @@ pub trait BiunionRoutine<Left, Right, Out>:
     + crate::Next<Out>
     + crate::Flush
     + crate::Poll
-    + Name
 {
 }
 
@@ -30,7 +28,6 @@ pub mod tests {
     use crate::biunion;
     use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
-    use crate::node::Name;
     use crate::poll::future::queue::OutputQueue;
 
     /// Mock biunion routine: left input doubled, right input tripled,
@@ -100,7 +97,6 @@ pub mod tests {
         }
     }
 
-    impl Name for MockBiunion {}
     impl super::BiunionRoutine<usize, usize, usize> for MockBiunion {}
 
     pub fn noop_local_waker() -> ThreadLocalWaker {

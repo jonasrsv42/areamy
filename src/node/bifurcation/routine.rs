@@ -1,9 +1,8 @@
 use crate::bifurcation;
-use crate::node::Name;
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a bifurcation routine from `{In}` to (`{Left}`, `{Right}`)",
-    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Left}, bifurcation::Left>`, `Next<{Right}, bifurcation::Right>`, `Flush`, `Name` and `impl BifurcationRoutine<{In}, {Left}, {Right}> for {Self}`"
+    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Left}, bifurcation::Left>`, `Next<{Right}, bifurcation::Right>`, `Flush` and `impl BifurcationRoutine<{In}, {Left}, {Right}> for {Self}`"
 )]
 pub trait BifurcationRoutine<In, Left, Right>:
     Send
@@ -11,7 +10,6 @@ pub trait BifurcationRoutine<In, Left, Right>:
     + crate::Next<Left, bifurcation::Left>
     + crate::Next<Right, bifurcation::Right>
     + crate::Flush
-    + Name
 where
     Left: Clone,
     Right: Clone,
@@ -73,12 +71,6 @@ pub mod tests {
         fn flush(&mut self) -> Result<(), Error> {
             self.shared_state = 0;
             Ok(())
-        }
-    }
-
-    impl Name for MockBifurcation {
-        fn name(&self) -> &str {
-            "MockBifurcation"
         }
     }
 

@@ -52,7 +52,6 @@
 
 use crate::connect::waker;
 use crate::error::Error;
-use crate::node::Name;
 use crate::node::line::poll::factory::LineWakers;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
@@ -168,11 +167,6 @@ where
     }
 }
 
-impl<'params, InType, OutType, F> Name for FutureRoutine<'params, InType, OutType, F> where
-    F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params
-{
-}
-
 impl<'params, InType, OutType, F> LineRoutine<InType, OutType>
     for FutureRoutine<'params, InType, OutType, F>
 where
@@ -282,6 +276,5 @@ mod tests {
         }
     }
 
-    impl crate::node::Name for PassThrough {}
     impl crate::node::line::LineRoutine<usize, usize> for PassThrough {}
 }

@@ -68,7 +68,6 @@ pub mod tests {
         }
     }
 
-    impl crate::node::Name for Identity {}
     impl crate::LineRoutine<usize, usize> for Identity {}
 
     #[test]

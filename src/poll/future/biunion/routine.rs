@@ -8,7 +8,6 @@
 use crate::biunion;
 use crate::connect::waker;
 use crate::error::Error;
-use crate::node::Name;
 use crate::node::biunion::poll::factory::BiunionWakers;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
@@ -148,12 +147,6 @@ where
             core::task::Poll::Pending => Ok(core::task::Poll::Pending),
         }
     }
-}
-
-impl<'params, Left, Right, Out, F> Name for FutureRoutine<'params, Left, Right, Out, F> where
-    F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
-        + 'params
-{
 }
 
 impl<'params, Left, Right, Out, F> BiunionRoutine<Left, Right, Out>

@@ -17,4 +17,4 @@ pub(crate) mod work;
 pub use bifurcation::{BifurcationIo, BifurcationRoutine};
 pub use biunion::{BiunionIo, BiunionRoutine};
 pub use line::{LineIo, LineRoutine};
-pub use routine::{Flush, Name, Next, Poll, Send};
+pub use routine::{Flush, Next, Poll, Send};

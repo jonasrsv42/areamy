@@ -7,7 +7,6 @@
 use crate::Origin;
 use crate::connect::graph::{Pullable, Pushable};
 use crate::error::Error;
-use crate::node::Name;
 use crate::node::line::LineRoutine;
 use crate::pull::{Reader, WriterBuffer, make_pull};
 use crate::work::Writer;
@@ -42,12 +41,6 @@ impl Next<Box<usize>> for BoxIncrementer {
 impl crate::Flush for BoxIncrementer {
     fn flush(&mut self) -> Result<(), Error> {
         Ok(())
-    }
-}
-
-impl Name for BoxIncrementer {
-    fn name(&self) -> &str {
-        "BoxIncrementer"
     }
 }
 

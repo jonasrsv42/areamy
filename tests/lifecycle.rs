@@ -47,7 +47,6 @@
 
 use areamy::connect::sync::Receiver;
 use areamy::error::Error;
-use areamy::node::Name;
 use areamy::pull;
 use areamy::pull::WriterBuffer;
 use areamy::thread::{ThreadBundle, ThreadBundleHandle, ThreadStream};
@@ -96,7 +95,6 @@ impl Flush for PullIdentity {
         Ok(())
     }
 }
-impl Name for PullIdentity {}
 impl LineRoutine<usize, usize> for PullIdentity {}
 
 /// Work-side routine: accept `pass_count` messages, error on the
@@ -134,7 +132,6 @@ impl Flush for FailAfter {
         Ok(())
     }
 }
-impl Name for FailAfter {}
 impl LineRoutine<usize, usize> for FailAfter {}
 
 /// Poll-side doubler. Same shape as `MockLine` but inline so this
@@ -173,7 +170,6 @@ impl areamy::Poll for PollDouble {
         Ok(core::task::Poll::Pending)
     }
 }
-impl Name for PollDouble {}
 impl areamy::poll::LineRoutine<usize, usize> for PollDouble {}
 
 // ---- orchestrator events --------------------------------------------------

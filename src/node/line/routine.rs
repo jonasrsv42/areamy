@@ -1,7 +1,5 @@
 //! [LineRoutine] is the work horse of all Line nodes. It is a frankenstein [std::ops::Coroutine].
 
-use crate::node::Name;
-
 /// [`LineRoutine`] is a flushable subset of [std::ops::Coroutine] accepting a stream of `In` types through
 /// [crate::Send::send] and produce a stream of output with [crate::Next::next].
 ///
@@ -46,12 +44,9 @@ use crate::node::Name;
 ///
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a line routine from `{In}` to `{Out}`",
-    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Out}>`, `Flush`, `Name` and `impl LineRoutine<{In}, {Out}> for {Self}`"
+    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Out}>`, `Flush` and `impl LineRoutine<{In}, {Out}> for {Self}`"
 )]
-pub trait LineRoutine<In, Out>:
-    Send + crate::Send<In> + crate::Next<Out> + crate::Flush + Name
-{
-}
+pub trait LineRoutine<In, Out>: Send + crate::Send<In> + crate::Next<Out> + crate::Flush {}
 
 #[cfg(test)]
 pub mod tests {
@@ -96,16 +91,12 @@ pub mod tests {
         }
     }
 
-    impl Name for MockLine {}
-
     impl LineRoutine<usize, usize> for MockLine {}
 
     pub struct AccMockLine {
         num: Vec<usize>,
         out: VecDeque<Vec<usize>>,
     }
-
-    impl Name for AccMockLine {}
 
     impl AccMockLine {
         pub fn new() -> Self {
@@ -190,7 +181,6 @@ pub mod tests {
         }
     }
 
-    impl Name for MockWaitLine {}
     impl LineRoutine<usize, usize> for MockWaitLine {}
 
     #[test]

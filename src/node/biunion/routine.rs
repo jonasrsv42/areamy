@@ -2,7 +2,7 @@ use crate::biunion;
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a biunion routine from (`{Left}`, `{Right}`) to `{Out}`",
-    note = "needs `Send`, `areamy::Send<{Left}, biunion::Left>`, `areamy::Send<{Right}, biunion::Right>`, `Next<{Out}>`, `Flush` and `impl BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`"
+    note = "needs the supertraits of `BiunionRoutine` and an explicit `impl BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`"
 )]
 pub trait BiunionRoutine<Left, Right, Out>:
     Send

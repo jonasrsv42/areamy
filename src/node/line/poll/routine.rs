@@ -70,8 +70,7 @@
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a poll line routine from `{In}` to `{Out}`",
-    note = "needs `areamy::Send<{In}>`, `Next<{Out}>`, `Flush`, `Poll` and `impl poll::LineRoutine<{In}, {Out}> for {Self}`",
-    note = "for async bodies use `FutureRoutine`; for a sync routine use a poll adapter"
+    note = "needs the supertraits of `poll::LineRoutine` and an explicit `impl poll::LineRoutine<{In}, {Out}> for {Self}`"
 )]
 pub trait LineRoutine<In, Out>:
     crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll

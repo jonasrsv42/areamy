@@ -44,7 +44,7 @@
 ///
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a line routine from `{In}` to `{Out}`",
-    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Out}>`, `Flush` and `impl LineRoutine<{In}, {Out}> for {Self}`"
+    note = "needs the supertraits of `LineRoutine` and an explicit `impl LineRoutine<{In}, {Out}> for {Self}`"
 )]
 pub trait LineRoutine<In, Out>: Send + crate::Send<In> + crate::Next<Out> + crate::Flush {}
 

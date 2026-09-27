@@ -2,7 +2,7 @@ use crate::bifurcation;
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a bifurcation routine from `{In}` to (`{Left}`, `{Right}`)",
-    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Left}, bifurcation::Left>`, `Next<{Right}, bifurcation::Right>`, `Flush` and `impl BifurcationRoutine<{In}, {Left}, {Right}> for {Self}`"
+    note = "needs the supertraits of `BifurcationRoutine` and an explicit `impl BifurcationRoutine<{In}, {Left}, {Right}> for {Self}`"
 )]
 pub trait BifurcationRoutine<In, Left, Right>:
     Send

@@ -11,8 +11,7 @@ use crate::biunion;
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a poll biunion routine from (`{Left}`, `{Right}`) to `{Out}`",
-    note = "needs `areamy::Send<{Left}, biunion::Left>`, `areamy::Send<{Right}, biunion::Right>`, `Next<{Out}>`, `Flush`, `Poll` and `impl poll::BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`",
-    note = "for async bodies use the biunion `FutureRoutine`"
+    note = "needs the supertraits of `poll::BiunionRoutine` and an explicit `impl poll::BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`"
 )]
 pub trait BiunionRoutine<Left, Right, Out>:
     crate::Send<Left, biunion::Left>

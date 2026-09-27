@@ -1,3 +1,5 @@
+use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
+use crate::connect::waker::Waker;
 use crate::error::{Error, ErrorKind};
 use crate::marker::{Connection, Multiplicity};
 use crate::node::Name;
@@ -85,10 +87,7 @@ impl crate::Flush for Hold {
 }
 
 impl crate::Poll for Hold {
-    fn poll(
-        &mut self,
-        _waker: &mut crate::connect::waker::Waker,
-    ) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         Ok(self.poll_flushed())
     }
 }
@@ -147,10 +146,7 @@ impl<R: crate::Flush> crate::Flush for Slow<R> {
 }
 
 impl<R: crate::Poll> crate::Poll for Slow<R> {
-    fn poll(
-        &mut self,
-        waker: &mut crate::connect::waker::Waker,
-    ) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         if self.remaining > 0 {
             self.remaining -= 1;
             waker.local.wake();
@@ -162,10 +158,7 @@ impl<R: crate::Poll> crate::Poll for Slow<R> {
 
 impl<R> Name for Slow<R> {}
 impl crate::poll::LineRoutine<usize, usize> for Slow<Hold> {}
-impl crate::node::biunion::poll::routine::BiunionRoutine<usize, usize, usize>
-    for Slow<HoldBiunion>
-{
-}
+impl PollBiunionRoutine<usize, usize, usize> for Slow<HoldBiunion> {}
 
 pub fn slow_hold(_: LineWakers) -> Slow<Hold> {
     Slow::new(Hold::new())
@@ -207,17 +200,14 @@ impl crate::Flush for HoldBiunion {
 }
 
 impl crate::Poll for HoldBiunion {
-    fn poll(
-        &mut self,
-        waker: &mut crate::connect::waker::Waker,
-    ) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         self.0.poll(waker)
     }
 }
 
 impl Name for HoldBiunion {}
 impl crate::BiunionRoutine<usize, usize, usize> for HoldBiunion {}
-impl crate::node::biunion::poll::routine::BiunionRoutine<usize, usize, usize> for HoldBiunion {}
+impl PollBiunionRoutine<usize, usize, usize> for HoldBiunion {}
 
 pub fn hold_biunion(_: BiunionWakers) -> HoldBiunion {
     HoldBiunion::new()

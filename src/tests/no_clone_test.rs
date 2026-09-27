@@ -7,6 +7,7 @@
 use crate::Origin;
 use crate::connect::graph::{Pullable, Pushable};
 use crate::error::Error;
+use crate::node::Name;
 use crate::node::line::LineRoutine;
 use crate::pull::{Reader, WriterBuffer, make_pull};
 use crate::work::Writer;
@@ -44,7 +45,7 @@ impl crate::Flush for BoxIncrementer {
     }
 }
 
-impl crate::node::Name for BoxIncrementer {
+impl Name for BoxIncrementer {
     fn name(&self) -> &str {
         "BoxIncrementer"
     }

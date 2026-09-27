@@ -1,5 +1,6 @@
 //! Bridge a [LineRoutine] with a [crate::pull::Line]
 
+use crate::error::Error;
 use crate::{LineRoutine, Origin, Pullable, ThreadId, Workable, work::Line};
 use crate::{Pushable, marker::Connection};
 
@@ -39,7 +40,7 @@ where
 
     /// Upon [Bridge::work] we pull our parent ([Bridge::pullable]) and [Pushable::push] into the
     /// child ([Bridge::pushable])
-    fn work(&mut self) -> Result<(), crate::error::Error> {
+    fn work(&mut self) -> Result<(), Error> {
         let msg = self.pullable.pull()?;
         self.pushable.push(msg)
     }

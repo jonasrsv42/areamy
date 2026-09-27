@@ -67,9 +67,9 @@ fn biunion_audio_with_config() {
 
     let mut node = async_thread
         .biunion(routine)
-        .input::<biunion::Left, crate::poll::Sync>()
-        .input::<biunion::Right, crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<biunion::Left, poll::Sync>()
+        .input::<biunion::Right, poll::Sync>()
+        .output::<poll::Sync>();
 
     let mut audio_writer = Writer::<usize>::of::<_, biunion::Left>(&node).unwrap();
     let mut config_writer = Writer::<Config>::of::<_, biunion::Right>(&node).unwrap();
@@ -127,7 +127,7 @@ fn biunion_with_async_parent() {
                 })
             },
         ))
-        .input::<crate::poll::Sync>();
+        .input::<poll::Sync>();
 
     // Writer pushes into parent
     let mut audio_writer = Writer::<usize>::of::<_, crate::marker::Unary>(&parent).unwrap();
@@ -168,8 +168,8 @@ fn biunion_with_async_parent() {
     let mut node = async_thread
         .biunion(biunion_routine)
         .parent::<biunion::Left>(parent)
-        .input::<biunion::Right, crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<biunion::Right, poll::Sync>()
+        .output::<poll::Sync>();
 
     let mut config_writer = Writer::<Config>::of::<_, biunion::Right>(&node).unwrap();
 

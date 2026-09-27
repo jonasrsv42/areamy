@@ -4,6 +4,7 @@ use super::mock::{
     HoldBiunion, IoThread, Msg, RIGHT, Signal, drain, drain_edge, hold, hold_biunion,
     slow_hold_biunion,
 };
+use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::Error;
 use crate::poll::{self, BiunionWakers};
 use crate::sync::Receiver;
@@ -86,7 +87,7 @@ fn work_biunion_close_right() -> Result<(), Error> {
 /// Push everything, then run the poll thread inline until it drains and exits.
 fn poll_biunion<R>(routine: fn(BiunionWakers) -> R, close_left: bool) -> Result<Vec<Msg>, Error>
 where
-    R: crate::node::biunion::poll::routine::BiunionRoutine<usize, usize, usize> + 'static,
+    R: PollBiunionRoutine<usize, usize, usize> + 'static,
 {
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let mut node = async_thread

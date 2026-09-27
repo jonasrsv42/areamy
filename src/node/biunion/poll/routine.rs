@@ -8,6 +8,7 @@
 //! contract (flush, poll, output waking).
 
 use crate::biunion;
+use crate::node::Name;
 
 pub trait BiunionRoutine<Left, Right, Out>:
     crate::Send<Left, biunion::Left>
@@ -15,7 +16,7 @@ pub trait BiunionRoutine<Left, Right, Out>:
     + crate::Next<Out>
     + crate::Flush
     + crate::Poll
-    + crate::node::Name
+    + Name
 {
 }
 
@@ -24,6 +25,7 @@ pub mod tests {
     use crate::biunion;
     use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
+    use crate::node::Name;
     use crate::poll::future::queue::OutputQueue;
 
     /// Mock biunion routine: left input doubled, right input tripled,
@@ -93,7 +95,7 @@ pub mod tests {
         }
     }
 
-    impl crate::node::Name for MockBiunion {}
+    impl Name for MockBiunion {}
     impl super::BiunionRoutine<usize, usize, usize> for MockBiunion {}
 
     pub fn noop_local_waker() -> ThreadLocalWaker {

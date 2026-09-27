@@ -8,6 +8,7 @@ use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::connect::waker::Waker;
 use crate::error::Error;
 use crate::marker::Connection;
+use crate::node::Name;
 use crate::poll::future::OutputQueue;
 use crate::{
     BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Sink, ThreadId,
@@ -64,7 +65,7 @@ impl<'a> crate::Flush for BorrowingLine<'a> {
     }
 }
 
-impl<'a> crate::node::Name for BorrowingLine<'a> {}
+impl<'a> Name for BorrowingLine<'a> {}
 
 impl<'a> LineRoutine<usize, usize> for BorrowingLine<'a> {}
 
@@ -104,7 +105,7 @@ impl<'a> crate::Poll for PollBorrowingLine<'a> {
     }
 }
 
-impl<'a> crate::node::Name for PollBorrowingLine<'a> {}
+impl<'a> Name for PollBorrowingLine<'a> {}
 
 impl<'a> crate::poll::LineRoutine<usize, usize> for PollBorrowingLine<'a> {}
 
@@ -143,7 +144,7 @@ impl<'a> crate::Flush for BorrowingBiunion<'a> {
     }
 }
 
-impl<'a> crate::node::Name for BorrowingBiunion<'a> {}
+impl<'a> Name for BorrowingBiunion<'a> {}
 
 impl<'a> BiunionRoutine<usize, usize, usize> for BorrowingBiunion<'a> {}
 
@@ -190,7 +191,7 @@ impl<'a> crate::Poll for PollBorrowingBiunion<'a> {
     }
 }
 
-impl<'a> crate::node::Name for PollBorrowingBiunion<'a> {}
+impl<'a> Name for PollBorrowingBiunion<'a> {}
 
 impl<'a> PollBiunionRoutine<usize, usize, usize> for PollBorrowingBiunion<'a> {}
 
@@ -233,7 +234,7 @@ impl<'a> crate::Flush for BorrowingBifurcation<'a> {
     }
 }
 
-impl<'a> crate::node::Name for BorrowingBifurcation<'a> {}
+impl<'a> Name for BorrowingBifurcation<'a> {}
 
 impl<'a> BifurcationRoutine<usize, usize, usize> for BorrowingBifurcation<'a> {}
 

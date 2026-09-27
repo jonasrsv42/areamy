@@ -477,10 +477,7 @@ pub mod tests {
 
     impl Pollable for AsyncNode {
         type ThreadId = DefaultThread;
-        fn poll(
-            &mut self,
-            _waker: &mut crate::connect::waker::Waker,
-        ) -> Result<core::task::Poll<()>, Error> {
+        fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
             match self.input.poll()? {
                 Some(Message::Data(d)) => {
                     self.outputs.push(self.routine.process(d));
@@ -539,10 +536,7 @@ pub mod tests {
 
     impl Pollable for ClosingAsyncNode {
         type ThreadId = DefaultThread;
-        fn poll(
-            &mut self,
-            _waker: &mut crate::connect::waker::Waker,
-        ) -> Result<core::task::Poll<()>, Error> {
+        fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
             match self.input.poll() {
                 Ok(Some(_)) => Ok(core::task::Poll::Pending),
                 Ok(None) => Ok(core::task::Poll::Pending),

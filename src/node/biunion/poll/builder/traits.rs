@@ -12,12 +12,13 @@
 use super::node::{Allocated, Allocating, BuilderInput, Node};
 use crate::ThreadId;
 use crate::biunion;
-use crate::connect::poll::edge::{Deferred, Edge, Null, Sync};
+use crate::connect::poll::edge::{Async, Deferred, Edge, Null, Sync};
 use crate::connect::poll::input::sync::{Input, Receiver};
 use crate::connect::poll::traits::AsyncParent;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
+use std::marker::PhantomData;
 
 /// Resolve one input to Async via a parent node.
 pub trait ResolveParent<'params, Node, SignalType: Origin, ThreadIdType: ThreadId> {
@@ -118,7 +119,7 @@ where
                 right: node.input.right,
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -189,7 +190,7 @@ where
                 right: node.input.right,
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -202,7 +203,7 @@ impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
             'params,
             Allocating<'alloc>,
             Deferred,
-            crate::connect::poll::edge::Async,
+            Async,
             Deferred,
             Left,
             Right,
@@ -223,7 +224,7 @@ where
         'params,
         Allocated,
         Sync,
-        crate::connect::poll::edge::Async,
+        Async,
         Deferred,
         Left,
         Right,
@@ -237,7 +238,7 @@ where
             'params,
             Allocating<'alloc>,
             Deferred,
-            crate::connect::poll::edge::Async,
+            Async,
             Deferred,
             Left,
             Right,
@@ -260,7 +261,7 @@ where
                 right: node.input.right,
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -335,7 +336,7 @@ where
                 },
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -406,7 +407,7 @@ where
                 },
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -418,7 +419,7 @@ impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
         Node<
             'params,
             Allocating<'alloc>,
-            crate::connect::poll::edge::Async,
+            Async,
             Deferred,
             Deferred,
             Left,
@@ -439,7 +440,7 @@ where
     type Resolved = Node<
         'params,
         Allocated,
-        crate::connect::poll::edge::Async,
+        Async,
         Sync,
         Deferred,
         Left,
@@ -453,7 +454,7 @@ where
         node: Node<
             'params,
             Allocating<'alloc>,
-            crate::connect::poll::edge::Async,
+            Async,
             Deferred,
             Deferred,
             Left,
@@ -477,7 +478,7 @@ where
                 },
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -545,7 +546,7 @@ where
             factory: node.factory,
             input: node.input,
             output: Default::default(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }

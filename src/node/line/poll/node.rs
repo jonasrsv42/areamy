@@ -35,13 +35,14 @@
 //! If strict ordering is required with async routines, use Flush instead.
 
 use crate::connect::waker::{ThreadLocalWaker, Waker};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::marker::Connection;
 use crate::message::Message;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
 use crate::{Pollable, Receivable, Sink, ThreadId, fatal};
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 /// Node state machine for managing flush and close lifecycle.
@@ -115,7 +116,7 @@ where
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    if matches!(e.kind, crate::error::ErrorKind::Closed) {
+                    if matches!(e.kind, ErrorKind::Closed) {
                         // Fast close: skip flush, skip routine polling.
                         // Output drains buffered next() and closes the
                         // downstream edge; routine is dropped with the node.
@@ -139,7 +140,7 @@ where
     fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         match crate::Poll::poll(&mut self.worker, waker) {
             Ok(poll) => Ok(poll),
-            Err(e) if matches!(e.kind, crate::error::ErrorKind::Closed) => Err(fatal!(
+            Err(e) if matches!(e.kind, ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"
             )),
             Err(e) => Err(e),
@@ -162,7 +163,7 @@ where
 {
     pub(crate) shared:
         Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    _thread_id: PhantomData<ThreadIdType>,
 }
 
 impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Connection
@@ -221,7 +222,7 @@ where
 {
     pub(crate) shared:
         Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    _thread_id: PhantomData<ThreadIdType>,
 }
 
 impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Connection
@@ -312,7 +313,7 @@ where
 {
     pub(crate) shared:
         Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    _thread_id: PhantomData<ThreadIdType>,
 }
 
 impl<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType> Connection
@@ -410,15 +411,15 @@ where
     (
         Input {
             shared: shared.clone(),
-            _thread_id: std::marker::PhantomData,
+            _thread_id: PhantomData,
         },
         Work {
             shared: shared.clone(),
-            _thread_id: std::marker::PhantomData,
+            _thread_id: PhantomData,
         },
         Output {
             shared,
-            _thread_id: std::marker::PhantomData,
+            _thread_id: PhantomData,
         },
     )
 }
@@ -526,17 +527,11 @@ mod tests {
         // Fast close: Input detects closed → CloseReady directly,
         // skipping the Closing/poll-routine cycle. Work is irrelevant.
         let result = input_phase.poll(&mut wkr);
-        assert!(matches!(
-            result.unwrap_err().kind,
-            crate::error::ErrorKind::Closed
-        ));
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
 
         // Output drains buffered output (none here) and closes downstream.
         let result = output_phase.poll(&mut wkr);
-        assert!(matches!(
-            result.unwrap_err().kind,
-            crate::error::ErrorKind::Closed
-        ));
+        assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
     }
 
     #[test]
@@ -613,7 +608,7 @@ mod tests {
 
         let err = work_phase.poll(&mut wkr).unwrap_err();
         assert!(
-            matches!(err.kind, crate::error::ErrorKind::Fatal(_)),
+            matches!(err.kind, ErrorKind::Fatal(_)),
             "expected Fatal, got {:?}",
             err.kind
         );
@@ -644,7 +639,7 @@ mod tests {
 
         let err = work_phase.poll(&mut wkr).unwrap_err();
         assert!(
-            matches!(err.kind, crate::error::ErrorKind::Fatal(_)),
+            matches!(err.kind, ErrorKind::Fatal(_)),
             "expected Fatal, got {:?}",
             err.kind
         );

@@ -1,5 +1,7 @@
 //! Type markers.
+use crate::error::Error;
 use crate::graph::Add;
+use crate::message::Message;
 use crate::{Pushable, Sink};
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
@@ -27,7 +29,7 @@ impl<Type> PhantomNode<Type> {
 // This is just a placeholder implementation for PhantomNode
 impl<'params, DataType, SignalType>
     Add<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
-    for PhantomNode<crate::message::Message<DataType, SignalType>>
+    for PhantomNode<Message<DataType, SignalType>>
 where
     DataType: Send + Sync,
     SignalType: crate::signal::Origin + Send + Sync,
@@ -35,14 +37,14 @@ where
     fn add(
         &mut self,
         _connection: Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<(), Error> {
         Ok(())
     }
 }
 
 impl<'params, DataType, SignalType>
     Add<dyn Sink<DataType = DataType, SignalType = SignalType> + 'params>
-    for PhantomNode<crate::message::Message<DataType, SignalType>>
+    for PhantomNode<Message<DataType, SignalType>>
 where
     DataType: Send + Sync,
     SignalType: crate::signal::Origin + Send + Sync,
@@ -50,14 +52,14 @@ where
     fn add(
         &mut self,
         _connection: Box<dyn Sink<DataType = DataType, SignalType = SignalType> + 'params>,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<(), Error> {
         Ok(())
     }
 }
 
 impl<'params, DataType, SignalType>
     Add<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
-    for PhantomNode<crate::message::Message<DataType, SignalType>>
+    for PhantomNode<Message<DataType, SignalType>>
 where
     DataType: Send + Sync,
     SignalType: crate::signal::Origin + Send + Sync,
@@ -67,7 +69,7 @@ where
         _connection: Box<
             dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
         >,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<(), Error> {
         Ok(())
     }
 }

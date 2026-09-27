@@ -10,7 +10,7 @@
 //!   so signals don't propagate around the loop forever.
 
 use crate::error::Error;
-use crate::node::{bifurcation, biunion};
+use crate::node::{Name, bifurcation, biunion};
 use crate::work::make_line;
 use crate::{
     BifurcationRoutine, BiunionRoutine, LineIo, Message, make_bidi,
@@ -57,7 +57,7 @@ impl crate::Flush for IncrementBiunion {
     }
 }
 
-impl crate::node::Name for IncrementBiunion {
+impl Name for IncrementBiunion {
     fn name(&self) -> &str {
         "IncrementBiunion"
     }
@@ -110,7 +110,7 @@ impl crate::Flush for DeciderBifurcation {
     }
 }
 
-impl crate::node::Name for DeciderBifurcation {
+impl Name for DeciderBifurcation {
     fn name(&self) -> &str {
         "DeciderBifurcation"
     }
@@ -200,7 +200,7 @@ impl crate::Flush for IncrementLine {
     }
 }
 
-impl crate::node::Name for IncrementLine {
+impl Name for IncrementLine {
     fn name(&self) -> &str {
         "IncrementLine"
     }

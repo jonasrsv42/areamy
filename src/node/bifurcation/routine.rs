@@ -1,4 +1,5 @@
 use crate::bifurcation;
+use crate::node::Name;
 
 pub trait BifurcationRoutine<In, Left, Right>:
     Send
@@ -6,7 +7,7 @@ pub trait BifurcationRoutine<In, Left, Right>:
     + crate::Next<Left, bifurcation::Left>
     + crate::Next<Right, bifurcation::Right>
     + crate::Flush
-    + crate::node::Name
+    + Name
 where
     Left: Clone,
     Right: Clone,
@@ -71,7 +72,7 @@ pub mod tests {
         }
     }
 
-    impl crate::node::Name for MockBifurcation {
+    impl Name for MockBifurcation {
         fn name(&self) -> &str {
             "MockBifurcation"
         }

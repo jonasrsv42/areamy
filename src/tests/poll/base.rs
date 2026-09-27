@@ -4,8 +4,10 @@ use crate::error::Error;
 use crate::marker::Connection;
 use crate::node::Name;
 use crate::poll;
+use crate::poll::Sync;
 use crate::signal::Trackable;
 use crate::sync::Receiver;
+use crate::work::{Writer, make_line};
 use crate::{
     Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
 };
@@ -176,14 +178,14 @@ impl ThreadId for IoThread {}
 /// Data only appears in output after poll() processes it.
 #[test]
 fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let mut node = async_thread
         .line(PollDouble::new)
-        .input::<crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<Sync>()
+        .output::<Sync>();
 
     make_push(&mut writer_node, &node)?;
 
@@ -215,20 +217,18 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
 /// Both async nodes use poll() to process data.
 #[test]
 fn async_chain_with_local_edges() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
-    let parent = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_node, &parent)?;
 
     let mut child = async_thread
         .line(PollDouble::new)
         .parent(parent)
-        .output::<crate::poll::Sync>();
+        .output::<Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -257,14 +257,12 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
 /// Five async nodes chained via merge: parent → linked → linked → linked → child.
 #[test]
 fn long_async_chain() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
-    let a = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let a = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_node, &a)?;
 
     let b = async_thread.line(PollDouble::new).parent(a);
@@ -273,7 +271,7 @@ fn long_async_chain() -> Result<(), Error> {
     let mut e = async_thread
         .line(PollDouble::new)
         .parent(d)
-        .output::<crate::poll::Sync>();
+        .output::<Sync>();
 
     let output = Receiver::new();
     make_push(&mut e, &output)?;
@@ -317,23 +315,23 @@ fn long_async_chain() -> Result<(), Error> {
 /// Push connections allow fan-out at the cost of Mutex.
 #[test]
 fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let mut node_a = async_thread
         .line(PollDouble::new)
-        .input::<crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<Sync>()
+        .output::<Sync>();
     let mut node_b = async_thread
         .line(PollDouble::new)
-        .input::<crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<Sync>()
+        .output::<Sync>();
     let mut node_c = async_thread
         .line(PollDouble::new)
-        .input::<crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<Sync>()
+        .output::<Sync>();
 
     make_push(&mut writer_node, &node_a)?;
     make_push(&mut node_a, &node_b)?;
@@ -381,29 +379,25 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
 /// Child drains from both parents. Output receives doubled values from both.
 #[test]
 fn merge_two_parents_into_child() -> Result<(), Error> {
-    let mut writer_a_node = crate::work::make_line(Double::new());
-    let mut writer_a = crate::work::Writer::<usize>::of(&writer_a_node)?;
+    let mut writer_a_node = make_line(Double::new());
+    let mut writer_a = Writer::<usize>::of(&writer_a_node)?;
 
-    let mut writer_b_node = crate::work::make_line(Double::new());
-    let mut writer_b = crate::work::Writer::<usize>::of(&writer_b_node)?;
+    let mut writer_b_node = make_line(Double::new());
+    let mut writer_b = Writer::<usize>::of(&writer_b_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
-    let parent_a = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_a = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_a_node, &parent_a)?;
 
-    let parent_b = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_b = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_b_node, &parent_b)?;
 
     let mut child = async_thread
         .line(PollDouble::new)
         .parent(parent_a)
         .parent(parent_b)
-        .output::<crate::poll::Sync>();
+        .output::<Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -450,30 +444,24 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
 /// ```
 #[test]
 fn merge_three_parents_via_linked() -> Result<(), Error> {
-    let mut writer_a_node = crate::work::make_line(Double::new());
-    let mut writer_a = crate::work::Writer::<usize>::of(&writer_a_node)?;
+    let mut writer_a_node = make_line(Double::new());
+    let mut writer_a = Writer::<usize>::of(&writer_a_node)?;
 
-    let mut writer_b_node = crate::work::make_line(Double::new());
-    let mut writer_b = crate::work::Writer::<usize>::of(&writer_b_node)?;
+    let mut writer_b_node = make_line(Double::new());
+    let mut writer_b = Writer::<usize>::of(&writer_b_node)?;
 
-    let mut writer_c_node = crate::work::make_line(Double::new());
-    let mut writer_c = crate::work::Writer::<usize>::of(&writer_c_node)?;
+    let mut writer_c_node = make_line(Double::new());
+    let mut writer_c = Writer::<usize>::of(&writer_c_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
-    let parent_a = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_a = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_a_node, &parent_a)?;
 
-    let parent_b = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_b = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_b_node, &parent_b)?;
 
-    let parent_c = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_c = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_c_node, &parent_c)?;
 
     // All three parents merged into one linked node
@@ -486,7 +474,7 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     let mut child = async_thread
         .line(PollDouble::new)
         .parent(linked)
-        .output::<crate::poll::Sync>();
+        .output::<Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -532,15 +520,15 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
 /// Terminal via typed: Node<Sync, Sync>.
 #[test]
 fn node_terminal_via_typed() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let mut node = async_thread
         .line(PollDouble::new)
-        .input::<crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<Sync>()
+        .output::<Sync>();
 
     make_push(&mut writer_node, &node)?;
 
@@ -571,20 +559,18 @@ fn node_terminal_via_typed() -> Result<(), Error> {
 /// Parent→child via typed + parent.
 #[test]
 fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
-    let parent = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_node, &parent)?;
 
     let mut child = async_thread
         .line(PollDouble::new)
         .parent(parent)
-        .output::<crate::poll::Sync>();
+        .output::<Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -613,14 +599,12 @@ fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
 /// Sink: Deferred output, data discarded via Null.
 #[test]
 fn node_sink_deferred_output() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
-    let parent = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_node, &parent)?;
 
     let sink = async_thread.line(PollDouble::new).parent(parent);
@@ -656,30 +640,24 @@ fn node_sink_deferred_output() -> Result<(), Error> {
 /// Both sinks accumulate values. Test verifies correct values arrive.
 #[test]
 fn async_only_multiple_sinks() -> Result<(), Error> {
-    let mut writer_a_node = crate::work::make_line(Double::new());
-    let mut writer_a = crate::work::Writer::<usize>::of(&writer_a_node)?;
+    let mut writer_a_node = make_line(Double::new());
+    let mut writer_a = Writer::<usize>::of(&writer_a_node)?;
 
-    let mut writer_b_node = crate::work::make_line(Double::new());
-    let mut writer_b = crate::work::Writer::<usize>::of(&writer_b_node)?;
+    let mut writer_b_node = make_line(Double::new());
+    let mut writer_b = Writer::<usize>::of(&writer_b_node)?;
 
-    let mut writer_c_node = crate::work::make_line(Double::new());
-    let mut writer_c = crate::work::Writer::<usize>::of(&writer_c_node)?;
+    let mut writer_c_node = make_line(Double::new());
+    let mut writer_c = Writer::<usize>::of(&writer_c_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
-    let parent_a = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_a = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_a_node, &parent_a)?;
 
-    let parent_b = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_b = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_b_node, &parent_b)?;
 
-    let parent_c = async_thread
-        .line(PollDouble::new)
-        .input::<crate::poll::Sync>();
+    let parent_c = async_thread.line(PollDouble::new).input::<Sync>();
     make_push(&mut writer_c_node, &parent_c)?;
 
     let collected_1 = Arc::new(Mutex::new(Vec::new()));
@@ -845,8 +823,8 @@ impl poll::LineRoutine<usize, usize> for HalfCloseRoutine {}
 /// Data sent before the flush is doubled and forwarded.
 #[test]
 fn flush_waits_for_routine_ready() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let flush_count = Arc::new(Mutex::new(0));
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
@@ -857,14 +835,14 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
             let fc = flush_count.clone();
             move |w| HalfCloseRoutine::new(w, 3, fc)
         })
-        .input::<crate::poll::Sync>();
+        .input::<Sync>();
     make_push(&mut writer_node, &parent)?;
 
     // Child collects output to verify flush ordering
     let mut child = async_thread
         .line(PollDouble::new)
         .parent(parent)
-        .output::<crate::poll::Sync>();
+        .output::<Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -981,20 +959,20 @@ impl poll::LineRoutine<usize, usize> for BatchRoutine {}
 ///   Close                          → empty flush, close propagates
 #[test]
 fn multi_flush_then_close() -> Result<(), Error> {
-    let mut writer_node = crate::work::make_line(Double::new());
-    let mut writer = crate::work::Writer::<usize>::of(&writer_node)?;
+    let mut writer_node = make_line(Double::new());
+    let mut writer = Writer::<usize>::of(&writer_node)?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let parent = async_thread
         .line(|w| BatchRoutine::new(w, 2))
-        .input::<crate::poll::Sync>();
+        .input::<Sync>();
     make_push(&mut writer_node, &parent)?;
 
     let mut child = async_thread
         .line(PollDouble::new)
         .parent(parent)
-        .output::<crate::poll::Sync>();
+        .output::<Sync>();
 
     let output = Receiver::new();
     make_push(&mut child, &output)?;
@@ -1082,8 +1060,8 @@ fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
                 })
             },
         ))
-        .input::<crate::poll::Sync>()
-        .output::<crate::poll::Sync>();
+        .input::<Sync>()
+        .output::<Sync>();
 
     let mut writer = Writer::<usize>::of::<_, crate::marker::Unary>(&node).unwrap();
     let output = Receiver::new();
@@ -1175,9 +1153,9 @@ fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
                 })
             },
         ))
-        .input::<crate::poll::Sync>()
+        .input::<Sync>()
         .sink(Collect { items, closed });
-    let mut writer = crate::work::Writer::<Moved>::new(&node)?;
+    let mut writer = Writer::<Moved>::new(&node)?;
     async_thread.add(node);
 
     std::thread::scope(|s| -> Result<(), Error> {

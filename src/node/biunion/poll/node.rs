@@ -19,13 +19,14 @@
 
 use crate::biunion;
 use crate::connect::waker::{ThreadLocalWaker, Waker};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::marker::Connection;
 use crate::message::Message;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
 use crate::{Pollable, Receivable, Sink, ThreadId, fatal};
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 /// A phase pairs its target (edge, routine, etc.) with its waker.
@@ -123,7 +124,7 @@ where
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    if matches!(e.kind, crate::error::ErrorKind::Closed) {
+                    if matches!(e.kind, ErrorKind::Closed) {
                         // Fast close: skip flush, skip routine polling.
                         // Output drains buffered next() and closes the
                         // downstream edge; routine drops with the node.
@@ -161,7 +162,7 @@ where
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    if matches!(e.kind, crate::error::ErrorKind::Closed) {
+                    if matches!(e.kind, ErrorKind::Closed) {
                         // Fast close — see `drain_left` for rationale.
                         self.state = NodeState::CloseReady;
                         self.work.waker.wake();
@@ -181,7 +182,7 @@ where
     fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         match crate::Poll::poll(&mut self.work.target, waker) {
             Ok(poll) => Ok(poll),
-            Err(e) if matches!(e.kind, crate::error::ErrorKind::Closed) => Err(fatal!(
+            Err(e) if matches!(e.kind, ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"
             )),
             Err(e) => Err(e),
@@ -241,7 +242,7 @@ pub struct LeftInput<
         RightInputType,
         OutputType,
     >,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    _thread_id: PhantomData<ThreadIdType>,
 }
 
 impl<
@@ -356,7 +357,7 @@ pub struct RightInput<
         RightInputType,
         OutputType,
     >,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    _thread_id: PhantomData<ThreadIdType>,
 }
 
 impl<
@@ -471,7 +472,7 @@ pub struct Work<
         RightInputType,
         OutputType,
     >,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    _thread_id: PhantomData<ThreadIdType>,
 }
 
 impl<
@@ -610,7 +611,7 @@ pub struct Output<
         RightInputType,
         OutputType,
     >,
-    _thread_id: std::marker::PhantomData<ThreadIdType>,
+    _thread_id: PhantomData<ThreadIdType>,
 }
 
 impl<
@@ -763,20 +764,20 @@ where
         inputs: super::phases::Inputs {
             left: LeftInput {
                 shared: shared.clone(),
-                _thread_id: std::marker::PhantomData,
+                _thread_id: PhantomData,
             },
             right: RightInput {
                 shared: shared.clone(),
-                _thread_id: std::marker::PhantomData,
+                _thread_id: PhantomData,
             },
         },
         work: Work {
             shared: shared.clone(),
-            _thread_id: std::marker::PhantomData,
+            _thread_id: PhantomData,
         },
         output: Output {
             shared,
-            _thread_id: std::marker::PhantomData,
+            _thread_id: PhantomData,
         },
     }
 }
@@ -1046,12 +1047,12 @@ mod tests {
         let _ = h.poll_left();
         assert!(matches!(
             h.poll_right().unwrap_err().kind,
-            crate::error::ErrorKind::Closed
+            ErrorKind::Closed
         ));
         let _ = h.poll_work();
         assert!(matches!(
             h.poll_output().unwrap_err().kind,
-            crate::error::ErrorKind::Closed
+            ErrorKind::Closed
         ));
     }
 
@@ -1069,7 +1070,7 @@ mod tests {
         let _ = h.poll_work();
         assert!(matches!(
             h.poll_output().unwrap_err().kind,
-            crate::error::ErrorKind::Closed
+            ErrorKind::Closed
         ));
     }
 

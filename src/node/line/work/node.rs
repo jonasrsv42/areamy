@@ -1,6 +1,6 @@
 //! [LineTrait] and default implementation for running [LineRoutine].
 use crate::connect::sync::Receiver;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::node::line::LineRoutine;
 use crate::node::work::work_each;
 use crate::{Closeable, Pushable, Sink, Workable};
@@ -246,7 +246,7 @@ where
     /// Returns the original result unchanged.
     fn propagate_if_closed<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
         result.map_err(|e| {
-            if matches!(e.kind, crate::error::ErrorKind::Closed) {
+            if matches!(e.kind, ErrorKind::Closed) {
                 self.close_pushes();
             }
             e
@@ -367,7 +367,6 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::error::ErrorKind;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::{make_bidi, work::make_line};
     use crate::{reader::work::tee, work::Reader, work::Writer};
@@ -544,8 +543,6 @@ pub mod tests {
 
     #[test]
     fn line_can_tee() {
-        // TODO make a tee sink where the sink only gets pushable references
-        // but does not own the workable.
         let mut line = make_line(MockLine::new());
 
         let mut writer = Writer::new(&line).unwrap();

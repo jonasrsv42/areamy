@@ -33,10 +33,12 @@ use crate::error::Error;
 use crate::graph::{Add, Get};
 use crate::marker::Connection;
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
+use crate::node::line::poll::node::new_phases;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
 use crate::{Sink, ThreadId};
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 /// Unified async node builder.
@@ -63,7 +65,7 @@ pub struct Node<
     factory: FactoryType,
     input: InEdgeType::Input<'params, InType, SignalType, ThreadIdType>,
     output: OutEdgeType::Output<'params, OutType, SignalType>,
-    _phantom: std::marker::PhantomData<(fn() -> OutType, fn() -> InType, ThreadIdType)>,
+    _phantom: PhantomData<(fn() -> OutType, fn() -> InType, ThreadIdType)>,
 }
 
 // ============================================================
@@ -122,7 +124,7 @@ where
             factory,
             input: Default::default(),
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 
@@ -139,7 +141,7 @@ where
             factory: self.factory,
             input,
             output: self.output,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 
@@ -154,7 +156,7 @@ where
             factory: self.factory,
             input: self.input,
             output: E::resolve(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -182,7 +184,7 @@ where
             factory: self.factory,
             input,
             output: self.output,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -210,7 +212,7 @@ where
             factory: self.factory,
             input: self.input,
             output: E::resolve(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 
@@ -227,7 +229,7 @@ where
             factory: self.factory,
             input: self.input,
             output: Box::new(sink),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -283,7 +285,7 @@ where
                 parents: vec![Box::new(parent)],
             },
             output: self.output,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -307,7 +309,7 @@ where
             factory: self.factory,
             input: self.input,
             output: E::resolve(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 
@@ -324,7 +326,7 @@ where
             factory: self.factory,
             input: self.input,
             output: Box::new(sink),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -468,7 +470,7 @@ where
         work: work.value.local.clone(),
         output: output_slot.value.local.clone(),
     });
-    let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+    let (input_phase, work_phase, output_phase) = new_phases(
         routine,
         input.edge,
         output,
@@ -540,7 +542,7 @@ where
         work: work.value.local.clone(),
         output: output_slot.value.local.clone(),
     });
-    let (input_phase, work_phase, output_phase) = crate::node::line::poll::node::new_phases(
+    let (input_phase, work_phase, output_phase) = new_phases(
         routine,
         edges,
         output,

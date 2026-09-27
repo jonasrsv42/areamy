@@ -12,6 +12,7 @@ use crate::connect::poll::traits::AsyncParent;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
+use std::marker::PhantomData;
 
 // --- Both deferred: parent on Node<Allocating, Deferred, Deferred, Deferred> ---
 
@@ -89,7 +90,7 @@ where
                 right: node.input.right,
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -168,7 +169,7 @@ where
                 },
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -248,7 +249,7 @@ where
                 },
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -328,7 +329,7 @@ where
                 right: node.input.right,
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -408,7 +409,7 @@ where
                 right: node.input.right,
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -488,7 +489,7 @@ where
                 },
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }

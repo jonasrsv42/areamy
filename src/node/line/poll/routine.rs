@@ -68,14 +68,16 @@
 //!
 //! Think this is too many rules? Just use [FutureRoutine](crate::poll::future::line::FutureRoutine) — it handles all of it for you.
 
+use crate::node::Name;
+
 pub trait LineRoutine<In, Out>:
-    crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + crate::node::Name
+    crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + Name
 {
 }
 
 #[cfg(test)]
 pub mod tests {
-    use super::LineRoutine;
+    use super::{LineRoutine, Name};
     use crate::connect::waker::{ThreadLocalWaker, Waker, mock};
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
@@ -132,7 +134,7 @@ pub mod tests {
         }
     }
 
-    impl crate::node::Name for MockLine {}
+    impl Name for MockLine {}
     impl LineRoutine<usize, usize> for MockLine {}
 
     pub fn noop_local_waker() -> ThreadLocalWaker {

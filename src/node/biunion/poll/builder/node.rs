@@ -13,7 +13,7 @@
 
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::biunion;
-use crate::connect::poll::edge::{Deferred, Edge, Null, Sync};
+use crate::connect::poll::edge::{Async, Deferred, Edge, Null, Sync};
 use crate::connect::poll::wakers::WakerAllocator;
 use crate::error::Error;
 use crate::graph::{Add, Get};
@@ -22,6 +22,7 @@ use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
 use crate::{Sink, ThreadId};
+use std::marker::PhantomData;
 
 /// Builder still holds `&'alloc mut WakerAllocator` — one or both inputs deferred.
 pub struct Allocating<'alloc>(pub(crate) &'alloc mut WakerAllocator);
@@ -71,8 +72,7 @@ pub struct Node<
     pub(crate) input:
         BuilderInput<'params, LeftEdge, RightEdge, Left, Right, SignalType, ThreadIdType>,
     pub(crate) output: OutEdge::Output<'params, Out, SignalType>,
-    pub(crate) _phantom:
-        std::marker::PhantomData<(fn() -> Out, fn() -> Left, fn() -> Right, ThreadIdType)>,
+    pub(crate) _phantom: PhantomData<(fn() -> Out, fn() -> Left, fn() -> Right, ThreadIdType)>,
 }
 
 impl<
@@ -145,7 +145,7 @@ where
                 right: Default::default(),
             },
             output: Null::new(),
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -180,9 +180,9 @@ macro_rules! impl_input {
 
 impl_input!(Deferred, Deferred, 'alloc);
 impl_input!(Sync, Deferred, 'alloc);
-impl_input!(crate::connect::poll::edge::Async, Deferred, 'alloc);
+impl_input!(Async, Deferred, 'alloc);
 impl_input!(Deferred, Sync, 'alloc);
-impl_input!(Deferred, crate::connect::poll::edge::Async, 'alloc);
+impl_input!(Deferred, Async, 'alloc);
 
 // ============================================================
 // .output::<Edge>() — dispatched via ResolveOutput

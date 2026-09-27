@@ -213,7 +213,7 @@ mod tests {
         // Driver work-line on a sibling thread (FutureRoutine wants its
         // own poll thread; we feed it from a sync line so the test
         // doesn't need to manage two source/sink wakers).
-        let mut driver = make_line(crate::poll::future::line::routine::tests::PassThrough::new());
+        let mut driver = make_line(PassThrough::new());
         let mut input = Writer::new(driver.as_ref()).unwrap();
         make_push(driver.as_mut(), &node).unwrap();
 

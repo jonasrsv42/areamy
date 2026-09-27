@@ -5,10 +5,10 @@
 //! [OutputProducer]. Use [race](fn@crate::poll::race) to await either
 //! input, or [try_join](fn@crate::poll::try_join) to serve both.
 
-use crate::biunion;
 use crate::error::Error;
 use crate::node::biunion::poll::factory::BiunionWakers;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::node::{biunion, routine};
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
 use crate::poll::waker;
 use std::future::Future;
@@ -75,7 +75,7 @@ where
     }
 }
 
-impl<'params, Left, Right, Out, F> crate::Send<Left, biunion::Left>
+impl<'params, Left, Right, Out, F> routine::Send<Left, biunion::Left>
     for FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
@@ -87,7 +87,7 @@ where
     }
 }
 
-impl<'params, Left, Right, Out, F> crate::Send<Right, biunion::Right>
+impl<'params, Left, Right, Out, F> routine::Send<Right, biunion::Right>
     for FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
@@ -99,7 +99,8 @@ where
     }
 }
 
-impl<'params, Left, Right, Out, F> crate::Next<Out> for FutureRoutine<'params, Left, Right, Out, F>
+impl<'params, Left, Right, Out, F> routine::Next<Out>
+    for FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
@@ -109,7 +110,7 @@ where
     }
 }
 
-impl<'params, Left, Right, Out, F> crate::Flush for FutureRoutine<'params, Left, Right, Out, F>
+impl<'params, Left, Right, Out, F> routine::Flush for FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
@@ -121,7 +122,7 @@ where
     }
 }
 
-impl<'params, Left, Right, Out, F> crate::Poll for FutureRoutine<'params, Left, Right, Out, F>
+impl<'params, Left, Right, Out, F> routine::Poll for FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,

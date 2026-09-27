@@ -1,4 +1,6 @@
-use crate::{Message, Pullable, error::Error};
+use crate::error::Error;
+use crate::message::Message;
+use crate::pull::Pullable;
 
 impl<PullableType: Pullable + ?Sized> Pullable for Box<PullableType> {
     type ThreadId = PullableType::ThreadId;

@@ -1,6 +1,7 @@
-use crate::Pullable;
 use crate::error::Error;
 use crate::message::Message;
+use crate::pull::Pullable;
+use crate::signal::Origin;
 
 /// [`read_until`] will [Pullable::pull] until it recieves the target [Message<DataType, SignalType>]
 ///
@@ -12,7 +13,7 @@ pub fn read_until<ThreadIdType, DataType, SignalType>(
 ) -> Result<Vec<Message<DataType, SignalType>>, Error>
 where
     DataType: Send + Sync,
-    SignalType: crate::Origin + Send + Sync,
+    SignalType: Origin + Send + Sync,
     Message<DataType, SignalType>: PartialEq,
 {
     let mut a = Vec::new();

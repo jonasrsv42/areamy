@@ -15,10 +15,12 @@
 
 use crate::edge::sync::Receiver;
 use crate::error::Error;
-use crate::graph::Get;
 use crate::graph::marker::Connection;
+use crate::graph::{Get, Pushable, Sink};
 use crate::message::Message;
-use crate::{Origin, Pullable, Pushable, ThreadId};
+use crate::pull::Pullable;
+use crate::signal::Origin;
+use crate::thread::ThreadId;
 use std::marker::PhantomData;
 
 /// A buffer that serves as the entry point to a [`Pullable`] subgraph.
@@ -114,9 +116,9 @@ where
     }
 }
 
-/// [Get] the [crate::Sink] from [WriterBuffer] for closing.
+/// [Get] the [Sink] from [WriterBuffer] for closing.
 impl<'params, DataType, SignalType, ThreadIdType>
-    Get<dyn crate::Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
+    Get<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
     for WriterBuffer<DataType, SignalType, ThreadIdType>
 where
     DataType: Send + Sync + 'static,
@@ -126,7 +128,7 @@ where
     fn get(
         &self,
     ) -> Result<
-        Box<dyn crate::Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
+        Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
         Error,
     > {
         Get::get(&self.input)

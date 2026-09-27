@@ -10,14 +10,14 @@
 //! the output edge.
 
 use super::node::{Allocated, Allocating, BuilderInput, Node};
-use crate::ThreadId;
-use crate::biunion;
+use crate::node::biunion;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
 use crate::poll::input::sync::{Input, Receiver};
 use crate::poll::traits::AsyncParent;
 use crate::signal::Origin;
+use crate::thread::ThreadId;
 use std::marker::PhantomData;
 
 /// Resolve one input to Async via a parent node.

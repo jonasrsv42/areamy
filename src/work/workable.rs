@@ -1,6 +1,6 @@
-use crate::ThreadId;
 use crate::error::Error;
 use crate::graph::marker::Connection;
+use crate::thread::ThreadId;
 
 mod default;
 

@@ -1,15 +1,13 @@
 //! [LineTrait] and default implementation for running [LineRoutine].
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
-use crate::node::line::LineRoutine;
-use crate::work::work_each;
-use crate::{Closeable, Pushable, Sink, Workable};
-use crate::{
-    DefaultThread, ThreadId,
-    graph::{Add, Get},
-    marker::Connection,
-};
-use crate::{Message, Origin};
+use crate::graph::marker::Connection;
+use crate::graph::{Add, Closeable, Get, Pushable, Sink};
+use crate::message::Message;
+use crate::node::line::routine::LineRoutine;
+use crate::signal::Origin;
+use crate::thread::{DefaultThread, ThreadId};
+use crate::work::{Workable, work_each};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a line.
@@ -336,9 +334,9 @@ where
 
 /// [make_line] creates a [LineTrait] implementation from a [LineRoutine] this
 /// can then be connected to other graph nodes using the functions such as
-/// - [crate::make_bidi]
-/// - [crate::make_push]
-/// - [crate::make_work]
+/// - [crate::work::make_bidi]
+/// - [crate::edge::push::make_push]
+/// - [crate::work::make_work]
 ///
 /// Returns a concrete `Box<Line<...>>` rather than `Box<impl LineTrait + ...>`.
 /// This is intentional — `impl Trait` return types prevent the compiler from

@@ -8,13 +8,15 @@
 //! [ThreadLocalWakerAllocator::build] to produce a [Runtime].
 
 use crate::error::Error;
+use crate::fatal;
+use crate::poll::Pollable;
 use crate::poll::graph::GraphNode;
 use crate::poll::marker::NodeId;
 use crate::poll::queue::{Producer, ThreadLocalProducer};
 use crate::poll::runtime::{Node, Runtime};
 use crate::poll::waker::{self, ThreadLocalWaker};
 use crate::poll::wakers::sync;
-use crate::{Pollable, ThreadId, fatal};
+use crate::thread::ThreadId;
 
 use alloc::vec::Vec;
 use core::marker::PhantomData;

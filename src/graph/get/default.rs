@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::fatal;
-use crate::{graph::Get, marker::Connection, marker::Multiplicity};
+use crate::graph::Get;
+use crate::graph::marker::{Connection, Multiplicity};
 use std::sync::{Arc, Mutex};
 
 impl<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity, GetType>

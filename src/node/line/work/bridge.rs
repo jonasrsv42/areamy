@@ -1,8 +1,14 @@
-//! Bridge a [LineRoutine] with a [crate::pull::Line]
+//! Bridge a [LineRoutine] with a [crate::node::line::pull::Line]
 
 use crate::error::Error;
-use crate::{LineRoutine, Origin, Pullable, ThreadId, Workable, work::Line};
-use crate::{Pushable, marker::Connection};
+use crate::graph::Pushable;
+use crate::graph::marker::Connection;
+use crate::node::line::routine::LineRoutine;
+use crate::node::line::work::node::Line;
+use crate::pull::Pullable;
+use crate::signal::Origin;
+use crate::thread::ThreadId;
+use crate::work::Workable;
 
 /// [`Bridge`] is a bridge between a [Pullable] and [Workable] segment.
 /// it holds a [Pullable] type which it'll [Pullable::pull] when scheduled
@@ -58,16 +64,16 @@ where
     }
 }
 
-/// Build a [`crate::work::Line`] node fed by a [Pullable] parent.
+/// Build a [`Line`] node fed by a [Pullable] parent.
 ///
 /// Bridges a pull-graph segment (the `pullable`) into a work-graph
 /// node (built from `worker`). The resulting node can be wired to
-/// other work-graph nodes via [crate::make_bidi], [crate::make_push]
-/// and [crate::make_work] like any other line node.
+/// other work-graph nodes via [crate::work::make_bidi], [crate::edge::push::make_push]
+/// and [crate::work::make_work] like any other line node.
 ///
 /// Returns a concrete `Box<Line<...>>` rather than `Box<impl LineTrait + ...>`
 /// — `impl Trait` returns hide type info from the inferencer in cyclic
-/// graphs, matching the policy used by [`crate::work::make_line`].
+/// graphs, matching the policy used by [`crate::node::line::work::node::make_line`].
 ///
 /// * `pullable` - a [Pullable] parent owned by the returned node.
 /// * `worker` - the [LineRoutine] that processes data inside the node.

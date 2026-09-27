@@ -4,7 +4,7 @@
 //! streaming mapping of some set if inputs to some set of outputs.
 //!
 //! For example usage of the [crate::node::routine] traits please see the tests in this file.
-//! or the various routine implementations such as [crate::LineRoutine]
+//! or the various routine implementations such as [crate::node::line::routine::LineRoutine]
 
 use crate::error::Error;
 use crate::graph::marker::{Multiplicity, Unary};
@@ -38,7 +38,7 @@ pub trait Next<Message, MultiplicityType: Multiplicity = Unary> {
     fn next(&mut self) -> Result<Option<Message>, Error>;
 }
 
-/// [`Flush`] trait is used to implement handling of the graph [crate::Message::Flush] signal for
+/// [`Flush`] trait is used to implement handling of the graph [crate::message::Message::Flush] signal for
 /// a routine.
 ///
 /// When flushed a routine should prepare to output everything it can on subsequent [Next]

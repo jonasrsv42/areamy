@@ -1,24 +1,24 @@
 //! [`BiunionRoutine`] for poll biunion nodes — two typed inputs, one output.
 //!
 //! Same contract as [line's LineRoutine](crate::node::line::poll::routine::LineRoutine)
-//! but with two [crate::Send] impls dispatched via [Left](crate::biunion::Left)
-//! and [Right](crate::biunion::Right) markers.
+//! but with two [routine::Send] impls dispatched via [Left](biunion::Left)
+//! and [Right](biunion::Right) markers.
 //!
 //! See [line's routine docs](crate::node::line::poll::routine) for the full
 //! contract (flush, poll, output waking).
 
-use crate::biunion;
+use crate::node::{biunion, routine};
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a poll biunion routine from (`{Left}`, `{Right}`) to `{Out}`",
     note = "needs the supertraits of `poll::BiunionRoutine` and an explicit `impl poll::BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`"
 )]
 pub trait BiunionRoutine<Left, Right, Out>:
-    crate::Send<Left, biunion::Left>
-    + crate::Send<Right, biunion::Right>
-    + crate::Next<Out>
-    + crate::Flush
-    + crate::Poll
+    routine::Send<Left, biunion::Left>
+    + routine::Send<Right, biunion::Right>
+    + routine::Next<Out>
+    + routine::Flush
+    + routine::Poll
 {
 }
 

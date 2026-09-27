@@ -12,17 +12,17 @@
 //! - `Allocated` — both inputs resolved, allocator released
 
 use super::traits::{ResolveInput, ResolveOutput};
-use crate::biunion;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get};
+use crate::graph::{Add, Get, Sink};
+use crate::node::biunion;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
 use crate::poll::thread::Thread;
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
-use crate::{Sink, ThreadId};
+use crate::thread::ThreadId;
 use std::marker::PhantomData;
 
 /// Builder still holds `&'alloc mut WakerAllocator` — one or both inputs deferred.

@@ -5,6 +5,7 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Pushable};
 use crate::message::Message;
 use crate::signal::Origin;
 use std::marker::PhantomData;
@@ -26,7 +27,7 @@ impl<DataType, SignalType: Origin> Default for Null<DataType, SignalType> {
 
 impl<DataType, SignalType: Origin> Connection for Null<DataType, SignalType> {}
 
-impl<DataType, SignalType: Origin> crate::Pushable for Null<DataType, SignalType> {
+impl<DataType, SignalType: Origin> Pushable for Null<DataType, SignalType> {
     type DataType = DataType;
     type SignalType = SignalType;
 
@@ -35,7 +36,7 @@ impl<DataType, SignalType: Origin> crate::Pushable for Null<DataType, SignalType
     }
 }
 
-impl<DataType, SignalType: Origin> crate::Closeable for Null<DataType, SignalType> {
+impl<DataType, SignalType: Origin> Closeable for Null<DataType, SignalType> {
     fn close(&mut self) -> Result<(), Error> {
         Ok(())
     }

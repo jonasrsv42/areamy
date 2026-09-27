@@ -1,6 +1,6 @@
-use crate::Receivable;
 use crate::closed;
 use crate::error::{Error, ErrorKind};
+use crate::graph::Receivable;
 use crate::message::Message;
 use std::cell::RefCell;
 use std::rc::Rc;

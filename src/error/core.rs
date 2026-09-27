@@ -37,7 +37,7 @@ pub enum ErrorKind {
     Any(Box<dyn AnyErr>),
     /// A connection has been closed. Writes fail immediately; reads keep
     /// succeeding until the connection is drained and only then fail, so
-    /// a [`crate::Message::Flush`] pushed before close is never lost. This
+    /// a [`crate::message::Message::Flush`] pushed before close is never lost. This
     /// is a normal termination signal, not an error. ThreadStreams treat
     /// this as an exit signal but can be restarted. Other consumers can
     /// interpret as they wish.

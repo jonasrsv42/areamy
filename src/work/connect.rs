@@ -1,17 +1,16 @@
 //! Utility functions for typed [make_bidi] and [make_push]
-use crate::{
-    Origin, Sink, Trackable, Workable,
-    error::Error,
-    graph::{Add, Get},
-    make_bidi, make_push,
-    marker::Multiplicity,
-};
+use crate::edge::push::make_push;
+use crate::error::Error;
+use crate::graph::marker::Multiplicity;
+use crate::graph::{Add, Get, Sink};
+use crate::signal::{Origin, Trackable};
+use crate::work::{Workable, make_bidi};
 use std::marker::PhantomData;
 
 /// [`Connect`] is a utility that serves no purpose beyond improving readability
 /// it provides no additional functionality beyond what [make_push] and [make_bidi] does.
 ///
-/// What it does provide is the ability to annotate the data that is [crate::Pushable::push]ed through
+/// What it does provide is the ability to annotate the data that is [crate::graph::Pushable::push]ed through
 /// the connection. It has been deemed to reduce cognitive overhead when it comes to reading
 /// the graph declaration if typing is more visible.
 ///

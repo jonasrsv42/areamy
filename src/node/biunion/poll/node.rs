@@ -17,14 +17,17 @@
 //!
 //! Flush from either input triggers Flushing immediately (first-flush-wins).
 
-use crate::biunion;
 use crate::error::{Error, ErrorKind};
+use crate::fatal;
 use crate::graph::marker::Connection;
+use crate::graph::{Receivable, Sink};
 use crate::message::Message;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::node::{biunion, routine};
+use crate::poll::Pollable;
 use crate::poll::waker::{ThreadLocalWaker, Waker};
 use crate::signal::Origin;
-use crate::{Pollable, Receivable, Sink, ThreadId, fatal};
+use crate::thread::ThreadId;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -107,7 +110,7 @@ where
         loop {
             match self.input.left.target.try_recv() {
                 Ok(Some(Message::Data(data))) => {
-                    crate::Send::<Left, biunion::Left>::send(&mut self.work.target, data)?;
+                    routine::Send::<Left, biunion::Left>::send(&mut self.work.target, data)?;
                 }
                 Ok(Some(Message::Flush(signal))) => {
                     self.work.target.flush()?;
@@ -147,7 +150,7 @@ where
         loop {
             match self.input.right.target.try_recv() {
                 Ok(Some(Message::Data(data))) => {
-                    crate::Send::<Right, biunion::Right>::send(&mut self.work.target, data)?;
+                    routine::Send::<Right, biunion::Right>::send(&mut self.work.target, data)?;
                 }
                 Ok(Some(Message::Flush(signal))) => {
                     self.work.target.flush()?;
@@ -180,7 +183,7 @@ where
     }
 
     fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
-        match crate::Poll::poll(&mut self.work.target, waker) {
+        match routine::Poll::poll(&mut self.work.target, waker) {
             Ok(poll) => Ok(poll),
             Err(e) if matches!(e.kind, ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"

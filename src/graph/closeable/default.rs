@@ -1,5 +1,5 @@
-use crate::Closeable;
 use crate::error::Error;
+use crate::graph::Closeable;
 use std::cell::RefCell;
 use std::rc::Rc;
 

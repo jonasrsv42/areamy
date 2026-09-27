@@ -1,6 +1,10 @@
-use crate::Message;
 use crate::error::Error;
-use crate::{DefaultThread, Origin, Pullable, ThreadId, Trackable, marker::Connection, reader};
+use crate::graph::marker::Connection;
+use crate::message::Message;
+use crate::pull::Pullable;
+use crate::reader;
+use crate::signal::{Origin, Trackable};
+use crate::thread::{DefaultThread, ThreadId};
 
 pub struct Reader<
     'params,

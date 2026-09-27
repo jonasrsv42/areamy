@@ -1,6 +1,8 @@
 use crate::node::line::pull::node::Line;
-use crate::{LineRoutine, Origin, ThreadId};
-use crate::{Pullable, Trackable};
+use crate::node::line::routine::LineRoutine;
+use crate::pull::Pullable;
+use crate::signal::{Origin, Trackable};
+use crate::thread::ThreadId;
 use std::marker::PhantomData;
 
 /// [`make_pull`] creates a [Pullable] connection. The child takes ownership

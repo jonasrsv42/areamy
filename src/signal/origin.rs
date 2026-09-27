@@ -24,5 +24,5 @@ pub trait Origin: Debug + Eq + Sync + Send {}
 
 impl Origin for usize {}
 
-/// Default signal us usually a [crate::Trackable<&static str>]
+/// Default signal us usually a [crate::signal::Trackable<&static str>]
 impl Origin for &'static str {}

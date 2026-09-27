@@ -7,11 +7,12 @@
 //! to select storage and control which wiring methods are available.
 
 use super::null::Null;
+use crate::graph::Sink;
 use crate::graph::marker::Connection;
 use crate::poll::input;
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
-use crate::{Sink, ThreadId};
+use crate::thread::ThreadId;
 
 /// Trait for edge markers. Uses GATs to resolve storage types.
 pub trait Edge: Connection {

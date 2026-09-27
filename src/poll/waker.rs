@@ -6,7 +6,7 @@
 //!
 //! [Waker] bundles a sync waker (for I/O, standard futures) with a
 //! thread-local waker (for cheap same-thread wake). Passed to
-//! [Pollable::poll](crate::Pollable).
+//! [Pollable::poll](crate::poll::Pollable).
 
 mod timer_key;
 
@@ -68,7 +68,7 @@ impl ThreadLocalWaker {
     }
 }
 
-/// Waker pair for [Pollable::poll](crate::Pollable).
+/// Waker pair for [Pollable::poll](crate::poll::Pollable).
 ///
 /// Always carries both sync and thread-local wakers. Created on the
 /// async thread during graph construction — never crosses threads.

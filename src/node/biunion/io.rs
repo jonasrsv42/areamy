@@ -1,6 +1,8 @@
 use crate::error::Error;
-use crate::{Message, Origin};
-use crate::{Reader, Sink, Trackable};
+use crate::graph::Sink;
+use crate::message::Message;
+use crate::reader::Reader;
+use crate::signal::{Origin, Trackable};
 use std::fmt::Debug;
 
 pub struct BiunionIo<LeftWriterType, RightWriterType, ReaderType>

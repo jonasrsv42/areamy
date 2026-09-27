@@ -24,8 +24,10 @@ pub use pollable::Pollable;
 pub use race::{Either, race};
 pub use sleep::{SleepFut, sleep, sleep_until};
 pub use thread::{Thread, ThreadHandle};
+pub use traits::AsyncParent;
 pub use try_join::try_join;
-pub use waker::TimerKey;
+pub use waker::{ThreadLocalWake, ThreadLocalWaker, TimerKey, Waker};
+pub use wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 
 pub use crate::node::biunion::poll::factory::{
     BiunionInputs, BiunionRoutineFactory, BiunionWakers,

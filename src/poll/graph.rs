@@ -8,9 +8,10 @@
 //! hold borrows captured from the surrounding scope.
 
 use crate::error::Error;
+use crate::poll::Pollable;
 use crate::poll::marker::NodeId;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
-use crate::{Pollable, ThreadId};
+use crate::thread::ThreadId;
 
 use alloc::vec::Vec;
 

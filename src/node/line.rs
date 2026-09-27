@@ -1,4 +1,4 @@
-//! A variant of [crate::Workable], [crate::Pullable], and [crate::Pollable] nodes with one input and output.
+//! A variant of [crate::work::Workable], [crate::pull::Pullable], and [crate::poll::Pollable] nodes with one input and output.
 mod io;
 pub mod poll;
 pub mod pull;

@@ -1,6 +1,6 @@
-//! [Message] is the core struct that traverses the computation graph and gets its [Message::Data] [crate::Composable::compose]ed by nodes.
+//! [Message] is the core struct that traverses the computation graph and gets its [Message::Data] [crate::typing::Composable::compose]ed by nodes.
 
-use crate::Origin;
+use crate::signal::Origin;
 use std::fmt::Debug;
 
 /// A unit of traffic in the computation graph.
@@ -9,7 +9,7 @@ use std::fmt::Debug;
 /// [Message::Flush] and [Message::Marker] are signals: nodes pass them
 /// through and routines never transform them.
 ///
-/// `SignalType` is usually [crate::Trackable], which keeps signals
+/// `SignalType` is usually [crate::signal::Trackable], which keeps signals
 /// safe in graphs with cycles.
 #[derive(Debug, PartialEq)]
 pub enum Message<DataType, SignalType>
@@ -24,8 +24,8 @@ where
     /// Close contract, per edge: a Flush pushed before close is fully
     /// processed (output, then the Flush, then close) before any node
     /// sees [crate::error::ErrorKind::Closed]. Close without a Flush
-    /// keeps nothing. Edges from [crate::make_push] use
-    /// [crate::SignalPolicy::FollowData] and drop a signal no data
+    /// keeps nothing. Edges from [crate::edge::push::make_push] use
+    /// [crate::edge::policy::SignalPolicy::FollowData] and drop a signal no data
     /// preceded. Pinned by `tests::close`.
     Flush(SignalType),
     /// Passed along as-is, never enters a routine.

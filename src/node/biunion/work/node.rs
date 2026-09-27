@@ -1,13 +1,13 @@
-use crate::biunion;
 use crate::error::{Error, ErrorKind};
+use crate::graph::marker::Connection;
+use crate::graph::{Add, Closeable, Get, Pushable, Sink};
+use crate::message::Message;
 use crate::node::biunion::routine::BiunionRoutine;
+use crate::node::{biunion, routine};
+use crate::signal::Origin;
+use crate::thread::{DefaultThread, ThreadId};
 use crate::work::multiedge::{self, Notify};
-use crate::work::work_each;
-use crate::{
-    Closeable, Message, Origin, Pushable, Sink, Workable,
-    graph::{Add, Get},
-};
-use crate::{DefaultThread, ThreadId, marker::Connection};
+use crate::work::{Workable, work_each};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
@@ -231,7 +231,7 @@ where
         // Do work on our input or forward signals from input to output.
         match message {
             Message::Data(data) => {
-                crate::Send::<Left, biunion::Left>::send(&mut self.routine, data)?;
+                routine::Send::<Left, biunion::Left>::send(&mut self.routine, data)?;
                 // If left or right is OK push is OK.
                 self.try_push()
             }
@@ -254,7 +254,7 @@ where
         // Do work on our input or forward signals from input to output.
         match message {
             Message::Data(data) => {
-                crate::Send::<Right, biunion::Right>::send(&mut self.routine, data)?;
+                routine::Send::<Right, biunion::Right>::send(&mut self.routine, data)?;
 
                 // If right is OK push is OK.
                 self.try_push()

@@ -53,6 +53,7 @@
 use crate::error::Error;
 use crate::node::line::poll::factory::LineWakers;
 use crate::node::line::poll::routine::LineRoutine;
+use crate::node::routine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
 use crate::poll::waker;
 use std::future::Future;
@@ -115,7 +116,8 @@ where
     }
 }
 
-impl<'params, InType, OutType, F> crate::Send<InType> for FutureRoutine<'params, InType, OutType, F>
+impl<'params, InType, OutType, F> routine::Send<InType>
+    for FutureRoutine<'params, InType, OutType, F>
 where
     F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
@@ -125,7 +127,7 @@ where
     }
 }
 
-impl<'params, InType, OutType, F> crate::Next<OutType>
+impl<'params, InType, OutType, F> routine::Next<OutType>
     for FutureRoutine<'params, InType, OutType, F>
 where
     F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
@@ -135,7 +137,7 @@ where
     }
 }
 
-impl<'params, InType, OutType, F> crate::Flush for FutureRoutine<'params, InType, OutType, F>
+impl<'params, InType, OutType, F> routine::Flush for FutureRoutine<'params, InType, OutType, F>
 where
     F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
@@ -145,7 +147,7 @@ where
     }
 }
 
-impl<'params, InType, OutType, F> crate::Poll for FutureRoutine<'params, InType, OutType, F>
+impl<'params, InType, OutType, F> routine::Poll for FutureRoutine<'params, InType, OutType, F>
 where
     F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {

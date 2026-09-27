@@ -1,6 +1,11 @@
-use crate::Reader;
 use crate::error::Error;
-use crate::{DefaultThread, Message, Origin, Sink, ThreadId, Trackable, Workable, fatal};
+use crate::fatal;
+use crate::graph::Sink;
+use crate::message::Message;
+use crate::reader::Reader;
+use crate::signal::{Origin, Trackable};
+use crate::thread::{DefaultThread, ThreadId};
+use crate::work::Workable;
 use std::fmt::Debug;
 
 pub struct BifurcationIo<

@@ -1,16 +1,18 @@
 //! [LineIo] is a convenient way to manage a graph input and output in a single place for
 //! linear graphs.
 use crate::error::Error;
-use crate::{Message, Origin, Trackable};
-use crate::{Reader, Sink};
+use crate::graph::Sink;
+use crate::message::Message;
+use crate::reader::Reader;
+use crate::signal::{Origin, Trackable};
 use std::fmt::Debug;
 
-/// [`LineIo`] provides a type that can accept a [Writer](crate::work::Writer) and [Reader] then
+/// [`LineIo`] provides a type that can accept a [Writer](crate::writer::push::Writer) and [Reader] then
 /// expose functions that makes reading and writing into the graph simpler.
 ///
 /// A [LineIo] is not necessary to read or write to the graph as the
 /// nodes themselves can be read from and written to in various ways.
-/// But the [LineIo] combines a graph [Writer](crate::work::Writer) with a graph [Reader] in
+/// But the [LineIo] combines a graph [Writer](crate::writer::push::Writer) with a graph [Reader] in
 /// a convenient struct.
 pub struct LineIo<WriterType, ReaderType>
 where
@@ -26,7 +28,7 @@ where
     WriterType: Sink,
     ReaderType: Reader,
 {
-    /// Create a [LineIo] from a [Writer](crate::work::Writer) and [Reader]
+    /// Create a [LineIo] from a [Writer](crate::writer::push::Writer) and [Reader]
     pub fn new(writer: WriterType, reader: ReaderType) -> LineIo<WriterType, ReaderType> {
         Self { writer, reader }
     }

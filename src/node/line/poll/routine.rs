@@ -1,10 +1,10 @@
 //! [`LineRoutine`] is the poll/async counterpart of
-//! [LineRoutine](crate::LineRoutine) (sync).
+//! [LineRoutine](crate::node::line::routine::LineRoutine) (sync).
 //!
-//! Prefer [FutureRoutine](crate::poll::future::line::FutureRoutine) over raw impls —
+//! Prefer [FutureRoutine](crate::node::line::poll::future::FutureRoutine) over raw impls —
 //! it enforces all contracts below by construction.
 //!
-//! Unlike the sync [LineRoutine](crate::LineRoutine), does NOT require
+//! Unlike the sync [LineRoutine](crate::node::line::routine::LineRoutine), does NOT require
 //! [std::marker::Send]. Async routines are created on the async thread via
 //! [LineRoutineFactory](super::factory::LineRoutineFactory) and never cross
 //! threads. This allows routines to hold non-Send types like `Rc<RefCell<_>>`
@@ -14,39 +14,39 @@
 //! for the Output phase. Routines MUST use this to wake Output when they
 //! produce data (e.g. via [OutputProducer](crate::poll::future::queue::OutputProducer)).
 //!
-//! ## [crate::Send] contract
+//! ## [routine::Send] contract
 //!
 //! If the routine needs async processing to handle data received
-//! via [crate::Send], it MUST arrange for [crate::Poll] to be woken
-//! (e.g. via a waker stored during a previous [crate::Poll] call).
-//! Failing to do so will deadlock — [crate::Poll] is not automatically
-//! invoked after [crate::Send].
+//! via [routine::Send], it MUST arrange for [routine::Poll] to be woken
+//! (e.g. via a waker stored during a previous [routine::Poll] call).
+//! Failing to do so will deadlock — [routine::Poll] is not automatically
+//! invoked after [routine::Send].
 //!
-//! Routines that produce output synchronously in [crate::Send]
-//! do not need to wake [crate::Poll].
+//! Routines that produce output synchronously in [routine::Send]
+//! do not need to wake [routine::Poll].
 //!
-//! [FutureRoutine](crate::poll::future::line::FutureRoutine) handles this via its
+//! [FutureRoutine](crate::node::line::poll::future::FutureRoutine) handles this via its
 //! waker-aware [InputQueue](crate::poll::future::queue::InputQueue) —
 //! push wakes Poll automatically.
 //!
-//! ## [crate::Next] contract
+//! ## [routine::Next] contract
 //!
-//! The node's Output phase calls [crate::Next] to drain output. Output
+//! The node's Output phase calls [routine::Next] to drain output. Output
 //! is NOT polled automatically — the routine MUST wake the Output phase
 //! when it produces data. Use [OutputProducer::push](crate::poll::future::queue::OutputProducer::push)
 //! which wakes Output via [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker).
 //!
-//! ## [crate::Poll] contract
+//! ## [routine::Poll] contract
 //!
-//! [crate::Poll::poll] receives a [Waker](crate::poll::waker::Waker)
+//! [routine::Poll::poll] receives a [Waker](crate::poll::waker::Waker)
 //! carrying both a sync waker (for I/O / standard futures) and a
 //! thread-local waker (for cheap same-thread wake).
 //!
 //! - [core::task::Poll::Pending] — async work in progress.
 //! - [core::task::Poll::Ready] — routine finished processing after
-//!   [crate::Flush].
+//!   [routine::Flush].
 //!
-//! After [crate::Flush], [crate::Poll] is invoked once. If the routine
+//! After [routine::Flush], [routine::Poll] is invoked once. If the routine
 //! returns Ready, the flush is complete. If it returns Pending, the
 //! runtime will NOT wake the routine again — the routine must arrange
 //! for itself to be woken (e.g. by handing its waker to an I/O source,
@@ -61,19 +61,21 @@
 //! ## TL;DR
 //!
 //! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker). Output is NOT polled automatically.
-//! - Need async work after [crate::Send]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
-//! - After [crate::Flush], return [core::task::Poll::Ready] from [crate::Poll] (immediately or eventually). Deadlock otherwise.
+//! - Need async work after [routine::Send]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
+//! - After [routine::Flush], return [core::task::Poll::Ready] from [routine::Poll] (immediately or eventually). Deadlock otherwise.
 //! - Never return [core::task::Poll::Ready] outside flush. Fatal error.
-//! - Never return [crate::error::ErrorKind::Closed] from [crate::Poll]. Fatal error — the routine does not manage its own lifecycle.
+//! - Never return [crate::error::ErrorKind::Closed] from [routine::Poll]. Fatal error — the routine does not manage its own lifecycle.
 //!
-//! Think this is too many rules? Just use [FutureRoutine](crate::poll::future::line::FutureRoutine) — it handles all of it for you.
+//! Think this is too many rules? Just use [FutureRoutine](crate::node::line::poll::future::FutureRoutine) — it handles all of it for you.
+
+use crate::node::routine;
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a poll line routine from `{In}` to `{Out}`",
     note = "needs the supertraits of `poll::LineRoutine` and an explicit `impl poll::LineRoutine<{In}, {Out}> for {Self}`"
 )]
 pub trait LineRoutine<In, Out>:
-    crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll
+    routine::Send<In> + routine::Next<Out> + routine::Flush + routine::Poll
 {
 }
 

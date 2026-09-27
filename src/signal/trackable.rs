@@ -1,5 +1,5 @@
 //! [EXPPERIMENTAL] Track signals in graph using [Trackable].
-use crate::Origin;
+use crate::signal::Origin;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -25,19 +25,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// When a signal is passed it will fork at Node (2)
 /// one will enter the Out leaf and one traverse back to Node (1).
 ///
-/// If data also traversed across the [crate::Pushable] connection as part of for example
-/// a [crate::Message::Flush] we do not want to accept the first instance of the signal entering
+/// If data also traversed across the [crate::graph::Pushable] connection as part of for example
+/// a [crate::message::Message::Flush] we do not want to accept the first instance of the signal entering
 /// `Out` as a `Complete` flush. Because the `Flush` may have triggered some new output going into
-/// Node (1) and when Node (1) is [crate::Message::Flush] by the signal chasing it (Or even by it
+/// Node (1) and when Node (1) is [crate::message::Message::Flush] by the signal chasing it (Or even by it
 /// just recieving the new data) it may produce new output for Node (2) and the cycle may repeat.
 ///
-/// The idea is that when we are [crate::Message::Flush]ing we don't just want to wait to recieve the
+/// The idea is that when we are [crate::message::Message::Flush]ing we don't just want to wait to recieve the
 /// signal at our output node. But we want to wait until the signal has chased around the graph and
 /// the graph is no longer transmitting data as part of the signal traversal.
 ///
-/// For this to work as intended there should only be a [crate::Message::Flush] signal of
+/// For this to work as intended there should only be a [crate::message::Message::Flush] signal of
 /// the same origin at the same time. If there's multiple signals or if data is actively being
-/// pushed into the graph during the [crate::Message::Flush] then behaviour is not entirely defined
+/// pushed into the graph during the [crate::message::Message::Flush] then behaviour is not entirely defined
 /// yet.
 #[derive(Debug)]
 pub struct Trackable<OriginType>

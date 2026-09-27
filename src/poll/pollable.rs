@@ -1,7 +1,7 @@
-use crate::ThreadId;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::poll::waker::Waker;
+use crate::thread::ThreadId;
 
 /// [`Pollable`] is a [Connection] for event-driven nodes.
 ///

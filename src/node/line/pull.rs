@@ -1,4 +1,4 @@
-//!  Run [crate::LineRoutine] with [crate::Pullable] scheduling.
+//!  Run [LineRoutine](super::routine::LineRoutine) with [crate::pull::Pullable] scheduling.
 mod builder;
 mod node;
 mod reader;

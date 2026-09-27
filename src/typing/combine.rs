@@ -6,8 +6,8 @@ use crate::error::Error;
 /// into a single instance of type `Combined`.
 ///
 /// This is the many:1 counterpart to:
-/// - [`Composable`](crate::Composable) which is 1:1 (Self × T → To)
-/// - [`Generates`](crate::Generates) which is 1:many (Self → multiple T)
+/// - [`Composable`](crate::typing::Composable) which is 1:1 (Self × T → To)
+/// - [`Generates`](crate::typing::Generates) which is 1:many (Self → multiple T)
 ///
 /// # Use Cases
 ///

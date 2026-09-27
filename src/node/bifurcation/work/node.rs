@@ -1,14 +1,13 @@
-use crate::bifurcation;
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
+use crate::graph::marker::Connection;
+use crate::graph::{Add, Closeable, Get, Pushable, Sink};
+use crate::message::Message;
 use crate::node::bifurcation::routine::BifurcationRoutine;
-use crate::work::work_each;
-use crate::{
-    Closeable, Message, Origin, Pushable, Sink, Workable,
-    graph::{Add, Get},
-    marker::Connection,
-};
-use crate::{DefaultThread, ThreadId};
+use crate::node::{bifurcation, routine};
+use crate::signal::Origin;
+use crate::thread::{DefaultThread, ThreadId};
+use crate::work::{Workable, work_each};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a bifurcation.
@@ -230,7 +229,7 @@ where
 
     fn try_left_output(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
-        match crate::Next::<Left, bifurcation::Left>::next(&mut self.routine)? {
+        match routine::Next::<Left, bifurcation::Left>::next(&mut self.routine)? {
             Some(message) => {
                 self.push_left(Message::Data(message))?;
 
@@ -243,7 +242,7 @@ where
     fn try_right_output(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
 
-        match crate::Next::<Right, bifurcation::Right>::next(&mut self.routine)? {
+        match routine::Next::<Right, bifurcation::Right>::next(&mut self.routine)? {
             Some(message) => {
                 self.push_right(Message::Data(message))?;
 

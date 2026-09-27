@@ -1,8 +1,8 @@
-use crate::ThreadId;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
+use crate::thread::ThreadId;
 
 mod default;
 

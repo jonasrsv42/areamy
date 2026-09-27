@@ -12,9 +12,10 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Get, Pushable, Sink};
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::{Closeable, Pushable, Sink, closed, fatal, graph::Get};
+use crate::{closed, fatal};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;

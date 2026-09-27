@@ -1,17 +1,17 @@
-//! Async thread that runs [Pollable](crate::Pollable) nodes driven by wakers.
+//! Async thread that runs [Pollable](crate::poll::Pollable) nodes driven by wakers.
 
 mod runtime;
 pub(crate) mod tls;
 
 use crate::error::{Error, ErrorKind};
+use crate::fatal;
 use crate::poll::graph::GraphBuilder;
 use crate::poll::queue::{Consumer, PollQueue};
 use crate::poll::runtime::Node as RuntimeNode;
 use crate::poll::wakers::WakerAllocator;
-use crate::thread::Join;
 use crate::thread::callback::{self, OnDone, PanicGuard};
 use crate::thread::done::Done;
-use crate::{ThreadId, fatal};
+use crate::thread::{Join, ThreadId};
 use runtime::ClosableRuntime;
 use std::thread::{Scope, ScopedJoinHandle};
 
@@ -63,7 +63,7 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     /// for nodes that need to be woken from external producers running
     /// on other threads.
     ///
-    /// Each allocated slot ID must be bound to a [`Pollable`](crate::Pollable) via a
+    /// Each allocated slot ID must be bound to a [`Pollable`](crate::poll::Pollable) via a
     /// custom [`GraphBuilder`] returning a [`GraphNode`](crate::poll::GraphNode) with that ID;
     /// otherwise the runtime will fail at build time with "slot N is
     /// empty."

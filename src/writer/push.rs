@@ -1,11 +1,8 @@
-use crate::Pushable;
-use crate::Trackable;
 use crate::error::Error;
-use crate::{
-    Message, Origin,
-    graph::Get,
-    marker::{Connection, Multiplicity},
-};
+use crate::graph::marker::{Connection, Multiplicity};
+use crate::graph::{Closeable, Get, Pushable, Sink};
+use crate::message::Message;
+use crate::signal::{Origin, Trackable};
 
 /// A `Writer` is a convenience type for an input. It forwards data into some inner source.
 pub struct Writer<'params, DataType, SignalType = Trackable<&'static str>>
@@ -13,8 +10,7 @@ where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
-    inner:
-        Box<dyn crate::Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
+    inner: Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
 }
 
 impl<'params, DataType, SignalType> Connection for Writer<'params, DataType, SignalType>
@@ -30,7 +26,7 @@ where
 {
     pub fn new<MultiplicityType: Multiplicity>(
         input: &impl Get<
-            dyn crate::Sink<DataType = DataType, SignalType = Trackable<&'static str>>
+            dyn Sink<DataType = DataType, SignalType = Trackable<&'static str>>
                 + Send
                 + Sync
                 + 'params,
@@ -50,10 +46,7 @@ where
     pub fn of<Node, MultiplicityType>(node: &Node) -> Result<Self, Error>
     where
         Node: Get<
-                dyn crate::Sink<DataType = DataType, SignalType = SignalType>
-                    + Send
-                    + Sync
-                    + 'params,
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
                 MultiplicityType,
             >,
         MultiplicityType: Multiplicity,
@@ -76,7 +69,7 @@ where
     }
 }
 
-impl<'params, DataType, SignalType> crate::Closeable for Writer<'params, DataType, SignalType>
+impl<'params, DataType, SignalType> Closeable for Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,

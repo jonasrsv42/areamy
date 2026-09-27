@@ -8,8 +8,8 @@
 //! a slot becomes `None` when its node terminates, indexing stays
 //! valid, and a wake for a `None` slot is observable.
 
-use crate::ThreadId;
 use crate::poll::runtime::{Node, Runtime};
+use crate::thread::ThreadId;
 
 pub struct ClosableRuntime<'params, ThreadIdType: ThreadId> {
     pub nodes: Vec<Option<Node<'params, ThreadIdType>>>,

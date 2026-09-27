@@ -35,12 +35,16 @@
 //! If strict ordering is required with async routines, use Flush instead.
 
 use crate::error::{Error, ErrorKind};
+use crate::fatal;
 use crate::graph::marker::Connection;
+use crate::graph::{Receivable, Sink};
 use crate::message::Message;
 use crate::node::line::poll::routine::LineRoutine;
+use crate::node::routine;
+use crate::poll::Pollable;
 use crate::poll::waker::{ThreadLocalWaker, Waker};
 use crate::signal::Origin;
-use crate::{Pollable, Receivable, Sink, ThreadId, fatal};
+use crate::thread::ThreadId;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -84,7 +88,7 @@ where
         self.output.push(msg)
     }
 
-    /// Drain routine output via [crate::Next] and push downstream.
+    /// Drain routine output via [routine::Next] and push downstream.
     fn drain_output(&mut self) -> Result<(), Error> {
         while let Some(out) = self.worker.next()? {
             self.push_output(Message::Data(out))?;
@@ -92,7 +96,7 @@ where
         Ok(())
     }
 
-    /// Drain input edge. Forwards data via [crate::Send].
+    /// Drain input edge. Forwards data via [routine::Send].
     /// May transition state to Flushing, Closing, or MarkerReady.
     fn drain_input(&mut self) -> Result<(), Error> {
         loop {
@@ -138,7 +142,7 @@ where
     /// Poll routine. Builds std Context from sync waker for the routine.
     /// Closed error from routine fatal.
     fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
-        match crate::Poll::poll(&mut self.worker, waker) {
+        match routine::Poll::poll(&mut self.worker, waker) {
             Ok(poll) => Ok(poll),
             Err(e) if matches!(e.kind, ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"

@@ -1,4 +1,7 @@
-use crate::{BifurcationRoutine, Origin, ThreadId, work::Bifurcation};
+use crate::node::bifurcation::routine::BifurcationRoutine;
+use crate::node::bifurcation::work::node::Bifurcation;
+use crate::signal::Origin;
+use crate::thread::ThreadId;
 
 pub fn make_bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>(
     worker: RoutineType,

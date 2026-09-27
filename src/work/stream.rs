@@ -12,11 +12,14 @@
 //! caller reaches this thread in a sequential `bundle.join()`.
 
 use crate::error::Error;
+use crate::fatal;
+use crate::graph::Add;
+use crate::thread::ThreadId;
 use crate::thread::callback::{self, OnDone, PanicGuard};
 use crate::thread::done::Done;
 use crate::thread::join::Join;
+use crate::work::Workable;
 use crate::work::work_each;
-use crate::{ThreadId, Workable, fatal, graph::Add};
 use std::thread::{Scope, ScopedJoinHandle};
 
 type Workables<'params, ThreadIdType> = Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>;

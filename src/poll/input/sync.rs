@@ -11,10 +11,11 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Get, Pushable, Receivable, Sink};
 use crate::message::Message;
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
-use crate::{Closeable, Pushable, Receivable, Sink, closed, fatal, graph::Get};
+use crate::{closed, fatal};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;

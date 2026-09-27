@@ -8,12 +8,13 @@
 //! this will only-ever be owned by a single thread and so its fully cleaned up
 //! one teardown of that thread.
 
+use crate::closed;
 use crate::error::Error;
 use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Pushable, Receivable};
 use crate::message::Message;
 use crate::poll::waker::ThreadLocalWaker;
 use crate::signal::Origin;
-use crate::{Closeable, Pushable, Receivable, closed};
 use std::collections::VecDeque;
 
 /// A same-thread async edge. No synchronization overhead.

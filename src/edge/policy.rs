@@ -1,8 +1,8 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
 use crate::error::Error;
 use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Pushable, Sink};
 use crate::message::Message;
-use crate::{Closeable, Pushable, Sink};
 
 #[derive(Debug)]
 /// Policy for handling signals in the queue

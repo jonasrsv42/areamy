@@ -1,9 +1,7 @@
 use crate::error::Error;
-use crate::{
-    fatal,
-    graph::Add,
-    marker::{Connection, Multiplicity},
-};
+use crate::fatal;
+use crate::graph::Add;
+use crate::graph::marker::{Connection, Multiplicity};
 use std::sync::{Arc, Mutex};
 
 impl<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity, AddType>

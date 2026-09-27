@@ -1,4 +1,4 @@
-//! A [crate::Workable] connection with two outputs (Experimental).
+//! A [crate::work::Workable] connection with two outputs (Experimental).
 
 mod io;
 mod marker;

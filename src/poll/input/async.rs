@@ -6,9 +6,9 @@
 //! during [`GraphBuilder::build`](crate::poll::graph::GraphBuilder::build);
 //! data flows at runtime through those edges, not through this struct.
 
-use crate::ThreadId;
 use crate::poll::traits::AsyncParent;
 use crate::signal::Origin;
+use crate::thread::ThreadId;
 
 /// Bundles parent [`AsyncParent`] configs for an async-input poll node.
 pub struct Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> {

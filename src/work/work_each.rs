@@ -1,7 +1,8 @@
 //! Helpers shared by the sync work nodes.
 
 use crate::error::{Error, ErrorKind};
-use crate::{ThreadId, Workable};
+use crate::thread::ThreadId;
+use crate::work::Workable;
 
 /// Work each once; drop those that report Closed. Other errors bubble up.
 pub(crate) fn work_each<'params, ThreadIdType: ThreadId>(

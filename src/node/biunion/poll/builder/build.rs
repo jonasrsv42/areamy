@@ -1,7 +1,6 @@
 //! GraphBuilder and AsyncParent impls for all biunion edge combinations.
 
 use super::node::{Allocated, Node};
-use crate::ThreadId;
 use crate::error::Error;
 use crate::node::biunion::poll::factory::{BiunionInputs, BiunionRoutineFactory, BiunionWakers};
 use crate::node::biunion::poll::node::{self, InputPhases, Phase};
@@ -12,6 +11,7 @@ use crate::poll::traits::AsyncParent;
 use crate::poll::waker::ThreadLocalWaker;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
+use crate::thread::ThreadId;
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -1,6 +1,7 @@
-use crate::Origin;
-use crate::ThreadId;
-use crate::node::biunion::{BiunionRoutine, work::Biunion};
+use crate::node::biunion::routine::BiunionRoutine;
+use crate::node::biunion::work::node::Biunion;
+use crate::signal::Origin;
+use crate::thread::ThreadId;
 
 pub fn make_biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>(
     worker: RoutineType,

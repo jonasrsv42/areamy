@@ -1,5 +1,7 @@
 use crate::error::Error;
-use crate::{ThreadId, Workable, fatal};
+use crate::fatal;
+use crate::thread::ThreadId;
+use crate::work::Workable;
 use std::sync::{Arc, Mutex};
 
 /// A [Workable] that is [std::marker::Send] + [std::marker::Sync] is also a [Workable]

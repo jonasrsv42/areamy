@@ -5,7 +5,7 @@
 //! Areamy graphs shut down gracefully through the [`crate::error::ErrorKind::Closed`] error.
 //! The shutdown flow works as follows:
 //!
-//! 1. **Close the writer**: Call [`crate::Closeable::close`] (or let a reader drop, which
+//! 1. **Close the writer**: Call [`crate::graph::Closeable::close`] (or let a reader drop, which
 //!    calls close automatically). This marks the underlying edge as closed.
 //!
 //! 2. **Buffered data drains**: Any data already in the edge's buffer can still be read.
@@ -14,7 +14,7 @@
 //! 3. **Workers receive `Closed`**: When a worker tries to read from an empty, closed edge,
 //!    it receives [`crate::error::ErrorKind::Closed`].
 //!
-//! 4. **ThreadStream exits cleanly**: [`crate::ThreadStream`] treats `Closed` as a clean
+//! 4. **ThreadStream exits cleanly**: [`crate::work::ThreadStream`] treats `Closed` as a clean
 //!    exit signal (not an error) and returns `Ok(())` from join.
 //!
 //! # Closed Semantics
@@ -58,7 +58,8 @@
 //!
 //! # Automatic Close on Drop
 //!
-//! The I/O types ([`crate::LineIo`], [`crate::BiunionIo`], [`crate::BifurcationIo`])
+//! The I/O types ([`crate::node::line::LineIo`], [`crate::node::biunion::BiunionIo`],
+//! [`crate::node::bifurcation::BifurcationIo`])
 //! implement [`Drop`] to call `close()` automatically. This ensures that worker threads
 //! are signaled to exit even if you forget to close explicitly.
 

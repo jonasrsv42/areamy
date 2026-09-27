@@ -1,4 +1,4 @@
-use crate::biunion;
+use crate::node::{biunion, routine};
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a biunion routine from (`{Left}`, `{Right}`) to `{Out}`",
@@ -6,10 +6,10 @@ use crate::biunion;
 )]
 pub trait BiunionRoutine<Left, Right, Out>:
     Send
-    + crate::Send<Left, biunion::Left>
-    + crate::Send<Right, biunion::Right>
-    + crate::Next<Out>
-    + crate::Flush
+    + routine::Send<Left, biunion::Left>
+    + routine::Send<Right, biunion::Right>
+    + routine::Next<Out>
+    + routine::Flush
 where
     Out: Clone,
 {

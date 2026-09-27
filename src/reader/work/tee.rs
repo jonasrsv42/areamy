@@ -1,7 +1,10 @@
 use crate::edge::sync::Receiver;
 use crate::error::Error;
-use crate::{DefaultThread, Sink, Trackable, graph::Add, marker::Multiplicity};
-use crate::{Message, Origin};
+use crate::graph::marker::Multiplicity;
+use crate::graph::{Add, Sink};
+use crate::message::Message;
+use crate::signal::{Origin, Trackable};
+use crate::thread::DefaultThread;
 
 pub struct Reader<DataType, SignalType = Trackable<&'static str>>
 where

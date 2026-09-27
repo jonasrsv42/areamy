@@ -4,12 +4,12 @@
 //! and be constructed with an allocator. Used by child nodes to link and
 //! construct their parents during [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
 
-use crate::ThreadId;
 use crate::error::Error;
 use crate::poll::edge::PollEdge;
 use crate::poll::graph::Graph;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
+use crate::thread::ThreadId;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
@@ -23,7 +23,7 @@ use core::cell::RefCell;
 /// pieces they care about (e.g. `impl AsyncParent<OutType = Vec<i16>>`)
 /// and so projection (`<P as AsyncParent>::OutType`) reads naturally.
 ///
-/// Mirrors [`Pollable`](crate::Pollable)'s `type ThreadId` style.
+/// Mirrors [`Pollable`](crate::poll::Pollable)'s `type ThreadId` style.
 ///
 /// Receives an output edge and the allocator, produces a [Graph],
 /// and returns the allocator inside it. The child creates the edge and calls

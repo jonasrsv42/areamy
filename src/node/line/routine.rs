@@ -1,52 +1,57 @@
 //! [LineRoutine] is the work horse of all Line nodes. It is a frankenstein [std::ops::Coroutine].
 
+use crate::node::routine;
+
 /// [`LineRoutine`] is a flushable subset of [std::ops::Coroutine] accepting a stream of `In` types through
-/// [crate::Send::send] and produce a stream of output with [crate::Next::next].
+/// [routine::Send::send] and produce a stream of output with [routine::Next::next].
 ///
 /// [std::ops::Coroutine] was not stable at time of development.
-/// [LineRoutine] implements a [crate::Send] for a single input and a [crate::Next] for a single
+/// [LineRoutine] implements a [routine::Send] for a single input and a [routine::Next] for a single
 /// output.
 ///
-/// [crate::Send] contract:
+/// [routine::Send] contract:
 ///
-/// The routine does not have to produce any output on [crate::Send] and is expected to accumulate
-/// state until it can yield on [crate::Next].
+/// The routine does not have to produce any output on [routine::Send] and is expected to accumulate
+/// state until it can yield on [routine::Next].
 ///
-/// After [crate::Send] is invoked [crate::Next] will be invoked
-/// until it yields [Option::None]. Then [crate::Send] will be invoked
+/// After [routine::Send] is invoked [routine::Next] will be invoked
+/// until it yields [Option::None]. Then [routine::Send] will be invoked
 /// again and so it may repeat.
 ///
 /// The Routine will loop like that, potentially forever.
 ///
-/// [crate::Flush] contract:
+/// [routine::Flush] contract:
 ///
-/// [crate::Flush] signals to the routine that it should output any state it can into
-/// subsequent [crate::Next] and then reset all of its internal state for future
-/// [crate::Send] invocations.
+/// [routine::Flush] signals to the routine that it should output any state it can into
+/// subsequent [routine::Next] and then reset all of its internal state for future
+/// [routine::Send] invocations.
 ///
 /// <div class="warning"> The routine should never reset its internal output buffer </div>
 ///
 /// It should only reset all other state associated with processing. In other words:
-/// a [crate::Flush] call should only ever create, potentially premature, additional output. A
-/// [crate::Flush] call should not remove any output.
+/// a [routine::Flush] call should only ever create, potentially premature, additional output. A
+/// [routine::Flush] call should not remove any output.
 ///
-/// [crate::Next] contract
+/// [routine::Next] contract
 ///
-/// [crate::Next] yields the next output available from the [LineRoutine]. If no
-/// more output can be yielded without additional [crate::Send] it should yield
+/// [routine::Next] yields the next output available from the [LineRoutine]. If no
+/// more output can be yielded without additional [routine::Send] it should yield
 /// [Option::None].
 ///
-/// [crate::Send] for a [LineRoutine] cannot be invoked again without [crate::Next]
+/// [routine::Send] for a [LineRoutine] cannot be invoked again without [routine::Next]
 /// having yielded [Option::None].
 ///
-/// [crate::Next] must only yield [Option::None] if it requires additional
-/// [crate::Send] to produce more output. The function should be blocking.
+/// [routine::Next] must only yield [Option::None] if it requires additional
+/// [routine::Send] to produce more output. The function should be blocking.
 ///
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a line routine from `{In}` to `{Out}`",
     note = "needs the supertraits of `LineRoutine` and an explicit `impl LineRoutine<{In}, {Out}> for {Self}`"
 )]
-pub trait LineRoutine<In, Out>: Send + crate::Send<In> + crate::Next<Out> + crate::Flush {}
+pub trait LineRoutine<In, Out>:
+    Send + routine::Send<In> + routine::Next<Out> + routine::Flush
+{
+}
 
 #[cfg(test)]
 pub mod tests {

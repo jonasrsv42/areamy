@@ -1,6 +1,10 @@
 use crate::error::Error;
-use crate::{LineRoutine, Message, Origin, marker::Connection};
-use crate::{Pullable, ThreadId};
+use crate::graph::marker::Connection;
+use crate::message::Message;
+use crate::node::line::routine::LineRoutine;
+use crate::pull::Pullable;
+use crate::signal::Origin;
+use crate::thread::ThreadId;
 use std::collections::VecDeque;
 
 /// [`Line`] with a [Pullable] connection that avoids dynamic dispatch.

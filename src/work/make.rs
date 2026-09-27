@@ -15,7 +15,7 @@ use crate::work::Workable;
 ///
 /// * `parent` - A [Workable] that we can [Add] a [Sink] into. The
 ///   [Workable] will be [Add] to the child so the child can schedule the [Workable::work]. The
-///   [Sink] will be [Add]ed as output for the child so it can [crate::Pushable::push] into the parent.
+///   [Sink] will be [Add]ed as output for the child so it can [crate::graph::Pushable::push] into the parent.
 ///
 /// * `child` - A type that we can [Add] the parent [Workable] into to grab ownership and from which we can [Get] the
 ///   [Sink] and give to the parent.

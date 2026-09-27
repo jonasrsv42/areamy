@@ -1,6 +1,6 @@
 //! [Generates] trait for data accumulation during graph traversal.
 //!
-//! Where [crate::Composable] is 1:1 this is 1:many
+//! Where [crate::typing::Composable] is 1:1 this is 1:many
 
 use crate::error::Error;
 /// [`Generates`] is a trait that allows `Self` to generate instances of

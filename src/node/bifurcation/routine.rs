@@ -1,4 +1,4 @@
-use crate::bifurcation;
+use crate::node::{bifurcation, routine};
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a bifurcation routine from `{In}` to (`{Left}`, `{Right}`)",
@@ -6,10 +6,10 @@ use crate::bifurcation;
 )]
 pub trait BifurcationRoutine<In, Left, Right>:
     Send
-    + crate::Send<In>
-    + crate::Next<Left, bifurcation::Left>
-    + crate::Next<Right, bifurcation::Right>
-    + crate::Flush
+    + routine::Send<In>
+    + routine::Next<Left, bifurcation::Left>
+    + routine::Next<Right, bifurcation::Right>
+    + routine::Flush
 where
     Left: Clone,
     Right: Clone,

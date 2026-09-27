@@ -4,14 +4,14 @@
 
 use super::node::{Allocated, Allocating, BuilderInput, Node};
 use super::traits::ResolveParent;
-use crate::ThreadId;
-use crate::biunion;
+use crate::node::biunion;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::edge::{Async, Deferred, Null, Sync};
 use crate::poll::input;
 use crate::poll::traits::AsyncParent;
 use crate::signal::Origin;
+use crate::thread::ThreadId;
 use std::marker::PhantomData;
 
 // --- Both deferred: parent on Node<Allocating, Deferred, Deferred, Deferred> ---

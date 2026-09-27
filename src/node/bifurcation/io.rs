@@ -33,17 +33,19 @@ where
     LeftReaderType: Reader,
     RightReaderType: Reader,
 {
+    /// `workable` is the node the readers tee from; [BifurcationIo::left_read] /
+    /// [BifurcationIo::right_read] drive it.
     pub fn new(
         input: WriterType,
         left: LeftReaderType,
         right: RightReaderType,
-        workable: Box<dyn Workable<ThreadId = DefaultThread> + 'params>,
+        workable: impl Workable<ThreadId = DefaultThread> + 'params,
     ) -> BifurcationIo<'params, WriterType, LeftReaderType, RightReaderType, DefaultThread> {
         Self {
             input,
             left,
             right,
-            workable,
+            workable: Box::new(workable),
         }
     }
 }
@@ -192,7 +194,7 @@ mod tests {
         let left_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Left>()).unwrap();
         let right_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Right>()).unwrap();
 
-        let mut reader = BifurcationIo::new(writer, left_reader, right_reader, Box::new(bifur));
+        let mut reader = BifurcationIo::new(writer, left_reader, right_reader, bifur);
 
         // Add one flush
         reader.push(Message::Data(1)).unwrap();

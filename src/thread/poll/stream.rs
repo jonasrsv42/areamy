@@ -272,9 +272,7 @@ mod tests {
     use crate::poll;
     use crate::{Closeable, Message, Sink, make_push};
 
-    #[derive(Debug)]
-    struct IoThread;
-    impl ThreadId for IoThread {}
+    crate::thread_id!(IoThread);
 
     type InputHandle =
         Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>;

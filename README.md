@@ -55,6 +55,8 @@ there are two threads working on the graph. The main thread and a `HelperThread`
 the graph computation is split across two threads.
 
 ```rust
+areamy::thread_id!(HelperThread);
+
 let in_node = areamy::work::make_line(AddOne::new());
 let mut middle_node = areamy::work::make_line(AddOne::new());
 let out_node = areamy::work::make_line(AddOne::new());
@@ -62,13 +64,11 @@ let out_node = areamy::work::make_line(AddOne::new());
 let writer = areamy::work::Writer::<usize>::of(&in_node)?;
 areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
 
-let mut helper_thread = areamy::ThreadStream::<HelperThread>::new();
-
 // Wire the middle node to push into the out node on the main thread.
 areamy::work::Connect::<usize>::push(&mut middle_node, &out_node)?;
 
 // Move the middle node onto the helper thread.
-areamy::make_work(middle_node, &mut helper_thread)?;
+let helper_thread = areamy::ThreadStream::<HelperThread>::of(middle_node);
 
 let reader = areamy::work::Reader::new(out_node)?;
 let mut io = areamy::LineIo::new(writer, reader);

@@ -6,17 +6,14 @@ use crate::node::Name;
 use crate::poll::{BiunionWakers, LineWakers};
 use crate::sync::Receiver;
 use crate::{
-    DefaultThread, Message, Pullable, ThreadId, Trackable, Workable, bifurcation, biunion, closed,
-    reader,
+    DefaultThread, Message, Pullable, Trackable, Workable, bifurcation, biunion, closed, reader,
 };
 use std::collections::VecDeque;
 
 pub type Signal = Trackable<&'static str>;
 pub type Msg = Message<usize, Signal>;
 
-#[derive(Debug)]
-pub struct IoThread;
-impl ThreadId for IoThread {}
+crate::thread_id!(pub IoThread);
 
 pub fn is_closed(error: &Error) -> bool {
     matches!(error.kind, ErrorKind::Closed)

@@ -9,7 +9,7 @@ use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use crate::poll::try_join;
 use crate::sync::Receiver;
 use crate::work::Writer;
-use crate::{Closeable, Message, Pushable, ThreadBundle, ThreadId, make_push};
+use crate::{Closeable, Message, Pushable, ThreadBundle, make_push};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
@@ -20,9 +20,7 @@ const STEP: Duration = Duration::from_millis(40);
 /// resume marginally late; lower bounds subtract this.
 const EPSILON: Duration = Duration::from_millis(10);
 
-#[derive(Debug)]
-struct SleepThread;
-impl ThreadId for SleepThread {}
+crate::thread_id!(SleepThread);
 
 type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 

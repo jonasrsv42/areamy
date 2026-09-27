@@ -1,7 +1,6 @@
 //! Builder tests: GraphBuilder::build, AsyncParent::build, and builder ordering.
 
 use super::node::Node;
-use crate::ThreadId;
 use crate::Trackable;
 use crate::connect::poll::edge::{Null, PollEdge, Sync};
 use crate::connect::poll::graph::{Graph, GraphBuilder};
@@ -13,9 +12,7 @@ use crate::node::line::poll::routine::tests::{MockLine, noop_local_waker};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Debug)]
-struct TestThread;
-impl ThreadId for TestThread {}
+crate::thread_id!(TestThread);
 
 fn mock_factory() -> impl FnOnce(crate::poll::LineWakers) -> MockLine + Send {
     |wakers| MockLine::new(wakers)

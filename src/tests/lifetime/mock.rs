@@ -11,20 +11,14 @@ use crate::marker::Connection;
 use crate::node::Name;
 use crate::poll::future::OutputQueue;
 use crate::{
-    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Sink, ThreadId,
-    Trackable, bifurcation, biunion,
+    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Sink, Trackable,
+    bifurcation, biunion,
 };
 use std::collections::VecDeque;
 
 // ---- Thread markers -------------------------------------------------------
 
-#[derive(Debug, Clone)]
-pub(super) struct LifetimeThread;
-impl ThreadId for LifetimeThread {}
-
-#[derive(Debug, Clone)]
-pub(super) struct LifetimePollThread;
-impl ThreadId for LifetimePollThread {}
+crate::thread_id!(pub(super) LifetimeThread, pub(super) LifetimePollThread);
 
 // ============================================================
 // Borrowing line routine (sync + pull)

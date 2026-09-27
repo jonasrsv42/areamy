@@ -7,9 +7,7 @@ use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use crate::sync::Receiver;
 use crate::work::{Writer, make_line};
-use crate::{
-    Closeable, DefaultThread, Message, Pushable, ThreadBundle, ThreadStream, make_push, make_work,
-};
+use crate::{Closeable, DefaultThread, Message, Pushable, ThreadBundle, ThreadStream, make_push};
 
 /// Marks output that only exists because the future saw Flush.
 const FLUSHED: usize = 999;
@@ -44,8 +42,7 @@ fn run_once() -> Result<(), Error> {
     make_push(&mut async_node, &output)?;
     async_thread.add(async_node);
 
-    let mut sync_thread = ThreadStream::<'_, DefaultThread>::new();
-    make_work(sync_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<DefaultThread>::of(sync_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);

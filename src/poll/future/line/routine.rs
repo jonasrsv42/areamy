@@ -189,15 +189,12 @@ mod tests {
 
     use super::*;
     use crate::connect::sync::Receiver;
-    use crate::marker::Unary;
     use crate::poll;
     use crate::thread::{ThreadBundle, ThreadStream};
     use crate::work::{Writer, make_line};
-    use crate::{Closeable, Message, Pushable, ThreadId, make_push, make_work};
+    use crate::{Closeable, Message, Pushable, make_push};
 
-    #[derive(Debug, Clone)]
-    struct LineFutureThread;
-    impl ThreadId for LineFutureThread {}
+    crate::thread_id!(LineFutureThread);
 
     #[test]
     fn future_routine_can_borrow_from_scope() {
@@ -230,8 +227,7 @@ mod tests {
         make_push(&mut node, &output).unwrap();
 
         thread.add(node);
-        let mut work_thread = ThreadStream::<'_, LineFutureThread>::new();
-        make_work::<Unary, _>(driver, &mut work_thread).unwrap();
+        let work_thread = ThreadStream::<LineFutureThread>::of(driver);
 
         let mut bundle = ThreadBundle::new();
         bundle.add(work_thread);

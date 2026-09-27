@@ -50,11 +50,11 @@ use areamy::error::Error;
 use areamy::node::Name;
 use areamy::pull;
 use areamy::pull::WriterBuffer;
-use areamy::thread::{ThreadBundle, ThreadBundleHandle, ThreadId, ThreadStream};
+use areamy::thread::{ThreadBundle, ThreadBundleHandle, ThreadStream};
 use areamy::work::{Writer, from_pull};
 use areamy::{
     Closeable, Flush, LineRoutine, Message, Next, Pushable, Send as RoutineSend, fatal, make_push,
-    make_work, poll,
+    poll,
 };
 use std::collections::VecDeque;
 use std::sync::mpsc;
@@ -62,13 +62,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
-struct WorkThread;
-impl ThreadId for WorkThread {}
-
-#[derive(Debug, Clone)]
-struct PollThread;
-impl ThreadId for PollThread {}
+areamy::thread_id!(WorkThread, PollThread);
 
 // ---- routines -------------------------------------------------------------
 
@@ -248,8 +242,7 @@ fn build_graph<'params>(
 
     poll_thread.add(poll_node);
 
-    let mut work_thread = ThreadStream::<'_, WorkThread>::new();
-    make_work(bridged, &mut work_thread).unwrap();
+    let work_thread = ThreadStream::<WorkThread>::of(bridged);
 
     let mut bundle = ThreadBundle::new();
     bundle

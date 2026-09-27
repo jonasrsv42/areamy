@@ -11,15 +11,13 @@ use crate::poll::future;
 use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use crate::sync::Receiver;
 use crate::writer::push::Writer;
-use crate::{Closeable, Message, Pushable, ThreadId, make_push};
+use crate::{Closeable, Message, Pushable, make_push};
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 
-#[derive(Debug)]
-struct IoThread;
-impl ThreadId for IoThread {}
+crate::thread_id!(IoThread);
 
 /// Config update: just a multiplier.
 #[derive(Clone, Debug)]
@@ -71,8 +69,8 @@ fn biunion_audio_with_config() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut audio_writer = Writer::<usize>::of::<_, biunion::Left>(&node).unwrap();
-    let mut config_writer = Writer::<Config>::of::<_, biunion::Right>(&node).unwrap();
+    let mut audio_writer = Writer::<usize>::of(&node).unwrap();
+    let mut config_writer = Writer::<Config>::of(&node).unwrap();
 
     let output_edge = Receiver::new();
     make_push(&mut node, &output_edge).unwrap();
@@ -130,7 +128,7 @@ fn biunion_with_async_parent() {
         .input::<poll::Sync>();
 
     // Writer pushes into parent
-    let mut audio_writer = Writer::<usize>::of::<_, crate::marker::Unary>(&parent).unwrap();
+    let mut audio_writer = Writer::<usize>::of(&parent).unwrap();
 
     // Biunion: left from async parent, right from sync config
     let biunion_routine = future::biunion::FutureRoutine::factory(
@@ -171,7 +169,7 @@ fn biunion_with_async_parent() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut config_writer = Writer::<Config>::of::<_, biunion::Right>(&node).unwrap();
+    let mut config_writer = Writer::<Config>::of(&node).unwrap();
 
     let output_edge = Receiver::new();
     make_push(&mut node, &output_edge).unwrap();

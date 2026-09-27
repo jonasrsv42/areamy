@@ -6,12 +6,11 @@ use super::mock::{
 };
 use crate::connect::sync::Receiver;
 use crate::graph::{Add, Get};
-use crate::marker::Unary;
 use crate::poll;
 use crate::poll::future::OutputQueue;
 use crate::thread::{ThreadBundle, ThreadStream};
 use crate::work::{Writer, make_line};
-use crate::{Closeable, Message, Pushable, biunion, make_push, make_work};
+use crate::{Closeable, Message, Pushable, biunion, make_push};
 
 #[test]
 fn line_poll_borrowed() {
@@ -217,8 +216,7 @@ fn poll_node_input_from_borrowed_parent() {
     make_push(&mut poll_node, &output).unwrap();
 
     poll_thread.add(poll_node);
-    let mut work_thread = ThreadStream::<'_, LifetimePollThread>::new();
-    make_work::<Unary, _>(work_line, &mut work_thread).unwrap();
+    let work_thread = ThreadStream::<LifetimePollThread>::of(work_line);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(work_thread);

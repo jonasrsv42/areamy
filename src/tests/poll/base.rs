@@ -8,9 +8,7 @@ use crate::poll::Sync;
 use crate::signal::Trackable;
 use crate::sync::Receiver;
 use crate::work::{Writer, make_line};
-use crate::{
-    Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
-};
+use crate::{Closeable, Message, Pushable, ThreadBundle, ThreadStream, make_push};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -170,9 +168,7 @@ impl crate::Flush for Double {
 impl Name for Double {}
 impl crate::LineRoutine<usize, usize> for Double {}
 
-#[derive(Debug)]
-struct IoThread;
-impl ThreadId for IoThread {}
+crate::thread_id!(IoThread);
 
 /// Sync writer → Node<Sync, Sync> (terminal) → sync output.
 /// Data only appears in output after poll() processes it.
@@ -194,8 +190,7 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
 
     async_thread.add(node);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -235,8 +230,7 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -278,8 +272,7 @@ fn long_async_chain() -> Result<(), Error> {
 
     async_thread.add(e);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -346,8 +339,7 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
     async_thread.add(node_b);
     async_thread.add(node_c);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -407,10 +399,8 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
     // Independent blocking writers need separate sync threads —
     // work() calls read_front() which blocks, preventing other
     // writers on the same thread from being serviced.
-    let mut sync_a = ThreadStream::<'_, crate::DefaultThread>::new();
-    let mut sync_b = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_a_node, &mut sync_a)?;
-    make_work(writer_b_node, &mut sync_b)?;
+    let sync_a = ThreadStream::<crate::DefaultThread>::of(writer_a_node);
+    let sync_b = ThreadStream::<crate::DefaultThread>::of(writer_b_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_a).add(sync_b).add(async_thread);
@@ -482,12 +472,9 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     async_thread.add(child);
 
     // Independent blocking writers need separate sync threads.
-    let mut sync_a = ThreadStream::<'_, crate::DefaultThread>::new();
-    let mut sync_b = ThreadStream::<'_, crate::DefaultThread>::new();
-    let mut sync_c = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_a_node, &mut sync_a)?;
-    make_work(writer_b_node, &mut sync_b)?;
-    make_work(writer_c_node, &mut sync_c)?;
+    let sync_a = ThreadStream::<crate::DefaultThread>::of(writer_a_node);
+    let sync_b = ThreadStream::<crate::DefaultThread>::of(writer_b_node);
+    let sync_c = ThreadStream::<crate::DefaultThread>::of(writer_c_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_a).add(sync_b).add(sync_c).add(async_thread);
@@ -537,8 +524,7 @@ fn node_terminal_via_typed() -> Result<(), Error> {
 
     async_thread.add(node);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -577,8 +563,7 @@ fn node_parent_child_via_typed_and_parent() -> Result<(), Error> {
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -610,8 +595,7 @@ fn node_sink_deferred_output() -> Result<(), Error> {
     let sink = async_thread.line(PollDouble::new).parent(parent);
     async_thread.add(sink);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -685,12 +669,9 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
         .parent(parent_c);
     async_thread.add(sink_2);
 
-    let mut sync_a = ThreadStream::<'_, crate::DefaultThread>::new();
-    let mut sync_b = ThreadStream::<'_, crate::DefaultThread>::new();
-    let mut sync_c = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_a_node, &mut sync_a)?;
-    make_work(writer_b_node, &mut sync_b)?;
-    make_work(writer_c_node, &mut sync_c)?;
+    let sync_a = ThreadStream::<crate::DefaultThread>::of(writer_a_node);
+    let sync_b = ThreadStream::<crate::DefaultThread>::of(writer_b_node);
+    let sync_c = ThreadStream::<crate::DefaultThread>::of(writer_c_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_a).add(sync_b).add(sync_c).add(async_thread);
@@ -849,8 +830,7 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -979,8 +959,7 @@ fn multi_flush_then_close() -> Result<(), Error> {
 
     async_thread.add(child);
 
-    let mut sync_thread = ThreadStream::<'_, crate::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<crate::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -1063,7 +1042,7 @@ fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
         .input::<Sync>()
         .output::<Sync>();
 
-    let mut writer = Writer::<usize>::of::<_, crate::marker::Unary>(&node).unwrap();
+    let mut writer = Writer::<usize>::of(&node).unwrap();
     let output = Receiver::new();
     make_push(&mut node, &output)?;
     async_thread.add(node);

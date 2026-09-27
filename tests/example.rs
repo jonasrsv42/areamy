@@ -64,10 +64,7 @@ fn simple_sync() -> Result<(), areamy::error::Error> {
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-struct HelperThread {}
-
-impl areamy::ThreadId for HelperThread {}
+areamy::thread_id!(HelperThread);
 
 #[test]
 fn sync_multithread() -> Result<(), areamy::error::Error> {
@@ -80,13 +77,11 @@ fn sync_multithread() -> Result<(), areamy::error::Error> {
     let writer = areamy::work::Writer::<usize>::of(&in_node)?;
     areamy::work::Connect::<usize>::bidi(in_node, &mut middle_node)?;
 
-    let mut helper_thread = areamy::ThreadStream::<'_, HelperThread>::new();
-
     // Ensure that middle node, using the `HelperThread` pushes data into out node.
     areamy::work::Connect::<usize>::push(&mut middle_node, &out_node)?;
 
     // Now helper thread will work on the middle_node subgraph.
-    areamy::make_work(middle_node, &mut helper_thread)?;
+    let helper_thread = areamy::ThreadStream::<HelperThread>::of(middle_node);
 
     let reader = areamy::work::Reader::new(out_node)?;
     let mut io = areamy::LineIo::new(writer, reader);

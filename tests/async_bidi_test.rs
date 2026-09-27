@@ -10,18 +10,14 @@ use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
 use areamy::poll::try_join;
 use areamy::sync::Receiver;
-use areamy::{
-    Closeable, Message, Pushable, ThreadBundle, ThreadId, ThreadStream, make_push, make_work,
-};
+use areamy::{Closeable, Message, Pushable, ThreadBundle, ThreadStream, make_push};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 
-#[derive(Debug)]
-struct IoThread;
-impl ThreadId for IoThread {}
+areamy::thread_id!(IoThread);
 
 // ============================================================
 // Fake I/O primitives
@@ -216,8 +212,7 @@ fn bidi_with_join() -> Result<(), Error> {
 
     async_thread.add(node);
 
-    let mut sync_thread = ThreadStream::<'_, areamy::DefaultThread>::new();
-    make_work(writer_node, &mut sync_thread)?;
+    let sync_thread = ThreadStream::<areamy::DefaultThread>::of(writer_node);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);

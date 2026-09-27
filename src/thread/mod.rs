@@ -11,15 +11,18 @@
 //! # Example
 //!
 //! ```ignore
-//! let mut thread = ThreadStream::<MyThread>::new();
-//! // Add workables while idle...
-//! let handle = thread.start();   // ThreadStream -> ThreadStreamHandle
-//! // Thread is now running...
-//! match handle.join() {
-//!     Join::Ok => { /* clean exit */ }
-//!     Join::Error(e) => { /* work loop error */ }
-//!     Join::Panic(e) => { /* OS thread panicked */ }
-//! }
+//! thread_id!(MyThread);
+//!
+//! let thread = ThreadStream::<MyThread>::of(root);
+//! std::thread::scope(|s| {
+//!     let handle = thread.start(s);   // ThreadStream -> ThreadStreamHandle
+//!     // Thread is now running...
+//!     match handle.join() {
+//!         Join::Ok => { /* clean exit */ }
+//!         Join::Error(e) => { /* work loop error */ }
+//!         Join::Panic(e) => { /* OS thread panicked */ }
+//!     }
+//! });
 //! ```
 
 mod bundle;

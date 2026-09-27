@@ -61,7 +61,6 @@ pub(super) fn inject<'params>(
 mod tests {
     use super::super::ThreadBundle;
     use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
-    use crate::graph::Add;
     use crate::thread::{Failure, ThreadStream};
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -69,8 +68,7 @@ mod tests {
 
     #[test]
     fn fires_on_thread_error() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(WorkError::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
         let count = Arc::new(AtomicUsize::new(0));
@@ -88,8 +86,7 @@ mod tests {
 
     #[test]
     fn fires_on_panic() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
         let count = Arc::new(AtomicUsize::new(0));
@@ -107,14 +104,8 @@ mod tests {
 
     #[test]
     fn does_not_fire_on_clean_exit() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a
-            .add(Box::new(ImmediateClose::<ThreadA>::new()))
-            .unwrap();
-        let mut thread_b = ThreadStream::<'_, ThreadB>::new();
-        thread_b
-            .add(Box::new(ImmediateClose::<ThreadB>::new()))
-            .unwrap();
+        let thread_a = ThreadStream::of(Box::new(ImmediateClose::<ThreadA>::new()));
+        let thread_b = ThreadStream::of(Box::new(ImmediateClose::<ThreadB>::new()));
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_cb = count.clone();
@@ -131,10 +122,8 @@ mod tests {
 
     #[test]
     fn fires_at_most_once_even_with_many_errors() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(WorkError::<ThreadA>::new())).unwrap();
-        let mut thread_b = ThreadStream::<'_, ThreadB>::new();
-        thread_b.add(Box::new(Panicker::<ThreadB>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
+        let thread_b = ThreadStream::of(Box::new(Panicker::<ThreadB>::new()));
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_cb = count.clone();
@@ -151,8 +140,7 @@ mod tests {
 
     #[test]
     fn multiple_registrations_all_fire_in_order() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(WorkError::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
 
         let order = Arc::new(Mutex::new(Vec::<u32>::new()));
         let o1 = order.clone();
@@ -174,8 +162,7 @@ mod tests {
 
     #[test]
     fn callback_receives_error_reference() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(WorkError::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
 
         let captured = Arc::new(Mutex::new(None::<String>));
         let cap = captured.clone();
@@ -201,8 +188,7 @@ mod tests {
     /// not prevent its siblings from running.
     #[test]
     fn panicking_callback_does_not_block_siblings() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
 
         let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
         let s1 = seen.clone();
@@ -228,8 +214,7 @@ mod tests {
 
     #[test]
     fn callback_receives_panic_marker() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
 
         let captured = Arc::new(Mutex::new(None::<&'static str>));
         let cap = captured.clone();

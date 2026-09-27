@@ -56,14 +56,15 @@ fn run<'params, ThreadIdType: ThreadId>(
 
 /// An idle thread that can have workables added and be started.
 ///
-/// Use [`Add`] to add workables, then call [`start`](Self::start) to
-/// spawn the OS thread and get a [`ThreadStreamHandle`].
+/// Use [`of`](Self::of) for a single root or [`Add`] to add workables, then call
+/// [`start`](Self::start) to spawn the OS thread and get a [`ThreadStreamHandle`].
 ///
 /// # Example
 ///
 /// ```ignore
-/// let mut thread = ThreadStream::<MyThread>::new();
-/// make_work::<_, MyThread>(some_vertex, &mut thread)?;
+/// thread_id!(MyThread);
+///
+/// let thread = ThreadStream::<MyThread>::of(some_vertex);
 /// std::thread::scope(|s| {
 ///     let handle = thread.start(s);  // consumes ThreadStream, returns handle
 ///     // ...
@@ -108,7 +109,8 @@ where
         Self::default()
     }
 
-    /// Create an idle thread stream driving `root`; the ThreadId comes from the root.
+    /// Create an idle thread stream driving `root`. `ThreadStream::<T>::of(root)` assigns
+    /// `T` to a thread-generic root; the turbofish can be dropped when the root's type fixes it.
     pub fn of(root: Box<impl Workable<ThreadId = ThreadIdType> + 'params>) -> Self {
         Self {
             workables: vec![root],
@@ -219,9 +221,7 @@ mod tests {
     use crate::connect::marker::Connection;
     use crate::{closed, fatal};
 
-    #[derive(Debug, Clone)]
-    struct TestThread;
-    impl ThreadId for TestThread {}
+    crate::thread_id!(TestThread);
 
     struct ImmediateClose;
     impl Connection for ImmediateClose {}

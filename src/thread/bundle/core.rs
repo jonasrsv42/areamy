@@ -124,7 +124,6 @@ impl<'threads> ThreadBundleHandle<'threads> {
 mod tests {
     use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use super::ThreadBundle;
-    use crate::graph::Add;
     use crate::thread::{Join, ThreadStream};
 
     #[test]
@@ -163,13 +162,9 @@ mod tests {
 
     #[test]
     fn work_error_appears_in_results() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(WorkError::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(WorkError::<ThreadA>::new()));
 
-        let mut thread_b = ThreadStream::<'_, ThreadB>::new();
-        thread_b
-            .add(Box::new(ImmediateClose::<ThreadB>::new()))
-            .unwrap();
+        let thread_b = ThreadStream::of(Box::new(ImmediateClose::<ThreadB>::new()));
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);
@@ -183,8 +178,7 @@ mod tests {
 
     #[test]
     fn panic_appears_as_panic_variant() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
 
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
@@ -200,11 +194,9 @@ mod tests {
 
     #[test]
     fn multiple_panics_each_recorded() {
-        let mut thread_a = ThreadStream::<'_, ThreadA>::new();
-        thread_a.add(Box::new(Panicker::<ThreadA>::new())).unwrap();
+        let thread_a = ThreadStream::of(Box::new(Panicker::<ThreadA>::new()));
 
-        let mut thread_b = ThreadStream::<'_, ThreadB>::new();
-        thread_b.add(Box::new(Panicker::<ThreadB>::new())).unwrap();
+        let thread_b = ThreadStream::of(Box::new(Panicker::<ThreadB>::new()));
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);

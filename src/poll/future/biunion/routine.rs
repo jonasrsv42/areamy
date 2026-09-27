@@ -181,11 +181,9 @@ mod tests {
     use crate::poll::try_join;
     use crate::thread::ThreadBundle;
     use crate::work::Writer;
-    use crate::{Closeable, Message, Pushable, ThreadId, biunion as biu, make_push};
+    use crate::{Closeable, Message, Pushable, biunion as biu, make_push};
 
-    #[derive(Debug, Clone)]
-    struct BiunionFutureThread;
-    impl ThreadId for BiunionFutureThread {}
+    crate::thread_id!(BiunionFutureThread);
 
     #[test]
     fn future_routine_can_borrow_from_scope() {

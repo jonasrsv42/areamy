@@ -217,11 +217,7 @@ fn test_cycle_with_line_node() {
 
     // Connect bifurcation's left output back to line's input (backward connection)
     // This creates a cycle where values <= 5 go back to the line
-    Connect::<usize>::push::<bifurcation::Left, crate::marker::Unary>(
-        bifurcation.as_mut(),
-        line.as_ref(),
-    )
-    .unwrap();
+    Connect::<usize>::push::<bifurcation::Left, _>(bifurcation.as_mut(), line.as_ref()).unwrap();
 
     // Connect line's output to bifurcation's input (forward connection)
     make_bidi(line, &mut bifurcation).unwrap();

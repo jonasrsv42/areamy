@@ -7,13 +7,7 @@ use crate::thread::ThreadId;
 use crate::{closed, fatal};
 use std::marker::PhantomData;
 
-#[derive(Debug, Clone)]
-pub struct ThreadA;
-impl ThreadId for ThreadA {}
-
-#[derive(Debug, Clone)]
-pub struct ThreadB;
-impl ThreadId for ThreadB {}
+crate::thread_id!(pub ThreadA, pub ThreadB);
 
 pub struct ImmediateClose<T>(PhantomData<T>);
 impl<T> ImmediateClose<T> {

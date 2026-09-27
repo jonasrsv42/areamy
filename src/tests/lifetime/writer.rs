@@ -7,13 +7,12 @@
 
 use super::mock::{BorrowingLine, LifetimeThread};
 use crate::connect::sync::Receiver;
-use crate::marker::Unary;
 use crate::node::line::work::bridge::from_pull;
 use crate::pull::Connect as PullConnect;
 use crate::thread::{ThreadBundle, ThreadStream};
 use crate::work::{Writer, make_line};
 use crate::writer::pull::WriterBuffer;
-use crate::{Closeable, Message, Pushable, make_push, make_work};
+use crate::{Closeable, Message, Pushable, make_push};
 
 /// [`Writer::of`] on a borrowed work-line node.
 #[test]
@@ -25,8 +24,7 @@ fn work_writer_of_borrowed_line() {
     let output = Receiver::new();
     make_push(line.as_mut(), &output).unwrap();
 
-    let mut thread = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, _>(line, &mut thread).unwrap();
+    let thread = ThreadStream::<LifetimeThread>::of(line);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);
@@ -57,8 +55,7 @@ fn work_writer_new_from_buffer_with_borrowed_pull() {
     let output = Receiver::new();
     make_push(bridged.as_mut(), &output).unwrap();
 
-    let mut thread = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, _>(bridged, &mut thread).unwrap();
+    let thread = ThreadStream::<LifetimeThread>::of(bridged);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);

@@ -1,7 +1,6 @@
 //! Builder tests: GraphBuilder::build, AsyncParent::build, and typestate transitions.
 
 use super::node::Node;
-use crate::ThreadId;
 use crate::Trackable;
 use crate::biunion::{Left, Right};
 use crate::connect::poll::edge::{PollEdge, Sync};
@@ -14,9 +13,7 @@ use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_local_waker};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Debug)]
-struct TestThread;
-impl ThreadId for TestThread {}
+crate::thread_id!(TestThread);
 
 fn mock_factory() -> impl FnOnce(crate::poll::BiunionWakers) -> MockBiunion + Send {
     |wakers| MockBiunion::new(wakers)

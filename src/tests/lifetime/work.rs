@@ -2,10 +2,9 @@
 
 use super::mock::{BorrowingBifurcation, BorrowingBiunion, BorrowingLine, LifetimeThread};
 use crate::connect::sync::Receiver;
-use crate::marker::Unary;
 use crate::thread::{ThreadBundle, ThreadStream};
 use crate::work::{Connect, Writer, make_bifurcation, make_biunion, make_line};
-use crate::{Closeable, Message, Pushable, bifurcation, biunion, make_push, make_work};
+use crate::{Closeable, Message, Pushable, bifurcation, biunion, make_push};
 use std::collections::VecDeque;
 
 #[test]
@@ -17,8 +16,7 @@ fn line_work_borrowed() {
     let output = Receiver::new();
     make_push(line.as_mut(), &output).unwrap();
 
-    let mut thread = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, _>(line, &mut thread).unwrap();
+    let thread = ThreadStream::<LifetimeThread>::of(line);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);
@@ -54,10 +52,8 @@ fn multi_thread_shared_borrow() {
     let output = Receiver::new();
     make_push(line_b.as_mut(), &output).unwrap();
 
-    let mut thread_a = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, _>(line_a, &mut thread_a).unwrap();
-    let mut thread_b = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, _>(line_b, &mut thread_b).unwrap();
+    let thread_a = ThreadStream::<LifetimeThread>::of(line_a);
+    let thread_b = ThreadStream::<LifetimeThread>::of(line_b);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread_a);
@@ -93,8 +89,7 @@ fn biunion_work_borrowed() {
     let output = Receiver::new();
     make_push(biun.as_mut(), &output).unwrap();
 
-    let mut thread = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, _>(biun, &mut thread).unwrap();
+    let thread = ThreadStream::<LifetimeThread>::of(biun);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);
@@ -128,11 +123,10 @@ fn bifurcation_work_borrowed() {
     let mut writer = Writer::new(bif.as_ref()).unwrap();
     let low = Receiver::new();
     let high = Receiver::new();
-    Connect::<usize>::push::<bifurcation::Left, Unary>(bif.as_mut(), &low).unwrap();
-    Connect::<usize>::push::<bifurcation::Right, Unary>(bif.as_mut(), &high).unwrap();
+    Connect::<usize>::push::<bifurcation::Left, _>(bif.as_mut(), &low).unwrap();
+    Connect::<usize>::push::<bifurcation::Right, _>(bif.as_mut(), &high).unwrap();
 
-    let mut thread = ThreadStream::<'_, LifetimeThread>::new();
-    make_work::<Unary, _>(bif, &mut thread).unwrap();
+    let thread = ThreadStream::<LifetimeThread>::of(bif);
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);

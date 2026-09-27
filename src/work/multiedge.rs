@@ -8,35 +8,49 @@ use crate::graph::{Closeable, Get, Pushable, Sink};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
+use std::mem;
 use std::sync::{Arc, Condvar, Mutex};
 
 /// Wake flag shared by a group of edges. Single waiter.
 pub(crate) struct Notify {
-    flag: Mutex<bool>,
+    flag: Mutex<Flag>,
     signal: Condvar,
+}
+
+#[derive(Default)]
+struct Flag {
+    raised: bool,
+    /// The waiter is blocked in [`Condvar::wait`]; raises only notify when set.
+    waiting: bool,
 }
 
 impl Notify {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
-            flag: Mutex::new(false),
+            flag: Mutex::new(Flag::default()),
             signal: Condvar::new(),
         })
     }
 
     fn raise(&self) {
         let mut flag = self.flag.lock().unwrap_or_else(|p| p.into_inner());
-        *flag = true;
-        self.signal.notify_one();
+        flag.raised = true;
+        let waiting = mem::take(&mut flag.waiting);
+        drop(flag);
+        if waiting {
+            self.signal.notify_one();
+        }
     }
 
     /// Block until raised since the last wait.
     fn wait(&self) -> Result<(), Error> {
         let mut flag = self.flag.lock().map_err(|e| fatal!(e))?;
-        while !*flag {
+        while !flag.raised {
+            // Set on every iteration: a spurious wakeup must re-arm it.
+            flag.waiting = true;
             flag = self.signal.wait(flag).map_err(|e| fatal!(e))?;
         }
-        *flag = false;
+        flag.raised = false;
         Ok(())
     }
 

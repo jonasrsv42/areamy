@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Sink};
 use crate::pull::Pullable;
-use crate::work::Workable;
+use crate::work::{Workable, push_each};
 
 /// [`Pulled`] runs a [Pullable] chain as a work node: each [Workable::work] pulls one message
 /// and pushes it into every connected child.
@@ -48,13 +48,7 @@ where
     /// A closed chain returns `Closed` without closing its sinks: dropping this node drops
     /// them, and a child's edge closes once every producer is gone (fan-in safe).
     fn work(&mut self) -> Result<(), Error> {
-        let message = self.pullable.pull()?;
-
-        for sink in self.sinks.iter_mut() {
-            sink.push(message.clone())?;
-        }
-
-        Ok(())
+        push_each(&mut self.sinks, self.pullable.pull()?)
     }
 }
 

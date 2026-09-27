@@ -7,7 +7,7 @@ use crate::node::{biunion, routine};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::multiedge::{self, Notify};
-use crate::work::{Workable, work_each};
+use crate::work::{Workable, push_each, work_each};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
@@ -221,11 +221,11 @@ where
                 // If left or right is OK push is OK.
                 self.try_push()?;
 
-                self.push(Message::Flush(origin.clone()))?;
+                self.push(Message::Flush(origin))?;
                 Ok(true)
             }
             Message::Marker(origin) => {
-                self.push(Message::Marker(origin.clone()))?;
+                self.push(Message::Marker(origin))?;
                 Ok(true)
             }
         }
@@ -245,11 +245,11 @@ where
                 // If left or right is OK push is OK.
                 self.try_push()?;
 
-                self.push(Message::Flush(origin.clone()))?;
+                self.push(Message::Flush(origin))?;
                 Ok(true)
             }
             Message::Marker(origin) => {
-                self.push(Message::Marker(origin.clone()))?;
+                self.push(Message::Marker(origin))?;
 
                 Ok(true)
             }
@@ -269,11 +269,7 @@ where
     }
 
     fn push(&mut self, obj: Message<Out, SignalType>) -> Result<(), Error> {
-        for pushable in self.pushes.iter_mut() {
-            pushable.push(obj.clone())?;
-        }
-
-        Ok(())
+        push_each(&mut self.pushes, obj)
     }
 
     /// Close all push outputs. Called on shutdown to propagate close through push connections.

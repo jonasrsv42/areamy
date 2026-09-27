@@ -2,12 +2,12 @@
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Closeable, Get, Pushable, Sink};
+use crate::graph::{Add, Closeable, Get, Sink};
 use crate::message::Message;
 use crate::node::line::routine::LineRoutine;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::{Workable, work_each};
+use crate::work::{Workable, push_each, work_each};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a line.
@@ -144,11 +144,11 @@ where
                         }
 
                         // Maybe forward the flush
-                        self.push(Message::Flush(origin.clone()))?;
+                        self.push(Message::Flush(origin))?;
                         push_ok = true;
                     }
                     Message::Marker(origin) => {
-                        self.push(Message::Marker(origin.clone()))?;
+                        self.push(Message::Marker(origin))?;
                         push_ok = true;
                     }
                 },
@@ -206,11 +206,7 @@ where
 
     /// push output into all [Pushable::push] edges.
     fn push(&mut self, obj: Message<Out, SignalType>) -> Result<(), Error> {
-        for pushable in self.pushes.iter_mut() {
-            pushable.push(obj.clone())?;
-        }
-
-        Ok(())
+        push_each(&mut self.pushes, obj)
     }
 
     /// Close all push outputs. Called on shutdown to propagate close through push connections.
@@ -316,6 +312,7 @@ where
 pub mod tests {
     use super::*;
     use crate::DefaultThread;
+    use crate::graph::Pushable;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::work::{self, Reader, Writer, tee};
     use std::time::Instant;

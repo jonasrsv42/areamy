@@ -7,7 +7,7 @@ use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::node::{bifurcation, routine};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::{Workable, work_each};
+use crate::work::{Workable, push_each, work_each};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a bifurcation.
@@ -234,19 +234,11 @@ where
     }
 
     fn push_left(&mut self, obj: Message<Left, SignalType>) -> Result<(), Error> {
-        for pushable in self.pushes.left.iter_mut() {
-            pushable.push(obj.clone())?;
-        }
-
-        Ok(())
+        push_each(&mut self.pushes.left, obj)
     }
 
     fn push_right(&mut self, obj: Message<Right, SignalType>) -> Result<(), Error> {
-        for pushable in self.pushes.right.iter_mut() {
-            pushable.push(obj.clone())?;
-        }
-
-        Ok(())
+        push_each(&mut self.pushes.right, obj)
     }
 
     /// Close all push outputs. Called on shutdown to propagate close through push connections.

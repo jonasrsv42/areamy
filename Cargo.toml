@@ -16,6 +16,10 @@ silent = []
 # downstream crates. Enable from [dev-dependencies] only.
 testing = []
 
+[lib]
+# Benches are criterion targets; libtest would reject criterion's flags.
+bench = false
+
 [dev-dependencies]
 criterion = "0.8"
 

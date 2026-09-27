@@ -19,6 +19,7 @@ use crate::{closed, fatal};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
+use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
@@ -40,6 +41,8 @@ where
 {
     buffer: VecDeque<Message<DataType, SignalType>>,
     closed: bool,
+    /// The receiver is blocked in [`Condvar::wait`]; pushes only notify when set.
+    waiting: bool,
 }
 
 struct Shared<DataType, SignalType>
@@ -103,6 +106,7 @@ where
             inner: Mutex::new(Inner {
                 buffer: VecDeque::new(),
                 closed: false,
+                waiting: false,
             }),
             signal: Condvar::new(),
             producer_count: AtomicUsize::new(0),
@@ -202,7 +206,7 @@ where
             return Err(closed!());
         }
         inner.buffer.push_back(message);
-        self.shared.signal.notify_one();
+        self.wake(inner);
         Ok(())
     }
 
@@ -214,11 +218,19 @@ where
         if inner.closed {
             return Err(closed!());
         }
-        for item in items {
-            inner.buffer.push_back(item);
-        }
-        self.shared.signal.notify_one();
+        inner.buffer.extend(items);
+        self.wake(inner);
         Ok(())
+    }
+
+    /// Notify the receiver only if it is blocked, after releasing the lock. The flag is set and
+    /// cleared under the lock, and there is at most one waiter (`Receiver` is `!Sync`).
+    fn wake(&self, mut inner: MutexGuard<'_, Inner<D, S>>) {
+        let waiting = mem::take(&mut inner.waiting);
+        drop(inner);
+        if waiting {
+            self.shared.signal.notify_one();
+        }
     }
 
     /// Mark the edge closed. Idempotent.
@@ -255,6 +267,8 @@ where
             if inner.closed || self.shared.producer_count.load(Ordering::Acquire) == 0 {
                 return Err(closed!());
             }
+            // Set on every iteration: a spurious wakeup must re-arm it.
+            inner.waiting = true;
             inner = self.shared.signal.wait(inner).map_err(|e| fatal!(e))?;
         }
         Ok(inner)

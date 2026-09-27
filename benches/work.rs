@@ -3,13 +3,13 @@
 mod support;
 
 use areamy::sync::Receiver;
-use areamy::work::{self, Line, Reader, Writer};
-use areamy::{Closeable, Message, Push, Pushable, ThreadStream, Trackable};
+use areamy::work::{self, Biunion, Line, Reader, Writer};
+use areamy::{At, Closeable, Message, Push, Pushable, ThreadStream, Trackable, biunion};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::thread;
 use std::time::Instant;
-use support::{Pass, frame};
+use support::{Merge, Pass, frame};
 
 areamy::thread_id!(Helper);
 
@@ -86,6 +86,27 @@ fn fan_out(c: &mut Criterion) {
     group.finish();
 }
 
+/// Biunion fed on both sides, read on this thread.
+fn biunion(c: &mut Criterion) {
+    let mut group = c.benchmark_group("work/biunion");
+    group.throughput(Throughput::Elements(2));
+
+    let mut node = Biunion::of(Merge::<usize>::new());
+    let mut left = Writer::new(&node.at::<biunion::Left>()).unwrap();
+    let mut right = Writer::new(&node.at::<biunion::Right>()).unwrap();
+    let mut reader = Reader::new(node).unwrap();
+
+    group.bench_function("both_sides", |b| {
+        b.iter(|| {
+            left.push(Message::Data(black_box(1))).unwrap();
+            right.push(Message::Data(black_box(2))).unwrap();
+            black_box(reader.read().unwrap());
+            black_box(reader.read().unwrap());
+        })
+    });
+    group.finish();
+}
+
 /// First two lines on a helper thread pushing into the last line on this thread.
 fn helper_thread(c: &mut Criterion) {
     let mut group = c.benchmark_group("work/helper_thread");
@@ -120,5 +141,5 @@ fn helper_thread(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, pipeline, fan_out, helper_thread);
+criterion_group!(benches, pipeline, fan_out, biunion, helper_thread);
 criterion_main!(benches);

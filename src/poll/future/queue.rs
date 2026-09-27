@@ -1,4 +1,4 @@
-//! Producer/consumer queues for [FutureRoutine](super::FutureRoutine).
+//! Producer/consumer queues for [FutureRoutine](super::line::FutureRoutine).
 //!
 //! Two queue types, each split into producer + consumer:
 //!
@@ -140,7 +140,7 @@ impl<T> InputConsumer<T> {
     ///
     /// Resolves to `Ok(Some(Input::*))` if an item arrives first,
     /// `Ok(None)` if `timeout` elapses first. After a `Flush`,
-    /// subsequent calls return `Err(Closed)` (same as [recv]).
+    /// subsequent calls return `Err(Closed)` (same as [Self::recv]).
     ///
     /// The deadline is fixed at call time (`Instant::now() + timeout`),
     /// not at first poll. Huge timeouts (e.g. `Duration::MAX` as

@@ -6,7 +6,7 @@ use crate::error::Error;
 /// something. It is useful for areamy nodes to restrict inputs/outputs
 /// to contain certain data.
 ///
-/// Trait to mark that [self] contains `Item`.
+/// Trait to mark that `Self` contains `Item`.
 pub trait Contains<Item> {
     // Get a reference to Item
     fn get(&self) -> Result<&Item, Error>;

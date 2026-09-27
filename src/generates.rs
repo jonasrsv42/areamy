@@ -9,7 +9,7 @@ use crate::error::Error;
 /// This is used in an Areamy graph for nodes to yield information based
 /// on existing signals.
 ///
-/// A [`Generates`] operation only references [self] type so that
+/// A [`Generates`] operation only references the `Self` type so that
 /// it can be repeatedly applied from an anchor.
 ///
 /// Each message type can be composed with

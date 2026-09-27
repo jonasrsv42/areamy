@@ -1,4 +1,4 @@
-//! Async thread that runs [Pollable] nodes driven by wakers.
+//! Async thread that runs [Pollable](crate::Pollable) nodes driven by wakers.
 
 use super::runtime::ClosableRuntime;
 use super::tls;
@@ -68,8 +68,8 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     /// for nodes that need to be woken from external producers running
     /// on other threads.
     ///
-    /// Each allocated slot ID must be bound to a [`Pollable`] via a
-    /// custom [`GraphBuilder`] returning a [`GraphNode`] with that ID;
+    /// Each allocated slot ID must be bound to a [`Pollable`](crate::Pollable) via a
+    /// custom [`GraphBuilder`] returning a [`GraphNode`](crate::poll::GraphNode) with that ID;
     /// otherwise the runtime will fail at build time with "slot N is
     /// empty."
     pub fn waker_allocator(&mut self) -> &mut WakerAllocator {

@@ -1,6 +1,6 @@
 //! Unified async node builder parameterized by edge kind markers.
 //!
-//! Use [`Node`] via [`Thread::line`](crate::poll::Thread):
+//! Use [`Node`](node::Node) via [`Thread::line`](crate::poll::Thread::line):
 //!
 //! - `.input::<Sync>()` → resolve input to Sync
 //! - `.output::<Sync>()` → resolve output to Sync

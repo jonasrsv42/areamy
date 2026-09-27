@@ -32,7 +32,7 @@ impl Generation {
 
 /// Handle to one live timer, returned by `schedule_at`. Cancelling or
 /// firing invalidates the key — later use is a no-op (ABA-guarded by
-/// [Self::generation]). Fields are crate-private — only the deadline
+/// a generation). Fields are crate-private — only the deadline
 /// heap mints these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TimerKey {

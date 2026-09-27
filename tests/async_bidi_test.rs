@@ -1,4 +1,4 @@
-//! Bidi streaming integration test using [areamy::poll::FutureRoutine].
+//! Bidi streaming integration test using [FutureRoutine].
 //!
 //! Demonstrates async connect → concurrent writer + reader via
 //! [areamy::poll::try_join], with flush triggering half-close and
@@ -158,8 +158,8 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 // Test
 // ============================================================
 
-/// Bidi streaming: connect → writer + reader via Join → half-close on flush.
-/// Uses areamy::poll::FutureRoutine with FutureRoutine::factory().
+/// Bidi streaming: connect → writer + reader via try_join → half-close on flush.
+/// Uses FutureRoutine::factory().
 /// Multi-segment: flush resets the future, reconnects.
 #[test]
 fn bidi_with_join() -> Result<(), Error> {

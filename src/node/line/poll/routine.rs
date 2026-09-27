@@ -1,7 +1,7 @@
 //! [`LineRoutine`] is the poll/async counterpart of
 //! [LineRoutine](crate::LineRoutine) (sync).
 //!
-//! Prefer [FutureRoutine](crate::poll::FutureRoutine) over raw impls —
+//! Prefer [FutureRoutine](crate::poll::future::line::FutureRoutine) over raw impls —
 //! it enforces all contracts below by construction.
 //!
 //! Unlike the sync [LineRoutine](crate::LineRoutine), does NOT require
@@ -25,7 +25,7 @@
 //! Routines that produce output synchronously in [crate::Send]
 //! do not need to wake [crate::Poll].
 //!
-//! [FutureRoutine](crate::poll::FutureRoutine) handles this via its
+//! [FutureRoutine](crate::poll::future::line::FutureRoutine) handles this via its
 //! waker-aware [InputQueue](crate::poll::future::queue::InputQueue) —
 //! push wakes Poll automatically.
 //!
@@ -66,7 +66,7 @@
 //! - Never return [core::task::Poll::Ready] outside flush. Fatal error.
 //! - Never return [crate::error::ErrorKind::Closed] from [crate::Poll]. Fatal error — the routine does not manage its own lifecycle.
 //!
-//! Think this is too many rules? Just use [FutureRoutine](crate::poll::FutureRoutine) — it handles all of it for you.
+//! Think this is too many rules? Just use [FutureRoutine](crate::poll::future::line::FutureRoutine) — it handles all of it for you.
 
 pub trait LineRoutine<In, Out>:
     crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + crate::node::Name

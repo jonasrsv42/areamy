@@ -1,5 +1,5 @@
 //! [FutureRoutine] — wraps a user-provided async fn into an
-//! [LineRoutine](crate::poll::LineRoutine).
+//! [LineRoutine].
 //!
 //! The user's async fn receives an [InputConsumer] and [OutputProducer].
 //! Data arrives as [Input::Data], flush as [Input::Flush].

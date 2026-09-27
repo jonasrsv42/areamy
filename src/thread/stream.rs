@@ -27,18 +27,18 @@ type Workables<'params, ThreadIdType> = Vec<Box<dyn Workable<ThreadId = ThreadId
 /// cascade fires within this work loop, so other workables in the
 /// same thread that share edges with it observe `Closed` on their
 /// next poll.
+#[cfg_attr(feature = "silent", allow(unused_variables))]
 fn work_loop<'params, ThreadIdType: ThreadId>(
     workables: &mut Workables<'params, ThreadIdType>,
 ) -> Result<(), Error> {
     while !workables.is_empty() {
-        work_each(workables).map_err(|error| {
+        work_each(workables).inspect_err(|error| {
             #[cfg(not(feature = "silent"))]
             eprintln!(
                 "In thread {} error: {}",
                 std::any::type_name::<ThreadIdType>(),
                 error
             );
-            error
         })?;
     }
     Ok(())
@@ -159,7 +159,7 @@ where
     /// Start the thread, consuming this [`ThreadStream`] and returning a handle.
     ///
     /// Spawns into the provided `scope`. The thread will run until a
-    /// workable returns [`ErrorKind::Closed`] (clean exit) or another
+    /// workable returns [`ErrorKind::Closed`](crate::error::ErrorKind::Closed) (clean exit) or another
     /// error (failure).
     pub fn start<'threads>(
         self,

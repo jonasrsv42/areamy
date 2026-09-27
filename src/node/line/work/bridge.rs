@@ -1,4 +1,4 @@
-//! Bridge a [LineTrait] with a [crate::pull::Line]
+//! Bridge a [LineRoutine] with a [crate::pull::Line]
 
 use crate::{LineRoutine, Origin, Pullable, ThreadId, Workable, work::Line};
 use crate::{Pushable, marker::Connection};

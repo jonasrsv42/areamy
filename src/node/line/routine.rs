@@ -1,7 +1,7 @@
 //! [LineRoutine] is the work horse of all Line nodes. It is a frankenstein [std::ops::Coroutine].
 
 /// [`LineRoutine`] is a flushable subset of [std::ops::Coroutine] accepting a stream of `In` types through
-/// [LineRoutine::send] and produce a stream of output with [LineRoutine::next].
+/// [crate::Send::send] and produce a stream of output with [crate::Next::next].
 ///
 /// [std::ops::Coroutine] was not stable at time of development.
 /// [LineRoutine] implements a [crate::Send] for a single input and a [crate::Next] for a single

@@ -95,23 +95,3 @@ pub struct Unary {}
 
 /// [Unary] is a [Multiplicity]
 impl Multiplicity for Unary {}
-
-/// [`Linkage`] identifies the role of a node in a two-stage link.
-/// Used by [crate::Linkable] to distinguish how a node is being
-/// connected during deferred graph construction.
-pub trait Linkage {}
-
-/// [`Parent`] linkage — the node is being linked as a parent.
-/// It receives an output edge (where to push data to its child).
-pub struct Parent;
-impl Linkage for Parent {}
-
-/// [`Child`] linkage — the node is being linked as a child.
-/// It receives an input edge (where to receive data from its parent).
-pub struct Child;
-impl Linkage for Child {}
-
-/// [`Terminal`] linkage — standalone node.
-/// Uses `Edge = ()` in [crate::Linkable].
-pub struct Terminal;
-impl Linkage for Terminal {}

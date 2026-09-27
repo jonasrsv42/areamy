@@ -50,7 +50,7 @@ pub trait Flush {
 /// [`Poll`] trait is the async component of async routines.
 ///
 /// When a node is woken, the framework calls [Poll::poll] with a
-/// [Waker](crate::connect::waker::Waker) carrying both a sync waker
+/// [Waker] carrying both a sync waker
 /// (for I/O registration / standard futures) and a thread-local waker
 /// (for cheap same-thread wake).
 ///
@@ -63,9 +63,10 @@ pub trait Poll {
 }
 
 /// [`Name`] trait is used to name routines for logging purposes.
+/// Defaults to the type name.
 pub trait Name {
     fn name(&self) -> &str {
-        "unknown"
+        core::any::type_name::<Self>()
     }
 }
 
@@ -204,5 +205,15 @@ pub mod tests {
         assert_eq!(Next::<usize, Right>::next(routine.as_mut()).unwrap(), None);
 
         routine.flush().unwrap();
+    }
+
+    impl Name for AddOne {}
+
+    #[test]
+    fn name_defaults_to_type_name() {
+        let routine = AddOne {
+            out: VecDeque::new(),
+        };
+        assert_eq!(routine.name(), core::any::type_name::<AddOne>());
     }
 }

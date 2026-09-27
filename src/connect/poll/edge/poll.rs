@@ -1,7 +1,7 @@
 //! A same-thread async edge.
 //!
 //! Used for connections between async nodes on the same [crate::thread::poll::stream::Thread].
-//! Fires a [Waker] on push to wake the consuming node.
+//! Fires a [ThreadLocalWaker] on push to wake the consuming node.
 //!
 //! Unlike sync variants that need separate producer and consumer for clean
 //! teardown semantics this is a single shared queue, this is sound because

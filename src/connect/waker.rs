@@ -22,7 +22,7 @@ pub trait ThreadLocalWake {
     /// Schedule the owning node to be polled at `deadline`. The key
     /// cancels the timer; dropping it means the timer just fires.
     /// Infallible: every waker must be backed by a timer source
-    /// (tests use [mock], which carries a private scheduler).
+    /// (tests use `mock`, which carries a private scheduler).
     #[must_use]
     fn schedule_at(&self, deadline: Instant) -> TimerKey;
     /// Release a timer before it fires. Dead keys are a no-op.

@@ -81,7 +81,7 @@ pub trait Pullable: Send + Connection {
 /// [`Pollable`] is a [Connection] for event-driven nodes.
 ///
 /// Unlike [Workable] which blocks until work is done, [Pollable::poll] is non-blocking
-/// and receives a [Waker](crate::connect::waker::Waker) carrying both a sync waker
+/// and receives a [Waker] carrying both a sync waker
 /// (for I/O registration / standard futures) and a thread-local waker (for cheap
 /// same-thread wake).
 ///

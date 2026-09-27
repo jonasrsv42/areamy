@@ -15,7 +15,7 @@ use crate::signal::Origin;
 
 // --- Both deferred: parent on Node<Allocating, Deferred, Deferred, Deferred> ---
 
-/// .parent::<Left> on both-deferred → left Async, stays Allocating
+/// `.parent::<Left>` on both-deferred → left Async, stays Allocating
 impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
         'params,
@@ -94,7 +94,7 @@ where
     }
 }
 
-/// .parent::<Right> on both-deferred → right Async, stays Allocating
+/// `.parent::<Right>` on both-deferred → right Async, stays Allocating
 impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveParent<
         'params,

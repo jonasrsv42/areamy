@@ -11,7 +11,7 @@ use std::marker::PhantomData;
 /// [`Connect`] is a utility that serves no purpose beyond improving readability
 /// it provides no additional functionality beyond what [make_push] and [make_bidi] does.
 ///
-/// What it does provide is the ability to annotate the data that is [Pushable::push]ed through
+/// What it does provide is the ability to annotate the data that is [crate::Pushable::push]ed through
 /// the connection. It has been deemed to reduce cognitive overhead when it comes to reading
 /// the graph declaration if typing is more visible.
 ///

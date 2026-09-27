@@ -1,7 +1,7 @@
 //! Sync (cross-thread) waker for async poll runtime.
 //!
-//! [Waker] implements [alloc::task::Wake] — enqueues a node ID via
-//! [Producer](crate::connect::poll::queue::Producer) with signal.
+//! `Waker` implements [alloc::task::Wake] — enqueues a node ID via
+//! [crate::connect::poll::queue::Producer] with signal.
 
 use crate::connect::poll::marker::NodeId;
 use crate::connect::poll::queue::Producer;
@@ -28,12 +28,10 @@ impl Waker {
 
 impl Wake for Waker {
     fn wake(self: Arc<Self>) {
-        if let Err(e) = self.producer.push(self.id) {
-            #[cfg(not(feature = "silent"))]
-            eprintln!("sync::Waker: failed to enqueue node {}: {}", self.id, e);
-        }
+        self.wake_by_ref();
     }
 
+    #[cfg_attr(feature = "silent", allow(unused_variables))]
     fn wake_by_ref(self: &Arc<Self>) {
         if let Err(e) = self.producer.push(self.id) {
             #[cfg(not(feature = "silent"))]

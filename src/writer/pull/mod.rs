@@ -10,7 +10,7 @@
 //!   nodes. Use this when you have in-memory data or want to bridge from a push-based source.
 //!
 //! - **[`PullWriter`](crate::PullWriter)**: A trait for "true" pull sources that
-//!   implement [`Pullable`](crate::Pullable) directly, like file readers. These pull data
+//!   implement [`Pullable`] directly, like file readers. These pull data
 //!   on-demand rather than buffering.
 
 use crate::connect::sync::Receiver;

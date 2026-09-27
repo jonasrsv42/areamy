@@ -1,9 +1,9 @@
 //! [FutureRoutine] for biunion — wraps a user-provided async fn into a
-//! [BiunionRoutine](crate::node::biunion::poll::routine::BiunionRoutine).
+//! [BiunionRoutine].
 //!
 //! The async fn receives two [InputConsumer]s (left + right) and one
-//! [OutputProducer]. Use [race](crate::poll::race) to await either
-//! input, or [try_join](crate::poll::try_join) to serve both.
+//! [OutputProducer]. Use [race](fn@crate::poll::race) to await either
+//! input, or [try_join](fn@crate::poll::try_join) to serve both.
 
 use crate::biunion;
 use crate::connect::waker;

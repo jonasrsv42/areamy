@@ -169,7 +169,7 @@ impl<T: Unpin> Future for RecvFut<T> {
         // this future across flush cycles (reset() keeps the waker),
         // so a Ready-only first batch must still leave a live waker
         // behind for the next push.
-        inner.waker = cx.waker().clone();
+        inner.waker.clone_from(cx.waker());
         match inner.try_take() {
             Some(result) => Poll::Ready(result),
             None => Poll::Pending,
@@ -198,7 +198,7 @@ impl<T: Unpin> Future for RecvTimeoutFut<T> {
         let this = self.get_mut();
         let mut inner = this.consumer.0.borrow_mut();
         // Register on every poll, Ready included — see RecvFut.
-        inner.waker = cx.waker().clone();
+        inner.waker.clone_from(cx.waker());
 
         // Buffered item / closed beats an expired deadline.
         let poll = match inner.try_take() {

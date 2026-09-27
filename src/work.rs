@@ -3,7 +3,6 @@
 mod bidi;
 pub(crate) mod multiedge;
 mod pulled;
-mod push_each;
 mod schedule;
 mod stream;
 mod work_each;
@@ -11,7 +10,6 @@ mod workable;
 
 pub use bidi::Bidi;
 pub use pulled::Pulled;
-pub(crate) use push_each::push_each;
 pub use schedule::Schedule;
 pub use stream::{ThreadStream, ThreadStreamHandle};
 pub(crate) use work_each::work_each;

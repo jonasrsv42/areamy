@@ -7,7 +7,7 @@ use crate::node::{biunion, routine};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::multiedge::{self, Notify};
-use crate::work::{Workable, push_each, work_each};
+use crate::work::{Workable, work_each};
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
@@ -269,7 +269,7 @@ where
     }
 
     fn push(&mut self, obj: Message<Out, SignalType>) -> Result<(), Error> {
-        push_each(&mut self.pushes, obj)
+        Pushable::push(&mut self.pushes, obj)
     }
 
     /// Close all push outputs. Called on shutdown to propagate close through push connections.

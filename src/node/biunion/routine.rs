@@ -1,6 +1,10 @@
 use crate::biunion;
 use crate::node::Name;
 
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a biunion routine from (`{Left}`, `{Right}`) to `{Out}`",
+    note = "needs `Send`, `areamy::Send<{Left}, biunion::Left>`, `areamy::Send<{Right}, biunion::Right>`, `Next<{Out}>`, `Flush`, `Name` and `impl BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`"
+)]
 pub trait BiunionRoutine<Left, Right, Out>:
     Send
     + crate::Send<Left, biunion::Left>

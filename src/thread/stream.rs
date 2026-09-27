@@ -108,6 +108,14 @@ where
         Self::default()
     }
 
+    /// Create an idle thread stream driving `root`; the ThreadId comes from the root.
+    pub fn of(root: Box<impl Workable<ThreadId = ThreadIdType> + 'params>) -> Self {
+        Self {
+            workables: vec![root],
+            on_done: Vec::new(),
+        }
+    }
+
     /// Register a callback to fire when the thread exits.
     ///
     /// Each registered callback fires exactly once, on any exit path
@@ -262,6 +270,23 @@ mod tests {
             let handle = thread.start(s);
             assert!(matches!(handle.join(), Join::Ok));
         });
+    }
+
+    #[test]
+    fn of_infers_thread_from_root() {
+        let thread = ThreadStream::of(Box::new(ImmediateClose));
+        std::thread::scope(|s| {
+            let handle = thread.start(s);
+            assert!(matches!(handle.join(), Join::Ok));
+        });
+    }
+
+    crate::thread_id!(MacroThread, pub(crate) OtherMacroThread);
+
+    #[test]
+    fn thread_id_macro_declares_thread_ids() {
+        let _a = ThreadStream::<'_, MacroThread>::new();
+        let _b = ThreadStream::<'_, OtherMacroThread>::new();
     }
 
     #[test]

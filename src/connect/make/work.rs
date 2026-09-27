@@ -99,4 +99,13 @@ where
 
         Ok(())
     }
+
+    /// Pins the DataType of a child input without connecting it; the input stays open.
+    pub fn input<'params, GetMultiplicity: Multiplicity>(
+        _child: &impl Get<
+            dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+            GetMultiplicity,
+        >,
+    ) {
+    }
 }

@@ -476,7 +476,7 @@ pub mod tests {
     use crate::Trackable;
     use crate::connect::sync::Receiver;
     use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::{Pushable, work::Reader, work::Writer, work::make_biunion};
+    use crate::{Pushable, work::Connect, work::Reader, work::Writer, work::make_biunion};
 
     #[test]
     fn run_biunion() {
@@ -504,6 +504,19 @@ pub mod tests {
 
         assert_eq!(reader.read().unwrap(), Message::Data(4));
         assert_eq!(reader.read().unwrap(), Message::Data(4));
+    }
+
+    /// An input that never had a producer stays open; only a dropped producer closes it.
+    #[test]
+    fn typed_unfed_left_input_stays_open() {
+        let biun = make_biunion(MockBiunion::new());
+        Connect::<usize>::input::<biunion::Left>(&biun);
+        let mut right_writer = Writer::new::<biunion::Right>(&biun).unwrap();
+        let mut reader = Reader::new(biun).unwrap();
+
+        right_writer.push(Message::Data(2)).unwrap();
+
+        assert_eq!(reader.read().unwrap(), Message::Data(6));
     }
 
     #[test]

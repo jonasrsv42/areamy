@@ -10,6 +10,11 @@
 use crate::biunion;
 use crate::node::Name;
 
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a poll biunion routine from (`{Left}`, `{Right}`) to `{Out}`",
+    note = "needs `areamy::Send<{Left}, biunion::Left>`, `areamy::Send<{Right}, biunion::Right>`, `Next<{Out}>`, `Flush`, `Poll`, `Name` and `impl poll::BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`",
+    note = "for async bodies use the biunion `FutureRoutine`"
+)]
 pub trait BiunionRoutine<Left, Right, Out>:
     crate::Send<Left, biunion::Left>
     + crate::Send<Right, biunion::Right>

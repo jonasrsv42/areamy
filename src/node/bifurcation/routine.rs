@@ -1,6 +1,10 @@
 use crate::bifurcation;
 use crate::node::Name;
 
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a bifurcation routine from `{In}` to (`{Left}`, `{Right}`)",
+    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Left}, bifurcation::Left>`, `Next<{Right}, bifurcation::Right>`, `Flush`, `Name` and `impl BifurcationRoutine<{In}, {Left}, {Right}> for {Self}`"
+)]
 pub trait BifurcationRoutine<In, Left, Right>:
     Send
     + crate::Send<In>

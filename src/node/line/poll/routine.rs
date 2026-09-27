@@ -70,6 +70,11 @@
 
 use crate::node::Name;
 
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a poll line routine from `{In}` to `{Out}`",
+    note = "needs `areamy::Send<{In}>`, `Next<{Out}>`, `Flush`, `Poll`, `Name` and `impl poll::LineRoutine<{In}, {Out}> for {Self}`",
+    note = "for async bodies use `FutureRoutine`; for a sync routine use a poll adapter"
+)]
 pub trait LineRoutine<In, Out>:
     crate::Send<In> + crate::Next<Out> + crate::Flush + crate::Poll + Name
 {

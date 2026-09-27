@@ -10,3 +10,15 @@ pub struct DefaultThread {}
 
 /// [DefaultThread] is a [ThreadId]
 impl ThreadId for DefaultThread {}
+
+/// Declares [ThreadId] marker types: `thread_id!(pub EncoderThread, DecoderThread);`
+#[macro_export]
+macro_rules! thread_id {
+    ($($vis:vis $name:ident),+ $(,)?) => {
+        $(
+            #[derive(Debug, Clone)]
+            $vis struct $name;
+            impl $crate::ThreadId for $name {}
+        )+
+    };
+}

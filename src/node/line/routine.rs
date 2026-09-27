@@ -44,6 +44,10 @@ use crate::node::Name;
 /// [crate::Next] must only yield [Option::None] if it requires additional
 /// [crate::Send] to produce more output. The function should be blocking.
 ///
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a line routine from `{In}` to `{Out}`",
+    note = "needs `Send`, `areamy::Send<{In}>`, `Next<{Out}>`, `Flush`, `Name` and `impl LineRoutine<{In}, {Out}> for {Self}`"
+)]
 pub trait LineRoutine<In, Out>:
     Send + crate::Send<In> + crate::Next<Out> + crate::Flush + Name
 {

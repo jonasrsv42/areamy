@@ -122,6 +122,11 @@ pub trait Receivable: Connection {
 /// [Add] is generic over [Multiplicity] to allow [Add::add] multiple inbound and outbound
 /// [Connection] for a single node. Per default all implementations are [Unary] unless
 /// otherwise stated to avoid specifying [Multiplicity] where not necessary.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot take this connection",
+    label = "does not accept `{ConnectionType}`",
+    note = "check that the data type, signal type and ThreadId match on both ends"
+)]
 pub trait Add<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity = Unary> {
     fn add(&mut self, connection: Box<ConnectionType>) -> Result<(), Error>;
 }
@@ -139,6 +144,11 @@ pub trait Add<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicit
 /// [Get] is generic over [Multiplicity] to allow [Get::get] multiple inbound
 /// [Connection] for a single node. Per default all implementations are [Unary] unless
 /// otherwise stated to avoid specifying [Multiplicity] where not necessary.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot provide this connection",
+    label = "has no `{ConnectionType}`",
+    note = "check that the data type, signal type and ThreadId match on both ends"
+)]
 pub trait Get<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity = Unary> {
     fn get(&self) -> Result<Box<ConnectionType>, Error>;
 }

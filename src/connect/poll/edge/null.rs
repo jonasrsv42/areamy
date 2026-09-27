@@ -4,7 +4,7 @@
 //! placeholder storage for [`Deferred`](super::traits::Deferred) edges.
 
 use crate::error::Error;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
 use std::marker::PhantomData;

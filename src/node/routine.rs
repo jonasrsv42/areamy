@@ -8,7 +8,7 @@
 
 use crate::connect::waker::Waker;
 use crate::error::Error;
-use crate::marker::{Multiplicity, Unary};
+use crate::graph::marker::{Multiplicity, Unary};
 
 /// [`Send`] trait is used to implement an input for a routine.  
 ///

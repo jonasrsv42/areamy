@@ -1,6 +1,6 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
 use crate::error::Error;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::{Closeable, Pushable, Sink};
 
@@ -115,7 +115,7 @@ mod tests {
     use super::*;
     use crate::Message;
     use crate::Trackable;
-    use crate::connect::sync::Receiver;
+    use crate::edge::sync::Receiver;
 
     type TestSignal = Trackable<&'static str>;
 

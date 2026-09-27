@@ -1,9 +1,12 @@
 //! Async polling primitives — edge markers, combinators, future routine.
 
 pub mod future;
+mod pollable;
 pub mod race;
 pub mod sleep;
 pub mod try_join;
+
+pub use pollable::Pollable;
 
 pub use crate::connect::poll::edge::{
     Async, Deferred, Direct, Edge, Linktime, Null, PollEdge, Sync,

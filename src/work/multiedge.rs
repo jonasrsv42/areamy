@@ -1,9 +1,9 @@
 //! Edges for multi-input nodes: one waiter blocks on all of them at once.
 
-use super::edge;
-pub use super::edge::State;
+use crate::edge::sync;
+pub use crate::edge::sync::State;
 use crate::error::Error;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{Closeable, Pushable, Sink, closed, fatal, graph::Get};
@@ -79,7 +79,7 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    inner: edge::Sender<D, S>,
+    inner: sync::Sender<D, S>,
     raise: RaiseOnDrop,
 }
 
@@ -88,7 +88,7 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    inner: edge::Receiver<D, S>,
+    inner: sync::Receiver<D, S>,
     notify: Arc<Notify>,
 }
 
@@ -99,7 +99,7 @@ where
 {
     pub(crate) fn new(notify: Arc<Notify>) -> Self {
         Self {
-            inner: edge::Receiver::new(),
+            inner: sync::Receiver::new(),
             notify,
         }
     }

@@ -1,8 +1,17 @@
 //! [`Sender`] / [`Receiver`] pair backed by a blocking mutex + condvar
 //! queue with refcounted close-on-drop semantics.
+//!
+//! [`Receiver::new`] creates a single-consumer endpoint with no senders
+//! attached. Mint producers with [`Receiver::sender`]; each call
+//! increments the producer refcount.
+//!
+//! When the last [`Sender`] is dropped, the edge auto-closes and any
+//! blocked [`Receiver`] read is woken with
+//! [`crate::error::ErrorKind::Closed`]. When the [`Receiver`] is
+//! dropped, further [`Sender::push_back`] calls return `Closed`.
 
 use crate::error::Error;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{Closeable, Pushable, Sink, closed, fatal, graph::Get};
@@ -403,13 +412,13 @@ mod tests {
 
     /// ```compile_fail
     /// fn require_clone<T: Clone>() {}
-    /// require_clone::<areamy::connect::sync::Receiver<usize, Trackable<&'static str>>>();
+    /// require_clone::<areamy::edge::sync::Receiver<usize, Trackable<&'static str>>>();
     /// ```
     fn _receiver_not_clone() {}
 
     /// ```compile_fail
     /// fn require_sync<T: Sync>() {}
-    /// require_sync::<areamy::connect::sync::Receiver<usize, Trackable<&'static str>>>();
+    /// require_sync::<areamy::edge::sync::Receiver<usize, Trackable<&'static str>>>();
     /// ```
     fn _receiver_not_sync() {}
 

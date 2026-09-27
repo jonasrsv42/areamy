@@ -1,8 +1,8 @@
 //! Shared test fixtures for the bundle module.
 
 use crate::Workable;
-use crate::connect::marker::Connection;
 use crate::error::Error;
+use crate::graph::marker::Connection;
 use crate::thread::ThreadId;
 use crate::{closed, fatal};
 use std::marker::PhantomData;

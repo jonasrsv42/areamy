@@ -1,7 +1,7 @@
 //! Borrowed routines on the `Workable` (sync) connection trait.
 
 use super::mock::{BorrowingBifurcation, BorrowingBiunion, BorrowingLine, LifetimeThread};
-use crate::connect::sync::Receiver;
+use crate::edge::sync::Receiver;
 use crate::thread::{ThreadBundle, ThreadStream};
 use crate::work::{Connect, Writer, make_bifurcation, make_biunion, make_line};
 use crate::{Closeable, Message, Pushable, bifurcation, biunion, make_push};

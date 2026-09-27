@@ -1,8 +1,8 @@
 use crate::biunion;
-use crate::connect::sync::multiedge::{self, Notify};
 use crate::error::{Error, ErrorKind};
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::node::work::work_each;
+use crate::work::multiedge::{self, Notify};
 use crate::{
     Closeable, Message, Origin, Pushable, Sink, Workable,
     graph::{Add, Get},
@@ -474,7 +474,7 @@ where
 pub mod tests {
     use super::*;
     use crate::Trackable;
-    use crate::connect::sync::Receiver;
+    use crate::edge::sync::Receiver;
     use crate::node::biunion::routine::tests::MockBiunion;
     use crate::{Pushable, work::Connect, work::Reader, work::Writer, work::make_biunion};
 
@@ -566,7 +566,7 @@ pub mod tests {
     #[test]
     fn close_propagates_through_work_chain() {
         use crate::closed;
-        use crate::marker::Connection;
+        use crate::graph::marker::Connection;
 
         // Create a mock workable that returns Closed error
         struct ClosingWorkable;

@@ -1,4 +1,4 @@
-use crate::connect::sync::Receiver;
+use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::{DefaultThread, Sink, Trackable, graph::Add, marker::Multiplicity};
 use crate::{Message, Origin};

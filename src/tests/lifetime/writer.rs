@@ -6,7 +6,7 @@
 //! the routine's `'params` to `'static`.
 
 use super::mock::{BorrowingLine, LifetimeThread};
-use crate::connect::sync::Receiver;
+use crate::edge::sync::Receiver;
 use crate::node::line::work::bridge::from_pull;
 use crate::pull::Connect as PullConnect;
 use crate::thread::{ThreadBundle, ThreadStream};

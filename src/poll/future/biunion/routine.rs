@@ -169,7 +169,7 @@ mod tests {
     //! drained and closed.
 
     use super::*;
-    use crate::connect::sync::Receiver;
+    use crate::edge::sync::Receiver;
     use crate::poll;
     use crate::poll::try_join;
     use crate::thread::ThreadBundle;

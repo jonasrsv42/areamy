@@ -1,4 +1,4 @@
-use crate::connect::marker::Multiplicity;
+use crate::graph::marker::Multiplicity;
 
 pub struct Left {}
 pub struct Right {}

@@ -182,7 +182,7 @@ mod tests {
     //! `&multiplier` capture wouldn't compile.
 
     use super::*;
-    use crate::connect::sync::Receiver;
+    use crate::edge::sync::Receiver;
     use crate::poll;
     use crate::thread::{ThreadBundle, ThreadStream};
     use crate::work::{Writer, make_line};

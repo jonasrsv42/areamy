@@ -36,7 +36,7 @@
 
 use crate::connect::waker::{ThreadLocalWaker, Waker};
 use crate::error::{Error, ErrorKind};
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
@@ -430,8 +430,8 @@ mod tests {
     use crate::DefaultThread;
     use crate::Trackable;
     use crate::connect::poll::input;
-    use crate::connect::sync::Receiver;
     use crate::connect::waker::{self, ThreadLocalWaker, mock};
+    use crate::edge::sync::Receiver;
     use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};

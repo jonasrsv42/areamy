@@ -266,7 +266,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
 mod tests {
     use super::*;
     use crate::Trackable;
-    use crate::connect::sync::Receiver;
+    use crate::edge::sync::Receiver;
     use crate::graph::Get;
     use crate::node::line::poll::routine::tests::MockLine;
     use crate::poll;

@@ -89,7 +89,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::sync::Receiver;
+    use crate::edge::sync::Receiver;
 
     struct MockNode {
         input: Receiver<usize, Trackable<&'static str>>,

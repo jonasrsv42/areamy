@@ -218,7 +218,7 @@ impl<'params, ThreadIdType: ThreadId> Add<dyn Workable<ThreadId = ThreadIdType> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connect::marker::Connection;
+    use crate::graph::marker::Connection;
     use crate::{closed, fatal};
 
     crate::thread_id!(TestThread);

@@ -45,7 +45,7 @@
 //! `src/tests/cycle_test.rs`; this test stays linear so the
 //! lifecycle plumbing is the focus.
 
-use areamy::connect::sync::Receiver;
+use areamy::edge::sync::Receiver;
 use areamy::error::Error;
 use areamy::pull;
 use areamy::pull::WriterBuffer;

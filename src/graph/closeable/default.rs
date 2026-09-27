@@ -30,7 +30,7 @@ mod tests {
     use crate::Pushable;
     use crate::Sink;
     use crate::Trackable;
-    use crate::connect::sync::{Receiver, Sender};
+    use crate::edge::sync::{Receiver, Sender};
 
     fn close(closeable: &mut impl Sink<DataType = usize, SignalType = Trackable<&'static str>>) {
         closeable.close().unwrap();

@@ -48,7 +48,7 @@ mod tests {
     use super::*;
     use crate::Message;
     use crate::Trackable;
-    use crate::connect::sync::{Receiver, Sender};
+    use crate::edge::sync::{Receiver, Sender};
 
     fn push(
         pushable: &mut impl Pushable<DataType = usize, SignalType = Trackable<&'static str>>,

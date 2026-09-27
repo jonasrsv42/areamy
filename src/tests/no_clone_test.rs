@@ -5,10 +5,10 @@
 //! `Box<n>` at the sink, with no cloning along the way.
 
 use crate::Origin;
-use crate::connect::graph::{Pullable, Pushable};
 use crate::error::Error;
+use crate::graph::Pushable;
 use crate::node::line::LineRoutine;
-use crate::pull::{Reader, WriterBuffer, make_pull};
+use crate::pull::{Pullable, Reader, WriterBuffer, make_pull};
 use crate::work::Writer;
 use crate::{Message, Next, Send};
 use std::collections::VecDeque;

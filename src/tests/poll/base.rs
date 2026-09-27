@@ -1,7 +1,7 @@
 //! Integration tests for mixed sync + async graphs.
 
 use crate::error::Error;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::poll;
 use crate::poll::Sync;
 use crate::signal::Trackable;

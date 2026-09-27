@@ -13,10 +13,10 @@
 //!   implement [`Pullable`] directly, like file readers. These pull data
 //!   on-demand rather than buffering.
 
-use crate::connect::sync::Receiver;
+use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::graph::Get;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::{Origin, Pullable, Pushable, ThreadId};
 use std::marker::PhantomData;

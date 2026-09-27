@@ -11,7 +11,7 @@
 
 use crate::connect::poll::wakers::allocator::Slot;
 use crate::error::Error;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{Closeable, Pushable, Receivable, Sink, closed, fatal, graph::Get};

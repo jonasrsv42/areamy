@@ -1,5 +1,5 @@
 use crate::bifurcation;
-use crate::connect::sync::Receiver;
+use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::node::work::work_each;

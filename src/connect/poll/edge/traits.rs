@@ -9,7 +9,7 @@
 use super::null::Null;
 use crate::connect::poll::input;
 use crate::connect::poll::wakers::WakerAllocator;
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::signal::Origin;
 use crate::{Sink, ThreadId};
 

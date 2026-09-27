@@ -20,7 +20,7 @@
 use crate::biunion;
 use crate::connect::waker::{ThreadLocalWaker, Waker};
 use crate::error::{Error, ErrorKind};
-use crate::marker::Connection;
+use crate::graph::marker::Connection;
 use crate::message::Message;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
@@ -788,8 +788,8 @@ mod tests {
     use crate::DefaultThread;
     use crate::Trackable;
     use crate::connect::poll::input;
-    use crate::connect::sync::{Receiver, Sender};
     use crate::connect::waker::mock::tracking_local_waker;
+    use crate::edge::sync::{Receiver, Sender};
     use crate::node::biunion::poll::routine::tests::{
         MockBiunion, noop_biunion_wakers, noop_waker,
     };

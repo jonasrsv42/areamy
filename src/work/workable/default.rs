@@ -21,8 +21,8 @@ mod tests {
     use super::*;
     use crate::Message;
     use crate::Trackable;
-    use crate::connect::graph::tests::Node;
-    use crate::connect::sync::Receiver;
+    use crate::edge::sync::Receiver;
+    use crate::graph::tests::Node;
 
     #[test]
     fn workable_can_work() {

@@ -4,7 +4,7 @@ use super::mock::{
     BorrowingLine, BorrowingSink, LifetimePollThread, PollBorrowingBiunion, PollBorrowingLine,
     box_borrowing_sink,
 };
-use crate::connect::sync::Receiver;
+use crate::edge::sync::Receiver;
 use crate::graph::{Add, Get};
 use crate::poll;
 use crate::poll::future::OutputQueue;

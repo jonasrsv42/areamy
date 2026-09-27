@@ -1,5 +1,14 @@
-//! Re-export of [crate::Workable] graph building.
-pub use crate::connect::work::Connect;
+//! Work graphs: blocking nodes scheduled by their children through [Workable].
+
+mod connect;
+mod make;
+pub(crate) mod multiedge;
+mod workable;
+
+pub use connect::Connect;
+pub use make::{make_bidi, make_work};
+pub use workable::Workable;
+
 pub use crate::node::bifurcation::work::builder::make_bifurcation;
 pub use crate::node::bifurcation::work::node::Bifurcation;
 pub use crate::node::biunion::work::builder::make_biunion;

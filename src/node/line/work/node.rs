@@ -1,5 +1,5 @@
 //! [LineTrait] and default implementation for running [LineRoutine].
-use crate::connect::sync::Receiver;
+use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::node::line::LineRoutine;
 use crate::node::work::work_each;

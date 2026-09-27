@@ -65,6 +65,16 @@ where
 /// Single-consumer handle. `Send + !Sync + !Clone`. Dropping the
 /// receiver closes the edge so that further [`Sender::push_back`]
 /// calls return `Closed`.
+///
+/// ```compile_fail,E0277
+/// fn require_clone<T: Clone>() {}
+/// require_clone::<areamy::edge::sync::Receiver<usize, areamy::Trackable<&'static str>>>();
+/// ```
+///
+/// ```compile_fail,E0277
+/// fn require_sync<T: Sync>() {}
+/// require_sync::<areamy::edge::sync::Receiver<usize, areamy::Trackable<&'static str>>>();
+/// ```
 pub struct Receiver<DataType, SignalType>
 where
     DataType: Send + Sync,
@@ -410,18 +420,6 @@ mod tests {
         fn require_send<T: Send>() {}
         require_send::<Receiver<usize, TestSignal>>();
     }
-
-    /// ```compile_fail
-    /// fn require_clone<T: Clone>() {}
-    /// require_clone::<areamy::edge::sync::Receiver<usize, Trackable<&'static str>>>();
-    /// ```
-    fn _receiver_not_clone() {}
-
-    /// ```compile_fail
-    /// fn require_sync<T: Sync>() {}
-    /// require_sync::<areamy::edge::sync::Receiver<usize, Trackable<&'static str>>>();
-    /// ```
-    fn _receiver_not_sync() {}
 
     #[test]
     fn roundtrip() {

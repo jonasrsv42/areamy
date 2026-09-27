@@ -13,7 +13,7 @@
 //! ```ignore
 //! thread_id!(MyThread);
 //!
-//! let thread = ThreadStream::<MyThread>::of(root);
+//! let thread = areamy::work::ThreadStream::<MyThread>::of(root);
 //! std::thread::scope(|s| {
 //!     let handle = thread.start(s);   // ThreadStream -> ThreadStreamHandle
 //!     // Thread is now running...

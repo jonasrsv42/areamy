@@ -9,7 +9,7 @@
 //! - **[`WriterBuffer`]**: A buffer you push data into, which can then be pulled by downstream
 //!   nodes. Use this when you have in-memory data or want to bridge from a push-based source.
 //!
-//! - **[`PullWriter`](crate::PullWriter)**: A trait for "true" pull sources that
+//! - **[`PullWriter`](crate::pull::PullWriter)**: A trait for "true" pull sources that
 //!   implement [`Pullable`] directly, like file readers. These pull data
 //!   on-demand rather than buffering.
 
@@ -28,7 +28,7 @@ use std::marker::PhantomData;
 /// graph segments.
 ///
 /// For "true" pull sources that read data on-demand (like file readers), implement
-/// [`PullWriter`](crate::PullWriter) directly instead.
+/// [`PullWriter`](crate::pull::PullWriter) directly instead.
 ///
 /// # Example
 ///

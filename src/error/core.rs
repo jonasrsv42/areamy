@@ -42,7 +42,7 @@ pub enum ErrorKind {
     /// this as an exit signal but can be restarted. Other consumers can
     /// interpret as they wish.
     ///
-    /// See [`crate::writer::writer`] for how writers use this for graceful shutdown.
+    /// See [`crate::writer`] for how writers use this for graceful shutdown.
     Closed,
 }
 

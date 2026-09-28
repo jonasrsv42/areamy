@@ -9,6 +9,12 @@
 //! blocked [`Receiver`] read is woken with
 //! [`crate::error::ErrorKind::Closed`]. When the [`Receiver`] is
 //! dropped, further [`Sender::push_back`] calls return `Closed`.
+//!
+//! [`Receiver::bounded`] caps how many messages the edge holds. When it is
+//! full, [`Sender::push_back`] blocks until the receiver pops or the edge
+//! closes, and [`Sender::try_push_back`] hands the message back.
+//! Freed slots are not handed out in order: a producer that isn't parked
+//! can take one ahead of a parked one, so a busy producer can starve others.
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
@@ -20,8 +26,15 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::mem;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+
+/// How many slots a pop freed, which decides how many blocked producers to wake.
+enum Freed {
+    One,
+    All,
+}
 
 /// What a waiter can do with an edge right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +54,23 @@ where
 {
     buffer: VecDeque<Message<DataType, SignalType>>,
     closed: bool,
-    /// The receiver is blocked in [`Condvar::wait`]; pushes only notify when set.
-    waiting: bool,
+    /// The receiver is parked on `not_empty`; pushes only notify it when set.
+    consumer_waiting: bool,
+    /// Maximum messages the buffer holds, signals included; `None` is unbounded.
+    bound: Option<NonZeroUsize>,
+    /// Producers parked on `not_full`; pops only notify it when non-zero.
+    producers_waiting: usize,
+}
+
+impl<DataType, SignalType> Inner<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
+    fn is_full(&self) -> bool {
+        self.bound
+            .is_some_and(|bound| self.buffer.len() >= bound.get())
+    }
 }
 
 struct Shared<DataType, SignalType>
@@ -51,7 +79,10 @@ where
     SignalType: Origin + Send + Sync,
 {
     inner: Mutex<Inner<DataType, SignalType>>,
-    signal: Condvar,
+    /// Wakes the receiver when a message arrives or the edge closes.
+    not_empty: Condvar,
+    /// Wakes producers blocked on a full bounded edge when a pop frees room or the edge closes.
+    not_full: Condvar,
     producer_count: AtomicUsize,
 }
 
@@ -102,13 +133,27 @@ where
     /// at once, since nothing could ever wake them. Mint senders
     /// before reading.
     pub fn new() -> Self {
+        Self::with_bound(None)
+    }
+
+    /// Like [`Receiver::new`], but the edge holds at most `bound` messages, signals included.
+    /// When full, [`Sender::push_back`] blocks and [`Sender::try_push_back`] hands the message
+    /// back.
+    pub fn bounded(bound: NonZeroUsize) -> Self {
+        Self::with_bound(Some(bound))
+    }
+
+    fn with_bound(bound: Option<NonZeroUsize>) -> Self {
         let shared = Arc::new(Shared {
             inner: Mutex::new(Inner {
                 buffer: VecDeque::new(),
                 closed: false,
-                waiting: false,
+                consumer_waiting: false,
+                bound,
+                producers_waiting: 0,
             }),
-            signal: Condvar::new(),
+            not_empty: Condvar::new(),
+            not_full: Condvar::new(),
             producer_count: AtomicUsize::new(0),
         });
         Self {
@@ -188,8 +233,11 @@ where
         .inner
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // Set before notifying, under the lock: every woken waiter re-checks `closed` after re-locking.
     guard.closed = true;
-    shared.signal.notify_all();
+    shared.not_empty.notify_all();
+    // Blocked producers must observe the close and return `Closed`.
+    shared.not_full.notify_all();
 }
 
 impl<D, S> Sender<D, S>
@@ -197,39 +245,74 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    /// Push a message onto the back of the queue. Returns
-    /// [`crate::error::ErrorKind::Closed`] if the receiver has been
-    /// dropped or the edge has been closed.
+    /// Push a message onto the back of the queue. On a full bounded edge, blocks until the
+    /// receiver pops or the edge closes. Returns [`crate::error::ErrorKind::Closed`] if the
+    /// receiver has been dropped or the edge has been closed.
     pub fn push_back(&self, message: Message<D, S>) -> Result<(), Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
+        if inner.is_full() && !inner.closed {
+            inner = self.wait_for_room(inner)?;
+        }
+        // Checked after the wait too: close releases blocked producers.
         if inner.closed {
             return Err(closed!());
         }
         inner.buffer.push_back(message);
-        self.wake(inner);
+        self.wake_consumer(inner);
         Ok(())
     }
 
-    /// Push multiple messages onto the back of the queue. Returns
-    /// `Closed` if the edge is closed; messages are not enqueued in
-    /// that case.
-    pub fn push_back_all(&self, items: Vec<Message<D, S>>) -> Result<(), Error> {
+    /// Park until the edge has room or closes. The count tells pops to notify; `wait_while`
+    /// absorbs spurious wakeups.
+    fn wait_for_room<'a>(
+        &'a self,
+        mut inner: MutexGuard<'a, Inner<D, S>>,
+    ) -> Result<MutexGuard<'a, Inner<D, S>>, Error> {
+        // Count in while still holding the lock, before waiting: a pop reads the count under the
+        // same lock, so it can't miss us.
+        inner.producers_waiting += 1;
+        // `wait_while` unlocks while parked and re-locks before each check and on return.
+        let waited = self
+            .shared
+            .not_full
+            .wait_while(inner, |inner| inner.is_full() && !inner.closed);
+        // Poisoned or not, the guard comes back, so the count is always restored.
+        let (mut inner, poisoned) = match waited {
+            Ok(inner) => (inner, false),
+            Err(poison) => (poison.into_inner(), true),
+        };
+        // Count out under the re-acquired lock.
+        inner.producers_waiting -= 1;
+        if poisoned {
+            return Err(fatal!("edge lock poisoned"));
+        }
+        Ok(inner)
+    }
+
+    /// Push a message without ever blocking: a full bounded edge hands it back as
+    /// [`TryPush::Full`]. Returns `Closed` if the edge is closed, even when it is also full.
+    pub fn try_push_back(&self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         if inner.closed {
             return Err(closed!());
         }
-        inner.buffer.extend(items);
-        self.wake(inner);
-        Ok(())
+        if inner.is_full() {
+            return Ok(TryPush::Full(message));
+        }
+        inner.buffer.push_back(message);
+        self.wake_consumer(inner);
+        Ok(TryPush::Pushed)
     }
 
     /// Notify the receiver only if it is blocked, after releasing the lock. The flag is set and
     /// cleared under the lock, and there is at most one waiter (`Receiver` is `!Sync`).
-    fn wake(&self, mut inner: MutexGuard<'_, Inner<D, S>>) {
-        let waiting = mem::take(&mut inner.waiting);
+    fn wake_consumer(&self, mut inner: MutexGuard<'_, Inner<D, S>>) {
+        // Read and clear under the lock: the receiver sets it under the same lock before waiting.
+        let consumer_waiting = mem::take(&mut inner.consumer_waiting);
+        // Unlock before notifying, so the woken receiver doesn't immediately block on our lock.
         drop(inner);
-        if waiting {
-            self.shared.signal.notify_one();
+        if consumer_waiting {
+            self.shared.not_empty.notify_one();
         }
     }
 
@@ -237,7 +320,9 @@ where
     pub fn close(&self) -> Result<(), Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         inner.closed = true;
-        self.shared.signal.notify_all();
+        self.shared.not_empty.notify_all();
+        // Blocked producers must observe the close and return `Closed`.
+        self.shared.not_full.notify_all();
         Ok(())
     }
 }
@@ -268,8 +353,8 @@ where
                 return Err(closed!());
             }
             // Set on every iteration: a spurious wakeup must re-arm it.
-            inner.waiting = true;
-            inner = self.shared.signal.wait(inner).map_err(|e| fatal!(e))?;
+            inner.consumer_waiting = true;
+            inner = self.shared.not_empty.wait(inner).map_err(|e| fatal!(e))?;
         }
         Ok(inner)
     }
@@ -278,10 +363,11 @@ where
     /// nothing could ever wake us: closed and empty, or no producer.
     pub fn read_front(&self) -> Result<Message<D, S>, Error> {
         let mut inner = self.wait_nonempty()?;
-        match inner.buffer.pop_front() {
-            Some(msg) => Ok(msg),
-            None => fatal!("non-empty queue with no element").into(),
-        }
+        let Some(msg) = inner.buffer.pop_front() else {
+            return fatal!("non-empty queue with no element").into();
+        };
+        self.wake_producers(inner, Freed::One);
+        Ok(msg)
     }
 
     /// Block until at least one message is available, then drain the
@@ -289,7 +375,9 @@ where
     /// empty, or no producer.
     pub fn read_all(&self) -> Result<Vec<Message<D, S>>, Error> {
         let mut inner = self.wait_nonempty()?;
-        Ok(inner.buffer.drain(..).collect())
+        let messages = inner.buffer.drain(..).collect();
+        self.wake_producers(inner, Freed::All);
+        Ok(messages)
     }
 
     /// Non-blocking pop. `Ok(None)` when open and empty, `Err(Closed)`
@@ -298,9 +386,28 @@ where
     pub fn poll(&self) -> Result<Option<Message<D, S>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         match inner.buffer.pop_front() {
-            Some(msg) => Ok(Some(msg)),
+            Some(msg) => {
+                self.wake_producers(inner, Freed::One);
+                Ok(Some(msg))
+            }
             None if inner.closed => Err(closed!()),
             None => Ok(None),
+        }
+    }
+
+    /// Notify producers blocked on a full edge, after releasing the lock, only if any are
+    /// parked. One freed slot wakes one producer; draining everything wakes all.
+    fn wake_producers(&self, inner: MutexGuard<'_, Inner<D, S>>, freed: Freed) {
+        // Read under the lock: producers count themselves in under the same lock before waiting,
+        // so a parked producer is never missed.
+        let producers_waiting = inner.producers_waiting > 0;
+        // Unlock before notifying, so woken producers don't immediately block on our lock.
+        drop(inner);
+        if producers_waiting {
+            match freed {
+                Freed::One => self.shared.not_full.notify_one(),
+                Freed::All => self.shared.not_full.notify_all(),
+            }
         }
     }
 
@@ -314,7 +421,9 @@ where
     pub fn close(&self) -> Result<(), Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         inner.closed = true;
-        self.shared.signal.notify_all();
+        self.shared.not_empty.notify_all();
+        // Blocked producers must observe the close and return `Closed`.
+        self.shared.not_full.notify_all();
         Ok(())
     }
 
@@ -354,9 +463,8 @@ where
         self.push_back(message)
     }
 
-    /// Unbounded: `push` never blocks.
     fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
-        self.push_back(message).map(|()| TryPush::Pushed)
+        self.try_push_back(message)
     }
 }
 
@@ -419,6 +527,22 @@ where
 }
 
 #[cfg(test)]
+impl<D, S> Receiver<D, S>
+where
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+{
+    /// Producers currently parked on a full edge; lets tests wait for a real block.
+    fn producers_waiting(&self) -> usize {
+        self.shared
+            .inner
+            .lock()
+            .map(|inner| inner.producers_waiting)
+            .unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::Trackable;
@@ -426,9 +550,244 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     type TestSignal = Trackable<&'static str>;
+
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    fn bounded(bound: usize) -> Receiver<usize, TestSignal> {
+        Receiver::bounded(NonZeroUsize::new(bound).unwrap())
+    }
+
+    /// Spin until `condition` holds; fails after `TIMEOUT` so a broken edge doesn't hang.
+    fn wait_until(condition: impl Fn() -> bool) {
+        let deadline = Instant::now() + TIMEOUT;
+        while !condition() {
+            assert!(Instant::now() < deadline, "timed out waiting");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// Join a thread, failing instead of hanging if it never finishes.
+    fn join_within<T>(handle: thread::JoinHandle<T>) -> T {
+        wait_until(|| handle.is_finished());
+        handle.join().unwrap()
+    }
+
+    fn is_closed(result: Result<(), Error>) -> bool {
+        matches!(
+            result,
+            Err(Error {
+                kind: ErrorKind::Closed,
+                ..
+            })
+        )
+    }
+
+    #[test]
+    fn try_push_full_at_bound() {
+        let rx = bounded(2);
+        let tx = rx.sender();
+        assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+        assert_eq!(tx.try_push_back(Message::Data(2)).unwrap(), TryPush::Pushed);
+        assert_eq!(
+            tx.try_push_back(Message::Data(3)).unwrap(),
+            TryPush::Full(Message::Data(3))
+        );
+        assert_eq!(rx.len().unwrap(), 2);
+    }
+
+    #[test]
+    fn pop_makes_room() {
+        let rx = bounded(1);
+        let tx = rx.sender();
+        assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+        assert_eq!(rx.read_front().unwrap(), Message::Data(1));
+        assert_eq!(tx.try_push_back(Message::Data(2)).unwrap(), TryPush::Pushed);
+    }
+
+    #[test]
+    fn signals_count_toward_bound() {
+        let rx = bounded(1);
+        let tx = rx.sender();
+        assert_eq!(
+            tx.try_push_back(Message::Flush("f".into())).unwrap(),
+            TryPush::Pushed
+        );
+        assert_eq!(
+            tx.try_push_back(Message::Data(1)).unwrap(),
+            TryPush::Full(Message::Data(1))
+        );
+    }
+
+    #[test]
+    fn closed_beats_full() {
+        let rx = bounded(1);
+        let tx = rx.sender();
+        tx.push_back(Message::Data(1)).unwrap();
+        rx.close().unwrap();
+        assert!(matches!(
+            tx.try_push_back(Message::Data(2)),
+            Err(Error {
+                kind: ErrorKind::Closed,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn blocking_push_waits_for_read_front() {
+        let rx = bounded(1);
+        // Kept alive: dropping the last sender would close the edge.
+        let first = rx.sender();
+        first.push_back(Message::Data(1)).unwrap();
+        let tx = rx.sender();
+        let producer = thread::spawn(move || tx.push_back(Message::Data(2)));
+
+        wait_until(|| rx.producers_waiting() == 1);
+        // Still blocked: the second message isn't queued yet.
+        assert_eq!(rx.len().unwrap(), 1);
+
+        assert_eq!(rx.read_front().unwrap(), Message::Data(1));
+        join_within(producer).unwrap();
+        // Counted out: a stale count would make every later pop notify.
+        assert_eq!(rx.producers_waiting(), 0);
+        assert_eq!(rx.read_front().unwrap(), Message::Data(2));
+    }
+
+    #[test]
+    fn poll_wakes_blocked_producer() {
+        let rx = bounded(1);
+        // Kept alive: dropping the last sender would close the edge.
+        let first = rx.sender();
+        first.push_back(Message::Data(1)).unwrap();
+        let tx = rx.sender();
+        let producer = thread::spawn(move || tx.push_back(Message::Data(2)));
+
+        wait_until(|| rx.producers_waiting() == 1);
+        assert_eq!(rx.poll().unwrap(), Some(Message::Data(1)));
+        join_within(producer).unwrap();
+        assert_eq!(rx.poll().unwrap(), Some(Message::Data(2)));
+    }
+
+    #[test]
+    fn read_all_wakes_every_blocked_producer() {
+        let rx = bounded(2);
+        let tx = rx.sender();
+        tx.push_back(Message::Data(1)).unwrap();
+        tx.push_back(Message::Data(2)).unwrap();
+        let (tx3, tx4) = (rx.sender(), rx.sender());
+        let first = thread::spawn(move || tx3.push_back(Message::Data(3)));
+        let second = thread::spawn(move || tx4.push_back(Message::Data(4)));
+
+        wait_until(|| rx.producers_waiting() == 2);
+        assert_eq!(
+            rx.read_all().unwrap(),
+            vec![Message::Data(1), Message::Data(2)]
+        );
+        // Both freed slots are taken without any further pop.
+        join_within(first).unwrap();
+        join_within(second).unwrap();
+
+        let mut rest = Message::data_from_iter(rx.read_all().unwrap().into_iter());
+        rest.sort();
+        assert_eq!(rest, vec![3, 4]);
+    }
+
+    #[test]
+    fn receiver_close_releases_blocked_producer() {
+        let rx = bounded(1);
+        // Kept alive: dropping the last sender would close the edge.
+        let first = rx.sender();
+        first.push_back(Message::Data(1)).unwrap();
+        let tx = rx.sender();
+        let producer = thread::spawn(move || tx.push_back(Message::Data(2)));
+
+        wait_until(|| rx.producers_waiting() == 1);
+        rx.close().unwrap();
+        assert!(is_closed(join_within(producer)));
+    }
+
+    #[test]
+    fn receiver_drop_releases_blocked_producer() {
+        let rx = bounded(1);
+        // Kept alive: dropping the last sender would close the edge.
+        let first = rx.sender();
+        first.push_back(Message::Data(1)).unwrap();
+        let tx = rx.sender();
+        let producer = thread::spawn(move || tx.push_back(Message::Data(2)));
+
+        wait_until(|| rx.producers_waiting() == 1);
+        drop(rx);
+        assert!(is_closed(join_within(producer)));
+    }
+
+    #[test]
+    fn sender_close_releases_other_blocked_producer() {
+        let rx = bounded(1);
+        let closer = rx.sender();
+        closer.push_back(Message::Data(1)).unwrap();
+        let tx = rx.sender();
+        let producer = thread::spawn(move || tx.push_back(Message::Data(2)));
+
+        wait_until(|| rx.producers_waiting() == 1);
+        closer.close().unwrap();
+        assert!(is_closed(join_within(producer)));
+    }
+
+    #[test]
+    fn bound_holds_under_concurrent_producers() {
+        const PRODUCERS: usize = 4;
+        const PER_PRODUCER: usize = 1000;
+        let rx = bounded(3);
+        let producers: Vec<_> = (0..PRODUCERS)
+            .map(|id| {
+                let tx = rx.sender();
+                thread::spawn(move || {
+                    for seq in 0..PER_PRODUCER {
+                        tx.push_back(Message::Data(id * PER_PRODUCER + seq))
+                            .unwrap();
+                    }
+                })
+            })
+            .collect();
+
+        // On its own thread so a stuck edge fails the test via `join_within` instead of hanging.
+        // Ends with Closed once every producer has finished and dropped its sender.
+        let consumer = thread::spawn(move || {
+            let mut next = [0; PRODUCERS];
+            let mut received = 0;
+            loop {
+                assert!(rx.len().unwrap() <= 3);
+                let Ok(message) = rx.read_front() else { break };
+                let value = message.data().unwrap();
+                let (id, seq) = (value / PER_PRODUCER, value % PER_PRODUCER);
+                // Each producer's messages arrive once, in order.
+                assert_eq!(seq, next[id]);
+                next[id] += 1;
+                received += 1;
+            }
+            received
+        });
+        assert_eq!(join_within(consumer), PRODUCERS * PER_PRODUCER);
+        for producer in producers {
+            join_within(producer);
+        }
+    }
+
+    #[test]
+    fn unbounded_never_full() {
+        let rx = Receiver::<usize, TestSignal>::new();
+        let tx = rx.sender();
+        for value in 0..10_000 {
+            assert_eq!(
+                tx.try_push_back(Message::Data(value)).unwrap(),
+                TryPush::Pushed
+            );
+        }
+        assert_eq!(rx.len().unwrap(), 10_000);
+    }
 
     #[test]
     fn unbounded_sender_always_pushes() {
@@ -628,6 +987,23 @@ mod tests {
     }
 
     #[test]
+    fn dyn_sink_try_push_hands_back_on_full_bounded_edge() {
+        let rx = bounded(1);
+        let mut sink: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
+            Get::get(&rx).unwrap();
+        // On its own thread so a `try_push` that blocks fails via `join_within` instead of hanging.
+        let pusher = thread::spawn(move || {
+            let pushed = sink.try_push(Message::Data(1)).unwrap();
+            let full = sink.try_push(Message::Data(2)).unwrap();
+            (pushed, full)
+        });
+        assert_eq!(
+            join_within(pusher),
+            (TryPush::Pushed, TryPush::Full(Message::Data(2)))
+        );
+    }
+
+    #[test]
     fn get_dyn_closeable_returns_working_handle() {
         let rx = Receiver::<usize, TestSignal>::new();
         let tx = rx.sender();
@@ -708,18 +1084,6 @@ mod tests {
         tx.close().unwrap();
         assert!(matches!(
             tx.push_back(Message::Data(1)).unwrap_err().kind,
-            ErrorKind::Closed
-        ));
-    }
-
-    #[test]
-    fn push_back_all_after_receiver_drop_returns_closed() {
-        let rx = Receiver::<usize, TestSignal>::new();
-        let tx = rx.sender();
-        drop(rx);
-        let items = vec![Message::Data(1), Message::Data(2)];
-        assert!(matches!(
-            tx.push_back_all(items).unwrap_err().kind,
             ErrorKind::Closed
         ));
     }

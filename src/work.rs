@@ -1,4 +1,9 @@
 //! Work graphs: blocking nodes scheduled by their children through [Workable].
+//!
+//! A work thread follows one call stack, so it waits on one thing at a time: while a node
+//! blocks (say a parentless [Line] waiting on its [Writer]), its siblings under the same owner
+//! don't run, even if they have data. Merge independent sources with [crate::Push] side paths
+//! into one input, a [Biunion] (its two inputs wait together), or the poll paradigm.
 
 mod bidi;
 pub(crate) mod multiedge;

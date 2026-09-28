@@ -39,3 +39,8 @@ harness = false
 name = "poll"
 harness = false
 
+# `cargo test` runs the example's `main`, so its backpressure check can't regress unnoticed.
+[[example]]
+name = "simple_speech_example"
+test = true
+harness = false

@@ -70,6 +70,15 @@ pub type Outputs<'params, Left, Right, SignalType> =
 pub(super) type Pending<Left, Right, SignalType> =
     Sides<Option<Message<Left, SignalType>>, Option<Message<Right, SignalType>>>;
 
+/// A work node with one input and two outputs.
+///
+/// To have a child schedule it, connect the side that feeds the child and the scheduling
+/// separately, since a bifurcation has two outputs to choose from:
+///
+/// ```ignore
+/// Push::connect(&mut bifurcation.at::<Left>(), &child)?;
+/// work::Schedule::connect(bifurcation, &mut child)?;
+/// ```
 pub struct Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
 where
     In: Send + Sync,

@@ -1,7 +1,8 @@
 //! The one place a push may block on a full edge.
 
 /// Runs a blocking push `f`, logging "blocked" before and "unblocked" after (also when `f`
-/// errors or panics). A "blocked" with no matching "unblocked" is a deadlock.
+/// errors or panics). A "blocked" with no matching "unblocked" is a deadlock, or a producer
+/// starved by others refilling the edge first.
 pub(crate) fn deadlock<R>(node: &str, edge: usize, f: impl FnOnce() -> R) -> R {
     log(node, edge, "blocked");
     // Dropped after `f`, on every exit path.

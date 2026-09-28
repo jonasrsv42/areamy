@@ -1,3 +1,4 @@
+use crate::edge::deadlock::deadlock;
 use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
 use crate::graph::{Closeable, Get, Pushable, Sink, TryPush};
@@ -65,8 +66,16 @@ where
     type DataType = DataType;
     type SignalType = SignalType;
 
+    /// Blocks while the input is full, logged as "blocked" / "unblocked" so a writer that can
+    /// never be drained (say, on its reader's thread) shows up.
     fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        self.inner.push(object)
+        match self.inner.try_push(object)? {
+            TryPush::Pushed => Ok(()),
+            // Nothing else to do meanwhile, so no yield: block right away, but visibly.
+            TryPush::Full(object) | TryPush::Stuck(object) => {
+                deadlock("Writer", 0, || self.inner.push(object))
+            }
+        }
     }
 
     fn try_push(
@@ -91,6 +100,9 @@ where
 mod tests {
     use super::*;
     use crate::edge::sync::Receiver;
+    use crate::edge::sync::tests::{join_within, wait_until};
+    use std::num::NonZeroUsize;
+    use std::thread;
 
     struct MockNode {
         input: Receiver<usize, Trackable<&'static str>>,
@@ -169,5 +181,21 @@ mod tests {
             mock_node.input.read_all().unwrap(),
             vec![Message::Marker("hi".into()),]
         );
+    }
+
+    #[test]
+    fn push_into_a_full_input_waits_then_delivers() {
+        let mock_node = MockNode {
+            input: Receiver::bounded(NonZeroUsize::MIN),
+        };
+        let mut writer = Writer::new(&mock_node).unwrap();
+        writer.push(Message::Data(1)).unwrap();
+
+        // Full: the second push waits for a pop instead of failing or dropping the message.
+        let pushing = thread::spawn(move || writer.push(Message::Data(2)).map(|()| writer));
+        wait_until(|| mock_node.input.producers_waiting() == 1);
+        assert_eq!(mock_node.input.poll().unwrap(), Some(Message::Data(1)));
+        let _writer = join_within(pushing).unwrap();
+        assert_eq!(mock_node.input.poll().unwrap(), Some(Message::Data(2)));
     }
 }

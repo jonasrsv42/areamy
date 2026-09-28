@@ -5,7 +5,7 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Pushable};
+use crate::graph::{Closeable, Pushable, TryPush};
 use crate::message::Message;
 use crate::signal::Origin;
 use std::marker::PhantomData;
@@ -33,6 +33,13 @@ impl<DataType, SignalType: Origin> Pushable for Null<DataType, SignalType> {
 
     fn push(&mut self, _msg: Message<DataType, SignalType>) -> Result<(), Error> {
         Ok(())
+    }
+
+    fn try_push(
+        &mut self,
+        _msg: Message<DataType, SignalType>,
+    ) -> Result<TryPush<Message<DataType, SignalType>>, Error> {
+        Ok(TryPush::Pushed)
     }
 }
 

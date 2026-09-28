@@ -1,6 +1,7 @@
 //! Integration tests for mixed sync + async graphs.
 
 use crate::error::Error;
+use crate::graph::TryPush;
 use crate::graph::marker::Connection;
 use crate::poll;
 use crate::poll::Sync;
@@ -1095,6 +1096,13 @@ impl Pushable for Collect {
             self.items.send(data).unwrap();
         }
         Ok(())
+    }
+
+    fn try_push(
+        &mut self,
+        msg: Message<Moved, Self::SignalType>,
+    ) -> Result<TryPush<Message<Moved, Self::SignalType>>, Error> {
+        self.push(msg).map(|()| TryPush::Pushed)
     }
 }
 

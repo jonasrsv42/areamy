@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Closeable, Get, Pushable, Sink};
+use crate::graph::{Closeable, Get, Pushable, Sink, TryPush};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
 
@@ -67,6 +67,13 @@ where
 
     fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         self.inner.push(object)
+    }
+
+    fn try_push(
+        &mut self,
+        object: Message<Self::DataType, Self::SignalType>,
+    ) -> Result<TryPush<Message<Self::DataType, Self::SignalType>>, Error> {
+        self.inner.try_push(object)
     }
 }
 

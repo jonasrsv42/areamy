@@ -6,6 +6,7 @@
 
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::Error;
+use crate::graph::TryPush;
 use crate::graph::marker::Connection;
 use crate::poll::future::OutputQueue;
 use crate::poll::waker::Waker;
@@ -241,6 +242,13 @@ impl<'a> Pushable for BorrowingSink<'a> {
     type SignalType = Trackable<&'static str>;
     fn push(&mut self, msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
         self.forward.push(msg)
+    }
+
+    fn try_push(
+        &mut self,
+        msg: Message<usize, Trackable<&'static str>>,
+    ) -> Result<TryPush<Message<usize, Trackable<&'static str>>>, Error> {
+        self.forward.try_push(msg)
     }
 }
 

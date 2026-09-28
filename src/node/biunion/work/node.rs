@@ -155,7 +155,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     fn work(&mut self) -> Result<(), Error> {
-        let mut push_ok = self.try_push()?;
+        let mut push_ok = self.drain_one()?;
         // Otherwise we loop until we have some output.
         // To produce output we work on all the input
         // or request more input by working.
@@ -214,12 +214,12 @@ where
             Message::Data(data) => {
                 routine::Send::<Left, biunion::Left>::send(&mut self.routine, data)?;
                 // If left or right is OK push is OK.
-                self.try_push()
+                self.drain_one()
             }
             Message::Flush(origin) => {
                 self.routine.flush()?;
                 // If left or right is OK push is OK.
-                self.try_push()?;
+                self.drain_one()?;
 
                 self.push(Message::Flush(origin))?;
                 Ok(true)
@@ -238,12 +238,12 @@ where
                 routine::Send::<Right, biunion::Right>::send(&mut self.routine, data)?;
 
                 // If right is OK push is OK.
-                self.try_push()
+                self.drain_one()
             }
             Message::Flush(origin) => {
                 self.routine.flush()?;
                 // If left or right is OK push is OK.
-                self.try_push()?;
+                self.drain_one()?;
 
                 self.push(Message::Flush(origin))?;
                 Ok(true)
@@ -256,7 +256,7 @@ where
         }
     }
 
-    fn try_push(&mut self) -> Result<bool, Error> {
+    fn drain_one(&mut self) -> Result<bool, Error> {
         // If we have output in our worker queue just immediately return it.
         match self.routine.next()? {
             Some(message) => {

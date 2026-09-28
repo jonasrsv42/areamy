@@ -12,7 +12,7 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, Sink};
+use crate::graph::{Closeable, Get, Pushable, Sink, TryPush};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
@@ -353,6 +353,11 @@ where
     fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
         self.push_back(message)
     }
+
+    /// Unbounded: `push` never blocks.
+    fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
+        self.push_back(message).map(|()| TryPush::Pushed)
+    }
 }
 
 impl<D, S> Closeable for Sender<D, S>
@@ -424,6 +429,14 @@ mod tests {
     use std::time::Duration;
 
     type TestSignal = Trackable<&'static str>;
+
+    #[test]
+    fn unbounded_sender_always_pushes() {
+        let rx = Receiver::<usize, TestSignal>::new();
+        let mut tx = rx.sender();
+        assert_eq!(tx.try_push(Message::Data(5)).unwrap(), TryPush::Pushed);
+        assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
+    }
 
     fn _assert_sender_send_sync() {
         fn require_send_sync<T: Send + Sync>() {}

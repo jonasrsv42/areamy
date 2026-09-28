@@ -23,6 +23,26 @@ pub trait Pushable: Connection {
     /// The SignalType used in [Message<DataType, SignalType>] for this [Pushable]
     type SignalType: Origin;
 
-    /// Pushes a message to this [Pushable]
+    /// Pushes a message to this [Pushable]. May block until there is room; use
+    /// [Pushable::try_push] where blocking is not allowed.
     fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error>;
+
+    /// Pushes without ever blocking; a full sink hands the message back. [TryPush::Pushed]
+    /// means the message was consumed (delivered, or intentionally dropped by a wrapper such as
+    /// a signal policy). Required: only the implementor knows whether its [Pushable::push] can
+    /// block.
+    fn try_push(
+        &mut self,
+        msg: Message<Self::DataType, Self::SignalType>,
+    ) -> Result<TryPush<Message<Self::DataType, Self::SignalType>>, Error>;
+}
+
+/// Outcome of [Pushable::try_push].
+#[must_use = "a Full message must be kept (parked) or it is lost"]
+#[derive(Debug, PartialEq)]
+pub enum TryPush<MessageType> {
+    /// The sink consumed the message.
+    Pushed,
+    /// The sink is full; the message is handed back.
+    Full(MessageType),
 }

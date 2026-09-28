@@ -4,7 +4,7 @@ use crate::edge::sync;
 pub use crate::edge::sync::State;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, Sink};
+use crate::graph::{Closeable, Get, Pushable, Sink, TryPush};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
@@ -187,6 +187,15 @@ where
 
     fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
         self.push_back(message)
+    }
+
+    /// Raises the group flag only when the inner edge took the message.
+    fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
+        let result = Pushable::try_push(&mut self.inner, message)?;
+        if matches!(result, TryPush::Pushed) {
+            self.raise.0.raise();
+        }
+        Ok(result)
     }
 }
 

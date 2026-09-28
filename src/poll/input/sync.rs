@@ -11,7 +11,7 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, Receivable, Sink};
+use crate::graph::{Closeable, Get, Pushable, Receivable, Sink, TryPush};
 use crate::message::Message;
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
@@ -183,6 +183,14 @@ where
 
     fn push(&mut self, message: Message<DataType, SignalType>) -> Result<(), Error> {
         self.push_back(message)
+    }
+
+    /// Unbounded: `push` never blocks.
+    fn try_push(
+        &mut self,
+        message: Message<DataType, SignalType>,
+    ) -> Result<TryPush<Message<DataType, SignalType>>, Error> {
+        self.push_back(message).map(|()| TryPush::Pushed)
     }
 }
 

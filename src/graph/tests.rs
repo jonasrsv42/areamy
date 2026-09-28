@@ -4,7 +4,7 @@ use crate::Push;
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get, Pushable, Sink};
+use crate::graph::{Add, Closeable, Get, Pushable, Sink, TryPush};
 use crate::message::Message;
 use crate::poll::Pollable;
 use crate::poll::waker::Waker;
@@ -12,6 +12,52 @@ use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
 use crate::work::{self, Workable};
+
+/// A sink that holds at most `bound` messages: `try_push` hands the rest back, `push` always
+/// takes them. Stands in for a bounded edge.
+#[derive(Debug, Default)]
+pub struct Bounded {
+    pub bound: usize,
+    pub items: Vec<Message<usize, Trackable<&'static str>>>,
+}
+
+impl Bounded {
+    pub fn new(bound: usize) -> Self {
+        Self {
+            bound,
+            items: Vec::new(),
+        }
+    }
+}
+
+impl Connection for Bounded {}
+
+impl Pushable for Bounded {
+    type DataType = usize;
+    type SignalType = Trackable<&'static str>;
+
+    fn push(&mut self, msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
+        self.items.push(msg);
+        Ok(())
+    }
+
+    fn try_push(
+        &mut self,
+        msg: Message<usize, Trackable<&'static str>>,
+    ) -> Result<TryPush<Message<usize, Trackable<&'static str>>>, Error> {
+        if self.items.len() >= self.bound {
+            return Ok(TryPush::Full(msg));
+        }
+        self.items.push(msg);
+        Ok(TryPush::Pushed)
+    }
+}
+
+impl Closeable for Bounded {
+    fn close(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
 
 /// A `Simple` "coroutine". At time of writing, 2024/12/11, coroutines
 /// are still experimental in rust.

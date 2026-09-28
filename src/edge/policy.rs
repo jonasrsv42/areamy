@@ -1,7 +1,7 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Pushable, Sink};
+use crate::graph::{Closeable, Pushable, Sink, TryPush};
 use crate::message::Message;
 
 #[derive(Debug)]
@@ -99,6 +99,24 @@ where
 
         Ok(())
     }
+
+    /// A message the policy drops counts as pushed. On `Full` the policy state is rolled back,
+    /// so the retry is judged the same way.
+    fn try_push(
+        &mut self,
+        message: Message<Self::DataType, Self::SignalType>,
+    ) -> Result<TryPush<Message<Self::DataType, Self::SignalType>>, Error> {
+        let is_signal = !matches!(message, Message::Data(_));
+        let last_was_data = self.last_was_data;
+        if !self.should_forward(is_signal) {
+            return Ok(TryPush::Pushed);
+        }
+        let result = self.inner.try_push(message)?;
+        if matches!(result, TryPush::Full(_)) {
+            self.last_was_data = last_was_data;
+        }
+        Ok(result)
+    }
 }
 
 impl<SinkType> Closeable for PolicyEdge<SinkType>
@@ -116,8 +134,44 @@ mod tests {
     use crate::Message;
     use crate::Trackable;
     use crate::edge::sync::Receiver;
+    use crate::graph::tests::Bounded;
 
     type TestSignal = Trackable<&'static str>;
+
+    #[test]
+    fn try_push_hands_back_when_full() {
+        let mut edge = PolicyEdge::new(Bounded::new(1), SignalPolicy::Forward);
+        assert_eq!(edge.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
+        assert_eq!(
+            edge.try_push(Message::Data(2)).unwrap(),
+            TryPush::Full(Message::Data(2))
+        );
+    }
+
+    #[test]
+    fn try_push_full_signal_is_forwarded_on_retry() {
+        let mut edge = PolicyEdge::new(Bounded::new(1), SignalPolicy::FollowData);
+        assert_eq!(edge.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
+
+        let TryPush::Full(flush) = edge.try_push(Message::Flush("f".into())).unwrap() else {
+            panic!("expected Full");
+        };
+        edge.inner.items.clear();
+
+        // The refused Flush still follows data, so the retry forwards it.
+        assert_eq!(edge.try_push(flush).unwrap(), TryPush::Pushed);
+        assert_eq!(edge.inner.items, vec![Message::Flush("f".into())]);
+    }
+
+    #[test]
+    fn try_push_dropped_signal_counts_as_pushed() {
+        let mut edge = PolicyEdge::new(Bounded::new(1), SignalPolicy::FollowData);
+        assert_eq!(
+            edge.try_push(Message::Flush("f".into())).unwrap(),
+            TryPush::Pushed
+        );
+        assert!(edge.inner.items.is_empty());
+    }
 
     #[test]
     fn test_policy_edge_forward() {

@@ -76,7 +76,7 @@ mod tests {
     use crate::Trackable;
     use crate::edge::sync::{Receiver, Sender};
     use crate::graph::Sink;
-    use crate::graph::tests::Bounded;
+    use crate::graph::tests::{Bounded, Counted};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -140,17 +140,6 @@ mod tests {
         let mut pushable: Box<Sender<usize, Trackable<&'static str>>> = Box::new(rx.sender());
         push(&mut pushable, 5);
         assert_eq!(rx.read_all().unwrap(), vec![Message::Data(5)]);
-    }
-
-    /// Counts its clones.
-    #[derive(Debug)]
-    struct Counted(Arc<AtomicUsize>);
-
-    impl Clone for Counted {
-        fn clone(&self) -> Self {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Counted(self.0.clone())
-        }
     }
 
     type CountedSink = Box<dyn Sink<DataType = Counted, SignalType = Trackable<&'static str>>>;

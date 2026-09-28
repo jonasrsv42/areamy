@@ -54,3 +54,13 @@ pub enum TryPush<MessageType> {
     /// is handed back. Retrying without waiting would spin.
     Stuck(MessageType),
 }
+
+impl<MessageType> TryPush<MessageType> {
+    /// The handed-back message, `Full` or `Stuck` alike; `None` if the sink took it.
+    pub fn refused(self) -> Option<MessageType> {
+        match self {
+            TryPush::Pushed => None,
+            TryPush::Full(message) | TryPush::Stuck(message) => Some(message),
+        }
+    }
+}

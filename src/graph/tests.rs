@@ -3,6 +3,7 @@
 use crate::Push;
 use crate::edge::sync::Receiver;
 use crate::error::Error;
+use crate::fatal;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Closeable, Get, Pushable, Sink, TryPush};
 use crate::message::Message;
@@ -12,6 +13,46 @@ use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
 use crate::work::{self, Workable};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Payload that counts its clones in a shared counter.
+#[derive(Debug)]
+pub struct Counted(pub Arc<AtomicUsize>);
+
+impl Clone for Counted {
+    fn clone(&self) -> Self {
+        self.0.fetch_add(1, Ordering::Relaxed);
+        Counted(self.0.clone())
+    }
+}
+
+/// A sink that accepts everything but fails to close, with its name as the error.
+pub struct FailingClose(pub &'static str);
+
+impl Connection for FailingClose {}
+
+impl Pushable for FailingClose {
+    type DataType = usize;
+    type SignalType = Trackable<&'static str>;
+
+    fn push(&mut self, _msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn try_push(
+        &mut self,
+        _msg: Message<usize, Trackable<&'static str>>,
+    ) -> Result<TryPush<Message<usize, Trackable<&'static str>>>, Error> {
+        Ok(TryPush::Pushed)
+    }
+}
+
+impl Closeable for FailingClose {
+    fn close(&mut self) -> Result<(), Error> {
+        Err(fatal!(self.0))
+    }
+}
 
 /// A sink that holds at most `bound` messages: `try_push` hands the rest back, `push` always
 /// takes them. Stands in for a bounded edge.

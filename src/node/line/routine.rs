@@ -56,6 +56,7 @@ pub trait LineRoutine<In, Out>:
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::closed;
     use crate::error::Error;
     use crate::{Next, Send};
     use std::collections::VecDeque;
@@ -187,6 +188,47 @@ pub mod tests {
     }
 
     impl LineRoutine<usize, usize> for MockWaitLine {}
+
+    /// Passes its first output through, then reports `Closed` from `next`.
+    pub struct ClosesAfterOne {
+        out: VecDeque<usize>,
+        yielded: bool,
+    }
+
+    impl ClosesAfterOne {
+        pub fn new() -> Self {
+            ClosesAfterOne {
+                out: VecDeque::new(),
+                yielded: false,
+            }
+        }
+    }
+
+    impl crate::Send<usize> for ClosesAfterOne {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
+            self.out.push_back(message);
+            Ok(())
+        }
+    }
+
+    impl crate::Next<usize> for ClosesAfterOne {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            if self.yielded {
+                return Err(closed!());
+            }
+            let output = self.out.pop_front();
+            self.yielded = output.is_some();
+            Ok(output)
+        }
+    }
+
+    impl crate::Flush for ClosesAfterOne {
+        fn flush(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+
+    impl LineRoutine<usize, usize> for ClosesAfterOne {}
 
     #[test]
     fn line_basic_work() {

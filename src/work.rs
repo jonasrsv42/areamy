@@ -4,6 +4,9 @@
 //! blocks (say a parentless [Line] waiting on its [Writer]), its siblings under the same owner
 //! don't run, even if they have data. Merge independent sources with [crate::Push] side paths
 //! into one input, a [Biunion] (its two inputs wait together), or the poll paradigm.
+//!
+//! A [Biunion] takes left input before right, so a left side that never empties starves the
+//! right. Fair scheduling between sources is what the poll paradigm is for.
 
 mod bidi;
 pub(crate) mod multiedge;

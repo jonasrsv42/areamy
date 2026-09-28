@@ -1,13 +1,18 @@
+use crate::closed;
+use crate::edge::fanout::Fanout;
 use crate::error::{Error, ErrorKind};
-use crate::graph::marker::Connection;
-use crate::graph::{Add, Closeable, Get, Pushable, Sink};
+use crate::graph::marker::{Connection, Multiplicity};
+use crate::graph::{Add, Get, Pushable, Sink};
 use crate::message::Message;
 use crate::node::biunion::routine::BiunionRoutine;
+use crate::node::biunion::work::builder::BiunionBuilder;
 use crate::node::{biunion, routine};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::multiedge::{self, Notify};
 use crate::work::{Workable, work_each};
+use std::any::type_name;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 // The contract of a `Sync` node forming a biunion.
@@ -94,17 +99,18 @@ where
     }
 }
 
-impl<Left, Right, SignalType> Default for Input<Left, Right, SignalType>
+impl<Left, Right, SignalType> Input<Left, Right, SignalType>
 where
     Left: Send + Sync,
     Right: Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
 {
-    fn default() -> Self {
+    /// Both sides share one [Notify]; each has its own bound (`None` is unbounded).
+    pub(super) fn new(left: Option<NonZeroUsize>, right: Option<NonZeroUsize>) -> Self {
         let notify = Notify::new();
         Self {
-            left: multiedge::Receiver::new(notify.clone(), None),
-            right: multiedge::Receiver::new(notify.clone(), None),
+            left: multiedge::Receiver::new(notify.clone(), left),
+            right: multiedge::Receiver::new(notify.clone(), right),
             notify,
         }
     }
@@ -125,11 +131,15 @@ where
     /// Parent workables, grouped by side.
     pub worker: Worker<'params, ThreadIdType>,
 
-    /// Output connections. Uses Sink to support shutdown propagation.
-    pub pushes: Vec<Box<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>>,
+    /// Edges that we push output into. A refused message waits here, and nothing new leaves the
+    /// routine until it is delivered.
+    pub outputs: Fanout<'params, Out, SignalType>,
 
     /// Input edges, grouped by side.
     pub input: Input<Left, Right, SignalType>,
+
+    /// A Flush or Marker held until the routine is drained; outputs go out one per round.
+    pub(super) pending: Option<Message<Out, SignalType>>,
 }
 
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType> Connection
@@ -154,35 +164,33 @@ where
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
+    /// One message per round into [Biunion::outputs]: finish a suspended push, else the next
+    /// routine output, pending signal or input.
     fn work(&mut self) -> Result<(), Error> {
-        let mut push_ok = self.drain_one()?;
-        // Otherwise we loop until we have some output.
-        // To produce output we work on all the input
-        // or request more input by working.
-        while !push_ok {
-            let left_poll = self.input.left.poll();
-            match self.propagate_if_closed(left_poll)? {
-                Some(message) => push_ok = self.do_left_input(message)?,
-                None => {
-                    let right_poll = self.input.right.poll();
-                    match self.propagate_if_closed(right_poll)? {
-                        Some(message) => push_ok = self.do_right_input(message)?,
-                        None => {
-                            // No parents left: block until either edge has data.
-                            // With parents, work both sides once; one side being
-                            // much busier than the other is not handled.
-                            if self.worker.left.is_empty() && self.worker.right.is_empty() {
-                                let waited = self.input.wait_any();
-                                self.propagate_if_closed(waited)?;
-                            }
-                            work_each(&mut self.worker.left)?;
-                            work_each(&mut self.worker.right)?;
-                        }
-                    }
-                }
-            }
-        }
+        let Biunion {
+            routine,
+            worker,
+            outputs,
+            input,
+            pending,
+        } = self;
 
+        // Finish last round's push, or push one new message. Return even when the resume
+        // completes: carrying on could block in `wait_any` after pushing.
+        let Some(ready) = outputs.ready() else {
+            // Complete or still suspended, this round is done; the fan-out remembers which.
+            let _ = outputs.resume(type_name::<RoutineType>())?;
+            return Ok(());
+        };
+
+        let Some(message) = next_message(routine, worker, input, pending)? else {
+            // An input closed: close the outputs too, so children see it. Other errors, the
+            // routine's `Closed` included, leave them to close on drop.
+            let _ = outputs.close();
+            return Err(closed!());
+        };
+        // A refused message stays in the fan-out; the next round resumes it.
+        let _ = ready.push(message)?;
         Ok(())
     }
 
@@ -200,94 +208,97 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
 {
     pub fn of(routine: RoutineType) -> Self {
-        Biunion {
-            routine,
-            worker: Worker::default(),
-            pushes: Vec::new(),
-            input: Input::default(),
+        Self::builder().build(routine)
+    }
+
+    /// Options for a biunion, such as [BiunionBuilder::bounded]; finish with
+    /// [BiunionBuilder::build].
+    pub fn builder()
+    -> BiunionBuilder<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType> {
+        BiunionBuilder::new()
+    }
+}
+
+/// The next message for a [Biunion] to push: routine output first, then a pending signal (so a
+/// Flush goes out behind everything its flush produced), then new input, left before right;
+/// `None` once either input has closed. Parents are scheduled only once both inputs polled
+/// empty: own input goes out first, and a parent refused by an input always finds progress
+/// (`Full`) when re-entered.
+fn next_message<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>(
+    routine: &mut RoutineType,
+    worker: &mut Worker<'params, ThreadIdType>,
+    input: &Input<Left, Right, SignalType>,
+    pending: &mut Option<Message<Out, SignalType>>,
+) -> Result<Option<Message<Out, SignalType>>, Error>
+where
+    Left: Send + Sync,
+    Right: Send + Sync,
+    Out: Clone,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out>,
+{
+    loop {
+        if let Some(output) = routine.next()? {
+            return Ok(Some(Message::Data(output)));
         }
-    }
-
-    fn do_left_input(&mut self, message: Message<Left, SignalType>) -> Result<bool, Error> {
-        // Do work on our input or forward signals from input to output.
-        match message {
-            Message::Data(data) => {
-                routine::Send::<Left, biunion::Left>::send(&mut self.routine, data)?;
-                // If left or right is OK push is OK.
-                self.drain_one()
+        if let Some(signal) = pending.take() {
+            return Ok(Some(signal));
+        }
+        match input.left.poll() {
+            Ok(Some(message)) => {
+                accept(routine, pending, message, biunion::Left)?;
+                continue;
             }
-            Message::Flush(origin) => {
-                self.routine.flush()?;
-                // If left or right is OK push is OK.
-                self.drain_one()?;
-
-                self.push(Message::Flush(origin))?;
-                Ok(true)
+            Ok(None) => {}
+            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(None),
+            Err(error) => return Err(error),
+        }
+        match input.right.poll() {
+            Ok(Some(message)) => {
+                accept(routine, pending, message, biunion::Right)?;
+                continue;
             }
-            Message::Marker(origin) => {
-                self.push(Message::Marker(origin))?;
-                Ok(true)
+            Ok(None) => {}
+            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(None),
+            Err(error) => return Err(error),
+        }
+        // No parents left: block until either edge has data. Closed once neither can.
+        if worker.left.is_empty() && worker.right.is_empty() {
+            match input.wait_any() {
+                Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(None),
+                waited => waited?,
             }
         }
+        // Work each side's parents once, dropping finished ones.
+        work_each(&mut worker.left)?;
+        work_each(&mut worker.right)?;
     }
+}
 
-    fn do_right_input(&mut self, message: Message<Right, SignalType>) -> Result<bool, Error> {
-        // Do work on our input or forward signals from input to output.
-        match message {
-            Message::Data(data) => {
-                routine::Send::<Right, biunion::Right>::send(&mut self.routine, data)?;
-
-                // If right is OK push is OK.
-                self.drain_one()
-            }
-            Message::Flush(origin) => {
-                self.routine.flush()?;
-                // If left or right is OK push is OK.
-                self.drain_one()?;
-
-                self.push(Message::Flush(origin))?;
-                Ok(true)
-            }
-            Message::Marker(origin) => {
-                self.push(Message::Marker(origin))?;
-
-                Ok(true)
-            }
+/// Take one input message from `_side`: data goes to the routine, a signal waits in `pending`
+/// until the routine is drained. The side is passed by value so it's inferred: a routine sends
+/// the same data type on both sides, so the input type alone can't pick the `Send` impl.
+fn accept<In, Side, Out, SignalType, RoutineType>(
+    routine: &mut RoutineType,
+    pending: &mut Option<Message<Out, SignalType>>,
+    message: Message<In, SignalType>,
+    _side: Side,
+) -> Result<(), Error>
+where
+    Side: Multiplicity,
+    SignalType: Origin,
+    RoutineType: routine::Send<In, Side> + routine::Flush,
+{
+    match message {
+        Message::Data(data) => routine.send(data)?,
+        Message::Flush(origin) => {
+            routine.flush()?;
+            *pending = Some(Message::Flush(origin));
         }
+        Message::Marker(origin) => *pending = Some(Message::Marker(origin)),
     }
-
-    fn drain_one(&mut self) -> Result<bool, Error> {
-        // If we have output in our worker queue just immediately return it.
-        match self.routine.next()? {
-            Some(message) => {
-                self.push(Message::Data(message))?;
-
-                Ok(true)
-            }
-            None => Ok(false),
-        }
-    }
-
-    fn push(&mut self, obj: Message<Out, SignalType>) -> Result<(), Error> {
-        Pushable::push(&mut self.pushes, obj)
-    }
-
-    /// Close all push outputs. Called on shutdown to propagate close through push connections.
-    fn close_pushes(&mut self) {
-        for pushable in self.pushes.iter_mut() {
-            let _ = pushable.close();
-        }
-    }
-
-    /// If result is a Closed error, close all pushes to propagate shutdown.
-    fn propagate_if_closed<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
-        result.map_err(|e| {
-            if matches!(e.kind, ErrorKind::Closed) {
-                self.close_pushes();
-            }
-            e
-        })
-    }
+    Ok(())
 }
 
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType> BiunionTrait<'params>
@@ -442,7 +453,7 @@ where
         &mut self,
         closeable: Box<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
-        self.pushes.push(closeable);
+        self.outputs.add(closeable);
         Ok(())
     }
 }
@@ -451,10 +462,158 @@ where
 pub mod tests {
     use super::*;
     use crate::edge::sync::Receiver;
-    use crate::node::biunion::routine::tests::MockBiunion;
-    use crate::work::{Reader, Writer};
+    use crate::edge::sync::tests::{join_within, wait_until};
+    use crate::graph::TryPush;
+    use crate::node::biunion::routine::tests::{HoldBiunion, MockBiunion};
+    use crate::node::line::routine::tests::MockWaitLine;
+    use crate::work::{self, Line, Reader, Writer};
     use crate::{At, Push, Pushable};
     use crate::{DefaultThread, Trackable};
+    use std::thread;
+
+    type TestSignal = Trackable<&'static str>;
+    type Hold<'params> =
+        Biunion<'params, usize, usize, usize, TestSignal, DefaultThread, HoldBiunion>;
+
+    #[test]
+    fn marker_passes_through() {
+        let mut biunion: Hold = Biunion::of(HoldBiunion::new(1));
+        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
+        let mut right = Writer::new(&biunion.at::<biunion::Right>()).unwrap();
+        let mut reader = Reader::new(biunion).unwrap();
+
+        left.push(Message::Marker("l".into())).unwrap();
+        right.push(Message::Marker("r".into())).unwrap();
+        // On a thread: a dropped Marker would leave the read waiting forever.
+        let reading = thread::spawn(move || [reader.read().unwrap(), reader.read().unwrap()]);
+        assert_eq!(
+            join_within(reading),
+            [Message::Marker("l".into()), Message::Marker("r".into())]
+        );
+    }
+
+    #[test]
+    fn closed_output_ends_the_round_with_closed() {
+        let mut biunion: Hold = Biunion::of(HoldBiunion::new(1));
+        let output = Receiver::<usize, TestSignal>::new();
+        let edge: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
+            Box::new(output.sender());
+        Add::add(&mut biunion, edge).unwrap();
+        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
+        left.push(Message::Data(1)).unwrap();
+
+        // A push error ends the round like any other.
+        output.close().unwrap();
+        assert!(matches!(
+            biunion.work().unwrap_err().kind,
+            ErrorKind::Closed
+        ));
+    }
+
+    #[test]
+    fn flush_goes_out_after_everything_it_released() {
+        let mut biunion: Hold = Biunion::of(HoldBiunion::new(10));
+        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
+        let mut reader = Reader::new(biunion).unwrap();
+
+        left.push(Message::Data(1)).unwrap();
+        left.push(Message::Data(2)).unwrap();
+        left.push(Message::Flush("f".into())).unwrap();
+
+        // The flush releases both held messages; the Flush must not overtake the second.
+        assert_eq!(reader.read().unwrap(), Message::Data(1));
+        assert_eq!(reader.read().unwrap(), Message::Data(2));
+        assert_eq!(reader.read().unwrap(), Message::Flush("f".into()));
+    }
+
+    /// Pushes until refused; returns how many the side took.
+    fn capacity(
+        side: &mut Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync>,
+    ) -> usize {
+        (0..10)
+            .take_while(|value| side.try_push(Message::Data(*value)).unwrap() == TryPush::Pushed)
+            .count()
+    }
+
+    #[test]
+    fn each_side_takes_its_own_bound() {
+        let mut biunion: Hold = Biunion::builder()
+            .bounded::<biunion::Left>(NonZeroUsize::new(1).unwrap())
+            .bounded::<biunion::Right>(NonZeroUsize::new(2).unwrap())
+            .build(HoldBiunion::new(1));
+        let mut left = Get::get(&biunion.at::<biunion::Left>()).unwrap();
+        let mut right = Get::get(&biunion.at::<biunion::Right>()).unwrap();
+        assert_eq!(capacity(&mut left), 1);
+        assert_eq!(capacity(&mut right), 2);
+
+        // A side left out stays unbounded.
+        let mut biunion: Hold = Biunion::builder()
+            .bounded::<biunion::Left>(NonZeroUsize::MIN)
+            .build(HoldBiunion::new(1));
+        let mut right = Get::get(&biunion.at::<biunion::Right>()).unwrap();
+        assert_eq!(capacity(&mut right), 10);
+    }
+
+    #[test]
+    fn full_side_path_yields_once_then_blocks_until_a_pop() {
+        let mut biunion: Hold = Biunion::of(HoldBiunion::new(1));
+        let side = Receiver::<usize, TestSignal>::bounded(NonZeroUsize::MIN);
+        let edge: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
+            Box::new(side.sender());
+        Add::add(&mut biunion, edge).unwrap();
+        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
+        for value in 0..3 {
+            left.push(Message::Data(value)).unwrap();
+        }
+
+        biunion.work().unwrap();
+        // Refused with `Full`: the biunion yields instead of blocking.
+        biunion.work().unwrap();
+        assert_eq!(biunion.outputs.suspended(), Some(0));
+
+        // Nothing popped since: `Stuck`, so this round blocks until the consumer pops.
+        let working = thread::spawn(move || biunion.work().map(|()| biunion));
+        wait_until(|| side.producers_waiting() == 1);
+        assert_eq!(side.poll().unwrap(), Some(Message::Data(0)));
+        let biunion = join_within(working).unwrap();
+        assert_eq!(biunion.outputs.suspended(), None);
+        assert_eq!(side.poll().unwrap(), Some(Message::Data(1)));
+    }
+
+    #[test]
+    fn two_parents_share_a_bounded_side() {
+        const N: usize = 20;
+        let first = Line::of(MockWaitLine::new(1));
+        let second = Line::of(MockWaitLine::new(1));
+        let mut to_first = Writer::new(&first).unwrap();
+        let mut to_second = Writer::new(&second).unwrap();
+        for value in 0..N {
+            to_first.push(Message::Data(value)).unwrap();
+            to_second.push(Message::Data(N + value)).unwrap();
+        }
+        let mut biunion: Hold = Biunion::builder()
+            .bounded::<biunion::Left>(NonZeroUsize::MIN)
+            .build(HoldBiunion::new(1));
+        // Whoever pushes second into the bound-1 left side is refused (`Full`) and parks.
+        work::Bidi::connect(first, &mut biunion.at::<biunion::Left>()).unwrap();
+        work::Bidi::connect(second, &mut biunion.at::<biunion::Left>()).unwrap();
+        let mut reader = Reader::new(biunion).unwrap();
+
+        // Reads N of the 2N: a parent that runs dry blocks in `wait_front` (a paradigm limit).
+        let reading = thread::spawn(move || {
+            (0..N)
+                .map(|_| reader.read().unwrap().data().unwrap())
+                .collect::<Vec<usize>>()
+        });
+        let got = join_within(reading);
+
+        // Both progressed, each in order.
+        let (from_first, from_second): (Vec<usize>, Vec<usize>) =
+            got.iter().partition(|value| **value < N);
+        assert_eq!(from_first, (0..from_first.len()).collect::<Vec<_>>());
+        assert_eq!(from_second, (N..N + from_second.len()).collect::<Vec<_>>());
+        assert!(from_second.len() >= N / 4, "{got:?}");
+    }
 
     #[test]
     fn run_biunion() {

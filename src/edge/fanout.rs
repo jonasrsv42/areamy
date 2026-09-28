@@ -132,7 +132,7 @@ where
     S: Origin + Clone,
 {
     /// Continue a suspended rotation without ever blocking: `Full` and `Stuck` both suspend
-    /// again. For callers that must not block (poll registers a waker first).
+    /// again. For callers that must not block.
     pub fn retry(&mut self) -> Result<Rotation, Error> {
         let Some(suspended) = self.suspended.take() else {
             return Ok(Rotation::Complete);

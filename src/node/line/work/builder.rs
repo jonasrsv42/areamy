@@ -42,9 +42,6 @@ where
 
     /// Hold at most `bound` messages in the line's input, signals included; producers wait while
     /// it is full.
-    ///
-    /// Until the other work nodes can park on a full edge, only bound a line whose bidi parents
-    /// are [Line]s: any other parent blocks on it while this line, its owner, is on the stack.
     pub fn bounded(mut self, bound: NonZeroUsize) -> Self {
         self.bound = Some(bound);
         self

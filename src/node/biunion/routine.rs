@@ -69,4 +69,59 @@ pub mod tests {
     }
 
     impl BiunionRoutine<usize, usize, usize> for MockBiunion {}
+
+    /// Passes both sides through unchanged; holds until `wait` have arrived or a flush, then
+    /// stays open.
+    pub struct HoldBiunion {
+        out: VecDeque<usize>,
+        wait: usize,
+        release: bool,
+    }
+
+    impl HoldBiunion {
+        pub fn new(wait: usize) -> Self {
+            HoldBiunion {
+                out: VecDeque::new(),
+                wait,
+                release: false,
+            }
+        }
+
+        fn hold(&mut self, message: usize) {
+            self.out.push_back(message);
+            self.release |= self.out.len() >= self.wait;
+        }
+    }
+
+    impl crate::Send<usize, biunion::Left> for HoldBiunion {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
+            self.hold(message);
+            Ok(())
+        }
+    }
+
+    impl crate::Send<usize, biunion::Right> for HoldBiunion {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
+            self.hold(message);
+            Ok(())
+        }
+    }
+
+    impl crate::Next<usize> for HoldBiunion {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            if !self.release {
+                return Ok(None);
+            }
+            Ok(self.out.pop_front())
+        }
+    }
+
+    impl crate::Flush for HoldBiunion {
+        fn flush(&mut self) -> Result<(), Error> {
+            self.release = true;
+            Ok(())
+        }
+    }
+
+    impl BiunionRoutine<usize, usize, usize> for HoldBiunion {}
 }

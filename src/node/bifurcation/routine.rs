@@ -75,4 +75,60 @@ pub mod tests {
     }
 
     impl BifurcationRoutine<usize, usize, usize> for MockBifurcation {}
+
+    /// Sends each input to both sides unchanged; holds until `wait` have arrived or a flush,
+    /// then stays open.
+    pub struct HoldBifurcation {
+        left: VecDeque<usize>,
+        right: VecDeque<usize>,
+        wait: usize,
+        release: bool,
+    }
+
+    impl HoldBifurcation {
+        pub fn new(wait: usize) -> Self {
+            HoldBifurcation {
+                left: VecDeque::new(),
+                right: VecDeque::new(),
+                wait,
+                release: false,
+            }
+        }
+    }
+
+    impl crate::Send<usize> for HoldBifurcation {
+        fn send(&mut self, message: usize) -> Result<(), Error> {
+            self.left.push_back(message);
+            self.right.push_back(message);
+            self.release |= self.left.len() >= self.wait;
+            Ok(())
+        }
+    }
+
+    impl crate::Next<usize, bifurcation::Left> for HoldBifurcation {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            if !self.release {
+                return Ok(None);
+            }
+            Ok(self.left.pop_front())
+        }
+    }
+
+    impl crate::Next<usize, bifurcation::Right> for HoldBifurcation {
+        fn next(&mut self) -> Result<Option<usize>, Error> {
+            if !self.release {
+                return Ok(None);
+            }
+            Ok(self.right.pop_front())
+        }
+    }
+
+    impl crate::Flush for HoldBifurcation {
+        fn flush(&mut self) -> Result<(), Error> {
+            self.release = true;
+            Ok(())
+        }
+    }
+
+    impl BifurcationRoutine<usize, usize, usize> for HoldBifurcation {}
 }

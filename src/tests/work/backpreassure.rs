@@ -2,14 +2,15 @@
 
 use crate::At;
 use crate::Push;
-use crate::biunion;
 use crate::error::ErrorKind;
 use crate::graph::{Closeable, Pushable};
 use crate::message::Message;
+use crate::node::bifurcation::routine::tests::HoldBifurcation;
 use crate::node::biunion::routine::tests::HoldBiunion;
 use crate::node::line::routine::tests::MockWaitLine;
 use crate::thread::Join;
-use crate::work::{Biunion, Line, Reader, ThreadStream, Writer};
+use crate::work::{Bifurcation, Biunion, Line, Reader, ThreadStream, Writer};
+use crate::{bifurcation, biunion};
 use std::num::NonZeroUsize;
 use std::thread;
 use std::time::Duration;
@@ -96,5 +97,40 @@ fn slow_biunion_blocks_producers_on_both_bounded_inputs() {
         right_writer.close().unwrap();
         assert!(matches!(left.join(), Join::Ok));
         assert!(matches!(right.join(), Join::Ok));
+    });
+}
+
+#[test]
+fn slow_consumers_block_a_producing_bifurcation() {
+    const BURST: usize = 25;
+    // Producer thread: bifurcation → a Push side path per side → a bounded sink per side.
+    let mut bifurcation = Bifurcation::of(HoldBifurcation::new(1));
+    let mut writer = Writer::new(&bifurcation).unwrap();
+    let left_sink = Line::builder().bounded(BOUND).build(MockWaitLine::new(1));
+    let right_sink = Line::builder().bounded(BOUND).build(MockWaitLine::new(1));
+    Push::connect(&mut bifurcation.at::<bifurcation::Left>(), &left_sink).unwrap();
+    Push::connect(&mut bifurcation.at::<bifurcation::Right>(), &right_sink).unwrap();
+    let mut left = Reader::new(left_sink).unwrap();
+    let mut right = Reader::new(right_sink).unwrap();
+
+    // Every input goes to both sides; closing lets the producer thread end once it's out.
+    for value in 0..BURST {
+        writer.push(Message::Data(value)).unwrap();
+    }
+    writer.close().unwrap();
+
+    thread::scope(|scope| {
+        let producer = ThreadStream::<Producer>::of(bifurcation).start(scope);
+        // The slow readers keep both sinks full, so the producer blocks on whichever side is;
+        // run with `--nocapture` to see the "blocked" / "unblocked" pairs.
+        for value in 0..BURST {
+            thread::sleep(Duration::from_millis(1));
+            assert_eq!(left.read().unwrap(), Message::Data(value));
+            assert_eq!(right.read().unwrap(), Message::Data(value));
+        }
+        // The input's close follows the burst out of both sides.
+        assert!(matches!(left.read().unwrap_err().kind, ErrorKind::Closed));
+        assert!(matches!(right.read().unwrap_err().kind, ErrorKind::Closed));
+        assert!(matches!(producer.join(), Join::Ok));
     });
 }

@@ -6,6 +6,7 @@ use crate::graph::{Add, Get, Pushable, Sink};
 use crate::message::Message;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::node::biunion::work::builder::BiunionBuilder;
+use crate::node::work::Incoming;
 use crate::node::{biunion, routine};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
@@ -183,15 +184,19 @@ where
             return Ok(());
         };
 
-        let Some(message) = next_message(routine, worker, input, pending)? else {
-            // An input closed: close the outputs too, so children see it. Other errors, the
-            // routine's `Closed` included, leave them to close on drop.
-            let _ = outputs.close();
-            return Err(closed!());
-        };
-        // A refused message stays in the fan-out; the next round resumes it.
-        let _ = ready.push(message)?;
-        Ok(())
+        match next_message(routine, worker, input, pending)? {
+            Incoming::Message(message) => {
+                // A refused message stays in the fan-out; the next round resumes it.
+                let _ = ready.push(message)?;
+                Ok(())
+            }
+            Incoming::Closed => {
+                // An input closed: close the outputs too, so children see it. Other errors, the
+                // routine's `Closed` included, leave them to close on drop.
+                let _ = outputs.close();
+                Err(closed!())
+            }
+        }
     }
 
     type ThreadId = ThreadIdType;
@@ -221,15 +226,15 @@ where
 
 /// The next message for a [Biunion] to push: routine output first, then a pending signal (so a
 /// Flush goes out behind everything its flush produced), then new input, left before right;
-/// `None` once either input has closed. Parents are scheduled only once both inputs polled
-/// empty: own input goes out first, and a parent refused by an input always finds progress
-/// (`Full`) when re-entered.
+/// closed once either input has. Parents are scheduled only once both inputs polled empty: own
+/// input goes out first, and a parent refused by an input always finds progress (`Full`) when
+/// re-entered.
 fn next_message<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>(
     routine: &mut RoutineType,
     worker: &mut Worker<'params, ThreadIdType>,
     input: &Input<Left, Right, SignalType>,
     pending: &mut Option<Message<Out, SignalType>>,
-) -> Result<Option<Message<Out, SignalType>>, Error>
+) -> Result<Incoming<Message<Out, SignalType>>, Error>
 where
     Left: Send + Sync,
     Right: Send + Sync,
@@ -240,10 +245,10 @@ where
 {
     loop {
         if let Some(output) = routine.next()? {
-            return Ok(Some(Message::Data(output)));
+            return Ok(Incoming::Message(Message::Data(output)));
         }
         if let Some(signal) = pending.take() {
-            return Ok(Some(signal));
+            return Ok(Incoming::Message(signal));
         }
         match input.left.poll() {
             Ok(Some(message)) => {
@@ -251,7 +256,7 @@ where
                 continue;
             }
             Ok(None) => {}
-            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(None),
+            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(Incoming::Closed),
             Err(error) => return Err(error),
         }
         match input.right.poll() {
@@ -260,13 +265,15 @@ where
                 continue;
             }
             Ok(None) => {}
-            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(None),
+            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(Incoming::Closed),
             Err(error) => return Err(error),
         }
         // No parents left: block until either edge has data. Closed once neither can.
         if worker.left.is_empty() && worker.right.is_empty() {
             match input.wait_any() {
-                Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(None),
+                Err(error) if matches!(error.kind, ErrorKind::Closed) => {
+                    return Ok(Incoming::Closed);
+                }
                 waited => waited?,
             }
         }

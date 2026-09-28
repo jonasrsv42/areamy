@@ -68,3 +68,30 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::graph::{Get, Pushable, Sink, TryPush};
+    use crate::message::Message;
+    use crate::node::line::routine::tests::MockWaitLine;
+    use crate::signal::Trackable;
+    use crate::thread::DefaultThread;
+    use crate::work::Line;
+    use std::num::NonZeroUsize;
+
+    type TestSignal = Trackable<&'static str>;
+
+    #[test]
+    fn bounded_line_refuses_past_its_bound() {
+        let line: Line<usize, usize, TestSignal, DefaultThread, MockWaitLine> = Line::builder()
+            .bounded(NonZeroUsize::MIN)
+            .build(MockWaitLine::new(1));
+        let mut input: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
+            Get::get(&line).unwrap();
+        assert_eq!(input.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
+        assert_eq!(
+            input.try_push(Message::Data(2)).unwrap(),
+            TryPush::Full(Message::Data(2))
+        );
+    }
+}

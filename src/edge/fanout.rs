@@ -67,11 +67,7 @@ impl<D, S: Origin> Default for Fanout<'_, D, S> {
     }
 }
 
-impl<'params, D, S> Fanout<'params, D, S>
-where
-    D: Clone,
-    S: Origin + Clone,
-{
+impl<'params, D, S: Origin> Fanout<'params, D, S> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -92,40 +88,6 @@ where
             Some(_) => None,
             None => Some(Ready { fanout: self }),
         }
-    }
-
-    /// Continue a suspended rotation without ever blocking: `Full` and `Stuck` both suspend
-    /// again. For callers that must not block (poll registers a waker first).
-    pub fn retry(&mut self) -> Result<Rotation, Error> {
-        let Some(suspended) = self.suspended.take() else {
-            return Ok(Rotation::Complete);
-        };
-        let edge = self.edge(suspended.index)?;
-        match edge.try_push(suspended.refused)?.refused() {
-            None => self.rotate_rest(suspended.index, suspended.rest),
-            Some(refused) => Ok(self.suspend(suspended.index, refused, suspended.rest)),
-        }
-    }
-
-    /// Continue a suspended rotation. `Full` suspends again: the consumer drained since the
-    /// last refusal, so yielding lets it drain more. `Stuck` blocks, logging "blocked" /
-    /// "unblocked" under `node`: nothing drained, so yielding again would spin.
-    pub fn resume(&mut self, node: &str) -> Result<Rotation, Error> {
-        let Some(suspended) = self.suspended.take() else {
-            return Ok(Rotation::Complete);
-        };
-        let edge = self.edge(suspended.index)?;
-        match edge.try_push(suspended.refused)? {
-            TryPush::Pushed => {}
-            TryPush::Full(refused) => {
-                return Ok(self.suspend(suspended.index, refused, suspended.rest));
-            }
-            TryPush::Stuck(refused) => {
-                deadlock(node, suspended.index, || edge.push(refused))?;
-            }
-        }
-        // The later edges only get a try: one may suspend the rotation again.
-        self.rotate_rest(suspended.index, suspended.rest)
     }
 
     /// Close every edge, even if one fails; returns the first error. A held message is dropped.
@@ -160,6 +122,47 @@ where
             rest,
         });
         Rotation::Suspended(index)
+    }
+}
+
+/// Delivering a message clones it for every edge but the last.
+impl<D, S> Fanout<'_, D, S>
+where
+    D: Clone,
+    S: Origin + Clone,
+{
+    /// Continue a suspended rotation without ever blocking: `Full` and `Stuck` both suspend
+    /// again. For callers that must not block (poll registers a waker first).
+    pub fn retry(&mut self) -> Result<Rotation, Error> {
+        let Some(suspended) = self.suspended.take() else {
+            return Ok(Rotation::Complete);
+        };
+        let edge = self.edge(suspended.index)?;
+        match edge.try_push(suspended.refused)?.refused() {
+            None => self.rotate_rest(suspended.index, suspended.rest),
+            Some(refused) => Ok(self.suspend(suspended.index, refused, suspended.rest)),
+        }
+    }
+
+    /// Continue a suspended rotation. `Full` suspends again: the consumer drained since the
+    /// last refusal, so yielding lets it drain more. `Stuck` blocks, logging "blocked" /
+    /// "unblocked" under `node`: nothing drained, so yielding again would spin.
+    pub fn resume(&mut self, node: &str) -> Result<Rotation, Error> {
+        let Some(suspended) = self.suspended.take() else {
+            return Ok(Rotation::Complete);
+        };
+        let edge = self.edge(suspended.index)?;
+        match edge.try_push(suspended.refused)? {
+            TryPush::Pushed => {}
+            TryPush::Full(refused) => {
+                return Ok(self.suspend(suspended.index, refused, suspended.rest));
+            }
+            TryPush::Stuck(refused) => {
+                deadlock(node, suspended.index, || edge.push(refused))?;
+            }
+        }
+        // The later edges only get a try: one may suspend the rotation again.
+        self.rotate_rest(suspended.index, suspended.rest)
     }
 
     fn rotate_rest(

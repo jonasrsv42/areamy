@@ -116,10 +116,10 @@ where
 
         let result = self.inner.try_push(message)?;
 
-        // Full: the message comes back for a retry, so restore the state it was judged under.
-        // Otherwise a FollowData Flush refused here would be dropped on retry, because the
-        // policy would think the last message was a signal.
-        if matches!(result, TryPush::Full(_)) {
+        // Full or Stuck: the message comes back for a retry, so restore the state it was judged
+        // under. Otherwise a FollowData Flush refused here would be dropped on retry, because
+        // the policy would think the last message was a signal.
+        if !matches!(result, TryPush::Pushed) {
             self.last_was_data = last_was_data;
         }
 
@@ -143,6 +143,7 @@ mod tests {
     use crate::Trackable;
     use crate::edge::sync::Receiver;
     use crate::graph::tests::Bounded;
+    use std::num::NonZeroUsize;
 
     type TestSignal = Trackable<&'static str>;
 
@@ -169,6 +170,26 @@ mod tests {
         // The refused Flush still follows data, so the retry forwards it.
         assert_eq!(edge.try_push(flush).unwrap(), TryPush::Pushed);
         assert_eq!(edge.inner.items, vec![Message::Flush("f".into())]);
+    }
+
+    #[test]
+    fn try_push_stuck_signal_is_forwarded_on_retry() {
+        let rx = Receiver::<f64, TestSignal>::bounded(NonZeroUsize::MIN);
+        let mut edge = PolicyEdge::new(rx.sender(), SignalPolicy::FollowData);
+        assert_eq!(edge.try_push(Message::Data(1.0)).unwrap(), TryPush::Pushed);
+
+        let TryPush::Full(flush) = edge.try_push(Message::Flush("f".into())).unwrap() else {
+            panic!("expected Full");
+        };
+        let TryPush::Stuck(flush) = edge.try_push(flush).unwrap() else {
+            panic!("expected Stuck");
+        };
+        rx.read_front().unwrap();
+
+        // Refused twice, still follows data, so the retry forwards it.
+        assert_eq!(edge.try_push(flush).unwrap(), TryPush::Pushed);
+        // `poll`, not `read_front`: a dropped Flush must fail here, not hang.
+        assert_eq!(rx.poll().unwrap(), Some(Message::Flush("f".into())));
     }
 
     #[test]

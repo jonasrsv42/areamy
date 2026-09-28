@@ -426,6 +426,9 @@ mod tests {
     fn cross_thread_fan_in() {
         let (waker, _woken) = test_waker();
         let rx = Receiver::<usize, TestSignal>::new(waker);
+        // Kept alive: a producer finishing before the next is minted would drop the count to
+        // zero and close the edge.
+        let _keep = rx.sender();
 
         let mut handles = Vec::new();
         for i in 0..5 {

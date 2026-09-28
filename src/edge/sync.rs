@@ -60,6 +60,9 @@ where
     bound: Option<NonZeroUsize>,
     /// Producers parked on `not_full`; pops only notify it when non-zero.
     producers_waiting: usize,
+    /// Consumer progress: bumped (wrapping) once per drain, a pop or a whole `read_all`; only
+    /// compared for equality. A sender refused twice at the same value is [`TryPush::Stuck`].
+    progress: u64,
 }
 
 impl<DataType, SignalType> Inner<DataType, SignalType>
@@ -88,12 +91,18 @@ where
 
 /// Producer handle. `Send + Sync + Clone`. Dropping the last clone
 /// closes the edge and wakes any blocked [`Receiver`].
+///
+/// Use one handle per producer: [`Sender::try_push_back`] remembers this handle's last
+/// refusal, so two producers sharing one handle can see a false [`TryPush::Stuck`].
 pub struct Sender<DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
     shared: Arc<Shared<DataType, SignalType>>,
+    /// The edge's progress when this handle was last refused. Never cleared: only a drain frees
+    /// room, so after any successful push progress has moved past it.
+    refused_at: Option<u64>,
 }
 
 /// Single-consumer handle. `Send + !Sync + !Clone`. Dropping the
@@ -151,6 +160,7 @@ where
                 consumer_waiting: false,
                 bound,
                 producers_waiting: 0,
+                progress: 0,
             }),
             not_empty: Condvar::new(),
             not_full: Condvar::new(),
@@ -168,6 +178,7 @@ where
         self.shared.producer_count.fetch_add(1, Ordering::Relaxed);
         Sender {
             shared: self.shared.clone(),
+            refused_at: None,
         }
     }
 }
@@ -192,8 +203,10 @@ where
         // clone site since the new reference can only be used through the
         // new owner.
         self.shared.producer_count.fetch_add(1, Ordering::Relaxed);
+        // A new producer: this handle's refusals aren't its.
         Self {
             shared: self.shared.clone(),
+            refused_at: None,
         }
     }
 }
@@ -289,14 +302,23 @@ where
         Ok(inner)
     }
 
-    /// Push a message without ever blocking: a full bounded edge hands it back as
+    /// Push a message without ever blocking. A full bounded edge hands it back: as
+    /// [`TryPush::Stuck`] if nothing popped since this handle was last refused, else as
     /// [`TryPush::Full`]. Returns `Closed` if the edge is closed, even when it is also full.
-    pub fn try_push_back(&self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
+    pub fn try_push_back(
+        &mut self,
+        message: Message<D, S>,
+    ) -> Result<TryPush<Message<D, S>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         if inner.closed {
             return Err(closed!());
         }
         if inner.is_full() {
+            // No progress since our last refusal, so a retry would spin.
+            if self.refused_at == Some(inner.progress) {
+                return Ok(TryPush::Stuck(message));
+            }
+            self.refused_at = Some(inner.progress);
             return Ok(TryPush::Full(message));
         }
         inner.buffer.push_back(message);
@@ -366,6 +388,7 @@ where
         let Some(msg) = inner.buffer.pop_front() else {
             return fatal!("non-empty queue with no element").into();
         };
+        inner.progress = inner.progress.wrapping_add(1);
         self.wake_producers(inner, Freed::One);
         Ok(msg)
     }
@@ -376,6 +399,8 @@ where
     pub fn read_all(&self) -> Result<Vec<Message<D, S>>, Error> {
         let mut inner = self.wait_nonempty()?;
         let messages = inner.buffer.drain(..).collect();
+        // One bump is enough: `Stuck` only asks whether anything drained.
+        inner.progress = inner.progress.wrapping_add(1);
         self.wake_producers(inner, Freed::All);
         Ok(messages)
     }
@@ -387,6 +412,7 @@ where
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         match inner.buffer.pop_front() {
             Some(msg) => {
+                inner.progress = inner.progress.wrapping_add(1);
                 self.wake_producers(inner, Freed::One);
                 Ok(Some(msg))
             }
@@ -588,7 +614,7 @@ pub(crate) mod tests {
     #[test]
     fn try_push_full_at_bound() {
         let rx = bounded(2);
-        let tx = rx.sender();
+        let mut tx = rx.sender();
         assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
         assert_eq!(tx.try_push_back(Message::Data(2)).unwrap(), TryPush::Pushed);
         assert_eq!(
@@ -601,7 +627,7 @@ pub(crate) mod tests {
     #[test]
     fn pop_makes_room() {
         let rx = bounded(1);
-        let tx = rx.sender();
+        let mut tx = rx.sender();
         assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
         assert_eq!(rx.read_front().unwrap(), Message::Data(1));
         assert_eq!(tx.try_push_back(Message::Data(2)).unwrap(), TryPush::Pushed);
@@ -610,7 +636,7 @@ pub(crate) mod tests {
     #[test]
     fn signals_count_toward_bound() {
         let rx = bounded(1);
-        let tx = rx.sender();
+        let mut tx = rx.sender();
         assert_eq!(
             tx.try_push_back(Message::Flush("f".into())).unwrap(),
             TryPush::Pushed
@@ -622,9 +648,94 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn refused_again_without_pop_is_stuck() {
+        let rx = bounded(1);
+        let mut tx = rx.sender();
+        tx.push_back(Message::Data(1)).unwrap();
+        assert_eq!(
+            tx.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Full(Message::Data(2))
+        );
+        assert_eq!(
+            tx.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Stuck(Message::Data(2))
+        );
+    }
+
+    /// Refused, then `pop` frees a slot that another producer refills: the retry must be `Full`
+    /// (something drained), and a further retry `Stuck` (nothing drained since).
+    fn pop_between_refusals_gives_full(pop: impl Fn(&Receiver<usize, TestSignal>)) {
+        let rx = bounded(1);
+        let mut tx = rx.sender();
+        let other = rx.sender();
+        tx.push_back(Message::Data(1)).unwrap();
+        assert_eq!(
+            tx.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Full(Message::Data(2))
+        );
+        pop(&rx);
+        other.push_back(Message::Data(3)).unwrap();
+        assert_eq!(
+            tx.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Full(Message::Data(2))
+        );
+        assert_eq!(
+            tx.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Stuck(Message::Data(2))
+        );
+    }
+
+    #[test]
+    fn read_front_counts_as_progress() {
+        pop_between_refusals_gives_full(|rx| {
+            rx.read_front().unwrap();
+        });
+    }
+
+    #[test]
+    fn poll_counts_as_progress() {
+        pop_between_refusals_gives_full(|rx| {
+            rx.poll().unwrap();
+        });
+    }
+
+    #[test]
+    fn read_all_counts_as_progress() {
+        pop_between_refusals_gives_full(|rx| {
+            rx.read_all().unwrap();
+        });
+    }
+
+    #[test]
+    fn each_sender_tracks_its_own_refusals() {
+        let rx = bounded(1);
+        let (mut a, mut b) = (rx.sender(), rx.sender());
+        a.push_back(Message::Data(1)).unwrap();
+        assert_eq!(
+            a.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Full(Message::Data(2))
+        );
+        // B's first refusal, though A was just refused at the same count.
+        assert_eq!(
+            b.try_push_back(Message::Data(3)).unwrap(),
+            TryPush::Full(Message::Data(3))
+        );
+        // A clone is a new producer, not A.
+        let mut c = a.clone();
+        assert_eq!(
+            c.try_push_back(Message::Data(4)).unwrap(),
+            TryPush::Full(Message::Data(4))
+        );
+        assert_eq!(
+            a.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Stuck(Message::Data(2))
+        );
+    }
+
+    #[test]
     fn closed_beats_full() {
         let rx = bounded(1);
-        let tx = rx.sender();
+        let mut tx = rx.sender();
         tx.push_back(Message::Data(1)).unwrap();
         rx.close().unwrap();
         assert!(matches!(
@@ -779,7 +890,7 @@ pub(crate) mod tests {
     #[test]
     fn unbounded_never_full() {
         let rx = Receiver::<usize, TestSignal>::new();
-        let tx = rx.sender();
+        let mut tx = rx.sender();
         for value in 0..10_000 {
             assert_eq!(
                 tx.try_push_back(Message::Data(value)).unwrap(),

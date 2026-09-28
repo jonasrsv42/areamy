@@ -31,6 +31,10 @@ pub trait Pushable: Connection {
     /// means the message was consumed (delivered, or intentionally dropped by a wrapper such as
     /// a signal policy). Required: only the implementor knows whether its [Pushable::push] can
     /// block.
+    ///
+    /// A bounded sink must tell [TryPush::Full] from [TryPush::Stuck], tracked per producer
+    /// handle: always answering `Full` lets a retrying producer spin, always answering `Stuck`
+    /// can block a producer whose consumer is waiting on it.
     fn try_push(
         &mut self,
         msg: Message<Self::DataType, Self::SignalType>,
@@ -38,11 +42,15 @@ pub trait Pushable: Connection {
 }
 
 /// Outcome of [Pushable::try_push].
-#[must_use = "a Full message must be kept (parked) or it is lost"]
+#[must_use = "a refused message must be kept (parked) or it is lost"]
 #[derive(Debug, PartialEq)]
 pub enum TryPush<MessageType> {
     /// The sink consumed the message.
     Pushed,
-    /// The sink is full; the message is handed back.
+    /// The sink is full; the message is handed back. The consumer drained since this
+    /// producer was last refused (or it wasn't refused before), so retrying later can succeed.
     Full(MessageType),
+    /// The sink is full and nothing drained since this producer was last refused; the message
+    /// is handed back. Retrying without waiting would spin.
+    Stuck(MessageType),
 }

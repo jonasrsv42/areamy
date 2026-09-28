@@ -86,11 +86,8 @@ where
     type SignalType = SinkType::SignalType;
 
     fn push(&mut self, message: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        // Check if the message is a signal
-        let is_signal = match &message {
-            Message::Data(_) => false,
-            Message::Flush(_) | Message::Marker(_) => true,
-        };
+        // Anything that isn't data is a signal
+        let is_signal = message.as_data().is_none();
 
         // Apply policy for signals
         if self.should_forward(is_signal) {
@@ -100,21 +97,32 @@ where
         Ok(())
     }
 
-    /// A message the policy drops counts as pushed. On `Full` the policy state is rolled back,
-    /// so the retry is judged the same way.
+    /// Same policy as [PolicyEdge::push], but the inner sink may hand the message back, so the
+    /// policy state must not advance for a message that wasn't delivered.
     fn try_push(
         &mut self,
         message: Message<Self::DataType, Self::SignalType>,
     ) -> Result<TryPush<Message<Self::DataType, Self::SignalType>>, Error> {
-        let is_signal = !matches!(message, Message::Data(_));
+        // Anything that isn't data is a signal
+        let is_signal = message.as_data().is_none();
+
+        // `should_forward` updates `last_was_data`; keep the old value to undo it on Full.
         let last_was_data = self.last_was_data;
+
+        // A signal the policy drops is consumed, same as `push` returning Ok.
         if !self.should_forward(is_signal) {
             return Ok(TryPush::Pushed);
         }
+
         let result = self.inner.try_push(message)?;
+
+        // Full: the message comes back for a retry, so restore the state it was judged under.
+        // Otherwise a FollowData Flush refused here would be dropped on retry, because the
+        // policy would think the last message was a signal.
         if matches!(result, TryPush::Full(_)) {
             self.last_was_data = last_was_data;
         }
+
         Ok(result)
     }
 }

@@ -83,6 +83,15 @@ where
             Message::Marker(_) => None,
         }
     }
+
+    /// [Message::as_data] is [Message::data] without consuming the [Message].
+    pub fn as_data(&self) -> Option<&DataType> {
+        match self {
+            Message::Data(data) => Some(data),
+            Message::Flush(_) => None,
+            Message::Marker(_) => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -118,5 +127,19 @@ mod tests {
                 .data()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn as_data_peeks_without_consuming() {
+        let data = Message::<i32, Trackable<&'static str>>::Data(5);
+        assert_eq!(data.as_data(), Some(&5));
+        assert_eq!(data, Message::Data(5));
+
+        let flush = Message::<i32, Trackable<&'static str>>::Flush("f".into());
+        assert_eq!(flush.as_data(), None);
+        assert_eq!(flush, Message::Flush("f".into()));
+
+        let marker = Message::<i32, Trackable<&'static str>>::Marker("m".into());
+        assert_eq!(marker.as_data(), None);
     }
 }

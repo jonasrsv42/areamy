@@ -533,7 +533,7 @@ where
     S: Origin + Send + Sync,
 {
     /// Producers currently parked on a full edge; lets tests wait for a real block.
-    fn producers_waiting(&self) -> usize {
+    pub(crate) fn producers_waiting(&self) -> usize {
         self.shared
             .inner
             .lock()
@@ -543,7 +543,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::Trackable;
     use crate::error::ErrorKind;
@@ -561,7 +561,7 @@ mod tests {
     }
 
     /// Spin until `condition` holds; fails after `TIMEOUT` so a broken edge doesn't hang.
-    fn wait_until(condition: impl Fn() -> bool) {
+    pub(crate) fn wait_until(condition: impl Fn() -> bool) {
         let deadline = Instant::now() + TIMEOUT;
         while !condition() {
             assert!(Instant::now() < deadline, "timed out waiting");
@@ -570,7 +570,7 @@ mod tests {
     }
 
     /// Join a thread, failing instead of hanging if it never finishes.
-    fn join_within<T>(handle: thread::JoinHandle<T>) -> T {
+    pub(crate) fn join_within<T>(handle: thread::JoinHandle<T>) -> T {
         wait_until(|| handle.is_finished());
         handle.join().unwrap()
     }

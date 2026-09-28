@@ -103,8 +103,8 @@ where
     fn default() -> Self {
         let notify = Notify::new();
         Self {
-            left: multiedge::Receiver::new(notify.clone()),
-            right: multiedge::Receiver::new(notify.clone()),
+            left: multiedge::Receiver::new(notify.clone(), None),
+            right: multiedge::Receiver::new(notify.clone(), None),
             notify,
         }
     }

@@ -9,36 +9,38 @@ use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
 use std::mem;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Condvar, Mutex};
 
 /// Wake flag shared by a group of edges. Single waiter.
 pub(crate) struct Notify {
     flag: Mutex<Flag>,
-    signal: Condvar,
+    /// The consumer waits here until an edge may be ready.
+    any_ready: Condvar,
 }
 
 #[derive(Default)]
 struct Flag {
     raised: bool,
-    /// The waiter is blocked in [`Condvar::wait`]; raises only notify when set.
-    waiting: bool,
+    /// The consumer is parked on `any_ready`; raises only notify when set.
+    consumer_waiting: bool,
 }
 
 impl Notify {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             flag: Mutex::new(Flag::default()),
-            signal: Condvar::new(),
+            any_ready: Condvar::new(),
         })
     }
 
     fn raise(&self) {
         let mut flag = self.flag.lock().unwrap_or_else(|p| p.into_inner());
         flag.raised = true;
-        let waiting = mem::take(&mut flag.waiting);
+        let consumer_waiting = mem::take(&mut flag.consumer_waiting);
         drop(flag);
-        if waiting {
-            self.signal.notify_one();
+        if consumer_waiting {
+            self.any_ready.notify_one();
         }
     }
 
@@ -47,8 +49,8 @@ impl Notify {
         let mut flag = self.flag.lock().map_err(|e| fatal!(e))?;
         while !flag.raised {
             // Set on every iteration: a spurious wakeup must re-arm it.
-            flag.waiting = true;
-            flag = self.signal.wait(flag).map_err(|e| fatal!(e))?;
+            flag.consumer_waiting = true;
+            flag = self.any_ready.wait(flag).map_err(|e| fatal!(e))?;
         }
         flag.raised = false;
         Ok(())
@@ -112,11 +114,13 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    pub(crate) fn new(notify: Arc<Notify>) -> Self {
-        Self {
-            inner: sync::Receiver::new(),
-            notify,
-        }
+    /// `bound` caps this side alone; each side of a group is bounded independently.
+    pub(crate) fn new(notify: Arc<Notify>, bound: Option<NonZeroUsize>) -> Self {
+        let inner = match bound {
+            Some(bound) => sync::Receiver::bounded(bound),
+            None => sync::Receiver::new(),
+        };
+        Self { inner, notify }
     }
 
     pub fn sender(&self) -> Sender<D, S> {
@@ -150,6 +154,8 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
+    /// Blocks while a bounded side is full. Raises only after the message lands, so the woken
+    /// waiter finds it.
     pub fn push_back(&self, message: Message<D, S>) -> Result<(), Error> {
         self.inner.push_back(message)?;
         self.raise.0.raise();
@@ -235,20 +241,69 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::edge::sync::tests::{join_within, wait_until};
     use crate::error::ErrorKind;
     use std::thread;
 
     type Signal = &'static str;
 
-    fn pair() -> (
+    type Group = (
         Arc<Notify>,
         Receiver<usize, Signal>,
         Receiver<usize, Signal>,
-    ) {
+    );
+
+    fn pair() -> Group {
+        group(None)
+    }
+
+    fn bounded_pair(bound: usize) -> Group {
+        group(NonZeroUsize::new(bound))
+    }
+
+    fn group(bound: Option<NonZeroUsize>) -> Group {
         let notify = Notify::new();
-        let left = Receiver::new(notify.clone());
-        let right = Receiver::new(notify.clone());
+        let left = Receiver::new(notify.clone(), bound);
+        let right = Receiver::new(notify.clone(), bound);
         (notify, left, right)
+    }
+
+    /// Read and clear the flag, so later checks see only raises after this point.
+    fn take_raised(notify: &Notify) -> bool {
+        mem::take(&mut notify.flag.lock().unwrap().raised)
+    }
+
+    #[test]
+    fn try_push_raises_only_when_pushed() {
+        let (notify, left, _right) = bounded_pair(1);
+        let mut tx = left.sender();
+        assert_eq!(tx.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
+        assert!(take_raised(&notify));
+        assert_eq!(
+            tx.try_push(Message::Data(2)).unwrap(),
+            TryPush::Full(Message::Data(2))
+        );
+        // Nothing landed, so the consumer must not wake for it.
+        assert!(!take_raised(&notify));
+    }
+
+    #[test]
+    fn blocked_push_raises_after_it_lands() {
+        let (notify, left, _right) = bounded_pair(1);
+        // Kept alive: dropping the last sender would close the edge.
+        let first = left.sender();
+        first.push_back(Message::Data(1)).unwrap();
+        let tx = left.sender();
+        // Hands the sender back: its drop raises too, which would hide a missing raise.
+        let producer = thread::spawn(move || tx.push_back(Message::Data(2)).map(|()| tx));
+
+        wait_until(|| left.inner.producers_waiting() == 1);
+        // Forget raises from before the block; only the landing may raise now.
+        take_raised(&notify);
+        assert_eq!(left.poll().unwrap(), Some(Message::Data(1)));
+        let _tx = join_within(producer).unwrap();
+        assert!(take_raised(&notify));
+        assert_eq!(left.poll().unwrap(), Some(Message::Data(2)));
     }
 
     #[test]

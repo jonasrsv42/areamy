@@ -1,30 +1,8 @@
 use crate::error::Error;
-use crate::graph::marker::Connection;
+use crate::graph::Outlet;
 use crate::message::Message;
-use crate::signal::Origin;
 
 mod default;
-
-/// An [`Outlet`] is a data [Connection] in our graph, it is used for dataflow.
-/// The associated [Outlet::DataType] and [Outlet::SignalType] types are used to specify the
-/// types for the [Message<DataType, SignalType>] that can be pushed through this
-/// [Connection]. How a push behaves is up to [TryPushable] and [Pushable].
-///
-/// Child nodes will typically hold [Outlet] references to queues owned by a parent
-/// and push [Message] into them when scheduled.
-///
-/// <div class="warning"> Nodes should never implement [Outlet] as it
-/// easily leads to circualar references and memory leaks </div>
-///
-/// Instead nodes hold a reference to something that is an [Outlet] such as a
-/// [crate::edge::sync::Sender].
-pub trait Outlet: Connection {
-    /// The DataType used in [Message<DataType, SignalType>] for this [Outlet]
-    type DataType;
-
-    /// The SignalType used in [Message<DataType, SignalType>] for this [Outlet]
-    type SignalType: Origin;
-}
 
 /// A [`TryPushable`] pushes without ever blocking.
 pub trait TryPushable: Outlet {
@@ -39,12 +17,6 @@ pub trait TryPushable: Outlet {
         &mut self,
         msg: Message<Self::DataType, Self::SignalType>,
     ) -> Result<TryPush<Message<Self::DataType, Self::SignalType>>, Error>;
-}
-
-/// A [`Pushable`] always delivers: [Pushable::push] makes no promise about blocking.
-pub trait Pushable: Outlet {
-    /// Delivers the message or errors (e.g. closed); may block until there is room.
-    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error>;
 }
 
 /// Outcome of [TryPushable::try_push].

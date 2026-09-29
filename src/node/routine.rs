@@ -58,6 +58,9 @@ pub trait Flush {
 /// from `waker.sync`: `Context::from_waker(&waker.sync)`.
 ///
 /// Routines that do no I/O can return [core::task::Poll::Pending].
+///
+/// Not [crate::poll::Pollable]: that is the node layer the runtime schedules. Here `Closed` is
+/// fatal; routines handle close, never propagate it.
 pub trait Poll {
     fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error>;
 }

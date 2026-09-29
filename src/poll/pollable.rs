@@ -12,6 +12,9 @@ use crate::thread::ThreadId;
 ///
 /// Like [crate::work::Workable], [Pollable] has an associated [Pollable::ThreadId] to ensure
 /// nodes are only added to matching threads (compile-time safety).
+///
+/// Not [crate::node::routine::Poll]: that is the user routine layer, where `Closed` is fatal.
+/// Here `Closed` is control flow and, like `Ready`, drops the node.
 pub trait Pollable: Connection {
     type ThreadId: ThreadId;
     fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error>;

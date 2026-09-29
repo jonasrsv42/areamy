@@ -162,4 +162,12 @@ pub mod mock {
             count,
         )
     }
+
+    /// Full [super::Waker] whose sync and local halves both do nothing.
+    pub fn noop_waker() -> super::Waker {
+        super::Waker {
+            sync: std::task::Waker::noop().clone(),
+            local: noop_local_waker(),
+        }
+    }
 }

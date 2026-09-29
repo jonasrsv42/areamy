@@ -3,7 +3,8 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Closeable, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
-use crate::work::Sink;
+use crate::poll::Room;
+use crate::poll::waker::Waker;
 
 mod policied;
 
@@ -20,14 +21,14 @@ pub enum SignalPolicy {
     Block,
 }
 
-/// A wrapper around a `Sink` that applies a signal policy.
+/// A wrapper around a sink that applies a signal policy.
 /// This allows for different signal policies to be applied to the same
 /// underlying queue when pushed to from different parents.
+///
+/// Each capability is forwarded only when the inner sink has it, so the same wrapper serves
+/// work and poll sinks.
 #[derive(Debug)]
-pub struct PolicyEdge<SinkType>
-where
-    SinkType: Sink,
-{
+pub struct PolicyEdge<SinkType> {
     /// The underlying pushable that messages will be sent to
     inner: SinkType,
     /// The policy to apply when pushing messages
@@ -36,10 +37,7 @@ where
     last_was_data: bool,
 }
 
-impl<SinkType> PolicyEdge<SinkType>
-where
-    SinkType: Sink,
-{
+impl<SinkType> PolicyEdge<SinkType> {
     /// Create a new policy wrapper with the specified policy
     pub fn new(inner: SinkType, policy: SignalPolicy) -> Self {
         Self {
@@ -81,11 +79,11 @@ where
     }
 }
 
-impl<SinkType> Connection for PolicyEdge<SinkType> where SinkType: Sink {}
+impl<SinkType> Connection for PolicyEdge<SinkType> {}
 
 impl<SinkType> Pushable for PolicyEdge<SinkType>
 where
-    SinkType: Sink,
+    SinkType: Pushable,
 {
     fn push(&mut self, message: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         // Anything that isn't data is a signal
@@ -102,7 +100,7 @@ where
 
 impl<SinkType> Outlet for PolicyEdge<SinkType>
 where
-    SinkType: Sink,
+    SinkType: Outlet,
 {
     type DataType = SinkType::DataType;
     type SignalType = SinkType::SignalType;
@@ -110,7 +108,7 @@ where
 
 impl<SinkType> TryPushable for PolicyEdge<SinkType>
 where
-    SinkType: Sink,
+    SinkType: TryPushable,
 {
     /// Same policy as [PolicyEdge::push], but the inner sink may hand the message back, so the
     /// policy state must not advance for a message that wasn't delivered.
@@ -144,10 +142,20 @@ where
 
 impl<SinkType> Closeable for PolicyEdge<SinkType>
 where
-    SinkType: Sink,
+    SinkType: Closeable,
 {
     fn close(&mut self) -> Result<(), Error> {
         self.inner.close()
+    }
+}
+
+/// Room is the inner sink's: the policy only drops signals, it never holds messages.
+impl<SinkType> Room for PolicyEdge<SinkType>
+where
+    SinkType: Room,
+{
+    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+        self.inner.poll(waker)
     }
 }
 

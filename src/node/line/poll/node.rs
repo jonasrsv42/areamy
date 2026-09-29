@@ -436,7 +436,8 @@ mod tests {
     use crate::edge::sync::Receiver;
     use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
     use crate::poll::input;
-    use crate::poll::waker::{self, ThreadLocalWaker, mock};
+    use crate::poll::waker::mock::{noop_local_waker, noop_waker};
+    use crate::poll::waker::{self, mock};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -452,17 +453,6 @@ mod tests {
         let woken = Arc::new(AtomicBool::new(false));
         let waker = std::task::Waker::from(Arc::new(TestWaker(woken.clone())));
         (waker, woken)
-    }
-
-    fn noop_local_waker() -> ThreadLocalWaker {
-        mock::noop_local_waker()
-    }
-
-    fn noop_waker() -> waker::Waker {
-        waker::Waker {
-            sync: std::task::Waker::noop().clone(),
-            local: noop_local_waker(),
-        }
     }
 
     #[test]

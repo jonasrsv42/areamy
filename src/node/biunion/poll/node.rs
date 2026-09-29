@@ -791,11 +791,9 @@ mod tests {
     use crate::DefaultThread;
     use crate::Trackable;
     use crate::edge::sync::{Receiver, Sender};
-    use crate::node::biunion::poll::routine::tests::{
-        MockBiunion, noop_biunion_wakers, noop_waker,
-    };
+    use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_biunion_wakers};
     use crate::poll::input;
-    use crate::poll::waker::mock::tracking_local_waker;
+    use crate::poll::waker::mock::{noop_waker, tracking_local_waker};
     use std::cell::Cell;
     use std::rc::Rc;
     use std::sync::Arc;

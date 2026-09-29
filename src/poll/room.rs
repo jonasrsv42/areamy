@@ -2,6 +2,8 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::poll::waker::Waker;
 
+mod default;
+
 /// A [`Room`] reports whether an outlet has room: readiness, not a push.
 pub trait Room: Connection {
     /// `Ready` if there is room now; a hint, since another producer may take it first

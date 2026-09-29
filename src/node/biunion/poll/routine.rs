@@ -27,7 +27,8 @@ pub mod tests {
     use crate::biunion;
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
-    use crate::poll::waker::{ThreadLocalWaker, Waker, mock};
+    use crate::poll::waker::Waker;
+    use crate::poll::waker::mock::noop_local_waker;
 
     /// Mock biunion routine: left input doubled, right input tripled,
     /// both pushed to output. Tracks poll_count.
@@ -97,15 +98,4 @@ pub mod tests {
     }
 
     impl super::BiunionRoutine<usize, usize, usize> for MockBiunion {}
-
-    pub fn noop_local_waker() -> ThreadLocalWaker {
-        mock::noop_local_waker()
-    }
-
-    pub fn noop_waker() -> Waker {
-        Waker {
-            sync: std::task::Waker::noop().clone(),
-            local: noop_local_waker(),
-        }
-    }
 }

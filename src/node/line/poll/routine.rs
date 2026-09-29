@@ -84,7 +84,8 @@ pub mod tests {
     use super::LineRoutine;
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
-    use crate::poll::waker::{ThreadLocalWaker, Waker, mock};
+    use crate::poll::waker::Waker;
+    use crate::poll::waker::mock::{noop_local_waker, noop_waker};
     use crate::{Next, Send};
 
     pub struct MockLine {
@@ -140,22 +141,11 @@ pub mod tests {
 
     impl LineRoutine<usize, usize> for MockLine {}
 
-    pub fn noop_local_waker() -> ThreadLocalWaker {
-        mock::noop_local_waker()
-    }
-
     pub fn noop_line_wakers() -> crate::poll::LineWakers {
         crate::poll::LineWakers {
             input: noop_local_waker(),
             work: noop_local_waker(),
             output: noop_local_waker(),
-        }
-    }
-
-    fn noop_waker() -> Waker {
-        Waker {
-            sync: std::task::Waker::noop().clone(),
-            local: noop_local_waker(),
         }
     }
 

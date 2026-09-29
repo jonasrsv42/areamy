@@ -9,6 +9,8 @@ use crate::graph::{Add, Closeable, Get, Outlet, Outputs, Pushable, TryPush, TryP
 use crate::message::Message;
 use crate::poll::Pollable;
 use crate::poll::waker::Waker;
+#[cfg(test)]
+use crate::poll::waker::mock::noop_waker;
 use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
@@ -454,18 +456,13 @@ impl Pollable for AsyncNode {
 /// A `Pollable` node that processes input non-blockingly.
 #[test]
 fn pollable_processes_available_input() {
-    use crate::poll::waker::{Waker, mock};
-
     let mut node = AsyncNode::new();
     let mut input = node.input.sender();
 
     input.push(Message::Data(0)).unwrap();
     input.push(Message::Data(1)).unwrap();
 
-    let mut waker = Waker {
-        sync: std::task::Waker::noop().clone(),
-        local: mock::noop_local_waker(),
-    };
+    let mut waker = noop_waker();
 
     // First poll processes first message
     assert!(matches!(
@@ -509,18 +506,13 @@ impl Pollable for ClosingAsyncNode {
 
 #[test]
 fn pollable_returns_ready_on_close() {
-    use crate::poll::waker::{Waker, mock};
-
     let mut node = ClosingAsyncNode {
         input: Receiver::new(),
     };
 
     node.input.close().unwrap();
 
-    let mut waker = Waker {
-        sync: std::task::Waker::noop().clone(),
-        local: mock::noop_local_waker(),
-    };
+    let mut waker = noop_waker();
 
     assert!(matches!(
         node.poll(&mut waker).unwrap(),

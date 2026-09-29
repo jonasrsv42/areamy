@@ -29,6 +29,12 @@ This rules out designs that decouple nodes from ownership: arenas, index or hand
 - Allocation, boxing and binding happen while the graph is built. Nodes and parents are passed by value; a `Box` appears only where a node stores a parent as `dyn`.
 - The hot path avoids extra heap allocation, locks and syscalls where placement allows.
 
+## Layers
+
+- `graph` is the vocabulary (`Outlet`, `TryPushable`, `Pushable`, `Closeable`, `Add`, `Get`, `Outputs`, `graph::Sink`) and depends on nothing.
+- `work` and `poll` are runtimes built on it, each with its own capabilities (`work::Sink`; `poll::Room`, `poll::Waker`, `poll::Sink`). Runtime types stay in their runtime: `poll::Waker` carries the scheduler's timers.
+- `edge` bridges nodes and runtimes, so it may depend on `graph`, `work` and `poll`. A capability is implemented next to its type.
+
 ## Small surface
 
 - Prefer an existing idiom at the call site over new API.

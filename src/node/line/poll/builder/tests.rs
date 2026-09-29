@@ -3,11 +3,12 @@
 use super::node::Node;
 use crate::Trackable;
 use crate::error::Error;
-use crate::node::line::poll::routine::tests::{MockLine, noop_local_waker};
+use crate::node::line::poll::routine::tests::MockLine;
 use crate::poll::edge::{Null, PollEdge, Sync};
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
+use crate::poll::waker::mock::noop_local_waker;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use std::cell::RefCell;
 use std::rc::Rc;

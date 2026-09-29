@@ -31,9 +31,9 @@ This rules out designs that decouple nodes from ownership: arenas, index or hand
 
 ## Layers
 
-- `graph` is the vocabulary (`Outlet`, `TryPushable`, `Pushable`, `Closeable`, `Add`, `Get`, `Outputs`, `graph::Sink`) and depends on nothing.
+- `graph` is the vocabulary (`Outlet`, `TryPushable`, `Pushable`, `Closeable`, `Add`, `Get`, `Outputs`, `graph::Sink`). Outside its tests and doc links it uses only `message`, `signal` and `error`.
 - `work` and `poll` are runtimes built on it, each with its own capabilities (`work::Sink`; `poll::Room`, `poll::Waker`, `poll::Sink`). Runtime types stay in their runtime: `poll::Waker` carries the scheduler's timers.
-- `edge` bridges nodes and runtimes, so it may depend on `graph`, `work` and `poll`. A capability is implemented next to its type.
+- `edge` holds the concrete edges between nodes and runtimes (`sync::Sender`, `PolicyEdge`, `Fanout`, `Push`), so it uses `work` and `poll` types. The runtimes use `edge` back (their `Policied` impls, `work` on `edge::sync`): these are modules of one crate, not a strict stack. The rule is placement: a capability is implemented next to its type, and runtime types stay in their runtime.
 
 ## Small surface
 

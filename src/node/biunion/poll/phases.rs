@@ -1,11 +1,10 @@
 //! Phase grouping structs for biunion poll nodes.
 
 use super::node::{LeftInput, Output, RightInput, Work};
-use crate::graph::Receivable;
+use crate::graph::{Closeable, Pushable, Receivable};
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
 
 /// Both input phases grouped together.
 pub struct Inputs<
@@ -24,7 +23,7 @@ pub struct Inputs<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     pub left: LeftInput<
         Left,
@@ -67,7 +66,7 @@ pub struct Phases<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     pub inputs: Inputs<
         Left,

@@ -36,8 +36,8 @@
 
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
-use crate::graph::Receivable;
 use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Pushable, Receivable};
 use crate::message::Message;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::node::routine;
@@ -45,7 +45,6 @@ use crate::poll::Pollable;
 use crate::poll::waker::{ThreadLocalWaker, Waker};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -66,7 +65,7 @@ where
     SignalType: Origin + Clone,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     pub(crate) worker: RoutineType,
     input: InputType,
@@ -83,7 +82,7 @@ where
     SignalType: Origin + Clone,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     fn push_output(&mut self, msg: Message<Out, SignalType>) -> Result<(), Error> {
         self.output.push(msg)
@@ -164,7 +163,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     pub(crate) shared:
         Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
@@ -178,7 +177,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
 }
 
@@ -189,7 +188,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type ThreadId = ThreadIdType;
 
@@ -223,7 +222,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     pub(crate) shared:
         Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
@@ -237,7 +236,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
 }
 
@@ -248,7 +247,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type ThreadId = ThreadIdType;
 
@@ -314,7 +313,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     pub(crate) shared:
         Rc<RefCell<SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>>>,
@@ -328,7 +327,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
 }
 
@@ -339,7 +338,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type ThreadId = ThreadIdType;
 
@@ -402,7 +401,7 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     let shared = Rc::new(RefCell::new(SharedState {
         worker,

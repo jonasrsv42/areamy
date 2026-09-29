@@ -4,7 +4,7 @@ use crate::edge::sync;
 pub use crate::edge::sync::State;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, TryPush, TryPushable};
+use crate::graph::{Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::work::Sink;
@@ -184,14 +184,20 @@ where
 {
 }
 
-impl<D, S> TryPushable for Sender<D, S>
+impl<D, S> Outlet for Sender<D, S>
 where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
     type DataType = D;
     type SignalType = S;
+}
 
+impl<D, S> TryPushable for Sender<D, S>
+where
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+{
     /// Raises the group flag only when the inner edge took the message.
     fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
         let result = TryPushable::try_push(&mut self.inner, message)?;

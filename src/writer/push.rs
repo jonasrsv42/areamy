@@ -1,7 +1,7 @@
 use crate::edge::deadlock::deadlock;
 use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Closeable, Get, Pushable, TryPush, TryPushable};
+use crate::graph::{Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
 use crate::work::Sink;
@@ -59,14 +59,20 @@ where
     }
 }
 
-impl<'params, DataType, SignalType> TryPushable for Writer<'params, DataType, SignalType>
+impl<'params, DataType, SignalType> Outlet for Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
     type DataType = DataType;
     type SignalType = SignalType;
+}
 
+impl<'params, DataType, SignalType> TryPushable for Writer<'params, DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
     fn try_push(
         &mut self,
         object: Message<Self::DataType, Self::SignalType>,

@@ -26,7 +26,7 @@
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get};
+use crate::graph::{Add, Closeable, Get, Pushable};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node::new_phases;
 use crate::node::line::poll::routine::LineRoutine;
@@ -469,7 +469,7 @@ where
 // ============================================================
 
 /// Build the three phase pollables for a node with a resolved [`Sync`]
-/// input, draining into `output` — any [`Sink`]; pushes move into it.
+/// input, draining into `output` — any [`Pushable`]; pushes move into it.
 fn sync_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
     factory: FactoryType,
     input: input::sync::Input<InType, SignalType>,
@@ -483,7 +483,7 @@ where
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
-    OutputType: Sink<DataType = OutType, SignalType = SignalType> + 'params,
+    OutputType: Pushable<DataType = OutType, SignalType = SignalType> + Closeable + 'params,
 {
     let work = allocator.next();
     let output_slot = allocator.next();
@@ -519,7 +519,7 @@ where
 }
 
 /// Build the parent graphs and the three phase pollables for a node with an
-/// [`Async`] input, draining into `output` — any [`Sink`]; pushes move into
+/// [`Async`] input, draining into `output` — any [`Pushable`]; pushes move into
 /// it.
 fn async_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
     factory: FactoryType,
@@ -543,7 +543,7 @@ where
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
-    OutputType: Sink<DataType = OutType, SignalType = SignalType> + 'params,
+    OutputType: Pushable<DataType = OutType, SignalType = SignalType> + Closeable + 'params,
 {
     let input = allocator.next();
     let edge_waker = input.value.local.clone();

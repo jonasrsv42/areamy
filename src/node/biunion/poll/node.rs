@@ -19,8 +19,8 @@
 
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
-use crate::graph::Receivable;
 use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Pushable, Receivable};
 use crate::message::Message;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::{biunion, routine};
@@ -28,7 +28,6 @@ use crate::poll::Pollable;
 use crate::poll::waker::{ThreadLocalWaker, Waker};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -70,7 +69,7 @@ pub(crate) struct SharedState<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     input: InputPhases<LeftInputType, RightInputType>,
     work: Phase<RoutineType>,
@@ -94,7 +93,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     fn push_output(&mut self, msg: Message<Out, SignalType>) -> Result<(), Error> {
         self.output.target.push(msg)
@@ -234,7 +233,7 @@ pub struct LeftInput<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     shared: Shared<
         Left,
@@ -277,7 +276,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
 }
 
@@ -309,7 +308,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type ThreadId = ThreadIdType;
 
@@ -349,7 +348,7 @@ pub struct RightInput<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     shared: Shared<
         Left,
@@ -392,7 +391,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
 }
 
@@ -424,7 +423,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type ThreadId = ThreadIdType;
 
@@ -464,7 +463,7 @@ pub struct Work<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     shared: Shared<
         Left,
@@ -507,7 +506,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
 }
 
@@ -539,7 +538,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type ThreadId = ThreadIdType;
 
@@ -603,7 +602,7 @@ pub struct Output<
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     shared: Shared<
         Left,
@@ -646,7 +645,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
 }
 
@@ -678,7 +677,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type ThreadId = ThreadIdType;
 
@@ -756,7 +755,7 @@ where
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     let shared = Rc::new(RefCell::new(SharedState {
         input,

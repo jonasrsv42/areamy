@@ -12,8 +12,8 @@ use crate::poll::future::OutputQueue;
 use crate::poll::waker::Waker;
 use crate::work::Sink;
 use crate::{
-    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Trackable,
-    TryPushable, bifurcation, biunion,
+    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Outlet, Pushable,
+    Trackable, TryPushable, bifurcation, biunion,
 };
 use std::collections::VecDeque;
 
@@ -244,10 +244,12 @@ impl<'a> Pushable for BorrowingSink<'a> {
     }
 }
 
-impl<'a> TryPushable for BorrowingSink<'a> {
+impl<'a> Outlet for BorrowingSink<'a> {
     type DataType = usize;
     type SignalType = Trackable<&'static str>;
+}
 
+impl<'a> TryPushable for BorrowingSink<'a> {
     fn try_push(
         &mut self,
         msg: Message<usize, Trackable<&'static str>>,

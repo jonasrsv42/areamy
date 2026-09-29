@@ -5,7 +5,7 @@ use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::fatal;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Closeable, Get, Pushable, TryPush, TryPushable};
+use crate::graph::{Add, Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::Pollable;
 use crate::poll::waker::Waker;
@@ -39,10 +39,12 @@ impl Pushable for FailingClose {
     }
 }
 
-impl TryPushable for FailingClose {
+impl Outlet for FailingClose {
     type DataType = usize;
     type SignalType = Trackable<&'static str>;
+}
 
+impl TryPushable for FailingClose {
     fn try_push(
         &mut self,
         _msg: Message<usize, Trackable<&'static str>>,
@@ -83,10 +85,12 @@ impl Pushable for Bounded {
     }
 }
 
-impl TryPushable for Bounded {
+impl Outlet for Bounded {
     type DataType = usize;
     type SignalType = Trackable<&'static str>;
+}
 
+impl TryPushable for Bounded {
     fn try_push(
         &mut self,
         msg: Message<usize, Trackable<&'static str>>,

@@ -11,7 +11,7 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, Receivable, TryPush, TryPushable};
+use crate::graph::{Closeable, Get, Outlet, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
@@ -184,14 +184,20 @@ where
     }
 }
 
-impl<DataType, SignalType> TryPushable for Sender<DataType, SignalType>
+impl<DataType, SignalType> Outlet for Sender<DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
     type DataType = DataType;
     type SignalType = SignalType;
+}
 
+impl<DataType, SignalType> TryPushable for Sender<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
     /// Unbounded: `push` never blocks.
     fn try_push(
         &mut self,

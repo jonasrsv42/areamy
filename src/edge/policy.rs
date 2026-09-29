@@ -1,7 +1,7 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Pushable, TryPush, TryPushable};
+use crate::graph::{Closeable, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::work::Sink;
 
@@ -96,13 +96,18 @@ where
     }
 }
 
-impl<SinkType> TryPushable for PolicyEdge<SinkType>
+impl<SinkType> Outlet for PolicyEdge<SinkType>
 where
     SinkType: Sink,
 {
     type DataType = SinkType::DataType;
     type SignalType = SinkType::SignalType;
+}
 
+impl<SinkType> TryPushable for PolicyEdge<SinkType>
+where
+    SinkType: Sink,
+{
     /// Same policy as [PolicyEdge::push], but the inner sink may hand the message back, so the
     /// policy state must not advance for a message that wasn't delivered.
     fn try_push(

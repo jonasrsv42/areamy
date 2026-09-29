@@ -6,7 +6,7 @@ mod default;
 /// A [`Closeable`] can be closed to signal no more data will be sent.
 ///
 /// When a node receives an error from upstream (via pull/work connections), it should
-/// close all its [crate::graph::Sink] outputs to propagate the shutdown through push connections.
+/// close all its [crate::work::Sink] outputs to propagate the shutdown through push connections.
 /// This enables clean shutdown cascade through the entire graph.
 ///
 /// The exact semantics of close (e.g., first-close-wins vs refcounted) are up to the

@@ -26,7 +26,7 @@
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get, Sink};
+use crate::graph::{Add, Get};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node::new_phases;
 use crate::node::line::poll::routine::LineRoutine;
@@ -38,6 +38,7 @@ use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use crate::work::Sink;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;

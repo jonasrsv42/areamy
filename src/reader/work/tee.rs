@@ -1,10 +1,11 @@
 use crate::edge::sync::Receiver;
 use crate::error::Error;
+use crate::graph::Add;
 use crate::graph::marker::Multiplicity;
-use crate::graph::{Add, Sink};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
 use crate::thread::DefaultThread;
+use crate::work::Sink;
 
 pub struct Reader<DataType, SignalType = Trackable<&'static str>>
 where
@@ -59,7 +60,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DefaultThread, Sink, Workable, graph::Get, marker::Connection};
+    use crate::work::Sink;
+    use crate::{DefaultThread, Workable, graph::Get, marker::Connection};
     use std::sync::{Arc, Mutex};
 
     struct MockNode {

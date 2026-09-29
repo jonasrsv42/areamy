@@ -1,8 +1,9 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Pushable, Sink, TryPush};
+use crate::graph::{Closeable, Pushable, TryPush, TryPushable};
 use crate::message::Message;
+use crate::work::Sink;
 
 #[derive(Debug)]
 /// Policy for handling signals in the queue
@@ -82,9 +83,6 @@ impl<SinkType> Pushable for PolicyEdge<SinkType>
 where
     SinkType: Sink,
 {
-    type DataType = SinkType::DataType;
-    type SignalType = SinkType::SignalType;
-
     fn push(&mut self, message: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
         // Anything that isn't data is a signal
         let is_signal = message.as_data().is_none();
@@ -96,6 +94,14 @@ where
 
         Ok(())
     }
+}
+
+impl<SinkType> TryPushable for PolicyEdge<SinkType>
+where
+    SinkType: Sink,
+{
+    type DataType = SinkType::DataType;
+    type SignalType = SinkType::SignalType;
 
     /// Same policy as [PolicyEdge::push], but the inner sink may hand the message back, so the
     /// policy state must not advance for a message that wasn't delivered.

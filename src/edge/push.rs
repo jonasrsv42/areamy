@@ -1,8 +1,9 @@
 use crate::edge::policy::{PolicyEdge, SignalPolicy};
 use crate::error::Error;
 use crate::graph::marker::Multiplicity;
-use crate::graph::{Add, Get, Sink};
+use crate::graph::{Add, Get};
 use crate::signal::Origin;
+use crate::work::Sink;
 use std::marker::PhantomData;
 
 /// [`Push`] is a data-only connection. See [Push::connect].

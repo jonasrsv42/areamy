@@ -63,6 +63,6 @@ pub use add::Add;
 pub use at::{At, Select};
 pub use closeable::Closeable;
 pub use get::Get;
-pub use pushable::{Pushable, TryPush};
+pub use pushable::{Pushable, TryPush, TryPushable};
 pub use receivable::Receivable;
 pub use sink::Sink;

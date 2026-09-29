@@ -8,7 +8,7 @@ use crate::poll::Sync;
 use crate::signal::Trackable;
 use crate::sync::Receiver;
 use crate::work::{self, Writer};
-use crate::{Closeable, Message, Push, Pushable, ThreadBundle, ThreadStream};
+use crate::{Closeable, Message, Push, Pushable, ThreadBundle, ThreadStream, TryPushable};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -1088,15 +1088,17 @@ struct Collect {
 impl Connection for Collect {}
 
 impl Pushable for Collect {
-    type DataType = Moved;
-    type SignalType = Trackable<&'static str>;
-
     fn push(&mut self, msg: Message<Moved, Self::SignalType>) -> Result<(), Error> {
         if let Message::Data(data) = msg {
             self.items.send(data).unwrap();
         }
         Ok(())
     }
+}
+
+impl TryPushable for Collect {
+    type DataType = Moved;
+    type SignalType = Trackable<&'static str>;
 
     fn try_push(
         &mut self,

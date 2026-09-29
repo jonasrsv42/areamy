@@ -36,8 +36,8 @@
 
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
+use crate::graph::Receivable;
 use crate::graph::marker::Connection;
-use crate::graph::{Receivable, Sink};
 use crate::message::Message;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::node::routine;
@@ -45,6 +45,7 @@ use crate::poll::Pollable;
 use crate::poll::waker::{ThreadLocalWaker, Waker};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use crate::work::Sink;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;

@@ -5,13 +5,14 @@ use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::fatal;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Closeable, Get, Pushable, Sink, TryPush};
+use crate::graph::{Add, Closeable, Get, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::Pollable;
 use crate::poll::waker::Waker;
 use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
+use crate::work::Sink;
 use crate::work::{self, Workable};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -33,12 +34,14 @@ pub struct FailingClose(pub &'static str);
 impl Connection for FailingClose {}
 
 impl Pushable for FailingClose {
-    type DataType = usize;
-    type SignalType = Trackable<&'static str>;
-
     fn push(&mut self, _msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
         Ok(())
     }
+}
+
+impl TryPushable for FailingClose {
+    type DataType = usize;
+    type SignalType = Trackable<&'static str>;
 
     fn try_push(
         &mut self,
@@ -74,13 +77,15 @@ impl Bounded {
 impl Connection for Bounded {}
 
 impl Pushable for Bounded {
-    type DataType = usize;
-    type SignalType = Trackable<&'static str>;
-
     fn push(&mut self, msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
         self.items.push(msg);
         Ok(())
     }
+}
+
+impl TryPushable for Bounded {
+    type DataType = usize;
+    type SignalType = Trackable<&'static str>;
 
     fn try_push(
         &mut self,

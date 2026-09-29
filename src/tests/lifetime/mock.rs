@@ -10,9 +10,10 @@ use crate::graph::TryPush;
 use crate::graph::marker::Connection;
 use crate::poll::future::OutputQueue;
 use crate::poll::waker::Waker;
+use crate::work::Sink;
 use crate::{
-    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Sink, Trackable,
-    bifurcation, biunion,
+    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Pushable, Trackable,
+    TryPushable, bifurcation, biunion,
 };
 use std::collections::VecDeque;
 
@@ -238,11 +239,14 @@ pub(super) struct BorrowingSink<'a> {
 impl<'a> Connection for BorrowingSink<'a> {}
 
 impl<'a> Pushable for BorrowingSink<'a> {
-    type DataType = usize;
-    type SignalType = Trackable<&'static str>;
     fn push(&mut self, msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
         self.forward.push(msg)
     }
+}
+
+impl<'a> TryPushable for BorrowingSink<'a> {
+    type DataType = usize;
+    type SignalType = Trackable<&'static str>;
 
     fn try_push(
         &mut self,

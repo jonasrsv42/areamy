@@ -1,10 +1,11 @@
 use crate::edge::sync::Receiver;
 use crate::error::Error;
+use crate::graph::Add;
 use crate::graph::marker::Multiplicity;
-use crate::graph::{Add, Sink};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
 use crate::thread::{DefaultThread, ThreadId};
+use crate::work::Sink;
 use crate::work::Workable;
 
 pub struct Reader<

@@ -28,9 +28,9 @@ impl<T: Closeable> Closeable for Rc<RefCell<T>> {
 mod tests {
     use crate::Message;
     use crate::Pushable;
-    use crate::Sink;
     use crate::Trackable;
     use crate::edge::sync::{Receiver, Sender};
+    use crate::work::Sink;
 
     fn close(closeable: &mut impl Sink<DataType = usize, SignalType = Trackable<&'static str>>) {
         closeable.close().unwrap();

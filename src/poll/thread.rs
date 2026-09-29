@@ -216,7 +216,8 @@ mod tests {
     use crate::graph::Get;
     use crate::node::line::poll::routine::tests::MockLine;
     use crate::poll;
-    use crate::{Closeable, Message, Push, Sink};
+    use crate::work::Sink;
+    use crate::{Closeable, Message, Push};
 
     crate::thread_id!(IoThread);
 

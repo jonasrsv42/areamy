@@ -18,9 +18,10 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, Sink, TryPush};
+use crate::graph::{Closeable, Get, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
+use crate::work::Sink;
 use crate::{closed, fatal};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -477,7 +478,7 @@ where
 {
 }
 
-impl<D, S> Pushable for Sender<D, S>
+impl<D, S> TryPushable for Sender<D, S>
 where
     D: Send + Sync,
     S: Origin + Send + Sync,
@@ -485,12 +486,18 @@ where
     type DataType = D;
     type SignalType = S;
 
-    fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
-        self.push_back(message)
-    }
-
     fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
         self.try_push_back(message)
+    }
+}
+
+impl<D, S> Pushable for Sender<D, S>
+where
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+{
+    fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
+        self.push_back(message)
     }
 }
 

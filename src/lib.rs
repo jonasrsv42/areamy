@@ -24,7 +24,7 @@ pub use edge::policy::{PolicyEdge, SignalPolicy};
 pub use edge::push::Push;
 pub use edge::sync;
 pub use graph::marker::{self, Connection};
-pub use graph::{At, Closeable, Pushable, Receivable, Sink, TryPush};
+pub use graph::{At, Closeable, Pushable, Receivable, TryPush, TryPushable};
 pub use message::Message;
 pub use node::{
     BifurcationIo, BifurcationRoutine, BiunionIo, BiunionRoutine, Flush, LineIo, LineRoutine, Next,

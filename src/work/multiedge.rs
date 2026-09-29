@@ -4,9 +4,10 @@ use crate::edge::sync;
 pub use crate::edge::sync::State;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, Sink, TryPush};
+use crate::graph::{Closeable, Get, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
+use crate::work::Sink;
 use crate::{closed, fatal};
 use std::mem;
 use std::num::NonZeroUsize;
@@ -183,7 +184,7 @@ where
 {
 }
 
-impl<D, S> Pushable for Sender<D, S>
+impl<D, S> TryPushable for Sender<D, S>
 where
     D: Send + Sync,
     S: Origin + Send + Sync,
@@ -191,17 +192,23 @@ where
     type DataType = D;
     type SignalType = S;
 
-    fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
-        self.push_back(message)
-    }
-
     /// Raises the group flag only when the inner edge took the message.
     fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
-        let result = Pushable::try_push(&mut self.inner, message)?;
+        let result = TryPushable::try_push(&mut self.inner, message)?;
         if matches!(result, TryPush::Pushed) {
             self.raise.0.raise();
         }
         Ok(result)
+    }
+}
+
+impl<D, S> Pushable for Sender<D, S>
+where
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+{
+    fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
+        self.push_back(message)
     }
 }
 

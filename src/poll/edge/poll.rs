@@ -11,7 +11,7 @@
 use crate::closed;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Pushable, Receivable, TryPush};
+use crate::graph::{Closeable, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::waker::ThreadLocalWaker;
 use crate::signal::Origin;
@@ -39,12 +39,17 @@ impl<DataType, SignalType> Pushable for PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
-    type DataType = DataType;
-    type SignalType = SignalType;
-
     fn push(&mut self, msg: Message<DataType, SignalType>) -> Result<(), Error> {
         PollEdge::push(self, msg)
     }
+}
+
+impl<DataType, SignalType> TryPushable for PollEdge<DataType, SignalType>
+where
+    SignalType: Origin,
+{
+    type DataType = DataType;
+    type SignalType = SignalType;
 
     /// Unbounded: `push` never blocks.
     fn try_push(

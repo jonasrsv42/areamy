@@ -11,10 +11,11 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Pushable, Receivable, Sink, TryPush};
+use crate::graph::{Closeable, Get, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
+use crate::work::Sink;
 use crate::{closed, fatal};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -178,12 +179,18 @@ where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
-    type DataType = DataType;
-    type SignalType = SignalType;
-
     fn push(&mut self, message: Message<DataType, SignalType>) -> Result<(), Error> {
         self.push_back(message)
     }
+}
+
+impl<DataType, SignalType> TryPushable for Sender<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
+    type DataType = DataType;
+    type SignalType = SignalType;
 
     /// Unbounded: `push` never blocks.
     fn try_push(

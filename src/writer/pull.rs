@@ -16,11 +16,12 @@
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Get, Pushable, Sink};
+use crate::graph::{Get, Pushable};
 use crate::message::Message;
 use crate::pull::Pullable;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use crate::work::Sink;
 use std::marker::PhantomData;
 
 /// A buffer that serves as the entry point to a [`Pullable`] subgraph.

@@ -1,29 +1,17 @@
 use crate::error::Error;
-use crate::graph::{Pushable, TryPush};
+use crate::graph::{Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// Fan-out: clones for every edge but the last, which takes the message by move. A single edge
-/// never clones.
-impl<T: Pushable> Pushable for Vec<T>
+impl<T: TryPushable> TryPushable for Vec<T>
 where
     T::DataType: Clone,
     T::SignalType: Origin + Clone,
 {
     type DataType = T::DataType;
     type SignalType = T::SignalType;
-
-    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        if let Some((last, rest)) = self.split_last_mut() {
-            for edge in rest {
-                edge.push(msg.clone())?;
-            }
-            last.push(msg)?;
-        }
-        Ok(())
-    }
 
     fn try_push(
         &mut self,
@@ -33,13 +21,27 @@ where
     }
 }
 
-impl<T: Pushable> Pushable for Rc<RefCell<T>> {
+/// Fan-out: clones for every edge but the last, which takes the message by move. A single edge
+/// never clones.
+impl<T: Pushable> Pushable for Vec<T>
+where
+    T::DataType: Clone,
+    T::SignalType: Origin + Clone,
+{
+    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
+        if let Some((last, rest)) = self.split_last_mut() {
+            for edge in rest {
+                edge.push(msg.clone())?;
+            }
+            last.push(msg)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: TryPushable> TryPushable for Rc<RefCell<T>> {
     type DataType = T::DataType;
     type SignalType = T::SignalType;
-
-    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        self.borrow_mut().push(msg)
-    }
 
     fn try_push(
         &mut self,
@@ -49,17 +51,19 @@ impl<T: Pushable> Pushable for Rc<RefCell<T>> {
     }
 }
 
-impl<PushableType: ?Sized, DataType, SignalType> Pushable for Box<PushableType>
+impl<T: Pushable> Pushable for Rc<RefCell<T>> {
+    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
+        self.borrow_mut().push(msg)
+    }
+}
+
+impl<PushableType: ?Sized, DataType, SignalType> TryPushable for Box<PushableType>
 where
     SignalType: Origin,
-    PushableType: Pushable<DataType = DataType, SignalType = SignalType>,
+    PushableType: TryPushable<DataType = DataType, SignalType = SignalType>,
 {
     type DataType = DataType;
     type SignalType = SignalType;
-
-    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        PushableType::push(self.as_mut(), object)
-    }
 
     fn try_push(
         &mut self,
@@ -69,14 +73,24 @@ where
     }
 }
 
+impl<PushableType: ?Sized, DataType, SignalType> Pushable for Box<PushableType>
+where
+    SignalType: Origin,
+    PushableType: Pushable<DataType = DataType, SignalType = SignalType>,
+{
+    fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
+        PushableType::push(self.as_mut(), object)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Message;
     use crate::Trackable;
     use crate::edge::sync::{Receiver, Sender};
-    use crate::graph::Sink;
     use crate::graph::tests::{Bounded, Counted};
+    use crate::work::Sink;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

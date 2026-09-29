@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::fatal;
-use crate::graph::Sink;
 use crate::message::Message;
 use crate::reader::Reader;
 use crate::signal::{Origin, Trackable};
 use crate::thread::{DefaultThread, ThreadId};
+use crate::work::Sink;
 use crate::work::Workable;
 use std::fmt::Debug;
 

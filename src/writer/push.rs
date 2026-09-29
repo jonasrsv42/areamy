@@ -1,9 +1,10 @@
 use crate::edge::deadlock::deadlock;
 use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Closeable, Get, Pushable, Sink, TryPush};
+use crate::graph::{Closeable, Get, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
+use crate::work::Sink;
 
 /// A `Writer` is a convenience type for an input. It forwards data into some inner source.
 pub struct Writer<'params, DataType, SignalType = Trackable<&'static str>>
@@ -58,7 +59,7 @@ where
     }
 }
 
-impl<'params, DataType, SignalType> Pushable for Writer<'params, DataType, SignalType>
+impl<'params, DataType, SignalType> TryPushable for Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
@@ -66,6 +67,19 @@ where
     type DataType = DataType;
     type SignalType = SignalType;
 
+    fn try_push(
+        &mut self,
+        object: Message<Self::DataType, Self::SignalType>,
+    ) -> Result<TryPush<Message<Self::DataType, Self::SignalType>>, Error> {
+        self.inner.try_push(object)
+    }
+}
+
+impl<'params, DataType, SignalType> Pushable for Writer<'params, DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
     /// Blocks while the input is full, logged as "blocked" / "unblocked" so a writer that can
     /// never be drained (say, on its reader's thread) shows up.
     fn push(&mut self, object: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
@@ -76,13 +90,6 @@ where
                 deadlock("Writer", 0, || self.inner.push(object))
             }
         }
-    }
-
-    fn try_push(
-        &mut self,
-        object: Message<Self::DataType, Self::SignalType>,
-    ) -> Result<TryPush<Message<Self::DataType, Self::SignalType>>, Error> {
-        self.inner.try_push(object)
     }
 }
 
@@ -117,17 +124,13 @@ mod tests {
         }
     }
 
-    impl Get<dyn crate::Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>
+    impl Get<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>
         for MockNode
     {
         fn get(
             &self,
         ) -> Result<
-            Box<
-                dyn crate::Sink<DataType = usize, SignalType = Trackable<&'static str>>
-                    + Send
-                    + Sync,
-            >,
+            Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
             Error,
         > {
             Get::get(&self.input)

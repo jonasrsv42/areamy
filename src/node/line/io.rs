@@ -1,10 +1,10 @@
 //! [LineIo] is a convenient way to manage a graph input and output in a single place for
 //! linear graphs.
 use crate::error::Error;
-use crate::graph::Sink;
 use crate::message::Message;
 use crate::reader::Reader;
 use crate::signal::{Origin, Trackable};
+use crate::work::Sink;
 use std::fmt::Debug;
 
 /// [`LineIo`] provides a type that can accept a [Writer](crate::writer::push::Writer) and [Reader] then

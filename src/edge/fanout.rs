@@ -2,9 +2,10 @@
 use crate::edge::deadlock::deadlock;
 use crate::error::Error;
 use crate::fatal;
-use crate::graph::{Sink, TryPush};
+use crate::graph::TryPush;
 use crate::message::Message;
 use crate::signal::Origin;
+use crate::work::Sink;
 
 type Edge<'params, D, S> = Box<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>;
 

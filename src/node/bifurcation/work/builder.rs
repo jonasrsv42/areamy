@@ -78,12 +78,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::graph::{Get, Pushable, Sink, TryPush};
+    use crate::graph::{Get, TryPush};
     use crate::message::Message;
     use crate::node::bifurcation::routine::tests::HoldBifurcation;
     use crate::signal::Trackable;
     use crate::thread::DefaultThread;
     use crate::work::Bifurcation;
+    use crate::work::Sink;
     use std::num::NonZeroUsize;
 
     type TestSignal = Trackable<&'static str>;

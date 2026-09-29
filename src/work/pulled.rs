@@ -1,8 +1,9 @@
 use crate::edge::fanout::Fanout;
 use crate::error::Error;
+use crate::graph::Add;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Sink};
 use crate::pull::Pullable;
+use crate::work::Sink;
 use crate::work::Workable;
 use std::any::type_name;
 
@@ -86,11 +87,12 @@ mod tests {
     use crate::edge::sync::Receiver;
     use crate::edge::sync::tests::{join_within, wait_until};
     use crate::error::Error;
+    use crate::graph::Add;
     use crate::graph::Pushable;
     use crate::graph::marker::Connection;
-    use crate::graph::{Add, Sink};
     use crate::node::line::routine::tests::{MockLine, MockWaitLine};
     use crate::pull::WriterBuffer;
+    use crate::work::Sink;
     use crate::work::{self, Line, Reader, Workable, Writer};
     use crate::{DefaultThread, Message, Pullable, Push, Trackable};
     use std::num::NonZeroUsize;

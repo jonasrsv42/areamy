@@ -3,7 +3,7 @@ use crate::edge::fanout::Fanout;
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Add, Get, Pushable};
+use crate::graph::{Add, Get, Outputs, Pushable};
 use crate::message::Message;
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::node::bifurcation::work::builder::BifurcationBuilder;
@@ -64,7 +64,7 @@ pub struct Sides<Left, Right> {
 
 /// Output edges by side. Each side holds its own refused message; a side suspended on `Full`
 /// doesn't stop the other from delivering what the routine already made for it.
-pub type Outputs<'params, Left, Right, SignalType> =
+pub type Fanouts<'params, Left, Right, SignalType> =
     Sides<Fanout<'params, Left, SignalType>, Fanout<'params, Right, SignalType>>;
 
 /// A Flush or Marker per side, held until that side's routine outputs are out.
@@ -96,7 +96,7 @@ where
     pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
 
     /// Output edges, grouped by side.
-    pub outputs: Outputs<'params, Left, Right, SignalType>,
+    pub outputs: Fanouts<'params, Left, Right, SignalType>,
 
     /// Input edge.
     pub input: Receiver<In, SignalType>,
@@ -391,6 +391,32 @@ where
         self.outputs.right.add(closeable);
         Ok(())
     }
+}
+
+impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> Outputs<bifurcation::Left>
+    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+{
+    type Sink = dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params;
+}
+
+impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> Outputs<bifurcation::Right>
+    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+{
+    type Sink = dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params;
 }
 
 impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>

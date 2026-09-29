@@ -5,7 +5,7 @@ use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::fatal;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
+use crate::graph::{Add, Closeable, Get, Outlet, Outputs, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::Pollable;
 use crate::poll::waker::Waker;
@@ -255,6 +255,12 @@ impl Add<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send
         Ok(())
     }
 }
+
+/// The sink its push output takes.
+impl Outputs for Node {
+    type Sink = dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync;
+}
+
 /// Method for adding a schedulable node to be worked on.
 impl Add<dyn Workable<ThreadId = DefaultThread>> for Node {
     fn add(

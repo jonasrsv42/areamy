@@ -14,7 +14,7 @@
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get};
+use crate::graph::{Add, Get, Outputs};
 use crate::node::biunion;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
@@ -409,4 +409,42 @@ where
         self.output.push(connection);
         Ok(())
     }
+}
+
+impl<
+    'params,
+    AllocState,
+    LeftEdge,
+    RightEdge,
+    Left,
+    Right,
+    Out,
+    SignalType,
+    ThreadIdType,
+    FactoryType,
+> Outputs
+    for Node<
+        'params,
+        AllocState,
+        LeftEdge,
+        RightEdge,
+        Sync,
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
+where
+    LeftEdge: Edge,
+    RightEdge: Edge,
+    Out: Clone + Send + std::marker::Sync + 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: BiunionRoutineFactory<'params>,
+    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+{
+    type Sink =
+        dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params;
 }

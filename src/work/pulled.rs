@@ -1,7 +1,7 @@
 use crate::edge::fanout::Fanout;
 use crate::error::Error;
-use crate::graph::Add;
 use crate::graph::marker::Connection;
+use crate::graph::{Add, Outputs};
 use crate::pull::Pullable;
 use crate::work::Sink;
 use crate::work::Workable;
@@ -80,6 +80,13 @@ impl<'params, PullableType: Pullable>
         self.outputs.add(sink);
         Ok(())
     }
+}
+
+impl<'params, PullableType: Pullable> Outputs for Pulled<'params, PullableType> {
+    type Sink = dyn Sink<DataType = PullableType::DataType, SignalType = PullableType::SignalType>
+        + Send
+        + Sync
+        + 'params;
 }
 
 #[cfg(test)]

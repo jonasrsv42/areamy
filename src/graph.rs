@@ -54,6 +54,7 @@ mod closeable;
 mod get;
 pub mod marker;
 mod outlet;
+mod outputs;
 mod receivable;
 mod sink;
 #[cfg(any(test, doc))]
@@ -64,5 +65,6 @@ pub use at::{At, Select};
 pub use closeable::Closeable;
 pub use get::Get;
 pub use outlet::{Outlet, Pushable, TryPush, TryPushable};
+pub use outputs::Outputs;
 pub use receivable::Receivable;
 pub use sink::Sink;

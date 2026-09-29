@@ -5,6 +5,10 @@ use crate::graph::{Closeable, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::work::Sink;
 
+mod policied;
+
+pub use policied::Policied;
+
 #[derive(Debug)]
 /// Policy for handling signals in the queue
 pub enum SignalPolicy {

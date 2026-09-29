@@ -2,7 +2,7 @@ use crate::closed;
 use crate::edge::fanout::Fanout;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Add, Get, Pushable};
+use crate::graph::{Add, Get, Outputs, Pushable};
 use crate::message::Message;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::node::biunion::work::builder::BiunionBuilder;
@@ -464,6 +464,19 @@ where
         self.outputs.add(closeable);
         Ok(())
     }
+}
+
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType> Outputs
+    for Biunion<'params, Left, Right, Out, SignalType, ThreadIdType, RoutineType>
+where
+    Left: Send + Sync + 'static,
+    Right: Send + Sync + 'static,
+    Out: Clone + Send + Sync + 'static,
+    SignalType: Origin + Clone + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out> + 'params,
+{
+    type Sink = dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params;
 }
 
 #[cfg(test)]

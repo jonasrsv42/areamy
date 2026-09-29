@@ -26,7 +26,7 @@
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Closeable, Get, Pushable};
+use crate::graph::{Add, Closeable, Get, Outputs, Pushable};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node::new_phases;
 use crate::node::line::poll::routine::LineRoutine;
@@ -462,6 +462,20 @@ where
         self.output.push(connection);
         Ok(())
     }
+}
+
+impl<'params, InEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType> Outputs
+    for Node<'_, 'params, InEdgeType, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
+where
+    InEdgeType: Edge,
+    OutType: Clone + Send + std::marker::Sync + 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
+{
+    type Sink =
+        dyn Sink<DataType = OutType, SignalType = SignalType> + Send + std::marker::Sync + 'params;
 }
 
 // ============================================================

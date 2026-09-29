@@ -4,7 +4,7 @@ use crate::edge::fanout::Fanout;
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get};
+use crate::graph::{Add, Get, Outputs};
 use crate::message::Message;
 use crate::node::line::routine::LineRoutine;
 use crate::node::line::work::builder::LineBuilder;
@@ -300,6 +300,18 @@ where
         self.outputs.add(closeable);
         Ok(())
     }
+}
+
+impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> Outputs
+    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
+where
+    In: Send + Sync,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    LineRoutineType: LineRoutine<In, Out> + 'params,
+{
+    type Sink = dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params;
 }
 
 #[cfg(test)]

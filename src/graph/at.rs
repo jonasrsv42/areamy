@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity, Unary};
-use crate::graph::{Add, Get};
+use crate::graph::{Add, Get, Outputs};
 use std::marker::PhantomData;
 
 /// [`At`] names one [Multiplicity] of a node, so connections reach a specific side.
@@ -53,4 +53,12 @@ where
     fn add(&mut self, connection: Box<ConnectionType>) -> Result<(), Error> {
         self.node.add(connection)
     }
+}
+
+impl<NodeType, MultiplicityType> Outputs<Unary> for Select<'_, NodeType, MultiplicityType>
+where
+    NodeType: Outputs<MultiplicityType>,
+    MultiplicityType: Multiplicity,
+{
+    type Sink = NodeType::Sink;
 }

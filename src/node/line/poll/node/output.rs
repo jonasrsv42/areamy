@@ -33,6 +33,7 @@ impl<T: Types> Pollable for Output<T> {
             routine: &mut work.target,
             output,
             inputs: &[&input.waker],
+            work: &work.waker,
             state,
         }
         .poll::<Unary>(waker)

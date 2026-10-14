@@ -493,6 +493,81 @@ fn data_then_close_drains_before_closing() {
     ));
 }
 
+// --- Closed outlet: Output's close error tears the whole node down ---
+
+impl<R: Routine> Biunion<R> {
+    /// Drop the downstream receiver, then poll Output into the closed outlet: every other phase
+    /// is woken and reports Closed.
+    fn close_downstream_under_output(self) {
+        let Self {
+            mut input,
+            mut work,
+            mut output,
+            downstream,
+            woken,
+            ..
+        } = self;
+        let mut wkr = noop_waker();
+        drop(downstream);
+        woken.reset();
+
+        assert!(matches!(
+            output.poll(&mut wkr).unwrap_err().kind,
+            ErrorKind::Closed
+        ));
+        assert!(woken.input.left.get(), "left input must be woken");
+        assert!(woken.input.right.get(), "right input must be woken");
+        assert!(woken.work.get(), "work must be woken");
+        for (phase, polled) in [
+            ("left", input.left.poll(&mut wkr)),
+            ("right", input.right.poll(&mut wkr)),
+            ("work", work.poll(&mut wkr)),
+        ] {
+            let kind = polled.map_err(|e| e.kind);
+            assert!(
+                matches!(kind, Err(ErrorKind::Closed)),
+                "{phase} must report Closed, got {kind:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn closed_outlet_while_running_closes_the_node() {
+    let mut b = Biunion::new();
+    let mut wkr = noop_waker();
+    b.upstream.left.push_back(Message::Data(7)).unwrap();
+    let _ = b.input.left.poll(&mut wkr).unwrap();
+    let _ = b.work.poll(&mut wkr).unwrap();
+    b.close_downstream_under_output();
+}
+
+#[test]
+fn closed_outlet_on_a_flush_closes_the_node() {
+    let mut b = Biunion::new();
+    let mut wkr = noop_waker();
+    b.upstream
+        .left
+        .push_back(Message::Flush("s1".into()))
+        .unwrap();
+    let _ = b.input.left.poll(&mut wkr).unwrap();
+    let _ = b.work.poll(&mut wkr).unwrap();
+    b.close_downstream_under_output();
+}
+
+#[test]
+fn closed_outlet_on_a_marker_closes_the_node() {
+    let mut b = Biunion::new();
+    let mut wkr = noop_waker();
+    b.upstream
+        .right
+        .push_back(Message::Marker("m1".into()))
+        .unwrap();
+    let _ = b.input.right.poll(&mut wkr).unwrap();
+    let _ = b.work.poll(&mut wkr).unwrap();
+    b.close_downstream_under_output();
+}
+
 // --- Input waker: close wakes other input ---
 
 #[test]

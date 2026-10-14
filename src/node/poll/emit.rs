@@ -11,12 +11,14 @@ use std::mem;
 
 /// One output's borrow of a node's state: drains the routine's output as side `M` downstream,
 /// forwards Flush and Marker and wakes the inputs on the return to Running, and closes downstream
-/// on CloseReady.
+/// on CloseReady. Any error closes the node and wakes the inputs and Work to report it.
 pub(crate) struct Emit<'a, RoutineType, OutletType: Pushable> {
     pub(crate) routine: &'a mut RoutineType,
     pub(crate) output: &'a mut Phase<OutletType>,
     /// The node's inputs, woken once a forwarded signal lets them resume.
     pub(crate) inputs: &'a [&'a ThreadLocalWaker],
+    /// Work's waker.
+    pub(crate) work: &'a ThreadLocalWaker,
     pub(crate) state: &'a mut NodeState<OutletType::SignalType>,
 }
 
@@ -25,6 +27,19 @@ where
     OutletType: Pushable + Closeable,
 {
     pub(crate) fn poll<M>(mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error>
+    where
+        M: Multiplicity,
+        RoutineType: Next<OutletType::DataType, M>,
+    {
+        let result = self.step::<M>();
+        if result.is_err() {
+            // Output drops on an error: without this, a closed outlet strands the other phases.
+            self.close();
+        }
+        result
+    }
+
+    fn step<M>(&mut self) -> Result<core::task::Poll<()>, Error>
     where
         M: Multiplicity,
         RoutineType: Next<OutletType::DataType, M>,
@@ -56,7 +71,6 @@ where
             NodeState::CloseReady => {
                 self.drain::<M>()?;
                 self.output.target.close()?;
-                *self.state = NodeState::Closed;
                 Err(crate::closed!())
             }
             // Running, Flushing — drain any available output
@@ -83,5 +97,12 @@ where
         for input in self.inputs {
             input.wake();
         }
+    }
+
+    /// Close the node and wake its other phases to report Closed.
+    fn close(&mut self) {
+        *self.state = NodeState::Closed;
+        self.wake_inputs();
+        self.work.wake();
     }
 }

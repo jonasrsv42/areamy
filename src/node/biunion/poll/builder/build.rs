@@ -103,7 +103,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: self.input.left.edge,
@@ -188,7 +188,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: self.input.left.edge,
@@ -284,7 +284,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: left_edges,
@@ -374,7 +374,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: left_edges,
@@ -468,7 +468,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: left_edges,
@@ -562,7 +562,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: self.input.left.edge,
@@ -652,7 +652,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: self.input.left.edge,
@@ -746,7 +746,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: self.input.left.edge,
@@ -848,7 +848,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: left_edges,
@@ -946,7 +946,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: left_edges,
@@ -1037,7 +1037,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: self.input.left.edge,
@@ -1141,7 +1141,7 @@ where
             work: work.value.local.clone(),
             output: output.value.local.clone(),
         });
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: left_edges,

@@ -13,8 +13,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 type Signal = Trackable<&'static str>;
-type Upstream = input::sync::Receiver<usize, Signal>;
-type Downstream = edge::sync::Sender<usize, Signal>;
+type Inlet = input::sync::Receiver<usize, Signal>;
+type Outlet = edge::sync::Sender<usize, Signal>;
+type Node =
+    node::Node<usize, usize, usize, Signal, DefaultThread, MockBiunion, Inlet, Inlet, Outlet>;
 type Flag = Rc<Cell<bool>>;
 
 /// Whether each phase's waker fired.
@@ -35,52 +37,9 @@ impl Woken {
 
 /// A biunion node over [MockBiunion] with the edges into and out of it.
 struct Biunion {
-    input: Inputs<
-        LeftInput<
-            usize,
-            usize,
-            usize,
-            Signal,
-            DefaultThread,
-            MockBiunion,
-            Upstream,
-            Upstream,
-            Downstream,
-        >,
-        RightInput<
-            usize,
-            usize,
-            usize,
-            Signal,
-            DefaultThread,
-            MockBiunion,
-            Upstream,
-            Upstream,
-            Downstream,
-        >,
-    >,
-    work: Work<
-        usize,
-        usize,
-        usize,
-        Signal,
-        DefaultThread,
-        MockBiunion,
-        Upstream,
-        Upstream,
-        Downstream,
-    >,
-    output: Output<
-        usize,
-        usize,
-        usize,
-        Signal,
-        DefaultThread,
-        MockBiunion,
-        Upstream,
-        Upstream,
-        Downstream,
-    >,
+    input: Inputs<LeftInput<Node>, RightInput<Node>>,
+    work: Work<Node>,
+    output: Output<Node>,
     upstream: Inputs<input::sync::Sender<usize, Signal>, input::sync::Sender<usize, Signal>>,
     downstream: edge::sync::Receiver<usize, Signal>,
     woken: Woken,
@@ -101,7 +60,7 @@ impl Biunion {
         let (work_waker, work_woken) = tracking_local_waker();
         let (output_waker, output_woken) = tracking_local_waker();
 
-        let phases = node::new(
+        let phases = node::Node::phases(
             Inputs {
                 left: Phase {
                     target: left,

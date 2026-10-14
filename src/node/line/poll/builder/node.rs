@@ -508,7 +508,7 @@ where
         work: work.value.local.clone(),
         output: output_slot.value.local.clone(),
     });
-    let (input_phase, work_phase, output_phase) = node::new(
+    let (input_phase, work_phase, output_phase) = node::Node::phases(
         Phase {
             target: input.edge,
             waker: input_waker,
@@ -586,7 +586,7 @@ where
         work: work.value.local.clone(),
         output: output_slot.value.local.clone(),
     });
-    let (input_phase, work_phase, output_phase) = node::new(
+    let (input_phase, work_phase, output_phase) = node::Node::phases(
         Phase {
             target: edges,
             waker: input.value.local,

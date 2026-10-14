@@ -1,34 +1,12 @@
-use super::{NodeState, Shared, SharedState};
+use super::{NodeState, Shared, SharedState, Types};
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Pushable, Receivable};
-use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::routine;
 use crate::poll::Pollable;
 use crate::poll::waker::Waker;
-use crate::signal::Origin;
-use crate::thread::ThreadId;
-use std::marker::PhantomData;
 
-impl<Left, Right, Out, SignalType, RoutineType, LeftInputType, RightInputType, OutputType>
-    SharedState<
-        Left,
-        Right,
-        Out,
-        SignalType,
-        RoutineType,
-        LeftInputType,
-        RightInputType,
-        OutputType,
-    >
-where
-    SignalType: Origin + Clone,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
-    RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
-{
+impl<T: Types> SharedState<T> {
     fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         match routine::Poll::poll(&mut self.work.target, waker) {
             Ok(poll) => Ok(poll),
@@ -40,149 +18,20 @@ where
     }
 }
 
-pub struct Work<
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    RoutineType,
-    LeftInputType,
-    RightInputType,
-    OutputType,
-> where
-    SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
-    RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
-{
-    shared: Shared<
-        Left,
-        Right,
-        Out,
-        SignalType,
-        RoutineType,
-        LeftInputType,
-        RightInputType,
-        OutputType,
-    >,
-    _thread_id: PhantomData<ThreadIdType>,
+pub struct Work<T: Types> {
+    shared: Shared<T>,
 }
 
-impl<
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    RoutineType,
-    LeftInputType,
-    RightInputType,
-    OutputType,
->
-    Work<
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        RoutineType,
-        LeftInputType,
-        RightInputType,
-        OutputType,
-    >
-where
-    SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
-    RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
-{
-    pub(super) fn new(
-        shared: Shared<
-            Left,
-            Right,
-            Out,
-            SignalType,
-            RoutineType,
-            LeftInputType,
-            RightInputType,
-            OutputType,
-        >,
-    ) -> Self {
-        Self {
-            shared,
-            _thread_id: PhantomData,
-        }
+impl<T: Types> Work<T> {
+    pub(super) fn new(shared: Shared<T>) -> Self {
+        Self { shared }
     }
 }
 
-impl<
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    RoutineType,
-    LeftInputType,
-    RightInputType,
-    OutputType,
-> Connection
-    for Work<
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        RoutineType,
-        LeftInputType,
-        RightInputType,
-        OutputType,
-    >
-where
-    SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
-    RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
-{
-}
+impl<T: Types> Connection for Work<T> {}
 
-impl<
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    RoutineType,
-    LeftInputType,
-    RightInputType,
-    OutputType,
-> Pollable
-    for Work<
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        RoutineType,
-        LeftInputType,
-        RightInputType,
-        OutputType,
-    >
-where
-    SignalType: Origin + Clone,
-    ThreadIdType: ThreadId,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
-    RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
-{
-    type ThreadId = ThreadIdType;
+impl<T: Types> Pollable for Work<T> {
+    type ThreadId = T::ThreadId;
 
     fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();

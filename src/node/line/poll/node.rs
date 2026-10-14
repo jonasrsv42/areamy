@@ -40,6 +40,7 @@ use crate::poll::Phase;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 mod input;
@@ -53,6 +54,51 @@ pub use input::Input;
 pub use output::Output;
 pub use work::Work;
 
+/// The types one line node is built from. Bounds live here once, so phases take a single
+/// `T: Types`.
+pub trait Types {
+    type In;
+    type Out;
+    type Signal: Origin + Clone;
+    type ThreadId: ThreadId;
+    type Routine: LineRoutine<Self::In, Self::Out>;
+    type Inlet: Receivable<DataType = Self::In, SignalType = Self::Signal>;
+    type Outlet: Pushable<DataType = Self::Out, SignalType = Self::Signal> + Closeable;
+}
+
+/// [Types] from its parts, so [Node::phases] infers them from its arguments.
+pub struct Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>(
+    PhantomData<
+        fn() -> (
+            In,
+            Out,
+            SignalType,
+            ThreadIdType,
+            RoutineType,
+            InletType,
+            OutletType,
+        ),
+    >,
+);
+
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType> Types
+    for Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: LineRoutine<In, Out>,
+    InletType: Receivable<DataType = In, SignalType = SignalType>,
+    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+{
+    type In = In;
+    type Out = Out;
+    type Signal = SignalType;
+    type ThreadId = ThreadIdType;
+    type Routine = RoutineType;
+    type Inlet = InletType;
+    type Outlet = OutletType;
+}
+
 /// Node state machine for managing flush and close lifecycle.
 enum NodeState<SignalType> {
     Running,
@@ -64,45 +110,43 @@ enum NodeState<SignalType> {
 }
 
 /// Shared state between Input, Work, and Output phases.
-pub(crate) struct SharedState<In, Out, SignalType, RoutineType, InputType, OutputType>
-where
-    SignalType: Origin + Clone,
-    RoutineType: LineRoutine<In, Out>,
-    InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
-{
-    input: Phase<InputType>,
-    work: Phase<RoutineType>,
-    output: Phase<OutputType>,
-    state: NodeState<SignalType>,
+pub(crate) struct SharedState<T: Types> {
+    input: Phase<T::Inlet>,
+    work: Phase<T::Routine>,
+    output: Phase<T::Outlet>,
+    state: NodeState<T::Signal>,
 }
 
-/// Create Input, Work, and Output phase pollables sharing state.
-pub fn new<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>(
-    input: Phase<InputType>,
-    work: Phase<RoutineType>,
-    output: Phase<OutputType>,
-) -> (
-    Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
-    Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
-    Output<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
-)
+type Shared<T> = Rc<RefCell<SharedState<T>>>;
+
+/// The three phase pollables of one line node.
+pub type Phases<T> = (Input<T>, Work<T>, Output<T>);
+
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
+    Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
-    InputType: Receivable<DataType = In, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+    InletType: Receivable<DataType = In, SignalType = SignalType>,
+    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
-    let shared = Rc::new(RefCell::new(SharedState {
-        input,
-        work,
-        output,
-        state: NodeState::Running,
-    }));
-    (
-        Input::new(shared.clone()),
-        Work::new(shared.clone()),
-        Output::new(shared),
-    )
+    /// Create Input, Work, and Output phase pollables sharing state.
+    pub fn phases(
+        input: Phase<InletType>,
+        work: Phase<RoutineType>,
+        output: Phase<OutletType>,
+    ) -> Phases<Self> {
+        let shared = Rc::new(RefCell::new(SharedState {
+            input,
+            work,
+            output,
+            state: NodeState::Running,
+        }));
+        (
+            Input::new(shared.clone()),
+            Work::new(shared.clone()),
+            Output::new(shared),
+        )
+    }
 }

@@ -13,14 +13,15 @@ use crate::poll::waker::{self, ThreadLocalWaker};
 use crate::poll::{Phase, Pollable};
 
 type Signal = Trackable<&'static str>;
-type Upstream = input::sync::Receiver<usize, Signal>;
-type Downstream = edge::sync::Sender<usize, Signal>;
+type Inlet = input::sync::Receiver<usize, Signal>;
+type Outlet = edge::sync::Sender<usize, Signal>;
+type Node<R> = node::Node<usize, usize, Signal, DefaultThread, R, Inlet, Outlet>;
 
 /// A line node with the edges into and out of it.
 struct Line<R: LineRoutine<usize, usize>> {
-    input: Input<usize, usize, Signal, DefaultThread, R, Upstream, Downstream>,
-    work: Work<usize, usize, Signal, DefaultThread, R, Upstream, Downstream>,
-    output: Output<usize, usize, Signal, DefaultThread, R, Upstream, Downstream>,
+    input: Input<Node<R>>,
+    work: Work<Node<R>>,
+    output: Output<Node<R>>,
     upstream: input::sync::Sender<usize, Signal>,
     downstream: edge::sync::Receiver<usize, Signal>,
 }
@@ -34,7 +35,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
         let edge = input::sync::Receiver::new(std::task::Waker::noop().clone());
         let upstream = edge.sender();
         let downstream = edge::sync::Receiver::new();
-        let (input, work, output) = node::new(
+        let (input, work, output) = node::Node::phases(
             Phase {
                 target: edge,
                 waker: input_waker,

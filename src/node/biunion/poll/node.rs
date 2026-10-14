@@ -25,6 +25,7 @@ use crate::poll::Phase;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 mod input;
@@ -38,6 +39,88 @@ pub use input::{LeftInput, RightInput};
 pub use output::Output;
 pub use work::Work;
 
+/// The types one biunion node is built from. Bounds live here once, so phases take a single
+/// `T: Types`.
+pub trait Types {
+    type Left;
+    type Right;
+    type Out;
+    type Signal: Origin + Clone;
+    type ThreadId: ThreadId;
+    type Routine: BiunionRoutine<Self::Left, Self::Right, Self::Out>;
+    type LeftInlet: Receivable<DataType = Self::Left, SignalType = Self::Signal>;
+    type RightInlet: Receivable<DataType = Self::Right, SignalType = Self::Signal>;
+    type Outlet: Pushable<DataType = Self::Out, SignalType = Self::Signal> + Closeable;
+}
+
+/// [Types] from its parts, so [Node::phases] infers them from its arguments.
+pub struct Node<
+    Left,
+    Right,
+    Out,
+    SignalType,
+    ThreadIdType,
+    RoutineType,
+    LeftInletType,
+    RightInletType,
+    OutletType,
+>(
+    PhantomData<
+        fn() -> (
+            Left,
+            Right,
+            Out,
+            SignalType,
+            ThreadIdType,
+            RoutineType,
+            LeftInletType,
+            RightInletType,
+            OutletType,
+        ),
+    >,
+);
+
+impl<
+    Left,
+    Right,
+    Out,
+    SignalType,
+    ThreadIdType,
+    RoutineType,
+    LeftInletType,
+    RightInletType,
+    OutletType,
+> Types
+    for Node<
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        RoutineType,
+        LeftInletType,
+        RightInletType,
+        OutletType,
+    >
+where
+    SignalType: Origin + Clone,
+    ThreadIdType: ThreadId,
+    RoutineType: BiunionRoutine<Left, Right, Out>,
+    LeftInletType: Receivable<DataType = Left, SignalType = SignalType>,
+    RightInletType: Receivable<DataType = Right, SignalType = SignalType>,
+    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+{
+    type Left = Left;
+    type Right = Right;
+    type Out = Out;
+    type Signal = SignalType;
+    type ThreadId = ThreadIdType;
+    type Routine = RoutineType;
+    type LeftInlet = LeftInletType;
+    type RightInlet = RightInletType;
+    type Outlet = OutletType;
+}
+
 /// Node state machine for managing flush and close lifecycle.
 enum NodeState<SignalType> {
     Running,
@@ -49,90 +132,64 @@ enum NodeState<SignalType> {
 }
 
 /// Shared state between LeftInput, RightInput, Work, and Output phases.
-pub(crate) struct SharedState<
-    Left,
-    Right,
-    Out,
-    SignalType,
-    RoutineType,
-    LeftInputType,
-    RightInputType,
-    OutputType,
-> where
-    SignalType: Origin + Clone,
-    RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
-    RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
-{
-    input: Inputs<Phase<LeftInputType>, Phase<RightInputType>>,
-    work: Phase<RoutineType>,
-    output: Phase<OutputType>,
-    state: NodeState<SignalType>,
+pub(crate) struct SharedState<T: Types> {
+    input: Inputs<Phase<T::LeftInlet>, Phase<T::RightInlet>>,
+    work: Phase<T::Routine>,
+    output: Phase<T::Outlet>,
+    state: NodeState<T::Signal>,
 }
 
-type Shared<Left, Right, Out, SignalType, RoutineType, LeftInputType, RightInputType, OutputType> =
-    Rc<
-        RefCell<
-            SharedState<
-                Left,
-                Right,
-                Out,
-                SignalType,
-                RoutineType,
-                LeftInputType,
-                RightInputType,
-                OutputType,
-            >,
-        >,
-    >;
+type Shared<T> = Rc<RefCell<SharedState<T>>>;
 
-/// Create all four phase pollables sharing state.
-pub fn new<
+impl<
     Left,
     Right,
     Out,
     SignalType,
     ThreadIdType,
     RoutineType,
-    LeftInputType,
-    RightInputType,
-    OutputType,
->(
-    input: Inputs<Phase<LeftInputType>, Phase<RightInputType>>,
-    work: Phase<RoutineType>,
-    output: Phase<OutputType>,
-) -> Phases<
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    RoutineType,
-    LeftInputType,
-    RightInputType,
-    OutputType,
+    LeftInletType,
+    RightInletType,
+    OutletType,
 >
+    Node<
+        Left,
+        Right,
+        Out,
+        SignalType,
+        ThreadIdType,
+        RoutineType,
+        LeftInletType,
+        RightInletType,
+        OutletType,
+    >
 where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInputType: Receivable<DataType = Left, SignalType = SignalType>,
-    RightInputType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+    LeftInletType: Receivable<DataType = Left, SignalType = SignalType>,
+    RightInletType: Receivable<DataType = Right, SignalType = SignalType>,
+    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
-    let shared = Rc::new(RefCell::new(SharedState {
-        input,
-        work,
-        output,
-        state: NodeState::Running,
-    }));
-    Phases {
-        inputs: Inputs {
-            left: LeftInput::new(shared.clone()),
-            right: RightInput::new(shared.clone()),
-        },
-        work: Work::new(shared.clone()),
-        output: Output::new(shared),
+    /// Create all four phase pollables sharing state.
+    pub fn phases(
+        input: Inputs<Phase<LeftInletType>, Phase<RightInletType>>,
+        work: Phase<RoutineType>,
+        output: Phase<OutletType>,
+    ) -> Phases<Self> {
+        let shared = Rc::new(RefCell::new(SharedState {
+            input,
+            work,
+            output,
+            state: NodeState::Running,
+        }));
+        Phases {
+            inputs: Inputs {
+                left: LeftInput::new(shared.clone()),
+                right: RightInput::new(shared.clone()),
+            },
+            work: Work::new(shared.clone()),
+            output: Output::new(shared),
+        }
     }
 }

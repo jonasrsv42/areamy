@@ -5,8 +5,10 @@ use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
 use crate::graph::{Add, Get, Outputs, Pushable};
 use crate::message::Message;
+use crate::node::bifurcation::Sides;
 use crate::node::bifurcation::routine::BifurcationRoutine;
 use crate::node::bifurcation::work::builder::BifurcationBuilder;
+use crate::node::routine::{Flush as _, Send as _};
 use crate::node::work::Incoming;
 use crate::node::{bifurcation, routine};
 use crate::signal::Origin;
@@ -14,62 +16,96 @@ use crate::thread::ThreadId;
 use crate::work::Sink;
 use crate::work::{Workable, work_each};
 use std::any::type_name;
-use std::sync::{Arc, Mutex};
+use std::marker::PhantomData;
 
 // The contract of a `Sync` node forming a bifurcation.
 // it has two outputs.
-pub trait BifurcationTrait<'params>:
+///
+/// Every node with these capabilities is a [BifurcationTrait]; there is nothing to implement.
+/// Areamy provides a default implementation [Bifurcation].
+pub trait BifurcationTrait<'params, In, Left, Right, Signal>:
     // We can work on the line to produce output.
     Workable
     // We can add edges it should push into.
-    + Add<dyn Sink<DataType = Self::Left, SignalType = Self::Signal> + Send + Sync + 'params, bifurcation::Left>
-    + Add<dyn Sink<DataType = Self::Right, SignalType = Self::Signal> + Send + Sync + 'params, bifurcation::Right>
+    + Add<dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params, bifurcation::Left>
+    + Add<dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params, bifurcation::Right>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
 
     // We can retrieve pushable edges
-    + Get<dyn Pushable<DataType = Self::In, SignalType = Self::Signal> + 'params>
+    + Get<dyn Pushable<DataType = In, SignalType = Signal> + 'params>
 
     // We can retrieve a Closeable for closing the input edge.
-    + Get<dyn Sink<DataType = Self::In, SignalType = Self::Signal> + Send + Sync + 'params>
+    + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
+where
+    Signal: Origin,
 {
-    // The input data entering it.
+}
+
+impl<'params, In, Left, Right, Signal, BifurcationType>
+    BifurcationTrait<'params, In, Left, Right, Signal> for BifurcationType
+where
+    Signal: Origin,
+    BifurcationType: Workable
+        + Add<
+            dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params,
+            bifurcation::Left,
+        > + Add<
+            dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params,
+            bifurcation::Right,
+        > + Add<dyn Workable<ThreadId = <BifurcationType as Workable>::ThreadId> + 'params>
+        + Get<dyn Pushable<DataType = In, SignalType = Signal> + 'params>
+        + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,
+{
+}
+
+/// The types a [Bifurcation] is built from. Bounds live here once, so impls take a single
+/// `T: Types`.
+pub trait Types {
     type In: Send + Sync + 'static;
-    // The output data going out of the bifurcation.
     type Left: Clone + Send + Sync;
     type Right: Clone + Send + Sync;
-    // The signal type used in the graph.
-    type Signal: Origin + Clone + 'static;
-    // The coroutine associated with this node.
-    type BifurcationRoutine: BifurcationRoutine<Self::In, Self::Left, Self::Right>;
-
+    type Signal: Origin + Clone + Send + Sync + 'static;
+    type ThreadId: ThreadId;
+    type Routine: BifurcationRoutine<Self::In, Self::Left, Self::Right>;
 }
 
-impl<'params, BifurcationType: BifurcationTrait<'params>> BifurcationTrait<'params>
-    for Arc<Mutex<BifurcationType>>
+/// [Types] from its parts, so [Bifurcation::of] infers them from the routine and the wiring.
+pub struct Node<In, Left, Right, SignalType, ThreadIdType, RoutineType>(
+    PhantomData<fn() -> (In, Left, Right, SignalType, ThreadIdType, RoutineType)>,
+);
+
+impl<In, Left, Right, SignalType, ThreadIdType, RoutineType> Types
+    for Node<In, Left, Right, SignalType, ThreadIdType, RoutineType>
+where
+    In: Send + Sync + 'static,
+    Left: Clone + Send + Sync,
+    Right: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
+    ThreadIdType: ThreadId,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
 {
-    type In = BifurcationType::In;
-    type Left = BifurcationType::Left;
-    type Right = BifurcationType::Right;
-    type Signal = BifurcationType::Signal;
-    type BifurcationRoutine = BifurcationType::BifurcationRoutine;
-}
-
-/// One value per bifurcation side.
-pub struct Sides<Left, Right> {
-    pub left: Left,
-    pub right: Right,
+    type In = In;
+    type Left = Left;
+    type Right = Right;
+    type Signal = SignalType;
+    type ThreadId = ThreadIdType;
+    type Routine = RoutineType;
 }
 
 /// Output edges by side. Each side holds its own refused message; a side suspended on `Full`
 /// doesn't stop the other from delivering what the routine already made for it.
-pub type Fanouts<'params, Left, Right, SignalType> =
-    Sides<Fanout<'params, Left, SignalType>, Fanout<'params, Right, SignalType>>;
+pub type Fanouts<'params, T> = Sides<
+    Fanout<'params, <T as Types>::Left, <T as Types>::Signal>,
+    Fanout<'params, <T as Types>::Right, <T as Types>::Signal>,
+>;
 
 /// A Flush or Marker per side, held until that side's routine outputs are out.
-pub(super) type Pending<Left, Right, SignalType> =
-    Sides<Option<Message<Left, SignalType>>, Option<Message<Right, SignalType>>>;
+pub(super) type Pending<T> = Sides<
+    Option<Message<<T as Types>::Left, <T as Types>::Signal>>,
+    Option<Message<<T as Types>::Right, <T as Types>::Signal>>,
+>;
 
 /// A work node with one input and two outputs.
 ///
@@ -80,53 +116,26 @@ pub(super) type Pending<Left, Right, SignalType> =
 /// Push::connect(&mut bifurcation.at::<Left>(), &child)?;
 /// work::Schedule::connect(bifurcation, &mut child)?;
 /// ```
-pub struct Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
-{
+pub struct Bifurcation<'params, T: Types> {
     /// The coroutine of this node.
-    pub routine: RoutineType,
+    pub routine: T::Routine,
 
     /// Parent workables.
-    pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
+    pub workers: Vec<Box<dyn Workable<ThreadId = T::ThreadId> + 'params>>,
 
     /// Output edges, grouped by side.
-    pub outputs: Fanouts<'params, Left, Right, SignalType>,
+    pub outputs: Fanouts<'params, T>,
 
     /// Input edge.
-    pub input: Receiver<In, SignalType>,
+    pub input: Receiver<T::In, T::Signal>,
 
     /// Per side: a Flush or Marker held until that side's routine outputs are out.
-    pub(super) pending: Pending<Left, Right, SignalType>,
+    pub(super) pending: Pending<T>,
 }
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> Connection
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
-{
-}
+impl<T: Types> Connection for Bifurcation<'_, T> {}
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> Workable
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
-{
+impl<T: Types> Workable for Bifurcation<'_, T> {
     /// At most one message per side per round: each side finishes its suspended push, else
     /// pushes its next routine output or pending signal. Input is taken only once both sides
     /// are idle, so a suspended side stops input and the routine's buffer holds the rest.
@@ -157,8 +166,8 @@ where
             }
 
             // Both sides idle: nothing held, nothing left in the routine, no signal owed.
-            match next_input(workers, input)? {
-                Incoming::Message(message) => accept(routine, pending, message)?,
+            match next_input::<T>(workers, input)? {
+                Incoming::Message(message) => accept::<T>(routine, pending, message)?,
                 Incoming::Closed => {
                     // Close the outputs too, so children see it. Other errors, the routine's
                     // `Closed` included, leave them to close on drop.
@@ -170,18 +179,18 @@ where
         }
     }
 
-    type ThreadId = ThreadIdType;
+    type ThreadId = T::ThreadId;
 }
 
 impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
+    Bifurcation<'params, Node<In, Left, Right, SignalType, ThreadIdType, RoutineType>>
 where
-    In: Send + Sync,
+    In: Send + Sync + 'static,
     Left: Clone + Send + Sync,
     Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync + 'static,
     ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+    RoutineType: BifurcationRoutine<In, Left, Right>,
 {
     pub fn of(routine: RoutineType) -> Self {
         Self::builder().build(routine)
@@ -190,7 +199,8 @@ where
     /// Options for a bifurcation, such as [BifurcationBuilder::bounded]; finish with
     /// [BifurcationBuilder::build].
     pub fn builder()
-    -> BifurcationBuilder<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> {
+    -> BifurcationBuilder<'params, Node<In, Left, Right, SignalType, ThreadIdType, RoutineType>>
+    {
         BifurcationBuilder::new()
     }
 }
@@ -231,15 +241,10 @@ where
 /// The next input message, working parents while the input is empty. Parents are scheduled
 /// only once input polled empty, so a parent refused by this input always finds progress
 /// (`Full`) when re-entered.
-fn next_input<'params, In, SignalType, ThreadIdType>(
-    workers: &mut Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
-    input: &Receiver<In, SignalType>,
-) -> Result<Incoming<Message<In, SignalType>>, Error>
-where
-    In: Send + Sync,
-    SignalType: Origin + Send + Sync,
-    ThreadIdType: ThreadId,
-{
+fn next_input<T: Types>(
+    workers: &mut Vec<Box<dyn Workable<ThreadId = T::ThreadId> + '_>>,
+    input: &Receiver<T::In, T::Signal>,
+) -> Result<Incoming<Message<T::In, T::Signal>>, Error> {
     loop {
         match input.poll() {
             Ok(Some(message)) => return Ok(Incoming::Message(message)),
@@ -264,17 +269,11 @@ where
 }
 
 /// Take one input message: data goes to the routine, a signal is owed to both sides.
-fn accept<In, Left, Right, SignalType, RoutineType>(
-    routine: &mut RoutineType,
-    pending: &mut Pending<Left, Right, SignalType>,
-    message: Message<In, SignalType>,
-) -> Result<(), Error>
-where
-    Left: Clone,
-    Right: Clone,
-    SignalType: Origin + Clone,
-    RoutineType: BifurcationRoutine<In, Left, Right>,
-{
+fn accept<T: Types>(
+    routine: &mut T::Routine,
+    pending: &mut Pending<T>,
+    message: Message<T::In, T::Signal>,
+) -> Result<(), Error> {
     match message {
         Message::Data(data) => routine.send(data)?,
         Message::Flush(origin) => {
@@ -294,145 +293,79 @@ where
     Ok(())
 }
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> BifurcationTrait<'params>
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
-{
-    type In = In;
-    type Left = Left;
-    type Right = Right;
-    type Signal = SignalType;
-    type BifurcationRoutine = RoutineType;
-}
-
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Pushable<DataType = In, SignalType = SignalType> + 'params>
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+impl<'params, T: Types> Get<dyn Pushable<DataType = T::In, SignalType = T::Signal> + 'params>
+    for Bifurcation<'params, T>
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Pushable<DataType = In, SignalType = SignalType> + 'params>, Error> {
+    ) -> Result<Box<dyn Pushable<DataType = T::In, SignalType = T::Signal> + 'params>, Error> {
         Get::get(&self.input)
     }
 }
 
 /// Get a [Sink] for this node's input edge.
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Get<dyn Sink<DataType = In, SignalType = SignalType> + Send + Sync + 'params>
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+impl<'params, T: Types>
+    Get<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>
+    for Bifurcation<'params, T>
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Sink<DataType = In, SignalType = SignalType> + Send + Sync + 'params>, Error>
-    {
+    ) -> Result<
+        Box<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>,
+        Error,
+    > {
         Get::get(&self.input)
     }
 }
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
+impl<'params, T: Types>
     Add<
-        dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params,
+        dyn Sink<DataType = T::Left, SignalType = T::Signal> + Send + Sync + 'params,
         bifurcation::Left,
-    > for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+    > for Bifurcation<'params, T>
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params>,
+        closeable: Box<
+            dyn Sink<DataType = T::Left, SignalType = T::Signal> + Send + Sync + 'params,
+        >,
     ) -> Result<(), Error> {
         self.outputs.left.add(closeable);
         Ok(())
     }
 }
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
+impl<'params, T: Types>
     Add<
-        dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params,
+        dyn Sink<DataType = T::Right, SignalType = T::Signal> + Send + Sync + 'params,
         bifurcation::Right,
-    > for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+    > for Bifurcation<'params, T>
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params>,
+        closeable: Box<
+            dyn Sink<DataType = T::Right, SignalType = T::Signal> + Send + Sync + 'params,
+        >,
     ) -> Result<(), Error> {
         self.outputs.right.add(closeable);
         Ok(())
     }
 }
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> Outputs<bifurcation::Left>
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
-{
-    type Sink = dyn Sink<DataType = Left, SignalType = SignalType> + Send + Sync + 'params;
+impl<'params, T: Types> Outputs<bifurcation::Left> for Bifurcation<'params, T> {
+    type Sink = dyn Sink<DataType = T::Left, SignalType = T::Signal> + Send + Sync + 'params;
 }
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType> Outputs<bifurcation::Right>
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
-{
-    type Sink = dyn Sink<DataType = Right, SignalType = SignalType> + Send + Sync + 'params;
+impl<'params, T: Types> Outputs<bifurcation::Right> for Bifurcation<'params, T> {
+    type Sink = dyn Sink<DataType = T::Right, SignalType = T::Signal> + Send + Sync + 'params;
 }
 
-impl<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-    Add<dyn Workable<ThreadId = ThreadIdType> + 'params>
-    for Bifurcation<'params, In, Left, Right, SignalType, ThreadIdType, RoutineType>
-where
-    In: Send + Sync + 'static,
-    Left: Clone + Send + Sync,
-    Right: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    RoutineType: BifurcationRoutine<In, Left, Right> + 'params,
+impl<'params, T: Types> Add<dyn Workable<ThreadId = T::ThreadId> + 'params>
+    for Bifurcation<'params, T>
 {
     fn add(
         &mut self,
-        workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
+        workable: Box<dyn Workable<ThreadId = T::ThreadId> + 'params>,
     ) -> Result<(), Error> {
         self.workers.push(workable);
         Ok(())
@@ -451,11 +384,24 @@ pub mod tests {
     use crate::{At, DefaultThread, Trackable};
     use std::num::NonZeroUsize;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
     use std::thread;
 
     type TestSignal = Trackable<&'static str>;
-    type Hold =
-        Bifurcation<'static, usize, usize, usize, TestSignal, DefaultThread, HoldBifurcation>;
+    type TestBifurcation<'params, R> =
+        Bifurcation<'params, Node<usize, usize, usize, TestSignal, DefaultThread, R>>;
+    type Hold = TestBifurcation<'static, HoldBifurcation>;
+
+    /// [Bifurcation], and a shared `Arc<Mutex<Bifurcation>>`, meet the [BifurcationTrait]
+    /// contract.
+    #[test]
+    fn bifurcation_meets_bifurcation_trait() {
+        fn contract<'params, B: BifurcationTrait<'params, usize, usize, usize, TestSignal>>(_: &B) {
+        }
+        let bifurcation: TestBifurcation<MockBifurcation> = Bifurcation::of(MockBifurcation::new());
+        contract(&bifurcation);
+        contract(&Arc::new(Mutex::new(bifurcation)));
+    }
     type Edge = Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync>;
 
     fn receiver(bound: Option<NonZeroUsize>) -> Receiver<usize, TestSignal> {
@@ -684,7 +630,8 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_push_when_input_closed() {
-        let mut bifur = Bifurcation::<_, _, _, _, DefaultThread, _>::of(MockBifurcation::new());
+        let mut bifur =
+            Bifurcation::<Node<_, _, _, _, DefaultThread, _>>::of(MockBifurcation::new());
 
         let left_output = Receiver::<usize, Trackable<&'static str>>::new();
         let right_output = Receiver::<usize, Trackable<&'static str>>::new();

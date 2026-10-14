@@ -11,7 +11,7 @@
 use crate::closed;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Outlet, Pushable, Receivable, TryPush, TryPushable};
+use crate::graph::{Closeable, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::waker::ThreadLocalWaker;
 use crate::signal::Origin;
@@ -74,13 +74,18 @@ where
     }
 }
 
-impl<DataType, SignalType> Receivable for PollEdge<DataType, SignalType>
+impl<DataType, SignalType> Inlet for PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
     type DataType = DataType;
     type SignalType = SignalType;
+}
 
+impl<DataType, SignalType> Receivable for PollEdge<DataType, SignalType>
+where
+    SignalType: Origin,
+{
     fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
         PollEdge::try_recv(self)
     }

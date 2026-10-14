@@ -11,7 +11,7 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Outlet, Pushable, Receivable, TryPush, TryPushable};
+use crate::graph::{Closeable, Get, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
@@ -217,14 +217,20 @@ where
     }
 }
 
-impl<DataType, SignalType> Receivable for Receiver<DataType, SignalType>
+impl<DataType, SignalType> Inlet for Receiver<DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
     type DataType = DataType;
     type SignalType = SignalType;
+}
 
+impl<DataType, SignalType> Receivable for Receiver<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
     fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
         Receiver::try_recv(self)
     }

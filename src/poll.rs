@@ -1,5 +1,6 @@
 //! Poll graphs: event-driven nodes driven by wakers through [Pollable].
 
+mod budget;
 pub mod edge;
 pub mod future;
 pub mod graph;
@@ -20,6 +21,7 @@ pub mod try_join;
 pub mod waker;
 pub mod wakers;
 
+pub use budget::BUDGET;
 pub use edge::{Async, Deferred, Direct, Edge, Linktime, Null, PollEdge, Sync};
 pub use graph::{Graph, GraphBuilder, GraphNode};
 pub use marker::NodeId;

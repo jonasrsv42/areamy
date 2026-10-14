@@ -22,12 +22,12 @@ where
     OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     fn push_output(&mut self, msg: Message<Out, SignalType>) -> Result<(), Error> {
-        self.output.push(msg)
+        self.output.target.push(msg)
     }
 
     /// Drain routine output via [crate::node::routine::Next] and push downstream.
     fn drain_output(&mut self) -> Result<(), Error> {
-        while let Some(out) = self.worker.next()? {
+        while let Some(out) = self.work.target.next()? {
             self.push_output(Message::Data(out))?;
         }
         Ok(())
@@ -101,7 +101,7 @@ where
                 };
                 s.push_output(Message::Flush(signal))?;
                 // Flush forwarded, back to Running. Input can resume draining.
-                s.wakers.input.wake();
+                s.input.waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::MarkerReady(_) => {
@@ -112,12 +112,12 @@ where
                 };
                 s.push_output(Message::Marker(signal))?;
                 // Marker forwarded, back to Running. Input can resume draining.
-                s.wakers.input.wake();
+                s.input.waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             NodeState::CloseReady => {
                 s.drain_output()?;
-                s.output.close()?;
+                s.output.target.close()?;
                 s.state = NodeState::Closed;
                 Err(crate::closed!())
             }

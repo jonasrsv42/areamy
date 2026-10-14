@@ -1,4 +1,4 @@
-use super::{Input, Output, Wakers, Work};
+use super::{Input, Output, Work};
 use crate::DefaultThread;
 use crate::Trackable;
 use crate::edge;
@@ -7,10 +7,10 @@ use crate::message::Message;
 use crate::node::line::poll::node;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
-use crate::poll::Pollable;
 use crate::poll::input;
-use crate::poll::waker;
 use crate::poll::waker::mock::{noop_local_waker, noop_waker, tracking_local_waker};
+use crate::poll::waker::{self, ThreadLocalWaker};
+use crate::poll::{Phase, Pollable};
 
 type Signal = Trackable<&'static str>;
 type Upstream = input::sync::Receiver<usize, Signal>;
@@ -27,21 +27,27 @@ struct Line<R: LineRoutine<usize, usize>> {
 
 impl<R: LineRoutine<usize, usize>> Line<R> {
     fn new(routine: R) -> Self {
-        Self::with_wakers(
-            routine,
-            Wakers {
-                input: noop_local_waker(),
-                work: noop_local_waker(),
-                output: noop_local_waker(),
-            },
-        )
+        Self::with_input_waker(routine, noop_local_waker())
     }
 
-    fn with_wakers(routine: R, wakers: Wakers) -> Self {
+    fn with_input_waker(routine: R, input_waker: ThreadLocalWaker) -> Self {
         let edge = input::sync::Receiver::new(std::task::Waker::noop().clone());
         let upstream = edge.sender();
         let downstream = edge::sync::Receiver::new();
-        let (input, work, output) = node::new(routine, edge, downstream.sender(), wakers);
+        let (input, work, output) = node::new(
+            Phase {
+                target: edge,
+                waker: input_waker,
+            },
+            Phase {
+                target: routine,
+                waker: noop_local_waker(),
+            },
+            Phase {
+                target: downstream.sender(),
+                waker: noop_local_waker(),
+            },
+        );
         Self {
             input,
             work,
@@ -96,10 +102,10 @@ fn poll_calls_routine_poll() {
     let mut wkr = noop_waker();
 
     let _ = line.work.poll(&mut wkr).unwrap();
-    assert_eq!(line.work.shared.borrow().worker.poll_count, 1);
+    assert_eq!(line.work.shared.borrow().work.target.poll_count, 1);
 
     let _ = line.work.poll(&mut wkr).unwrap();
-    assert_eq!(line.work.shared.borrow().worker.poll_count, 2);
+    assert_eq!(line.work.shared.borrow().work.target.poll_count, 2);
 }
 
 struct ClosedErrorRoutine;
@@ -222,14 +228,7 @@ fn marker_preserves_ordering_with_data() {
 #[test]
 fn flush_wakes_input_for_remaining_data() {
     let (input_waker, input_woken) = tracking_local_waker();
-    let mut line = Line::with_wakers(
-        mock(),
-        Wakers {
-            input: input_waker,
-            work: noop_local_waker(),
-            output: noop_local_waker(),
-        },
-    );
+    let mut line = Line::with_input_waker(mock(), input_waker);
     let mut wkr = noop_waker();
 
     line.upstream.push_back(Message::Data(1)).unwrap();

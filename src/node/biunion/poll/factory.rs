@@ -7,14 +7,12 @@
 //! The `'params` parameter bounds how long the factory (and the routine
 //! it produces) may hold borrows captured from the surrounding scope.
 
+use super::Inputs;
 use crate::poll::waker::ThreadLocalWaker;
 
 /// Per-input wakers, grouped under [`BiunionWakers::input`] so a
 /// routine accesses them via `wakers.input.left` / `wakers.input.right`.
-pub struct BiunionInputs {
-    pub left: ThreadLocalWaker,
-    pub right: ThreadLocalWaker,
-}
+pub type BiunionInputs = Inputs<ThreadLocalWaker, ThreadLocalWaker>;
 
 /// Phase wakers the framework hands to a biunion routine.
 ///

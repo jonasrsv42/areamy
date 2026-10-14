@@ -24,7 +24,7 @@ where
     /// Poll routine. Builds std Context from sync waker for the routine.
     /// Closed error from routine fatal.
     fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
-        match routine::Poll::poll(&mut self.worker, waker) {
+        match routine::Poll::poll(&mut self.work.target, waker) {
             Ok(poll) => Ok(poll),
             Err(e) if matches!(e.kind, ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"
@@ -107,7 +107,7 @@ where
                     s.state = NodeState::FlushReady(signal);
                     // Flush complete. Output must drain remaining output
                     // and forward the Flush signal downstream.
-                    s.wakers.output.wake();
+                    s.output.waker.wake();
                 }
                 Ok(core::task::Poll::Pending)
             }
@@ -131,7 +131,7 @@ where
                 }
                 // Routine got one poll cycle. Output must drain any
                 // produced output and forward the marker downstream.
-                s.wakers.output.wake();
+                s.output.waker.wake();
                 Ok(core::task::Poll::Pending)
             }
             // FlushReady — Work is done, Output handles it

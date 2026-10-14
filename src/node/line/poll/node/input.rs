@@ -24,22 +24,22 @@ where
     /// May transition state to Flushing, Closing, or MarkerReady.
     fn drain_input(&mut self) -> Result<(), Error> {
         loop {
-            match self.input.try_recv() {
+            match self.input.target.try_recv() {
                 Ok(Some(Message::Data(data))) => {
-                    self.worker.send(data)?;
+                    self.work.target.send(data)?;
                 }
                 Ok(Some(Message::Flush(signal))) => {
-                    self.worker.flush()?;
+                    self.work.target.flush()?;
                     self.state = NodeState::Flushing(signal);
                     // Work must poll routine until Ready to complete the flush.
-                    self.wakers.work.wake();
+                    self.work.waker.wake();
                     break;
                 }
                 Ok(Some(Message::Marker(signal))) => {
                     self.state = NodeState::MarkerReady(signal);
                     // Work gets one poll cycle to let routine emit pending output
                     // before Output forwards the marker.
-                    self.wakers.work.wake();
+                    self.work.waker.wake();
                     break;
                 }
                 Ok(None) => break,
@@ -52,8 +52,8 @@ where
                         // closed back to the poll loop; wake Output to
                         // drive the drain + close.
                         self.state = NodeState::CloseReady;
-                        self.wakers.work.wake();
-                        self.wakers.output.wake();
+                        self.work.waker.wake();
+                        self.output.waker.wake();
                         break;
                     }
                     return Err(e);

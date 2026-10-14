@@ -36,6 +36,7 @@
 
 use crate::graph::{Closeable, Pushable, Receivable};
 use crate::node::line::poll::routine::LineRoutine;
+use crate::poll::Phase;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::cell::RefCell;
@@ -43,7 +44,6 @@ use std::rc::Rc;
 
 mod input;
 mod output;
-mod wakers;
 mod work;
 
 #[cfg(test)]
@@ -51,7 +51,6 @@ mod tests;
 
 pub use input::Input;
 pub use output::Output;
-pub use wakers::Wakers;
 pub use work::Work;
 
 /// Node state machine for managing flush and close lifecycle.
@@ -72,19 +71,17 @@ where
     InputType: Receivable<DataType = In, SignalType = SignalType>,
     OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
-    pub(crate) worker: RoutineType,
-    input: InputType,
-    output: OutputType,
+    input: Phase<InputType>,
+    work: Phase<RoutineType>,
+    output: Phase<OutputType>,
     state: NodeState<SignalType>,
-    wakers: Wakers,
 }
 
 /// Create Input, Work, and Output phase pollables sharing state.
 pub fn new<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>(
-    worker: RoutineType,
-    input: InputType,
-    output: OutputType,
-    wakers: Wakers,
+    input: Phase<InputType>,
+    work: Phase<RoutineType>,
+    output: Phase<OutputType>,
 ) -> (
     Input<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
     Work<In, Out, SignalType, ThreadIdType, RoutineType, InputType, OutputType>,
@@ -98,11 +95,10 @@ where
     OutputType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     let shared = Rc::new(RefCell::new(SharedState {
-        worker,
         input,
+        work,
         output,
         state: NodeState::Running,
-        wakers,
     }));
     (
         Input::new(shared.clone()),

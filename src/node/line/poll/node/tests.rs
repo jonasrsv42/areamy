@@ -283,6 +283,66 @@ fn routine_returning_closed_during_flush_becomes_fatal() {
     );
 }
 
+/// Done with its async work on every poll, flush or not.
+struct ReadyRoutine;
+
+impl crate::TrySend<usize> for ReadyRoutine {
+    fn try_send(&mut self, _: usize) -> Result<Accept<usize>, Error> {
+        Ok(Accept::Accepted)
+    }
+}
+
+impl crate::Next<usize> for ReadyRoutine {
+    fn next(&mut self) -> Result<Option<usize>, Error> {
+        Ok(None)
+    }
+}
+
+impl crate::Flush for ReadyRoutine {
+    fn flush(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+impl crate::Poll for ReadyRoutine {
+    fn poll(&mut self, _waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+        Ok(core::task::Poll::Ready(()))
+    }
+}
+
+impl LineRoutine<usize, usize> for ReadyRoutine {}
+
+#[test]
+fn routine_ready_while_running_is_fatal() {
+    let mut line = Line::new(ReadyRoutine);
+    let mut wkr = noop_waker();
+
+    let err = line.work.poll(&mut wkr).unwrap_err();
+    assert!(
+        matches!(err.kind, ErrorKind::Fatal(_)),
+        "expected Fatal, got {:?}",
+        err.kind
+    );
+}
+
+#[test]
+fn routine_ready_on_a_marker_is_fatal() {
+    let mut line = Line::new(ReadyRoutine);
+    let mut wkr = noop_waker();
+
+    line.upstream
+        .push_back(Message::Marker("m".into()))
+        .unwrap();
+    let _ = line.input.poll(&mut wkr);
+
+    let err = line.work.poll(&mut wkr).unwrap_err();
+    assert!(
+        matches!(err.kind, ErrorKind::Fatal(_)),
+        "expected Fatal, got {:?}",
+        err.kind
+    );
+}
+
 #[test]
 fn poll_drains_multiple_inputs() {
     let mut line = Line::new(mock());

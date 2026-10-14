@@ -28,7 +28,7 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Closeable, Get, Outputs, Pushable};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
-use crate::node::line::poll::node::new_phases;
+use crate::node::line::poll::node::{self, Wakers};
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::edge::{Async, Deferred, Direct, Edge, Null, PollEdge, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
@@ -507,13 +507,15 @@ where
         work: work.value.local.clone(),
         output: output_slot.value.local.clone(),
     });
-    let (input_phase, work_phase, output_phase) = new_phases(
+    let (input_phase, work_phase, output_phase) = node::new(
         routine,
         input.edge,
         output,
-        input_waker,
-        work.value.local,
-        output_slot.value.local,
+        Wakers {
+            input: input_waker,
+            work: work.value.local,
+            output: output_slot.value.local,
+        },
     );
     let nodes = vec![
         GraphNode {
@@ -579,13 +581,15 @@ where
         work: work.value.local.clone(),
         output: output_slot.value.local.clone(),
     });
-    let (input_phase, work_phase, output_phase) = new_phases(
+    let (input_phase, work_phase, output_phase) = node::new(
         routine,
         edges,
         output,
-        input.value.local,
-        work.value.local,
-        output_slot.value.local,
+        Wakers {
+            input: input.value.local,
+            work: work.value.local,
+            output: output_slot.value.local,
+        },
     );
     nodes.push(GraphNode {
         id: input.id,

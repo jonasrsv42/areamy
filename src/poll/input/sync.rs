@@ -11,7 +11,9 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
+use crate::graph::{
+    Closeable, Closed, Get, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable,
+};
 use crate::message::Message;
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
@@ -236,6 +238,16 @@ where
     }
 }
 
+impl<DataType, SignalType> Closed for Receiver<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
+    fn closed(&self) -> Result<bool, Error> {
+        Ok(self.shared.inner.lock().map_err(|e| fatal!(e))?.closed)
+    }
+}
+
 impl<'params, DataType, SignalType>
     Get<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
     for Sender<DataType, SignalType>
@@ -387,6 +399,20 @@ mod tests {
         drop(tx2);
         assert!(woken.load(Ordering::SeqCst));
         assert!(matches!(rx.try_recv().unwrap_err().kind, ErrorKind::Closed));
+    }
+
+    #[test]
+    fn closed_reports_last_sender_drop_while_data_is_buffered() {
+        let rx = Receiver::<usize, TestSignal>::new(noop_waker());
+        let tx = rx.sender();
+        tx.push_back(Message::Data(1)).unwrap();
+        assert!(!Closed::closed(&rx).unwrap());
+
+        drop(tx);
+
+        // Closed before the buffer drains, and asking takes nothing out.
+        assert!(Closed::closed(&rx).unwrap());
+        assert_eq!(rx.try_recv().unwrap(), Some(Message::Data(1)));
     }
 
     #[test]

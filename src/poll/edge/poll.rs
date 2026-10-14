@@ -11,7 +11,7 @@
 use crate::closed;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
+use crate::graph::{Closeable, Closed, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::waker::ThreadLocalWaker;
 use crate::signal::Origin;
@@ -88,6 +88,15 @@ where
 {
     fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
         PollEdge::try_recv(self)
+    }
+}
+
+impl<DataType, SignalType> Closed for PollEdge<DataType, SignalType>
+where
+    SignalType: Origin,
+{
+    fn closed(&self) -> Result<bool, Error> {
+        Ok(self.closed)
     }
 }
 
@@ -186,6 +195,19 @@ mod tests {
         assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(1)));
         assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(2)));
         assert!(edge.try_recv().is_err());
+    }
+
+    #[test]
+    fn closed_reports_close_while_data_is_buffered() {
+        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
+        edge.push(Message::Data(1)).unwrap();
+        assert!(!Closed::closed(&edge).unwrap());
+
+        edge.close().unwrap();
+
+        // Closed before the buffer drains, and asking takes nothing out.
+        assert!(Closed::closed(&edge).unwrap());
+        assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(1)));
     }
 
     #[test]

@@ -27,8 +27,8 @@ pub use graph::marker::{self, Connection};
 pub use graph::{At, Closeable, Closed, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
 pub use message::Message;
 pub use node::{
-    BifurcationIo, BifurcationRoutine, BiunionIo, BiunionRoutine, Flush, LineIo, LineRoutine, Next,
-    Poll, Send,
+    Accept, BifurcationIo, BifurcationRoutine, BiunionIo, BiunionRoutine, Flush, LineIo,
+    LineRoutine, Next, Poll, Send, TrySend,
 };
 pub use node::{bifurcation, biunion};
 pub use poll::Pollable;

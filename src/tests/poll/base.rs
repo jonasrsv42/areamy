@@ -8,7 +8,9 @@ use crate::poll::Sync;
 use crate::signal::Trackable;
 use crate::sync::Receiver;
 use crate::work::{self, Writer};
-use crate::{Closeable, Message, Outlet, Push, Pushable, ThreadBundle, ThreadStream, TryPushable};
+use crate::{
+    Accept, Closeable, Message, Outlet, Push, Pushable, ThreadBundle, ThreadStream, TryPushable,
+};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,10 +39,10 @@ impl PollDouble {
     }
 }
 
-impl crate::Send<usize> for PollDouble {
-    fn send(&mut self, message: usize) -> Result<(), Error> {
+impl crate::TrySend<usize> for PollDouble {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
         self.input.producer.push(Input::Data(message));
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 
@@ -98,10 +100,10 @@ impl PollAccumulator {
     }
 }
 
-impl crate::Send<usize> for PollAccumulator {
-    fn send(&mut self, message: usize) -> Result<(), Error> {
+impl crate::TrySend<usize> for PollAccumulator {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
         self.collected.lock().unwrap().push(message);
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 
@@ -128,7 +130,6 @@ impl crate::Poll for PollAccumulator {
     }
 }
 
-impl crate::LineRoutine<usize, usize> for PollAccumulator {}
 impl poll::LineRoutine<usize, usize> for PollAccumulator {}
 
 /// Sync Double — used for the sync part of the graph.
@@ -734,10 +735,10 @@ impl HalfCloseRoutine {
     }
 }
 
-impl crate::Send<usize> for HalfCloseRoutine {
-    fn send(&mut self, message: usize) -> Result<(), Error> {
+impl crate::TrySend<usize> for HalfCloseRoutine {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
         self.input.producer.push(Input::Data(message));
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 
@@ -880,10 +881,10 @@ impl BatchRoutine {
     }
 }
 
-impl crate::Send<usize> for BatchRoutine {
-    fn send(&mut self, message: usize) -> Result<(), Error> {
+impl crate::TrySend<usize> for BatchRoutine {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
         self.accumulator += message;
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 

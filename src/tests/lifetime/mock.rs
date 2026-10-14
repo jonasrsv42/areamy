@@ -4,6 +4,7 @@
 //! it interesting is that the borrow is held by a graph node and must
 //! flow through the entire cascade (routine → node → thread → bundle).
 
+use crate::Accept;
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::Error;
 use crate::graph::TryPush;
@@ -73,10 +74,10 @@ pub(super) struct PollBorrowingLine<'a> {
     pub(super) output: OutputQueue<usize>,
 }
 
-impl<'a> crate::Send<usize> for PollBorrowingLine<'a> {
-    fn send(&mut self, message: usize) -> Result<(), Error> {
+impl<'a> crate::TrySend<usize> for PollBorrowingLine<'a> {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
         self.output.producer.push(message * *self.multiplier);
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 

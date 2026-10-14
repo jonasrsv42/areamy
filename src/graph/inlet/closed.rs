@@ -6,8 +6,7 @@ mod default;
 /// [`Closed`] asks an [Inlet] whether its producers have closed, without taking anything out.
 ///
 /// Unlike [crate::graph::Receivable::try_recv], which reports close only once drained, this is
-/// true as soon as no more messages can arrive, whatever is still buffered. A node holding a
-/// refused message can't drain, so it asks this instead.
+/// true as soon as no more messages can arrive, whatever is still buffered.
 pub trait Closed: Inlet {
     fn closed(&self) -> Result<bool, Error>;
 }

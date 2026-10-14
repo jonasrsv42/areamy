@@ -14,15 +14,26 @@
 //! for the Output phase. Routines MUST use this to wake Output when they
 //! produce data (e.g. via [OutputProducer](crate::poll::future::queue::OutputProducer)).
 //!
-//! ## [routine::Send] contract
+//! ## [routine::TrySend] contract
+//!
+//! [routine::TrySend::try_send] never blocks. A full routine returns
+//! [routine::Accept::Full] with the message and MUST wake the Input phase
+//! ([LineWakers::input](super::factory::LineWakers)) once room frees (e.g. in
+//! [routine::Next] or [routine::Poll]). Wake once per refusal, after room frees;
+//! waking while still full just burns a poll. The node retries the held message
+//! before taking anything else. A routine that never refuses never wakes Input.
+//!
+//! Refuse with nothing accepted only if something other than input will free
+//! room, otherwise the wake never comes. [routine::Flush] cannot refuse: it may
+//! arrive while full and must be absorbed, overshooting the bound if need be.
 //!
 //! If the routine needs async processing to handle data received
-//! via [routine::Send], it MUST arrange for [routine::Poll] to be woken
+//! via [routine::TrySend], it MUST arrange for [routine::Poll] to be woken
 //! (e.g. via a waker stored during a previous [routine::Poll] call).
 //! Failing to do so will deadlock — [routine::Poll] is not automatically
-//! invoked after [routine::Send].
+//! invoked after [routine::TrySend].
 //!
-//! Routines that produce output synchronously in [routine::Send]
+//! Routines that produce output synchronously in [routine::TrySend]
 //! do not need to wake [routine::Poll].
 //!
 //! [FutureRoutine](crate::node::line::poll::future::FutureRoutine) handles this via its
@@ -61,7 +72,8 @@
 //! ## TL;DR
 //!
 //! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker). Output is NOT polled automatically.
-//! - Need async work after [routine::Send]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
+//! - Full? Return [routine::Accept::Full] and wake Input once there is room.
+//! - Need async work after [routine::TrySend]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
 //! - After [routine::Flush], return [core::task::Poll::Ready] from [routine::Poll] (immediately or eventually). Deadlock otherwise.
 //! - Never return [core::task::Poll::Ready] outside flush. Fatal error.
 //! - Never return [crate::error::ErrorKind::Closed] from [routine::Poll]. Fatal error — the routine does not manage its own lifecycle.
@@ -75,7 +87,7 @@ use crate::node::routine;
     note = "needs the supertraits of `poll::LineRoutine` and an explicit `impl poll::LineRoutine<{In}, {Out}> for {Self}`"
 )]
 pub trait LineRoutine<In, Out>:
-    routine::Send<In> + routine::Next<Out> + routine::Flush + routine::Poll
+    routine::TrySend<In> + routine::Next<Out> + routine::Flush + routine::Poll
 {
 }
 
@@ -86,7 +98,7 @@ pub mod tests {
     use crate::poll::future::queue::OutputQueue;
     use crate::poll::waker::Waker;
     use crate::poll::waker::mock::{noop_local_waker, noop_waker};
-    use crate::{Next, Send};
+    use crate::{Accept, Next, TrySend};
 
     pub struct MockLine {
         state: usize,
@@ -106,11 +118,11 @@ pub mod tests {
         }
     }
 
-    impl crate::Send<usize> for MockLine {
-        fn send(&mut self, message: usize) -> Result<(), Error> {
+    impl crate::TrySend<usize> for MockLine {
+        fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
             self.state += message;
             self.output.producer.push(self.state * 2);
-            Ok(())
+            Ok(Accept::Accepted)
         }
     }
 
@@ -152,7 +164,7 @@ pub mod tests {
     #[test]
     fn poll_line_send_next_works() {
         let mut line = MockLine::new(noop_line_wakers());
-        line.send(2).unwrap();
+        assert_eq!(line.try_send(2).unwrap(), Accept::Accepted);
         assert_eq!(line.next().unwrap(), Some(4));
     }
 

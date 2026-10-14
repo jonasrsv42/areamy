@@ -1,7 +1,8 @@
 //! Async line node split into three phase pollables sharing state via
 //! `Rc<RefCell<SharedState>>`:
 //!
-//! - **Input**: drain edge → Send to routine. Routine wakes Output via OutputProducer.
+//! - **Input**: drain edge → TrySend to routine; a refused message is held until the routine
+//!   wakes Input, and no signal is read past it. Routine wakes Output via OutputProducer.
 //! - **Work**: poll routine async work (woken by InputQueue/IO)
 //! - **Output**: drain Next → push downstream, forward flush/close/marker signals
 //!
@@ -21,11 +22,16 @@
 //! downstream edge; the routine drops with the node, so its `Drop`
 //! is responsible for cancelling any in-flight async work.
 //!
+//! Close drops what Input can't hand over. Queued messages still reach the
+//! routine while it accepts; once it refuses on a closed edge, Input closes,
+//! dropping the refused message and everything behind it, Flush included.
+//! For a graceful end, close only after the Flush comes out downstream.
+//!
 //! # Marker ordering
 //!
 //! Markers are synchronization primitives — all data naturally produced
 //! before the marker should arrive downstream before it. For sync routines
-//! this is guaranteed: Send produces output immediately, Output drains it,
+//! this is guaranteed: TrySend produces output immediately, Output drains it,
 //! then forwards the marker.
 //!
 //! For async routines (e.g. FutureRoutine), the guarantee is **best-effort**.
@@ -34,7 +40,7 @@
 //! poll cycle (e.g. from an in-flight future) may arrive after the marker.
 //! If strict ordering is required with async routines, use Flush instead.
 
-use crate::graph::{Closeable, Pushable, Receivable};
+use crate::graph::{Closeable, Closed, Pushable, Receivable};
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::Phase;
 use crate::signal::Origin;
@@ -62,7 +68,7 @@ pub trait Types {
     type Signal: Origin + Clone;
     type ThreadId: ThreadId;
     type Routine: LineRoutine<Self::In, Self::Out>;
-    type Inlet: Receivable<DataType = Self::In, SignalType = Self::Signal>;
+    type Inlet: Receivable<DataType = Self::In, SignalType = Self::Signal> + Closed;
     type Outlet: Pushable<DataType = Self::Out, SignalType = Self::Signal> + Closeable;
 }
 
@@ -87,7 +93,7 @@ where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
-    InletType: Receivable<DataType = In, SignalType = SignalType>,
+    InletType: Receivable<DataType = In, SignalType = SignalType> + Closed,
     OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     type In = In;
@@ -128,7 +134,7 @@ where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
-    InletType: Receivable<DataType = In, SignalType = SignalType>,
+    InletType: Receivable<DataType = In, SignalType = SignalType> + Closed,
     OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
 {
     /// Create Input, Work, and Output phase pollables sharing state.

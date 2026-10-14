@@ -15,7 +15,8 @@ use crate::poll::waker::ThreadLocalWaker;
 
 /// Phase wakers the framework hands to a line routine at construction.
 ///
-/// - `input` wakes the input phase (drains the input edge).
+/// - `input` wakes the input phase (drains the input edge). Wake it after
+///   [crate::node::routine::Accept::Full] once room frees.
 /// - `work` wakes the work phase (the one that polls the routine).
 ///   `InputQueue::new(wakers.work)` is what makes deadline-driven
 ///   re-polls (via `recv_with_timeout` / `schedule_at`) route back to

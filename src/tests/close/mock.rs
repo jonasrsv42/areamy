@@ -5,7 +5,8 @@ use crate::poll::waker::Waker;
 use crate::poll::{BiunionWakers, LineWakers};
 use crate::sync::Receiver;
 use crate::{
-    DefaultThread, Message, Pullable, Trackable, Workable, bifurcation, biunion, closed, reader,
+    Accept, DefaultThread, Message, Pullable, Trackable, Workable, bifurcation, biunion, closed,
+    reader,
 };
 use std::collections::VecDeque;
 
@@ -69,6 +70,14 @@ impl crate::Send<usize> for Hold {
     }
 }
 
+/// Unbounded: always accepts.
+impl crate::TrySend<usize> for Hold {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
+        crate::Send::send(self, message)?;
+        Ok(Accept::Accepted)
+    }
+}
+
 impl crate::Next<usize> for Hold {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         Ok(self.ready.pop_front())
@@ -124,6 +133,16 @@ where
 {
     fn send(&mut self, message: usize) -> Result<(), Error> {
         self.inner.send(message)
+    }
+}
+
+impl<R, M> crate::TrySend<usize, M> for Slow<R>
+where
+    R: crate::TrySend<usize, M>,
+    M: Multiplicity,
+{
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
+        self.inner.try_send(message)
     }
 }
 

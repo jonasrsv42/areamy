@@ -22,14 +22,34 @@ pub trait Send<Message, MultiplicityType: Multiplicity = Unary> {
     fn send(&mut self, message: Message) -> Result<(), Error>;
 }
 
+/// [`TrySend`] is a routine input that can refuse.
+///
+/// [TrySend::try_send] never blocks. [Accept::Full] hands the message back. The routine MUST
+/// wake its sender once it has room; the sender retries the same message.
+///
+/// [crate::error::ErrorKind::Closed] is fatal; routines handle close, never propagate it.
+pub trait TrySend<Message, MultiplicityType: Multiplicity = Unary> {
+    fn try_send(&mut self, message: Message) -> Result<Accept<Message>, Error>;
+}
+
+/// Outcome of [TrySend::try_send].
+#[must_use = "a refused message must be kept and retried or it is lost"]
+#[derive(Debug, PartialEq)]
+pub enum Accept<Message> {
+    /// The routine took the message.
+    Accepted,
+    /// The routine is full; the message is handed back.
+    Full(Message),
+}
+
 /// [`Next`] trait is used to implement an output for a routine.  
 ///
 /// [Next] is generic over `Message` to allow yielding various types of data from the routine.
 /// For example a routine might template over a floating point trait.
 ///
-/// // When [Next::next] yields [Option::None] it implies that the node needs additional data
-/// [Send::send] before it can yield output. See individual routine documentation (E.g. line) for how
-/// the [Next::next] contract is implemented.
+/// When [Next::next] yields [Option::None] the routine needs more input before it can yield
+/// output. See individual routine documentation (E.g. line) for how the [Next::next] contract is
+/// implemented.
 ///
 /// [Next] is generic over [Multiplicity] to allow a routine to have multiple outputs.
 /// Per default all implementations are [Unary] unless
@@ -42,7 +62,7 @@ pub trait Next<Message, MultiplicityType: Multiplicity = Unary> {
 /// a routine.
 ///
 /// When flushed a routine should prepare to output everything it can on subsequent [Next]
-/// invocations and it should clear its state for subsequent [Send] invocations.
+/// invocations and it should clear its state for subsequent input.
 pub trait Flush {
     fn flush(&mut self) -> Result<(), Error>;
 }

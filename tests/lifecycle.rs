@@ -51,8 +51,8 @@ use areamy::pull::WriterBuffer;
 use areamy::thread::{ThreadBundle, ThreadBundleHandle};
 use areamy::work::{self, ThreadStream, Writer};
 use areamy::{
-    Closeable, Flush, LineRoutine, Message, Next, Pullable, Push, Pushable, Send as RoutineSend,
-    fatal, poll,
+    Accept, Closeable, Flush, LineRoutine, Message, Next, Pullable, Push, Pushable,
+    Send as RoutineSend, TrySend, fatal, poll,
 };
 use std::collections::VecDeque;
 use std::sync::mpsc;
@@ -145,10 +145,10 @@ impl PollDouble {
         }
     }
 }
-impl RoutineSend<usize> for PollDouble {
-    fn send(&mut self, m: usize) -> Result<(), Error> {
+impl TrySend<usize> for PollDouble {
+    fn try_send(&mut self, m: usize) -> Result<Accept<usize>, Error> {
         self.out.push_back(m * 2);
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 impl Next<usize> for PollDouble {

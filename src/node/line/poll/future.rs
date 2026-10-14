@@ -116,14 +116,15 @@ where
     }
 }
 
-impl<'params, InType, OutType, F> routine::Send<InType>
+impl<'params, InType, OutType, F> routine::TrySend<InType>
     for FutureRoutine<'params, InType, OutType, F>
 where
     F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
-    fn send(&mut self, message: InType) -> Result<(), Error> {
+    /// Unbounded: always accepts.
+    fn try_send(&mut self, message: InType) -> Result<routine::Accept<InType>, Error> {
         self.input.producer.push(Input::Data(message));
-        Ok(())
+        Ok(routine::Accept::Accepted)
     }
 }
 

@@ -6,6 +6,7 @@
 //! input, or [try_join](fn@crate::poll::try_join) to serve both.
 
 use crate::error::Error;
+use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::BiunionWakers;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::{biunion, routine};
@@ -23,17 +24,12 @@ pub type BoxFut<'params> = Pin<Box<dyn Future<Output = Result<(), Error>> + 'par
 ///
 /// The factory receives left input consumer, right input consumer,
 /// and output producer.
-struct Inputs<Left, Right> {
-    left: InputQueue<Left>,
-    right: InputQueue<Right>,
-}
-
 pub struct FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
-    input: Inputs<Left, Right>,
+    input: Inputs<InputQueue<Left>, InputQueue<Right>>,
     output: OutputQueue<Out>,
     factory: F,
     future: Option<BoxFut<'params>>,

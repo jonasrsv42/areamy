@@ -149,17 +149,17 @@ pub(super) struct PollBorrowingBiunion<'a> {
     pub(super) output: OutputQueue<usize>,
 }
 
-impl<'a> crate::Send<usize, biunion::Left> for PollBorrowingBiunion<'a> {
-    fn send(&mut self, m: usize) -> Result<(), Error> {
+impl<'a> crate::TrySend<usize, biunion::Left> for PollBorrowingBiunion<'a> {
+    fn try_send(&mut self, m: usize) -> Result<Accept<usize>, Error> {
         self.output.producer.push(m + *self.bias);
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 
-impl<'a> crate::Send<usize, biunion::Right> for PollBorrowingBiunion<'a> {
-    fn send(&mut self, m: usize) -> Result<(), Error> {
+impl<'a> crate::TrySend<usize, biunion::Right> for PollBorrowingBiunion<'a> {
+    fn try_send(&mut self, m: usize) -> Result<Accept<usize>, Error> {
         self.output.producer.push(m * *self.bias);
-        Ok(())
+        Ok(Accept::Accepted)
     }
 }
 

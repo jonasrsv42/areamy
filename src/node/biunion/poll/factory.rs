@@ -16,7 +16,8 @@ pub type BiunionInputs = Inputs<ThreadLocalWaker, ThreadLocalWaker>;
 
 /// Phase wakers the framework hands to a biunion routine.
 ///
-/// - `input.left` / `input.right` wake the two input phases.
+/// - `input.left` / `input.right` wake the two input phases. Wake a side after
+///   [crate::node::routine::Accept::Full] on it once room frees.
 /// - `work` wakes the work phase (polls the routine). Used by
 ///   `recv_with_timeout` on either input so the routine re-polls at
 ///   the deadline.

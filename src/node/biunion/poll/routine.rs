@@ -1,11 +1,19 @@
 //! [`BiunionRoutine`] for poll biunion nodes — two typed inputs, one output.
 //!
 //! Same contract as [line's LineRoutine](crate::node::line::poll::routine::LineRoutine)
-//! but with two [routine::Send] impls dispatched via [Left](biunion::Left)
+//! but with two [routine::TrySend] impls dispatched via [Left](biunion::Left)
 //! and [Right](biunion::Right) markers.
 //!
 //! See [line's routine docs](crate::node::line::poll::routine) for the full
-//! contract (flush, poll, output waking).
+//! contract (try_send, flush, poll, output waking).
+//!
+//! ## Per side
+//!
+//! Each side is its own Input phase holding its own refused message. After
+//! [routine::Accept::Full] on a side, wake that side's Input
+//! ([BiunionInputs](super::factory::BiunionInputs) `left` / `right`) once it has
+//! room. A routine with one budget for both sides wakes every side it refused.
+//! Sides drain independently: one side holding never stops the other.
 
 use crate::node::{biunion, routine};
 
@@ -14,8 +22,8 @@ use crate::node::{biunion, routine};
     note = "needs the supertraits of `poll::BiunionRoutine` and an explicit `impl poll::BiunionRoutine<{Left}, {Right}, {Out}> for {Self}`"
 )]
 pub trait BiunionRoutine<Left, Right, Out>:
-    routine::Send<Left, biunion::Left>
-    + routine::Send<Right, biunion::Right>
+    routine::TrySend<Left, biunion::Left>
+    + routine::TrySend<Right, biunion::Right>
     + routine::Next<Out>
     + routine::Flush
     + routine::Poll
@@ -24,6 +32,7 @@ pub trait BiunionRoutine<Left, Right, Out>:
 
 #[cfg(test)]
 pub mod tests {
+    use crate::Accept;
     use crate::biunion;
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
@@ -59,17 +68,17 @@ pub mod tests {
         }
     }
 
-    impl crate::Send<usize, biunion::Left> for MockBiunion {
-        fn send(&mut self, message: usize) -> Result<(), Error> {
+    impl crate::TrySend<usize, biunion::Left> for MockBiunion {
+        fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
             self.output.producer.push(message * 2);
-            Ok(())
+            Ok(Accept::Accepted)
         }
     }
 
-    impl crate::Send<usize, biunion::Right> for MockBiunion {
-        fn send(&mut self, message: usize) -> Result<(), Error> {
+    impl crate::TrySend<usize, biunion::Right> for MockBiunion {
+        fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
             self.output.producer.push(message * 3);
-            Ok(())
+            Ok(Accept::Accepted)
         }
     }
 

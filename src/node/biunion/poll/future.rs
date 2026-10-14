@@ -71,27 +71,29 @@ where
     }
 }
 
-impl<'params, Left, Right, Out, F> routine::Send<Left, biunion::Left>
+impl<'params, Left, Right, Out, F> routine::TrySend<Left, biunion::Left>
     for FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
-    fn send(&mut self, message: Left) -> Result<(), Error> {
+    /// Unbounded: always accepts.
+    fn try_send(&mut self, message: Left) -> Result<routine::Accept<Left>, Error> {
         self.input.left.producer.push(Input::Data(message));
-        Ok(())
+        Ok(routine::Accept::Accepted)
     }
 }
 
-impl<'params, Left, Right, Out, F> routine::Send<Right, biunion::Right>
+impl<'params, Left, Right, Out, F> routine::TrySend<Right, biunion::Right>
     for FutureRoutine<'params, Left, Right, Out, F>
 where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
-    fn send(&mut self, message: Right) -> Result<(), Error> {
+    /// Unbounded: always accepts.
+    fn try_send(&mut self, message: Right) -> Result<routine::Accept<Right>, Error> {
         self.input.right.producer.push(Input::Data(message));
-        Ok(())
+        Ok(routine::Accept::Accepted)
     }
 }
 

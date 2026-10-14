@@ -200,6 +200,22 @@ impl crate::Send<usize, biunion::Right> for HoldBiunion {
     }
 }
 
+/// Unbounded: always accepts.
+impl crate::TrySend<usize, biunion::Left> for HoldBiunion {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
+        crate::Send::<usize, biunion::Left>::send(self, message)?;
+        Ok(Accept::Accepted)
+    }
+}
+
+/// Unbounded: always accepts.
+impl crate::TrySend<usize, biunion::Right> for HoldBiunion {
+    fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
+        crate::Send::<usize, biunion::Right>::send(self, message)?;
+        Ok(Accept::Accepted)
+    }
+}
+
 impl crate::Next<usize> for HoldBiunion {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         self.0.next()

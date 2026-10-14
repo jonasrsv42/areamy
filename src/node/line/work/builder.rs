@@ -1,38 +1,20 @@
 //! [LineBuilder] sets a work [Line]'s options before it exists.
 use crate::edge::fanout::Fanout;
 use crate::edge::sync::Receiver;
-use crate::node::line::routine::LineRoutine;
-use crate::node::line::work::node::Line;
-use crate::signal::Origin;
-use crate::thread::ThreadId;
+use crate::node::line::work::node::{Line, Types};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 /// Options for a work [Line], from [Line::builder]. They are set before the line exists because
 /// its input mints the senders every producer holds.
-pub struct LineBuilder<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
+pub struct LineBuilder<'params, T: Types> {
     bound: Option<NonZeroUsize>,
     // Carries the line's types so they are inferred from its use, as with [Line::of]. `fn() ->`
     // keeps the builder `Send + Sync` whatever the routine is.
-    _line: PhantomData<fn() -> Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>>,
+    _line: PhantomData<fn() -> Line<'params, T>>,
 }
 
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-    LineBuilder<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
+impl<'params, T: Types> LineBuilder<'params, T> {
     pub(crate) fn new() -> Self {
         LineBuilder {
             bound: None,
@@ -48,10 +30,7 @@ where
     }
 
     /// The line, running `worker`.
-    pub fn build(
-        self,
-        worker: LineRoutineType,
-    ) -> Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> {
+    pub fn build(self, worker: T::Routine) -> Line<'params, T> {
         let input = match self.bound {
             Some(bound) => Receiver::bounded(bound),
             None => Receiver::new(),
@@ -71,6 +50,7 @@ mod tests {
     use crate::graph::{Get, TryPush};
     use crate::message::Message;
     use crate::node::line::routine::tests::MockWaitLine;
+    use crate::node::line::work::node::Node;
     use crate::signal::Trackable;
     use crate::thread::DefaultThread;
     use crate::work::Line;
@@ -81,9 +61,10 @@ mod tests {
 
     #[test]
     fn bounded_line_refuses_past_its_bound() {
-        let line: Line<usize, usize, TestSignal, DefaultThread, MockWaitLine> = Line::builder()
-            .bounded(NonZeroUsize::MIN)
-            .build(MockWaitLine::new(1));
+        let line: Line<Node<usize, usize, TestSignal, DefaultThread, MockWaitLine>> =
+            Line::builder()
+                .bounded(NonZeroUsize::MIN)
+                .build(MockWaitLine::new(1));
         let mut input: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
             Get::get(&line).unwrap();
         assert_eq!(input.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);

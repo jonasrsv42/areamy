@@ -8,16 +8,17 @@ use crate::graph::{Add, Get, Outputs};
 use crate::message::Message;
 use crate::node::line::routine::LineRoutine;
 use crate::node::line::work::builder::LineBuilder;
+use crate::node::routine::{Flush as _, Next as _, Send as _};
 use crate::node::work::Incoming;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::Sink;
 use crate::work::{Workable, work_each};
 use std::any::type_name;
-use std::sync::{Arc, Mutex};
+use std::marker::PhantomData;
 
 // The contract of a `Sync` node forming a line.
-/// [`LineTrait`] describes the contract of this Node.
+/// [`LineTrait`] describes the contract of a line node.
 ///
 /// - The node is [Workable]
 /// - We can [Add] a [Workable] to it.
@@ -25,93 +26,93 @@ use std::sync::{Arc, Mutex};
 /// - We can [Get] a [Sink] from it. Inbound connection to recieve data.
 ///
 /// It forms the basis if a node that recieves one input stream of data and
-/// produces one output stream of data using a [LineRoutine].
+/// produces one output stream of data.
 ///
-/// Areamy provides a default implementation [Line], but users are
-/// encouraged to implement [LineTrait] whenever [Line] does not
-/// suit their needs.
-pub trait LineTrait<'params>:
+/// Every node with these capabilities is a [LineTrait]; there is nothing to implement. Areamy
+/// provides a default implementation [Line], but users are encouraged to write their own node
+/// whenever [Line] does not suit their needs.
+pub trait LineTrait<'params, In, Out, Signal>:
     // We can work on the line to produce output.
     Workable
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
     // We can add edges it should push into.
-    + Add<dyn Sink<DataType = Self::Out, SignalType = Self::Signal> + Send + Sync + 'params>
+    + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
     // We can retrieve its edge for others to push into.
-    + Get<dyn Sink<DataType = Self::In, SignalType = Self::Signal> + Send + Sync + 'params>
+    + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
+where
+    Signal: Origin,
 {
-    /// The input data going into the line.
-    type In: Send + Sync + 'static;
-    /// The output data leaving it.
-    type Out: Clone + Send + Sync;
-    /// The signal type used in the graph.
-    type Signal: Origin + Clone + 'static;
-    /// The coroutine associated with this node.
-    type LineRoutine: LineRoutine<Self::In, Self::Out>;
-
 }
 
-///  A Send+Sync+Clone variant of our [LineTrait] for types that implement it.
-impl<'params, LineType: LineTrait<'params>> LineTrait<'params> for Arc<Mutex<LineType>> {
-    type In = LineType::In;
-    type Out = LineType::Out;
-    type Signal = LineType::Signal;
-    type LineRoutine = LineType::LineRoutine;
+impl<'params, In, Out, Signal, LineType> LineTrait<'params, In, Out, Signal> for LineType
+where
+    Signal: Origin,
+    LineType: Workable
+        + Add<dyn Workable<ThreadId = <LineType as Workable>::ThreadId> + 'params>
+        + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
+        + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,
+{
+}
+
+/// The types a [Line] is built from. Bounds live here once, so impls take a single `T: Types`.
+pub trait Types {
+    type In: Send + Sync;
+    type Out: Clone + Send + Sync;
+    type Signal: Origin + Clone + Send + Sync;
+    type ThreadId: ThreadId;
+    type Routine: LineRoutine<Self::In, Self::Out>;
+}
+
+/// [Types] from its parts, so [Line::of] infers them from the routine and the wiring.
+pub struct Node<In, Out, SignalType, ThreadIdType, RoutineType>(
+    PhantomData<fn() -> (In, Out, SignalType, ThreadIdType, RoutineType)>,
+);
+
+impl<In, Out, SignalType, ThreadIdType, RoutineType> Types
+    for Node<In, Out, SignalType, ThreadIdType, RoutineType>
+where
+    In: Send + Sync,
+    Out: Clone + Send + Sync,
+    SignalType: Origin + Clone + Send + Sync,
+    ThreadIdType: ThreadId,
+    RoutineType: LineRoutine<In, Out>,
+{
+    type In = In;
+    type Out = Out;
+    type Signal = SignalType;
+    type ThreadId = ThreadIdType;
+    type Routine = RoutineType;
 }
 
 /// [`Line`] is a default implementation of [LineTrait]. See [Line::work]
 /// for implementation details on how it works.
 ///
-/// If the implementation is not suitable for a usecase then implementing
-/// your own [LineTrait] will let it be used as a drop-in replacement
-/// for [Line].
-pub struct Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
+/// If the implementation is not suitable for a usecase then any node with
+/// the [LineTrait] capabilities can be used as a drop-in replacement for [Line].
+pub struct Line<'params, T: Types> {
     /// Worker or `Coroutine` associated with the current node.
-    pub worker: LineRoutineType,
+    pub worker: T::Routine,
 
     /// Parent nodes that we can schedule to work.
-    pub workers: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
+    pub workers: Vec<Box<dyn Workable<ThreadId = T::ThreadId> + 'params>>,
 
     /// Edges that we push output into. A refused message waits here, and nothing new leaves the
     /// routine until it is delivered.
-    pub outputs: Fanout<'params, Out, SignalType>,
+    pub outputs: Fanout<'params, T::Out, T::Signal>,
 
     /// Input to our current node that parents will push into.
-    pub input: Receiver<In, SignalType>,
+    pub input: Receiver<T::In, T::Signal>,
 
     /// A Flush or Marker held until the routine is drained; outputs go out one per round.
-    pub(super) pending: Option<Message<Out, SignalType>>,
+    pub(super) pending: Option<Message<T::Out, T::Signal>>,
 }
 
 /// Mark our Line as a possible connection in a graph. It's a connection
 /// because it is `Workable`.
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> Connection
-    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
-}
+impl<T: Types> Connection for Line<'_, T> {}
 
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> Workable
-    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    ThreadIdType: ThreadId,
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
+impl<T: Types> Workable for Line<'_, T> {
     /// One message per round into [Line::outputs]: finish a suspended push, else the next
     /// routine output, pending signal or input.
     fn work(&mut self) -> Result<(), Error> {
@@ -127,11 +128,11 @@ where
         // completes: carrying on could block in `wait_front` after pushing.
         let Some(ready) = outputs.ready() else {
             // Complete or still suspended, this round is done; the fan-out remembers which.
-            let _ = outputs.resume(type_name::<LineRoutineType>())?;
+            let _ = outputs.resume(type_name::<T::Routine>())?;
             return Ok(());
         };
 
-        match next_message(worker, workers, input, pending)? {
+        match next_message::<T>(worker, workers, input, pending)? {
             Incoming::Message(message) => {
                 // A refused message stays in the fan-out; the next round resumes it.
                 let _ = ready.push(message)?;
@@ -146,28 +147,28 @@ where
         }
     }
 
-    type ThreadId = ThreadIdType;
+    type ThreadId = T::ThreadId;
 }
 
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, In, Out, SignalType, ThreadIdType, RoutineType>
+    Line<'params, Node<In, Out, SignalType, ThreadIdType, RoutineType>>
 where
     In: Send + Sync,
     Out: Clone + Send + Sync,
     SignalType: Origin + Clone + Send + Sync,
     ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
+    RoutineType: LineRoutine<In, Out>,
 {
     /// Create a [Line] with routine [LineRoutine]. Wire it with [crate::Push],
     /// [crate::work::Bidi] and [crate::work::Schedule]; its thread is inferred from them.
     ///
     /// * `worker` - A [LineRoutine] that will transform data in this node.
-    pub fn of(worker: LineRoutineType) -> Self {
+    pub fn of(worker: RoutineType) -> Self {
         Self::builder().build(worker)
     }
 
     /// Options for a line, such as [LineBuilder::bounded]; finish with [LineBuilder::build].
-    pub fn builder() -> LineBuilder<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> {
+    pub fn builder() -> LineBuilder<'params, Node<In, Out, SignalType, ThreadIdType, RoutineType>> {
         LineBuilder::new()
     }
 }
@@ -176,18 +177,12 @@ where
 /// Flush goes out behind everything its flush produced), then new input. Parents are scheduled
 /// only once input polled empty: its own input goes out first, and a parent refused by this
 /// input always finds progress (`Full`) when re-entered.
-fn next_message<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>(
-    worker: &mut LineRoutineType,
-    workers: &mut Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
-    input: &Receiver<In, SignalType>,
-    pending: &mut Option<Message<Out, SignalType>>,
-) -> Result<Incoming<Message<Out, SignalType>>, Error>
-where
-    In: Send + Sync,
-    SignalType: Origin + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out>,
-{
+fn next_message<T: Types>(
+    worker: &mut T::Routine,
+    workers: &mut Vec<Box<dyn Workable<ThreadId = T::ThreadId> + '_>>,
+    input: &Receiver<T::In, T::Signal>,
+    pending: &mut Option<Message<T::Out, T::Signal>>,
+) -> Result<Incoming<Message<T::Out, T::Signal>>, Error> {
     loop {
         if let Some(output) = worker.next()? {
             return Ok(Incoming::Message(Message::Data(output)));
@@ -222,58 +217,30 @@ where
     }
 }
 
-/// Implement [LineTrait] for [Line].
-/// It's mostly a type mapping after we've implemented
-/// all the supertraits.
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> LineTrait<'params>
-    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync + 'static,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
-    type In = In;
-    type Out = Out;
-    type Signal = SignalType;
-    type LineRoutine = LineRoutineType;
-}
-
 /// Get a [Sink] for this node's input edge.
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Get<dyn Sink<DataType = In, SignalType = SignalType> + Send + Sync + 'params>
-    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
+impl<'params, T: Types>
+    Get<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>
+    for Line<'params, T>
 where
-    In: Send + Sync + 'static,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
+    T::In: 'static,
+    T::Signal: 'static,
 {
     fn get(
         &self,
-    ) -> Result<Box<dyn Sink<DataType = In, SignalType = SignalType> + Send + Sync + 'params>, Error>
-    {
+    ) -> Result<
+        Box<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>,
+        Error,
+    > {
         Get::get(&self.input)
     }
 }
 
 /// Implement the [Add] constructor for inbound [Workable] edge.
 /// This allows users to add [Workable] edges to this node such that it can schedule them.
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Add<dyn Workable<ThreadId = ThreadIdType> + 'params>
-    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
+impl<'params, T: Types> Add<dyn Workable<ThreadId = T::ThreadId> + 'params> for Line<'params, T> {
     fn add(
         &mut self,
-        workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
+        workable: Box<dyn Workable<ThreadId = T::ThreadId> + 'params>,
     ) -> Result<(), Error> {
         self.workers.push(workable);
         Ok(())
@@ -283,35 +250,21 @@ where
 /// Implement the [Add] constructor for output [Sink] edge.
 /// This allows users to add [Sink] edges to this node such that it can push data
 /// into them when scheduled, and close them on shutdown.
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-    Add<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>
-    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
+impl<'params, T: Types>
+    Add<dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + Sync + 'params>
+    for Line<'params, T>
 {
     fn add(
         &mut self,
-        closeable: Box<dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params>,
+        closeable: Box<dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + Sync + 'params>,
     ) -> Result<(), Error> {
         self.outputs.add(closeable);
         Ok(())
     }
 }
 
-impl<'params, In, Out, SignalType, ThreadIdType, LineRoutineType> Outputs
-    for Line<'params, In, Out, SignalType, ThreadIdType, LineRoutineType>
-where
-    In: Send + Sync,
-    Out: Clone + Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-    ThreadIdType: ThreadId,
-    LineRoutineType: LineRoutine<In, Out> + 'params,
-{
-    type Sink = dyn Sink<DataType = Out, SignalType = SignalType> + Send + Sync + 'params;
+impl<'params, T: Types> Outputs for Line<'params, T> {
+    type Sink = dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + Sync + 'params;
 }
 
 #[cfg(test)]
@@ -326,10 +279,12 @@ pub mod tests {
     use crate::work::{self, Reader, Writer, tee};
     use std::num::NonZeroUsize;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Instant;
 
     type TestSignal = Trackable<&'static str>;
+    type TestLine<'params, R> = Line<'params, Node<usize, usize, TestSignal, DefaultThread, R>>;
 
     /// Counts the `work()` calls of the parent it wraps.
     struct Counting<W> {
@@ -359,11 +314,19 @@ pub mod tests {
     }
 
     /// A pass-through line whose input holds at most one message.
-    fn bound_one_line<'params>()
-    -> Line<'params, usize, usize, TestSignal, DefaultThread, MockWaitLine> {
+    fn bound_one_line<'params>() -> TestLine<'params, MockWaitLine> {
         Line::builder()
             .bounded(NonZeroUsize::MIN)
             .build(MockWaitLine::new(1))
+    }
+
+    /// [Line], and a shared `Arc<Mutex<Line>>`, meet the [LineTrait] contract.
+    #[test]
+    fn line_meets_line_trait() {
+        fn contract<'params, L: LineTrait<'params, usize, usize, TestSignal>>(_: &L) {}
+        let line: TestLine<MockLine> = Line::of(MockLine::new());
+        contract(&line);
+        contract(&Arc::new(Mutex::new(line)));
     }
 
     #[test]
@@ -477,8 +440,7 @@ pub mod tests {
             inner: parent,
             calls: calls.clone(),
         };
-        let mut child: Line<usize, usize, TestSignal, DefaultThread, MockWaitLine> =
-            Line::of(MockWaitLine::new(1));
+        let mut child: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
         let mut direct = Writer::new(&child).unwrap();
         work::Bidi::connect(counting, &mut child).unwrap();
         let mut reader = Reader::new(child).unwrap();
@@ -505,8 +467,7 @@ pub mod tests {
         for value in 0..5 {
             to_open.push(Message::Data(value)).unwrap();
         }
-        let mut child: Line<usize, usize, TestSignal, DefaultThread, MockWaitLine> =
-            Line::of(MockWaitLine::new(1));
+        let mut child: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
         work::Bidi::connect(closing, &mut child).unwrap();
         work::Bidi::connect(open, &mut child).unwrap();
         let mut reader = Reader::new(child).unwrap();
@@ -524,8 +485,7 @@ pub mod tests {
 
     #[test]
     fn signals_with_no_outputs_are_consumed() {
-        let mut line: Line<usize, usize, TestSignal, DefaultThread, MockWaitLine> =
-            Line::of(MockWaitLine::new(1));
+        let mut line: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
         let mut writer = Writer::new(&line).unwrap();
         writer.push(Message::Marker("m".into())).unwrap();
         writer.push(Message::Flush("f".into())).unwrap();
@@ -539,8 +499,7 @@ pub mod tests {
 
     #[test]
     fn full_side_path_yields_once_then_blocks_until_a_pop() {
-        let mut line: Line<usize, usize, TestSignal, DefaultThread, MockWaitLine> =
-            Line::of(MockWaitLine::new(1));
+        let mut line: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
         let side = Receiver::<usize, TestSignal>::bounded(NonZeroUsize::MIN);
         let edge: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
             Box::new(side.sender());

@@ -42,6 +42,7 @@
 
 use crate::graph::{Closeable, Closed, Pushable, Receivable};
 use crate::node::line::poll::routine::LineRoutine;
+use crate::node::poll::NodeState;
 use crate::poll::Phase;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
@@ -103,16 +104,6 @@ where
     type Routine = RoutineType;
     type Inlet = InletType;
     type Outlet = OutletType;
-}
-
-/// Node state machine for managing flush and close lifecycle.
-enum NodeState<SignalType> {
-    Running,
-    Flushing(SignalType),
-    FlushReady(SignalType),
-    MarkerReady(SignalType),
-    CloseReady,
-    Closed,
 }
 
 /// Shared state between Input, Work, and Output phases.

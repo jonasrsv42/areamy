@@ -28,6 +28,8 @@ struct Line<R: LineRoutine<usize, usize>> {
     output: Output<Node<R>>,
     upstream: input::sync::Sender<usize, Signal>,
     downstream: edge::sync::Receiver<usize, Signal>,
+    /// Whether Output's waker fired.
+    output_woken: Rc<Cell<bool>>,
 }
 
 impl<R: LineRoutine<usize, usize>> Line<R> {
@@ -39,6 +41,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
         let edge = input::sync::Receiver::new(std::task::Waker::noop().clone());
         let upstream = edge.sender();
         let downstream = edge::sync::Receiver::new();
+        let (output_waker, output_woken) = tracking_local_waker();
         let (input, work, output) = node::Node::phases(
             Phase {
                 target: edge,
@@ -50,7 +53,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
             },
             Phase {
                 target: downstream.sender(),
-                waker: noop_local_waker(),
+                waker: output_waker,
             },
         );
         Self {
@@ -59,6 +62,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
             output,
             upstream,
             downstream,
+            output_woken,
         }
     }
 
@@ -164,7 +168,7 @@ fn poll_processes_input_and_produces_output() {
 
     line.upstream.push_back(Message::Data(2)).unwrap();
 
-    // Input drains edge → Send to routine
+    // Input drains edge → TrySend to routine
     assert!(line.input.poll(&mut wkr).unwrap().is_pending());
     // Work polls routine (sync mock — no-op here)
     assert!(line.work.poll(&mut wkr).unwrap().is_pending());
@@ -185,6 +189,7 @@ fn poll_returns_closed_on_closed_input() {
     // skipping the Closing/poll-routine cycle. Work is irrelevant.
     let result = line.input.poll(&mut wkr);
     assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+    assert!(line.output_woken.get(), "Input must wake Output on close");
 
     // Output drains buffered output (none here) and closes downstream.
     let result = line.output.poll(&mut wkr);
@@ -509,10 +514,11 @@ fn close_while_holding_closes_at_once() {
     // 2 is held, and the routine never makes room.
     assert!(line.input.poll(&mut wkr).unwrap().is_pending());
 
-    // Close wakes Input; the held message can't be waited out.
+    // Close wakes Input; the held message can't be waited out, and Output must hear.
     line.upstream.close().unwrap();
     let result = line.input.poll(&mut wkr);
     assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+    assert!(line.output_woken.get());
 }
 
 #[test]
@@ -527,4 +533,5 @@ fn close_before_the_refusal_closes_at_once() {
 
     let result = line.input.poll(&mut wkr);
     assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+    assert!(line.output_woken.get());
 }

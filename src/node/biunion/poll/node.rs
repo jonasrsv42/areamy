@@ -27,6 +27,7 @@ use super::phases::Phases;
 use crate::graph::{Closeable, Closed, Pushable, Receivable};
 use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::node::poll::NodeState;
 use crate::poll::Phase;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
@@ -125,16 +126,6 @@ where
     type LeftInlet = LeftInletType;
     type RightInlet = RightInletType;
     type Outlet = OutletType;
-}
-
-/// Node state machine for managing flush and close lifecycle.
-enum NodeState<SignalType> {
-    Running,
-    Flushing(SignalType),
-    FlushReady(SignalType),
-    MarkerReady(SignalType),
-    CloseReady,
-    Closed,
 }
 
 /// Shared state between the two Inputs, Work, and Output phases.

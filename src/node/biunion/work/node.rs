@@ -4,6 +4,7 @@ use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
 use crate::graph::{Add, Get, Outputs, Pushable};
 use crate::message::Message;
+use crate::node::biunion::Inputs;
 use crate::node::biunion::routine::BiunionRoutine;
 use crate::node::biunion::work::builder::BiunionBuilder;
 use crate::node::routine::Next as _;
@@ -95,51 +96,22 @@ where
     type Routine = RoutineType;
 }
 
-/// Parent workables grouped by biunion side.
-pub struct Worker<'params, ThreadIdType: ThreadId> {
-    pub left: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
-    pub right: Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>,
-}
-
-impl<'params, ThreadIdType: ThreadId> Default for Worker<'params, ThreadIdType> {
-    fn default() -> Self {
-        Self {
-            left: Vec::new(),
-            right: Vec::new(),
-        }
-    }
-}
+/// Parent workables of one side.
+pub type Parents<'params, ThreadIdType> = Vec<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>>;
 
 /// Input edges grouped by biunion side.
-pub struct Input<Left, Right, SignalType>
-where
-    Left: Send + Sync,
-    Right: Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-{
-    pub left: multiedge::Receiver<Left, SignalType>,
-    pub right: multiedge::Receiver<Right, SignalType>,
+pub struct Input<T: Types> {
+    pub left: multiedge::Receiver<T::Left, T::Signal>,
+    pub right: multiedge::Receiver<T::Right, T::Signal>,
     notify: Arc<Notify>,
 }
 
-impl<Left, Right, SignalType> Input<Left, Right, SignalType>
-where
-    Left: Send + Sync,
-    Right: Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-{
+impl<T: Types> Input<T> {
     /// Block until either side has data; `Closed` when neither can.
     fn wait_any(&self) -> Result<(), Error> {
         self.notify.wait_any(&[&self.left, &self.right])
     }
-}
 
-impl<Left, Right, SignalType> Input<Left, Right, SignalType>
-where
-    Left: Send + Sync,
-    Right: Send + Sync,
-    SignalType: Origin + Clone + Send + Sync,
-{
     /// Both sides share one [Notify]; each has its own bound (`None` is unbounded).
     pub(super) fn new(left: Option<NonZeroUsize>, right: Option<NonZeroUsize>) -> Self {
         let notify = Notify::new();
@@ -156,14 +128,14 @@ pub struct Biunion<'params, T: Types> {
     pub routine: T::Routine,
 
     /// Parent workables, grouped by side.
-    pub worker: Worker<'params, T::ThreadId>,
+    pub workers: Inputs<Parents<'params, T::ThreadId>, Parents<'params, T::ThreadId>>,
 
     /// Edges that we push output into. A refused message waits here, and nothing new leaves the
     /// routine until it is delivered.
     pub outputs: Fanout<'params, T::Out, T::Signal>,
 
     /// Input edges, grouped by side.
-    pub input: Input<T::Left, T::Right, T::Signal>,
+    pub input: Input<T>,
 
     /// A Flush or Marker held until the routine is drained; outputs go out one per round.
     pub(super) pending: Option<Message<T::Out, T::Signal>>,
@@ -177,7 +149,7 @@ impl<T: Types> Workable for Biunion<'_, T> {
     fn work(&mut self) -> Result<(), Error> {
         let Biunion {
             routine,
-            worker,
+            workers,
             outputs,
             input,
             pending,
@@ -191,7 +163,7 @@ impl<T: Types> Workable for Biunion<'_, T> {
             return Ok(());
         };
 
-        match next_message::<T>(routine, worker, input, pending)? {
+        match next_message::<T>(routine, workers, input, pending)? {
             Incoming::Message(message) => {
                 // A refused message stays in the fan-out; the next round resumes it.
                 let _ = ready.push(message)?;
@@ -238,8 +210,8 @@ where
 /// re-entered.
 fn next_message<T: Types>(
     routine: &mut T::Routine,
-    worker: &mut Worker<'_, T::ThreadId>,
-    input: &Input<T::Left, T::Right, T::Signal>,
+    workers: &mut Inputs<Parents<'_, T::ThreadId>, Parents<'_, T::ThreadId>>,
+    input: &Input<T>,
     pending: &mut Option<Message<T::Out, T::Signal>>,
 ) -> Result<Incoming<Message<T::Out, T::Signal>>, Error> {
     loop {
@@ -268,7 +240,7 @@ fn next_message<T: Types>(
             Err(error) => return Err(error),
         }
         // No parents left: block until either edge has data. Closed once neither can.
-        if worker.left.is_empty() && worker.right.is_empty() {
+        if workers.left.is_empty() && workers.right.is_empty() {
             match input.wait_any() {
                 Err(error) if matches!(error.kind, ErrorKind::Closed) => {
                     return Ok(Incoming::Closed);
@@ -277,8 +249,8 @@ fn next_message<T: Types>(
             }
         }
         // Work each side's parents once, dropping finished ones.
-        work_each(&mut worker.left)?;
-        work_each(&mut worker.right)?;
+        work_each(&mut workers.left)?;
+        work_each(&mut workers.right)?;
     }
 }
 
@@ -370,7 +342,7 @@ impl<'params, T: Types> Add<dyn Workable<ThreadId = T::ThreadId> + 'params, biun
         &mut self,
         workable: Box<dyn Workable<ThreadId = T::ThreadId> + 'params>,
     ) -> Result<(), Error> {
-        self.worker.left.push(workable);
+        self.workers.left.push(workable);
         Ok(())
     }
 }
@@ -382,7 +354,7 @@ impl<'params, T: Types> Add<dyn Workable<ThreadId = T::ThreadId> + 'params, biun
         &mut self,
         workable: Box<dyn Workable<ThreadId = T::ThreadId> + 'params>,
     ) -> Result<(), Error> {
-        self.worker.right.push(workable);
+        self.workers.right.push(workable);
         Ok(())
     }
 }

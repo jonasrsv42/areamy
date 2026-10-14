@@ -1,7 +1,8 @@
 //! [BiunionBuilder] sets a work [Biunion]'s options before it exists.
 use crate::edge::fanout::Fanout;
+use crate::node::biunion::Inputs;
 use crate::node::biunion::Side;
-use crate::node::biunion::work::node::{Biunion, Input, Types, Worker};
+use crate::node::biunion::work::node::{Biunion, Input, Types};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
@@ -35,7 +36,7 @@ impl<'params, T: Types> BiunionBuilder<'params, T> {
     pub fn build(self, routine: T::Routine) -> Biunion<'params, T> {
         Biunion {
             routine,
-            worker: Worker::default(),
+            workers: Inputs::default(),
             outputs: Fanout::new(),
             input: Input::new(self.left, self.right),
             pending: None,

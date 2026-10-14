@@ -17,9 +17,9 @@
 //!
 //! Flush from either input triggers Flushing immediately (first-flush-wins).
 
-use super::Inputs;
 use super::phases::Phases;
 use crate::graph::{Closeable, Pushable, Receivable};
+use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::Phase;
 use crate::signal::Origin;

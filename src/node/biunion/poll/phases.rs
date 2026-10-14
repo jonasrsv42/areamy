@@ -1,7 +1,7 @@
 //! Phase grouping structs for biunion poll nodes.
 
-use super::Inputs;
 use super::node::{LeftInput, Output, RightInput, Types, Work};
+use crate::node::biunion::Inputs;
 
 /// All four phase pollables for a biunion node.
 pub struct Phases<T: Types> {

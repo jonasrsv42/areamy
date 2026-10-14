@@ -2,7 +2,7 @@
 
 use super::node::{Allocated, Node};
 use crate::error::Error;
-use crate::node::biunion::poll::Inputs;
+use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::{BiunionRoutineFactory, BiunionWakers};
 use crate::node::biunion::poll::node;
 use crate::node::biunion::poll::routine::BiunionRoutine;

@@ -8,24 +8,24 @@ use crate::poll::queue::ThreadLocalProducer;
 use crate::wake::{LocalWake, LocalWaker};
 
 /// Local wake impl backed by [ThreadLocalProducer].
-struct Wake {
+pub(crate) struct Waker {
     id: NodeId,
     producer: ThreadLocalProducer,
 }
 
-impl LocalWake for Wake {
-    fn wake(&self) {
-        self.producer.push(self.id);
-    }
-}
-
-impl LocalWaker {
-    /// Create a local waker for a node ID using the given producer.
-    pub fn from_producer(id: NodeId, producer: &ThreadLocalProducer) -> Self {
-        Self::new(Wake {
+impl Waker {
+    /// A local waker for a node ID on the given producer.
+    pub(crate) fn local(id: NodeId, producer: &ThreadLocalProducer) -> LocalWaker {
+        LocalWaker::new(Self {
             id,
             producer: producer.clone(),
         })
+    }
+}
+
+impl LocalWake for Waker {
+    fn wake(&self) {
+        self.producer.push(self.id);
     }
 }
 
@@ -38,7 +38,7 @@ mod tests {
     fn wake_via_local_waker_drives_consumer() {
         let q = PollQueue::new();
         let (mut consumer, local) = q.local();
-        let waker = LocalWaker::from_producer(7, &local);
+        let waker = Waker::local(7, &local);
         waker.wake();
         assert_eq!(consumer.next().unwrap(), 7);
     }

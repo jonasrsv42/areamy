@@ -14,7 +14,7 @@ use crate::poll::marker::NodeId;
 use crate::poll::queue::{Producer, ThreadLocalProducer};
 use crate::poll::runtime::{Node, Runtime};
 use crate::poll::timer::Timer;
-use crate::poll::wakers::sync;
+use crate::poll::wakers::{sync, thread_local};
 use crate::poll::{Context, Pollable};
 use crate::thread::ThreadId;
 use crate::wake::{self, LocalWaker};
@@ -87,7 +87,7 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
     /// Create a [LocalWaker] for an existing node ID.
     /// Does not allocate a new slot.
     pub fn local_waker(&self, id: NodeId) -> LocalWaker {
-        LocalWaker::from_producer(id, &self.local_producer)
+        thread_local::Waker::local(id, &self.local_producer)
     }
 
     /// Finalize allocation and build the [Runtime].
@@ -141,7 +141,7 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         Context {
             wake: wake::Waker {
                 sync: sync::Waker::task(id, &self.producer),
-                local: LocalWaker::from_producer(id, &self.local_producer),
+                local: thread_local::Waker::local(id, &self.local_producer),
             },
             timer: Timer::new(id, &self.local_producer),
         }

@@ -164,14 +164,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
     let mut alive = runtime.nodes.len();
 
     while alive > 0 {
-        let node_id = match consumer.next() {
-            Ok(id) => id,
-            Err(e) => {
-                #[cfg(not(feature = "silent"))]
-                eprintln!("Thread dequeue error: {}", e);
-                return Err(e);
-            }
-        };
+        let node_id = consumer.next();
 
         let slot = &mut runtime.nodes[node_id];
         let Some(RuntimeNode { pollable, cx }) = slot.as_mut() else {

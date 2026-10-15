@@ -32,7 +32,7 @@ pub struct ThreadLocalProducer {
 }
 
 impl ThreadLocalProducer {
-    /// Enqueue a wake. No signal — consumer is on the same thread.
+    /// Enqueue a wake. No parker wake — the consumer is on this thread and not parked.
     pub fn push(&self, id: NodeId) {
         self.inner.borrow_mut().push(id);
     }

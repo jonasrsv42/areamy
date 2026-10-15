@@ -7,9 +7,10 @@ use core::marker::PhantomData;
 use core::task::Waker;
 use std::mem;
 use std::sync::{Condvar, Mutex};
+use std::time::Instant;
 
-/// One thread's park token. Wakes coalesce and are never lost: a wake before [Parker::park]
-/// makes the next one return at once.
+/// One thread's park token. Wakes coalesce and are never lost: a wake before a park
+/// ([Parker::park] or [Parker::park_until]) makes it return at once.
 ///
 /// Binds no thread, unlike `thread::park`: its waker exists before the thread that parks (a node
 /// is built on one thread and runs on another).
@@ -54,24 +55,56 @@ impl Parker {
 
     /// Block until woken since the last park.
     pub(crate) fn park(&self) {
+        self.sleep(None);
+    }
+
+    /// Block until woken since the last park, or until `deadline`. A wake present at the
+    /// deadline wins and is consumed, so no stale token outlives the call.
+    pub(crate) fn park_until(&self, deadline: Instant) {
+        self.sleep(Some(deadline));
+    }
+
+    /// [Self::park] without a deadline, [Self::park_until] with one: one loop, so both share the
+    /// lost-wake reasoning.
+    fn sleep(&self, deadline: Option<Instant>) {
         // Poison is recovered: the state is two bools, valid in every combination.
         let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
-        // Woken before we parked: consume the token without sleeping.
+        // Woken before we parked: consume the token without sleeping; `parked` stays clear, so
+        // wakes skip the notify.
         if state.woken {
             state.woken = false;
             return;
         }
-        // Tell wakes to notify. Only a wake clears it, and that wake also sets the token, which
-        // ends the loop.
+        // Tell wakes to notify. Only a wake (which also sets the token, ending the loop) or our
+        // timeout clears it.
         state.parked = true;
         // Loop: the condvar may return spuriously, without a wake.
         while !state.woken {
-            // Unlocks while asleep, so a wake can take the lock; relocks before returning.
-            state = self
-                .inner
-                .unpark
-                .wait(state)
-                .unwrap_or_else(|p| p.into_inner());
+            // Each wait unlocks while asleep, so a wake can take the lock; relocks before
+            // returning.
+            state = match deadline {
+                None => self
+                    .inner
+                    .unpark
+                    .wait(state)
+                    .unwrap_or_else(|p| p.into_inner()),
+                Some(deadline) => {
+                    // Recomputed each turn: a spurious return must not restart the full wait.
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    // Timed out unwoken (checked after the token, so a wake wins a tie): stop
+                    // asking wakes to notify a parker that left.
+                    if remaining.is_zero() {
+                        state.parked = false;
+                        return;
+                    }
+                    self.inner
+                        .unpark
+                        .wait_timeout(state, remaining)
+                        // The timed-out flag is dropped: the token and the clock decide, above.
+                        .map(|(state, _)| state)
+                        .unwrap_or_else(|p| p.into_inner().0)
+                }
+            };
         }
         // Consume the token: the next park sleeps until a later wake.
         state.woken = false;
@@ -101,7 +134,7 @@ impl Wake for Inner {
 
     fn wake_by_ref(self: &Arc<Self>) {
         let parked = {
-            // Poison is recovered, as in `park`.
+            // Poison is recovered, as in `sleep`.
             let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
             // Set the token: kept for the next park if none is asleep. Wakes coalesce into it.
             state.woken = true;
@@ -121,6 +154,7 @@ mod tests {
     use super::*;
     use crate::edge::sync::tests::wait_until;
     use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn wake_by_ref_wakes() {
@@ -142,6 +176,8 @@ mod tests {
         parker.waker().wake_by_ref();
         parker.park();
         assert!(!parker.take_woken());
+        // Never slept, so later wakes must skip the notify.
+        assert!(!parker.parked_probe()());
     }
 
     #[test]
@@ -158,5 +194,65 @@ mod tests {
             parker.park();
         });
         assert!(!parker.parked_probe()());
+        // The wake was consumed: the next park sleeps until a later one.
+        assert!(!parker.take_woken());
+    }
+
+    #[test]
+    fn park_until_times_out_without_a_wake() {
+        let parker = Parker::new();
+        let start = Instant::now();
+        parker.park_until(start + Duration::from_millis(20));
+        assert!(start.elapsed() >= Duration::from_millis(20));
+        // The parker left: no token, and wakes must not notify it.
+        assert!(!parker.take_woken());
+        assert!(!parker.parked_probe()());
+    }
+
+    #[test]
+    fn park_until_a_past_deadline_returns_at_once() {
+        let parker = Parker::new();
+        let start = Instant::now();
+        parker.park_until(start - Duration::from_millis(50));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(!parker.parked_probe()());
+    }
+
+    #[test]
+    fn park_until_consumes_an_earlier_wake() {
+        let parker = Parker::new();
+        parker.waker().wake_by_ref();
+        let start = Instant::now();
+        parker.park_until(start + Duration::from_secs(60));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(!parker.take_woken());
+        assert!(!parker.parked_probe()());
+    }
+
+    #[test]
+    fn park_until_a_past_deadline_still_consumes_a_wake() {
+        let parker = Parker::new();
+        parker.waker().wake_by_ref();
+        parker.park_until(Instant::now() - Duration::from_millis(50));
+        // The wake wins the tie: consumed, not left for the next park.
+        assert!(!parker.take_woken());
+    }
+
+    #[test]
+    fn park_until_returns_when_woken_while_asleep() {
+        let parker = Parker::new();
+        let waker = parker.waker();
+        let parked = parker.parked_probe();
+        let start = Instant::now();
+        thread::scope(|s| {
+            s.spawn(move || {
+                wait_until(parked);
+                waker.wake();
+            });
+            parker.park_until(start + Duration::from_secs(60));
+        });
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(!parker.parked_probe()());
+        assert!(!parker.take_woken());
     }
 }

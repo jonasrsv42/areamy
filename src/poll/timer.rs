@@ -74,7 +74,7 @@ mod tests {
         let past = Instant::now() - Duration::from_millis(50);
         let _ = timer.schedule_at(past);
         // An expired deadline comes out as the node's id.
-        assert_eq!(consumer.next().unwrap(), 42);
+        assert_eq!(consumer.next(), 42);
     }
 
     #[test]

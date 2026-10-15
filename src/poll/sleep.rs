@@ -152,7 +152,7 @@ mod tests {
         // The deadline wakes node 7 (the frame that first polled),
         // and the woken poll resolves.
         let start = Instant::now();
-        assert_eq!(consumer.next().unwrap(), 7);
+        assert_eq!(consumer.next(), 7);
         assert!(start.elapsed() >= Duration::from_millis(15));
         assert!(matches!(poll_once(&mut fut), Poll::Ready(Ok(()))));
     }
@@ -175,7 +175,7 @@ mod tests {
         // ahead of the push; with it, the push is the only event.
         thread::sleep(Duration::from_millis(40));
         local.push(9);
-        assert_eq!(consumer.next().unwrap(), 9);
+        assert_eq!(consumer.next(), 9);
     }
 
     #[test]
@@ -201,9 +201,9 @@ mod tests {
         // Inner frame exited — outer timer restored.
         assert!(matches!(poll_once(&mut after), Poll::Pending));
 
-        assert_eq!(consumer.next().unwrap(), 1); // before → outer
-        assert_eq!(consumer.next().unwrap(), 2); // nested → inner
-        assert_eq!(consumer.next().unwrap(), 1); // after → outer
+        assert_eq!(consumer.next(), 1); // before → outer
+        assert_eq!(consumer.next(), 2); // nested → inner
+        assert_eq!(consumer.next(), 1); // after → outer
     }
 
     #[test]

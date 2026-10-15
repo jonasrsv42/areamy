@@ -21,21 +21,19 @@
 //! - [ThreadLocalProducer](super::ThreadLocalProducer) is `!Send`,
 //!   shares the thread with the consumer — no transient state is
 //!   observable across the consumer's only chance to look.
-//! - [Producer](super::Producer) always calls [Self::signal] after
-//!   push. Even if the consumer sees false-empty and parks, the
-//!   signal wakes it; on retry the push is complete and visible.
+//! - [Producer](super::Producer) always wakes the consumer's
+//!   [Parker](crate::wake::Parker) after push. Even if the consumer
+//!   sees false-empty and parks, the wake releases it; on retry the
+//!   push is complete and visible. An earlier producer's half-link
+//!   may still hide it, but that producer wakes after linking too.
 //!
-//! Breaking either (cross-thread push without signal) loses items.
+//! Breaking either (cross-thread push without a wake) loses items.
 
-use crate::error::Error;
-use crate::fatal;
 use crate::poll::marker::NodeId;
 
 use alloc::boxed::Box;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
-use std::sync::{Condvar, Mutex};
-use std::time::Instant;
 
 /// What producers push and consumers pop. Exhaustive over the events
 /// the consumer dispatches on.
@@ -51,14 +49,6 @@ pub(super) enum Item {
 enum NodeValue {
     Initial,
     Item(Item),
-}
-
-/// Outcome of [VyukovQueue::wait_until].
-pub(super) enum Wait {
-    /// A signal arrived; parked flag consumed.
-    Signal,
-    /// Deadline elapsed; parked flag untouched.
-    Timeout,
 }
 
 struct Node {
@@ -102,8 +92,6 @@ impl<T> core::ops::Deref for CachePadded<T> {
 pub(super) struct VyukovQueue {
     head: CachePadded<AtomicPtr<Node>>,
     tail: CachePadded<AtomicPtr<Node>>,
-    parked: Mutex<bool>,
-    signal: Condvar,
 }
 
 impl VyukovQueue {
@@ -112,8 +100,6 @@ impl VyukovQueue {
         Self {
             head: CachePadded(AtomicPtr::new(initial)),
             tail: CachePadded(AtomicPtr::new(initial)),
-            parked: Mutex::new(false),
-            signal: Condvar::new(),
         }
     }
 
@@ -135,15 +121,6 @@ impl VyukovQueue {
         // via next pointers, so this completes the insertion.
         // Safety: prev is valid and exclusively ours after the swap.
         unsafe { &*prev }.next.store(node, Ordering::Release);
-    }
-
-    /// Set the parked flag and notify. Producers call this after push.
-    pub(super) fn signal(&self) -> Result<(), Error> {
-        let mut parked = self.parked.lock().map_err(|e| fatal!(e))?;
-        *parked = true;
-        self.signal.notify_one();
-        drop(parked);
-        Ok(())
     }
 
     /// Non-blocking dequeue. Single consumer only.
@@ -183,84 +160,6 @@ impl VyukovQueue {
         unsafe { drop(Box::from_raw(head)) };
         Some(item)
     }
-
-    /// Block until a signal arrives.
-    ///
-    /// # Same-thread assumption
-    ///
-    /// [ThreadLocalProducer](super::ThreadLocalProducer) pushes
-    /// without signaling. Safe because producer and consumer share a
-    /// thread: if we're in `wait`, no local push can fire
-    /// concurrently. Local pushes only happen during poll callbacks,
-    /// which only run *after* `wait` returns.
-    ///
-    /// If a local push *could* happen while we're inside the inner
-    /// [Condvar::wait], we would deadlock — no signal to wake us,
-    /// item stuck in the queue. The `!Send` constraint on
-    /// `ThreadLocalProducer` and `Consumer` guarantees they share a
-    /// thread, preventing this.
-    ///
-    /// Only cross-thread [Producer](super::Producer) can wake us, and
-    /// it always calls `signal`.
-    ///
-    /// # Race with signal-before-wait
-    ///
-    /// A producer that signaled between the caller's last
-    /// `try_pop_value` and our lock acquisition has already flipped
-    /// the parked flag (the mutex orders our acquire after their
-    /// release). We see the flag set under lock and return
-    /// immediately without waiting.
-    pub(super) fn wait(&self) -> Result<(), Error> {
-        let mut parked = self.parked.lock().map_err(|e| fatal!(e))?;
-        while !*parked {
-            parked = self.signal.wait(parked).map_err(|e| fatal!(e))?;
-        }
-        *parked = false;
-        Ok(())
-    }
-
-    /// Block until a signal arrives or `deadline` elapses.
-    ///
-    /// # Race safety: parked-flag is source of truth
-    ///
-    /// [Condvar::wait_timeout]'s `WaitTimeoutResult` is intentionally
-    /// discarded — we read `*parked` on the next iteration instead.
-    /// Reasons:
-    ///
-    /// - **Signal-during-timeout race:** `wait_timeout` may report
-    ///   "timed out" while a producer simultaneously sets the flag
-    ///   under the same mutex (producer's release happens-before our
-    ///   reacquire). Checking the flag catches this and reports
-    ///   [Wait::Signal] — the safe choice, since consuming a real
-    ///   signal never loses data.
-    /// - **Spurious wakeups:** `wait_timeout` may return with flag
-    ///   still false and time remaining. We loop, recompute
-    ///   `remaining`, and wait again.
-    /// - **Signal-before-wait race:** if a producer signaled before
-    ///   our lock acquisition, the flag is already true on entry; we
-    ///   exit [Wait::Signal] without ever calling `wait_timeout`.
-    ///
-    /// [Wait::Signal] takes precedence over [Wait::Timeout] when both
-    /// conditions hold — avoids leaving a stale flag set between
-    /// calls.
-    pub(super) fn wait_until(&self, deadline: Instant) -> Result<Wait, Error> {
-        let mut parked = self.parked.lock().map_err(|e| fatal!(e))?;
-        loop {
-            if *parked {
-                *parked = false;
-                return Ok(Wait::Signal);
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Ok(Wait::Timeout);
-            }
-            let (new_parked, _) = self
-                .signal
-                .wait_timeout(parked, remaining)
-                .map_err(|e| fatal!(e))?;
-            parked = new_parked;
-        }
-    }
 }
 
 impl Drop for VyukovQueue {
@@ -288,7 +187,6 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use std::thread;
-    use std::time::Duration;
 
     fn assert_id(item: Option<Item>, expected: NodeId) {
         match item {
@@ -374,13 +272,8 @@ mod tests {
     fn cross_thread_push() {
         let q = Arc::new(VyukovQueue::new());
         let q2 = q.clone();
-        let handle = thread::spawn(move || {
-            q2.push(99);
-            q2.signal().unwrap();
-        });
-        q.wait().unwrap();
+        thread::spawn(move || q2.push(99)).join().unwrap();
         assert_id(q.try_pop_value(), 99);
-        handle.join().unwrap();
     }
 
     #[test]
@@ -389,10 +282,7 @@ mod tests {
         let mut handles = Vec::new();
         for i in 0..10 {
             let q = q.clone();
-            handles.push(thread::spawn(move || {
-                q.push(i);
-                q.signal().unwrap();
-            }));
+            handles.push(thread::spawn(move || q.push(i)));
         }
         for handle in handles {
             handle.join().unwrap();
@@ -440,70 +330,5 @@ mod tests {
         q.push(2);
         q.push_value(Item::DeadlinePending);
         drop(q);
-    }
-
-    #[test]
-    fn wait_until_returns_timeout_when_no_signal() {
-        let q = VyukovQueue::new();
-        let deadline = Instant::now() + Duration::from_millis(20);
-        let start = Instant::now();
-        match q.wait_until(deadline).unwrap() {
-            Wait::Timeout => {}
-            Wait::Signal => panic!("unexpected signal"),
-        }
-        assert!(start.elapsed() >= Duration::from_millis(15));
-    }
-
-    #[test]
-    fn wait_until_returns_signal_when_producer_signals() {
-        let q = Arc::new(VyukovQueue::new());
-        let q2 = q.clone();
-        let deadline = Instant::now() + Duration::from_secs(60);
-        let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(10));
-            q2.push(7);
-            q2.signal().unwrap();
-        });
-        match q.wait_until(deadline).unwrap() {
-            Wait::Signal => {}
-            Wait::Timeout => panic!("timed out despite signal"),
-        }
-        assert_id(q.try_pop_value(), 7);
-        handle.join().unwrap();
-    }
-
-    #[test]
-    fn wait_until_returns_signal_if_flag_was_already_set() {
-        let q = VyukovQueue::new();
-        q.signal().unwrap();
-        let deadline = Instant::now() + Duration::from_secs(60);
-        match q.wait_until(deadline).unwrap() {
-            Wait::Signal => {}
-            Wait::Timeout => panic!("expected immediate signal"),
-        }
-    }
-
-    #[test]
-    fn wait_until_past_deadline_returns_timeout_immediately() {
-        let q = VyukovQueue::new();
-        let past = Instant::now() - Duration::from_millis(50);
-        let start = Instant::now();
-        match q.wait_until(past).unwrap() {
-            Wait::Timeout => {}
-            Wait::Signal => panic!("no signal was sent"),
-        }
-        assert!(start.elapsed() < Duration::from_millis(5));
-    }
-
-    #[test]
-    fn wait_returns_after_signal() {
-        let q = Arc::new(VyukovQueue::new());
-        let q2 = q.clone();
-        let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(10));
-            q2.signal().unwrap();
-        });
-        q.wait().unwrap();
-        handle.join().unwrap();
     }
 }

@@ -6,7 +6,7 @@
 //! [Waker] bundles a sync waker (for I/O, standard futures) with a
 //! local waker (for cheap same-thread wake).
 //!
-//! `Parker` blocks a thread until woken.
+//! `Parker` blocks a thread until woken, or until a deadline.
 
 mod parker;
 

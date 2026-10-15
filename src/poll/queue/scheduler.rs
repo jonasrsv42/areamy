@@ -4,18 +4,18 @@
 //! shared by [Consumer](super::Consumer) and every
 //! [ThreadLocalProducer](super::ThreadLocalProducer) clone.
 //!
-//! [Self::next] is timer-unaware on the fast path: pop, dispatch on
-//! [Item]. A `DeadlinePending` pop hands off to [Self::timer_dispatch]
+//! [Scheduler::next] is timer-unaware on the fast path: pop, dispatch on
+//! [Item]. A `DeadlinePending` pop hands off to [Scheduler::on_deadline]
 //! which owns all deadline state.
 //!
 //! `pending: bool` dedupes the cycling `DeadlinePending` sentinel —
 //! exactly one is ever live in the queue.
 
-use super::core::{Item, VyukovQueue, Wait};
+use super::core::{Item, VyukovQueue};
 use super::deadline::DeadlineHeap;
-use crate::error::Error;
 use crate::poll::marker::NodeId;
 use crate::poll::timer::TimerKey;
+use crate::wake::Parker;
 
 use alloc::sync::Arc;
 use core::mem;
@@ -24,17 +24,36 @@ use std::time::Instant;
 pub(super) struct Scheduler {
     // Inner thread-safe queue for scheduling work.
     queue: Arc<VyukovQueue>,
+    /// Parked on when the queue is empty; cross-thread producers wake it.
+    ///
+    /// # Same-thread assumption
+    ///
+    /// [ThreadLocalProducer](super::ThreadLocalProducer) pushes
+    /// without waking. Safe because producer and consumer share a
+    /// thread: if we're in `park`, no local push can fire
+    /// concurrently. Local pushes only happen during poll callbacks,
+    /// which only run *after* `park` returns.
+    ///
+    /// If a local push *could* happen while we're inside the park,
+    /// we would deadlock — no wake to release us, item stuck in the
+    /// queue. The `!Send` constraint on `ThreadLocalProducer` and
+    /// `Consumer` guarantees they share a thread, preventing this.
+    ///
+    /// Only cross-thread [Producer](super::Producer) can wake us, and
+    /// it always wakes after pushing.
+    parker: Parker,
     // Current future-scheduled work.
     deadline: DeadlineHeap,
     /// True iff a `DeadlinePending` sentinel is live in the queue or
-    /// being processed in [Self::timer_dispatch].
+    /// being processed in [Self::on_deadline].
     pending: bool,
 }
 
 impl Scheduler {
-    pub(super) fn new(queue: Arc<VyukovQueue>) -> Self {
+    pub(super) fn new(queue: Arc<VyukovQueue>, parker: Parker) -> Self {
         Self {
             queue,
+            parker,
             deadline: DeadlineHeap::new(),
             pending: false,
         }
@@ -66,27 +85,29 @@ impl Scheduler {
         self.deadline.cancel(key);
     }
 
-    /// Fast path: pop, dispatch, park. Delegates to [Self::timer_dispatch]
+    /// Fast path: pop, dispatch, park. Delegates to [Self::on_deadline]
     /// only when a `DeadlinePending` sentinel surfaces.
-    pub(super) fn next(&mut self) -> Result<NodeId, Error> {
+    pub(super) fn next(&mut self) -> NodeId {
         loop {
             match self.queue.try_pop_value() {
-                Some(Item::Id(id)) => return Ok(id),
+                Some(Item::Id(id)) => return id,
                 Some(Item::DeadlinePending) => {
-                    if let Some(id) = self.on_deadline()? {
-                        return Ok(id);
+                    if let Some(id) = self.on_deadline() {
+                        return id;
                     }
                     // Heap was empty — coupon dropped; resume fast path.
                 }
-                None => self.queue.wait()?,
+                // A wake after our empty pop is already in the token: park returns at once. A
+                // stale token (its item already popped) costs one empty re-pop.
+                None => self.parker.park(),
             }
         }
     }
 
     /// Caller has popped a `DeadlinePending` sentinel. Run the timer
-    /// state machine until either a node is ready (`Ok(Some)`) or the
-    /// heap is empty and the coupon should be dropped (`Ok(None)`).
-    fn on_deadline(&mut self) -> Result<Option<NodeId>, Error> {
+    /// state machine until either a node is ready (`Some`) or the
+    /// heap is empty and the coupon should be dropped (`None`).
+    fn on_deadline(&mut self) -> Option<NodeId> {
         // Sentinel just consumed — clear flag so re-arm sites below
         // can push a fresh one.
         self.pending = false;
@@ -95,22 +116,19 @@ impl Scheduler {
             // Expired entries first, every iteration: a busy queue
             // would otherwise starve them.
             if let Some(first) = self.schedule_expired() {
-                return Ok(Some(first));
+                return Some(first);
             }
 
             // Re-peek each iteration. `peek` drains stale; None here
             // means no fresh work — drop coupon, fast path resumes.
-            let deadline = match self.deadline.peek() {
-                None => return Ok(None),
-                Some(d) => d,
-            };
+            let deadline = self.deadline.peek()?;
 
             match self.queue.try_pop_value() {
                 Some(Item::Id(id)) => {
                     // Real wake in timer mode: re-arm so next next()
                     // re-enters and re-bounds its park.
                     self.arm();
-                    return Ok(Some(id));
+                    return Some(id);
                 }
                 Some(Item::DeadlinePending) => {
                     // Unreachable under the dedup invariant; reset
@@ -122,11 +140,9 @@ impl Scheduler {
                     );
                     self.pending = false;
                 }
-                None => match self.queue.wait_until(deadline)? {
-                    // Both arms loop back; top handles uniformly via
-                    // drain_expired (on Timeout) or try_pop (on Signal).
-                    Wait::Signal | Wait::Timeout => continue,
-                },
+                // Woken or timed out, loop back: the top drains what expired, the pop takes what
+                // was pushed.
+                None => self.parker.park_until(deadline),
             }
         }
     }
@@ -157,11 +173,12 @@ impl Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::edge::sync::tests::wait_until;
     use std::thread;
     use std::time::Duration;
 
     fn sched() -> Scheduler {
-        Scheduler::new(Arc::new(VyukovQueue::new()))
+        Scheduler::new(Arc::new(VyukovQueue::new()), Parker::new())
     }
 
     // ---- fast path ----
@@ -170,19 +187,43 @@ mod tests {
     fn next_returns_pushed_id() {
         let mut s = sched();
         s.queue.push(42);
-        assert_eq!(s.next().unwrap(), 42);
+        assert_eq!(s.next(), 42);
     }
 
     #[test]
     fn next_blocks_until_cross_thread_push() {
         let mut s = sched();
         let shared = s.queue.clone();
+        let waker = s.parker.waker();
+        let parked = s.parker.parked_probe();
         let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(10));
+            // Push only once the consumer sleeps, so the wake's notify is what releases it.
+            wait_until(parked);
             shared.push(7);
-            shared.signal().unwrap();
+            waker.wake();
         });
-        assert_eq!(s.next().unwrap(), 7);
+        assert_eq!(s.next(), 7);
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn next_parks_for_real_after_a_stale_token() {
+        let mut s = sched();
+        // Pushed and woken, then popped without parking: the token is left stale.
+        s.queue.push(1);
+        s.parker.waker().wake();
+        assert_eq!(s.next(), 1);
+
+        let shared = s.queue.clone();
+        let waker = s.parker.waker();
+        let parked = s.parker.parked_probe();
+        let handle = thread::spawn(move || {
+            // The stale token buys one empty re-pop; the park after it really sleeps.
+            wait_until(parked);
+            shared.push(2);
+            waker.wake();
+        });
+        assert_eq!(s.next(), 2);
         handle.join().unwrap();
     }
 
@@ -238,7 +279,7 @@ mod tests {
         s.queue.push_value(Item::DeadlinePending);
         s.pending = true;
         s.queue.push(99);
-        assert_eq!(s.next().unwrap(), 99);
+        assert_eq!(s.next(), 99);
     }
 
     #[test]
@@ -247,7 +288,7 @@ mod tests {
         let past = Instant::now() - Duration::from_millis(50);
         s.schedule(13, past);
         let start = Instant::now();
-        assert_eq!(s.next().unwrap(), 13);
+        assert_eq!(s.next(), 13);
         assert!(start.elapsed() < Duration::from_millis(20));
     }
 
@@ -258,7 +299,7 @@ mod tests {
         s.schedule(1, past);
         s.schedule(2, past);
         s.schedule(3, past);
-        let mut got = [s.next().unwrap(), s.next().unwrap(), s.next().unwrap()];
+        let mut got = [s.next(), s.next(), s.next()];
         got.sort();
         assert_eq!(got, [1, 2, 3]);
     }
@@ -274,7 +315,7 @@ mod tests {
         s.schedule(999, past);
         for i in 0..100 {
             s.queue.push(i);
-            if s.next().unwrap() == 999 {
+            if s.next() == 999 {
                 return;
             }
         }
@@ -290,7 +331,7 @@ mod tests {
         s.schedule(5, Instant::now() + Duration::from_millis(20));
         s.schedule(5, Instant::now() + Duration::from_secs(60));
         let start = Instant::now();
-        assert_eq!(s.next().unwrap(), 5);
+        assert_eq!(s.next(), 5);
         assert!(start.elapsed() < Duration::from_secs(1));
     }
 
@@ -302,7 +343,7 @@ mod tests {
         // Sentinel is still queued; on_deadline finds an empty heap,
         // drops the coupon, and the real wake surfaces.
         s.queue.push(7);
-        assert_eq!(s.next().unwrap(), 7);
+        assert_eq!(s.next(), 7);
         assert_eq!(s.deadline.peek(), None);
     }
 
@@ -312,7 +353,7 @@ mod tests {
         let key = s.schedule(1, Instant::now() + Duration::from_secs(60));
         s.schedule(2, Instant::now() - Duration::from_millis(50));
         s.cancel(key);
-        assert_eq!(s.next().unwrap(), 2);
+        assert_eq!(s.next(), 2);
         assert_eq!(s.deadline.peek(), None);
     }
 
@@ -321,12 +362,15 @@ mod tests {
         let mut s = sched();
         s.schedule(99, Instant::now() + Duration::from_secs(60));
         let shared = s.queue.clone();
+        let waker = s.parker.waker();
+        let parked = s.parker.parked_probe();
         let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(20));
+            // Push only once the timed park sleeps, so the wake's notify is what releases it.
+            wait_until(parked);
             shared.push(7);
-            shared.signal().unwrap();
+            waker.wake();
         });
-        assert_eq!(s.next().unwrap(), 7);
+        assert_eq!(s.next(), 7);
         assert!(s.pending, "sentinel must be re-armed");
         handle.join().unwrap();
     }

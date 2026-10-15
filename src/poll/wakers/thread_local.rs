@@ -1,7 +1,7 @@
 //! Local waker backed by [ThreadLocalProducer].
 //!
-//! Enqueues a node ID without signaling — the consumer is on the
-//! same thread and already awake. `!Send`, `!Sync`.
+//! Enqueues a node ID without waking the parker — the consumer is on
+//! the same thread and not parked. `!Send`, `!Sync`.
 
 use crate::poll::marker::NodeId;
 use crate::poll::queue::ThreadLocalProducer;
@@ -40,6 +40,6 @@ mod tests {
         let (mut consumer, local) = q.local();
         let waker = Waker::local(7, &local);
         waker.wake();
-        assert_eq!(consumer.next().unwrap(), 7);
+        assert_eq!(consumer.next(), 7);
     }
 }

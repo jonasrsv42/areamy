@@ -4,7 +4,6 @@
 //! invariant: not `Clone`, [Consumer::next] takes `&mut self`.
 
 use super::scheduler::Scheduler;
-use crate::error::Error;
 use crate::poll::marker::NodeId;
 
 use alloc::rc::Rc;
@@ -31,7 +30,7 @@ pub struct Consumer {
 
 impl Consumer {
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Result<NodeId, Error> {
+    pub fn next(&mut self) -> NodeId {
         self.inner.borrow_mut().next()
     }
 }

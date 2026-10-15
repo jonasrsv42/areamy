@@ -6,7 +6,7 @@ use crate::graph::{Closeable, Pushable};
 use crate::message::Message;
 use crate::node::routine::Next;
 use crate::poll::Phase;
-use crate::poll::waker::{ThreadLocalWaker, Waker};
+use crate::poll::waker::{LocalWaker, Waker};
 use std::mem;
 
 /// One output's borrow of a node's state: drains the routine's output as side `M` downstream,
@@ -16,9 +16,9 @@ pub(crate) struct Emit<'a, RoutineType, OutletType: Pushable> {
     pub(crate) routine: &'a mut RoutineType,
     pub(crate) output: &'a mut Phase<OutletType>,
     /// The node's inputs, woken once a forwarded signal lets them resume.
-    pub(crate) inputs: &'a [&'a ThreadLocalWaker],
+    pub(crate) inputs: &'a [&'a LocalWaker],
     /// Work's waker.
-    pub(crate) work: &'a ThreadLocalWaker,
+    pub(crate) work: &'a LocalWaker,
     pub(crate) state: &'a mut NodeState<OutletType::SignalType>,
 }
 

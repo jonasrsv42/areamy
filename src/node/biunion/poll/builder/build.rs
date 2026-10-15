@@ -10,7 +10,7 @@ use crate::poll::Phase;
 use crate::poll::edge::{Async, Deferred, PollEdge, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::traits::AsyncParent;
-use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::waker::LocalWaker;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
@@ -29,7 +29,7 @@ fn build_parents<'params, DataType, SignalType, ThreadIdType>(
                 > + 'params,
         >,
     >,
-    edge_waker: ThreadLocalWaker,
+    edge_waker: LocalWaker,
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
 ) -> Result<
     (

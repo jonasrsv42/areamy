@@ -6,9 +6,9 @@ use crate::thread::ThreadId;
 /// [`Pollable`] is a [Connection] for event-driven nodes.
 ///
 /// Unlike [crate::work::Workable] which blocks until work is done, [Pollable::poll] is non-blocking
-/// and receives a [Waker] carrying both a sync waker
-/// (for I/O registration / standard futures) and a thread-local waker (for cheap
-/// same-thread wake).
+/// and receives a [Waker] carrying a sync waker
+/// (for I/O registration / standard futures), a local waker (for cheap
+/// same-thread wake) and the node's timer.
 ///
 /// Like [crate::work::Workable], [Pollable] has an associated [Pollable::ThreadId] to ensure
 /// nodes are only added to matching threads (compile-time safety).

@@ -5,7 +5,7 @@ use crate::graph::marker::Multiplicity;
 use crate::graph::{Closed, Inlet, Receivable};
 use crate::message::Message;
 use crate::node::routine::{Accept, Flush, TrySend};
-use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::waker::LocalWaker;
 use crate::poll::{BUDGET, Phase};
 use std::ops::ControlFlow::{self, Break, Continue};
 
@@ -14,7 +14,7 @@ use std::ops::ControlFlow::{self, Break, Continue};
 pub(crate) struct Feed<'a, InletType: Inlet, RoutineType> {
     pub(crate) inlet: &'a mut InletType,
     /// This input's own waker.
-    pub(crate) waker: &'a ThreadLocalWaker,
+    pub(crate) waker: &'a LocalWaker,
     pub(crate) work: &'a mut Phase<RoutineType>,
     pub(crate) state: &'a mut NodeState<InletType::SignalType>,
 }

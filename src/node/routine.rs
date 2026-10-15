@@ -70,9 +70,9 @@ pub trait Flush {
 /// [`Poll`] trait is the async component of async routines.
 ///
 /// When a node is woken, the framework calls [Poll::poll] with a
-/// [Waker] carrying both a sync waker
-/// (for I/O registration / standard futures) and a thread-local waker
-/// (for cheap same-thread wake).
+/// [Waker] carrying a sync waker
+/// (for I/O registration / standard futures), a local waker
+/// (for cheap same-thread wake) and the node's timer.
 ///
 /// Routines that drive standard futures can build a [core::task::Context]
 /// from `waker.sync`: `Context::from_waker(&waker.sync)`.

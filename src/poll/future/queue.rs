@@ -6,14 +6,14 @@
 //!   Uses `std::task::Waker` (standard futures contract).
 //!
 //! - [OutputQueue]: future pushes data out, node drains via [OutputConsumer::pop].
-//!   Uses [ThreadLocalWaker] to wake the Output phase (same thread, no atomics).
+//!   Uses [LocalWaker] to wake the Output phase (same thread, no atomics).
 //!
 //! All types are `!Send` — they live on the async thread.
 
 use crate::error::Error;
 use crate::poll::limit::deadline_after;
 use crate::poll::timer::{Timer, TimerGuard};
-use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::waker::LocalWaker;
 use core::task::Poll;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -227,11 +227,11 @@ impl<T: Unpin> Future for RecvTimeoutFut<T> {
 
 struct OutputInner<T> {
     buffer: VecDeque<T>,
-    waker: ThreadLocalWaker,
+    waker: LocalWaker,
 }
 
 /// Pushes output data into the queue. Held by the future.
-/// Wakes the Output phase on push via [ThreadLocalWaker].
+/// Wakes the Output phase on push via [LocalWaker].
 pub struct OutputProducer<T>(Rc<RefCell<OutputInner<T>>>);
 
 /// Consumes output data from the queue. Held by the node's Output phase.
@@ -256,7 +256,7 @@ pub struct OutputQueue<T> {
 }
 
 impl<T> OutputQueue<T> {
-    pub fn new(waker: ThreadLocalWaker) -> Self {
+    pub fn new(waker: LocalWaker) -> Self {
         let inner = Rc::new(RefCell::new(OutputInner {
             buffer: VecDeque::new(),
             waker,

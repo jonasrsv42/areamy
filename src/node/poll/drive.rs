@@ -2,7 +2,7 @@ use super::NodeState;
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
 use crate::node::routine;
-use crate::poll::waker::{ThreadLocalWaker, Waker};
+use crate::poll::waker::{LocalWaker, Waker};
 use std::mem;
 
 /// Work's borrow of a node's state: polls the routine's async work, completes a flush and wakes
@@ -11,7 +11,7 @@ use std::mem;
 pub(crate) struct Drive<'a, RoutineType, SignalType> {
     pub(crate) routine: &'a mut RoutineType,
     /// Output's waker.
-    pub(crate) output: &'a ThreadLocalWaker,
+    pub(crate) output: &'a LocalWaker,
     pub(crate) state: &'a mut NodeState<SignalType>,
 }
 

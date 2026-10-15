@@ -36,7 +36,7 @@ pub use thread::{Thread, ThreadHandle};
 pub use timer::{Timer, TimerKey};
 pub use traits::AsyncParent;
 pub use try_join::try_join;
-pub use waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
+pub use waker::{LocalWake, LocalWaker, Waker};
 pub use wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 
 pub use crate::node::biunion::poll::factory::{

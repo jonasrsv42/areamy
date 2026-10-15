@@ -10,7 +10,7 @@ use crate::node::line::poll::routine::LineRoutine;
 use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
 use crate::poll::input;
 use crate::poll::waker::mock::{noop_local_waker, noop_waker, tracking_local_waker};
-use crate::poll::waker::{self, ThreadLocalWaker};
+use crate::poll::waker::{self, LocalWaker};
 use crate::poll::{BUDGET, Phase, Pollable};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -37,7 +37,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
         Self::with_input_waker(routine, noop_local_waker())
     }
 
-    fn with_input_waker(routine: R, input_waker: ThreadLocalWaker) -> Self {
+    fn with_input_waker(routine: R, input_waker: LocalWaker) -> Self {
         let edge = input::sync::Receiver::new(std::task::Waker::noop().clone());
         let upstream = edge.sender();
         let downstream = edge::sync::Receiver::new();
@@ -95,12 +95,12 @@ struct Bounded {
     queue: VecDeque<usize>,
     room: usize,
     refused: bool,
-    input: ThreadLocalWaker,
+    input: LocalWaker,
     flushed: bool,
 }
 
 impl Bounded {
-    fn new(room: usize, input: ThreadLocalWaker) -> Self {
+    fn new(room: usize, input: LocalWaker) -> Self {
         Self {
             queue: VecDeque::new(),
             room,

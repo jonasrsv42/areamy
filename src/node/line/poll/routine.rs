@@ -10,7 +10,7 @@
 //! threads. This allows routines to hold non-Send types like `Rc<RefCell<_>>`
 //! for zero-cost shared state with their futures.
 //!
-//! The factory receives a [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker)
+//! The factory receives a [LocalWaker](crate::poll::waker::LocalWaker)
 //! for the Output phase. Routines MUST use this to wake Output when they
 //! produce data (e.g. via [OutputProducer](crate::poll::future::queue::OutputProducer)).
 //!
@@ -45,13 +45,13 @@
 //! The node's Output phase calls [routine::Next] to drain output. Output
 //! is NOT polled automatically — the routine MUST wake the Output phase
 //! when it produces data. Use [OutputProducer::push](crate::poll::future::queue::OutputProducer::push)
-//! which wakes Output via [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker).
+//! which wakes Output via [LocalWaker](crate::poll::waker::LocalWaker).
 //!
 //! ## [routine::Poll] contract
 //!
 //! [routine::Poll::poll] receives a [Waker](crate::poll::waker::Waker)
-//! carrying both a sync waker (for I/O / standard futures) and a
-//! thread-local waker (for cheap same-thread wake).
+//! carrying a sync waker (for I/O / standard futures), a local waker
+//! (for cheap same-thread wake) and the node's timer.
 //!
 //! - [core::task::Poll::Pending] — async work in progress.
 //! - [core::task::Poll::Ready] — routine finished processing after
@@ -71,7 +71,7 @@
 //!
 //! ## TL;DR
 //!
-//! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [ThreadLocalWaker](crate::poll::waker::ThreadLocalWaker). Output is NOT polled automatically.
+//! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [LocalWaker](crate::poll::waker::LocalWaker). Output is NOT polled automatically.
 //! - Full? Return [routine::Accept::Full] and wake Input once there is room.
 //! - Need async work after [routine::TrySend]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
 //! - After [routine::Flush], return [core::task::Poll::Ready] from [routine::Poll] (immediately or eventually). Deadlock otherwise.

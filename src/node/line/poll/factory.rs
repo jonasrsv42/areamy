@@ -12,7 +12,7 @@
 //! at every call site that doesn't introduce a borrow.
 
 use crate::poll::timer::Timer;
-use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::waker::LocalWaker;
 
 /// Phase wakers the framework hands to a line routine at construction.
 ///
@@ -24,9 +24,9 @@ use crate::poll::waker::ThreadLocalWaker;
 /// - `timer` re-polls the work phase at a deadline. Pass to
 ///   `InputQueue::new` so `recv_with_timeout` re-polls the routine.
 pub struct LineWakers {
-    pub input: ThreadLocalWaker,
-    pub work: ThreadLocalWaker,
-    pub output: ThreadLocalWaker,
+    pub input: LocalWaker,
+    pub work: LocalWaker,
+    pub output: LocalWaker,
     pub timer: Timer,
 }
 

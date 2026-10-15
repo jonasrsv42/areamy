@@ -9,11 +9,11 @@
 
 use crate::node::biunion::Inputs;
 use crate::poll::timer::Timer;
-use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::waker::LocalWaker;
 
 /// Per-input wakers, grouped under [`BiunionWakers::input`] so a
 /// routine accesses them via `wakers.input.left` / `wakers.input.right`.
-pub type BiunionInputs = Inputs<ThreadLocalWaker, ThreadLocalWaker>;
+pub type BiunionInputs = Inputs<LocalWaker, LocalWaker>;
 
 /// Phase wakers the framework hands to a biunion routine.
 ///
@@ -26,8 +26,8 @@ pub type BiunionInputs = Inputs<ThreadLocalWaker, ThreadLocalWaker>;
 ///   the deadline.
 pub struct BiunionWakers {
     pub input: BiunionInputs,
-    pub work: ThreadLocalWaker,
-    pub output: ThreadLocalWaker,
+    pub work: LocalWaker,
+    pub output: LocalWaker,
     pub timer: Timer,
 }
 

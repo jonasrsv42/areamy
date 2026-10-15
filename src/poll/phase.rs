@@ -1,9 +1,9 @@
 //! [Phase] pairs what a poll node phase drives with the waker that schedules it.
 
-use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::waker::LocalWaker;
 
 /// A phase's target (edge, routine, ...) and its waker.
 pub struct Phase<T> {
     pub target: T,
-    pub waker: ThreadLocalWaker,
+    pub waker: LocalWaker,
 }

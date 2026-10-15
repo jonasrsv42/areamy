@@ -1,7 +1,7 @@
 //! A same-thread async edge.
 //!
 //! Used for connections between async nodes on the same [crate::poll::Thread].
-//! Fires a [ThreadLocalWaker] on push to wake the consuming node.
+//! Fires a [LocalWaker] on push to wake the consuming node.
 //!
 //! Unlike sync variants that need separate producer and consumer for clean
 //! teardown semantics this is a single shared queue, this is sound because
@@ -13,14 +13,14 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Closeable, Closed, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
-use crate::poll::waker::ThreadLocalWaker;
+use crate::poll::waker::LocalWaker;
 use crate::signal::Origin;
 use std::collections::VecDeque;
 
 /// A same-thread async edge. No synchronization overhead.
 ///
 /// Uses a plain [VecDeque] with no Mutex — all access happens on a single
-/// [crate::poll::Thread]. Fires a [ThreadLocalWaker] on push to
+/// [crate::poll::Thread]. Fires a [LocalWaker] on push to
 /// enqueue the consuming node in the ready queue.
 ///
 /// `PollEdge` is `!Send`, `!Sync` — it must stay on the async thread.
@@ -29,7 +29,7 @@ where
     SignalType: Origin,
 {
     buffer: VecDeque<Message<DataType, SignalType>>,
-    waker: ThreadLocalWaker,
+    waker: LocalWaker,
     closed: bool,
 }
 
@@ -104,7 +104,7 @@ impl<DataType, SignalType> PollEdge<DataType, SignalType>
 where
     SignalType: Origin,
 {
-    pub fn new(waker: ThreadLocalWaker) -> Self {
+    pub fn new(waker: LocalWaker) -> Self {
         Self {
             buffer: VecDeque::new(),
             waker,

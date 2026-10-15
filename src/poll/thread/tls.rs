@@ -16,7 +16,7 @@
 //! `Context` (unstable `context_ext`). Once that rides stable, the
 //! attach sites are the `Context`-building `FutureRoutine::poll` impls
 //! (node/line/poll/future.rs, node/biunion/poll/future.rs — both have
-//! `waker.timer` in scope); `SleepFut` then reads the timer from
+//! `cx.timer` in scope); `SleepFut` then reads the timer from
 //! `cx.ext()` and this module gets deleted. Caveat for that migration:
 //! a cx-carried extension is stripped by any layer that rebuilds a
 //! `Context` via plain `from_waker` — a pattern TLS survives today.

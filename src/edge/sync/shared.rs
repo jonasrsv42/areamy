@@ -2,10 +2,12 @@
 
 use crate::message::Message;
 use crate::signal::Origin;
+use core::task::Waker;
 use std::collections::VecDeque;
+use std::mem;
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 /// How many slots a pop freed, which decides how many blocked producers to wake.
 pub(super) enum Freed {
@@ -41,6 +43,11 @@ where
     /// compared for equality. A sender refused twice at the same value is
     /// [`TryPush::Stuck`](crate::graph::TryPush::Stuck).
     pub(super) progress: u64,
+    /// Wakers recorded by `Full` refusals since the last drain. A bound sender is refused `Full`
+    /// once per epoch (between drains) and every drain (and close) takes the whole list, so each
+    /// handle's waker is in it at most once; a sender re-scheduled mid-epoch adds one entry per
+    /// re-schedule (the old waker is still woken). Never deduped.
+    pub(super) refused: Vec<Waker>,
 }
 
 impl<DataType, SignalType> Inner<DataType, SignalType>
@@ -76,13 +83,37 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    let mut guard = shared
+    let inner = shared
         .inner
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // Set before notifying, under the lock: every woken waiter re-checks `closed` after re-locking.
-    guard.closed = true;
+    close(shared, inner);
+}
+
+/// Every close path ends here, so none forgets a step: mark the edge closed, wake everyone
+/// waiting on it, release the lock.
+pub(super) fn close<D, S>(shared: &Shared<D, S>, mut inner: MutexGuard<'_, Inner<D, S>>)
+where
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+{
+    // Set before notifying, under the lock: every woken waiter re-checks `closed` after
+    // re-locking.
+    inner.closed = true;
     shared.not_empty.notify_all();
     // Blocked producers must observe the close and return `Closed`.
     shared.not_full.notify_all();
+    // Refused senders too: their retry finds the edge closed.
+    let refused = mem::take(&mut inner.refused);
+    drop(inner);
+    wake_all(refused);
+}
+
+/// Wake each taken waker. Only after unlocking: a wake runs foreign code, which may retry (and
+/// lock) the edge. Wakers must not panic (the rest of a taken batch would go unwoken), and must
+/// not touch the edge when cloned (`Full` clones one under the edge lock).
+pub(super) fn wake_all(wakers: impl IntoIterator<Item = Waker>) {
+    for waker in wakers {
+        waker.wake();
+    }
 }

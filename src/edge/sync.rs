@@ -15,6 +15,9 @@
 //! closes, and [`Sender::try_push_back`] hands the message back.
 //! Freed slots are not handed out in order: a producer that isn't parked
 //! can take one ahead of a parked one, so a busy producer can starve others.
+//!
+//! A [`Sender`] bound via [`Schedule`](crate::graph::Schedule) is woken by the next pop or close
+//! after a `Full`: all such wakers wake at once, blocked threads one per freed slot.
 
 mod receiver;
 mod sender;

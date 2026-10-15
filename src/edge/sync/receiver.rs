@@ -1,7 +1,7 @@
 //! The consumer end of an edge.
 
 use super::sender::Sender;
-use super::shared::{Freed, Inner, Shared, State, close_infallible};
+use super::shared::{Freed, Inner, Shared, State, close, close_infallible, wake_all};
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Get, Pushable};
@@ -9,9 +9,11 @@ use crate::message::Message;
 use crate::signal::Origin;
 use crate::work::Sink;
 use crate::{closed, fatal};
+use core::task::Waker;
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
+use std::mem;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -35,6 +37,9 @@ where
     SignalType: Origin + Send + Sync,
 {
     shared: Arc<Shared<DataType, SignalType>>,
+    /// Empty spare traded with the edge's refused list when a drain takes it, so neither
+    /// reallocates. Out of the cell while waking: a re-entrant drain finds it empty.
+    scratch: Cell<Vec<Waker>>,
     // PhantomData<Cell<()>> is Send + !Sync — prevents concurrent reads
     // racing on the blocking dequeue.
     _single_consumer: PhantomData<Cell<()>>,
@@ -72,6 +77,7 @@ where
                 bound,
                 producers_waiting: 0,
                 progress: 0,
+                refused: Vec::new(),
             }),
             not_empty: Condvar::new(),
             not_full: Condvar::new(),
@@ -79,6 +85,7 @@ where
         });
         Self {
             shared,
+            scratch: Cell::new(Vec::new()),
             _single_consumer: PhantomData,
         }
     }
@@ -90,6 +97,7 @@ where
         Sender {
             shared: self.shared.clone(),
             refused_at: None,
+            waker: None,
         }
     }
 }
@@ -153,8 +161,7 @@ where
         let Some(msg) = inner.buffer.pop_front() else {
             return fatal!("non-empty queue with no element").into();
         };
-        inner.progress = inner.progress.wrapping_add(1);
-        self.wake_producers(inner, Freed::One);
+        self.drained(inner, Freed::One);
         Ok(msg)
     }
 
@@ -164,9 +171,8 @@ where
     pub fn read_all(&self) -> Result<Vec<Message<D, S>>, Error> {
         let mut inner = self.wait_nonempty()?;
         let messages = inner.buffer.drain(..).collect();
-        // One bump is enough: `Stuck` only asks whether anything drained.
-        inner.progress = inner.progress.wrapping_add(1);
-        self.wake_producers(inner, Freed::All);
+        // One drain, one bump: `Stuck` only asks whether anything drained.
+        self.drained(inner, Freed::All);
         Ok(messages)
     }
 
@@ -177,8 +183,7 @@ where
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         match inner.buffer.pop_front() {
             Some(msg) => {
-                inner.progress = inner.progress.wrapping_add(1);
-                self.wake_producers(inner, Freed::One);
+                self.drained(inner, Freed::One);
                 Ok(Some(msg))
             }
             None if inner.closed => Err(closed!()),
@@ -186,14 +191,50 @@ where
         }
     }
 
-    /// Notify producers blocked on a full edge, after releasing the lock, only if any are
-    /// parked. One freed slot wakes one producer; draining everything wakes all.
-    fn wake_producers(&self, inner: MutexGuard<'_, Inner<D, S>>, freed: Freed) {
+    /// Every pop ends here: bump `progress` and take this epoch's refused wakers in one critical
+    /// section, so the list only ever holds this epoch's refusals. Then, after releasing the
+    /// lock, notify blocked producers (one freed slot wakes one blocked thread, draining
+    /// everything wakes all) and wake every refused waker.
+    ///
+    /// Wakers are all woken, threads are not: a blocked `push_back` is sure to retry, a waker
+    /// only asks, so a slot handed to one could strand.
+    fn drained(&self, mut inner: MutexGuard<'_, Inner<D, S>>, freed: Freed) {
+        inner.progress = inner.progress.wrapping_add(1);
         // Read under the lock: producers count themselves in under the same lock before waiting,
         // so a parked producer is never missed.
         let producers_waiting = inner.producers_waiting > 0;
+        // Out of line, so the common pop (nobody refused) stays small enough to inline.
+        if !inner.refused.is_empty() {
+            return self.drained_refused(inner, producers_waiting, freed);
+        }
         // Unlock before notifying, so woken producers don't immediately block on our lock.
         drop(inner);
+        self.notify_producers(producers_waiting, freed);
+    }
+
+    /// [`Self::drained`] when someone was refused this epoch: still in the critical section,
+    /// take the list.
+    #[cold]
+    #[inline(never)]
+    fn drained_refused(
+        &self,
+        mut inner: MutexGuard<'_, Inner<D, S>>,
+        producers_waiting: bool,
+        freed: Freed,
+    ) {
+        // Trade the list for the empty scratch, so both keep their capacity.
+        let mut refused = mem::replace(&mut inner.refused, self.scratch.take());
+        // Unlock before waking, so woken producers don't immediately block on our lock.
+        drop(inner);
+        self.notify_producers(producers_waiting, freed);
+        wake_all(refused.drain(..));
+        // Emptied, back as the next drain's scratch.
+        self.scratch.set(refused);
+    }
+
+    /// One freed slot wakes one blocked thread, draining everything wakes all; nothing if none
+    /// is parked.
+    fn notify_producers(&self, producers_waiting: bool, freed: Freed) {
         if producers_waiting {
             match freed {
                 Freed::One => self.shared.not_full.notify_one(),
@@ -210,11 +251,8 @@ where
 
     /// Mark the edge closed. Idempotent.
     pub fn close(&self) -> Result<(), Error> {
-        let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
-        inner.closed = true;
-        self.shared.not_empty.notify_all();
-        // Blocked producers must observe the close and return `Closed`.
-        self.shared.not_full.notify_all();
+        let inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
+        close(&self.shared, inner);
         Ok(())
     }
 

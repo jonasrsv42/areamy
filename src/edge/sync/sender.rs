@@ -1,13 +1,15 @@
 //! The producer end of an edge.
 
-use super::shared::{Inner, Shared, close_infallible};
+use super::shared::{Inner, Shared, close, close_infallible};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
+use crate::graph::{Closeable, Get, Outlet, Pushable, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
+use crate::wake;
 use crate::work::Sink;
 use crate::{closed, fatal};
+use core::task::Waker;
 use std::mem;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, MutexGuard};
@@ -17,15 +19,47 @@ use std::sync::{Arc, MutexGuard};
 ///
 /// Use one handle per producer: [`Sender::try_push_back`] remembers this handle's last
 /// refusal, so two producers sharing one handle can see a false [`TryPush::Stuck`].
+///
+/// [`Schedule`]: after a [`TryPush::Full`], the scheduled waker is woken once the receiver pops
+/// or the edge closes; if bound, a [`TryPush::Stuck`] is already owed that wake. A clone is
+/// unbound, and an unbound `Full` records nothing.
 pub struct Sender<DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
     pub(super) shared: Arc<Shared<DataType, SignalType>>,
-    /// The edge's progress when this handle was last refused. Never cleared: only a drain frees
+    /// The edge's progress when this handle was last refused. Reset by [`Schedule`] (that
+    /// refusal recorded no wake for the new waker); otherwise never cleared: only a drain frees
     /// room, so after any successful push progress has moved past it.
     pub(super) refused_at: Option<u64>,
+    /// Recorded on each `Full`, woken by the next pop or close; `None` until scheduled. Only
+    /// `.sync`: the edge crosses threads.
+    pub(super) waker: Option<Waker>,
+}
+
+/// Wakes once, after a refused `try_push_back` (`Full`), at the next pop or close.
+/// Re-scheduling replaces the waker; a refusal already recorded still wakes the old one, once.
+/// Same target: no-op.
+impl<D, S> Schedule for Sender<D, S>
+where
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+{
+    fn schedule(&mut self, waker: wake::Waker) {
+        // Same target: its refusal, if any, is already recorded; keep it, so no second entry.
+        if self
+            .waker
+            .as_ref()
+            .is_some_and(|current| current.will_wake(&waker.sync))
+        {
+            return;
+        }
+        self.waker = Some(waker.sync);
+        // A refusal while unbound (or bound elsewhere) recorded nothing for this waker: forget
+        // it, so the next refusal is `Full` and records, not a wakeless `Stuck`.
+        self.refused_at = None;
+    }
 }
 
 impl<D, S> Clone for Sender<D, S>
@@ -38,10 +72,11 @@ where
         // clone site since the new reference can only be used through the
         // new owner.
         self.shared.producer_count.fetch_add(1, Ordering::Relaxed);
-        // A new producer: this handle's refusals aren't its.
+        // A new producer: this handle's refusals and waker aren't its.
         Self {
             shared: self.shared.clone(),
             refused_at: None,
+            waker: None,
         }
     }
 }
@@ -119,11 +154,16 @@ where
             return Err(closed!());
         }
         if inner.is_full() {
-            // No progress since our last refusal, so a retry would spin.
+            // No progress since our last refusal, so a retry would spin. Its waker, if bound, is
+            // already in the list: recording again would duplicate it.
             if self.refused_at == Some(inner.progress) {
                 return Ok(TryPush::Stuck(message));
             }
             self.refused_at = Some(inner.progress);
+            // Recorded under the lock that saw the edge full: any later drain or close takes it.
+            if let Some(waker) = &self.waker {
+                inner.refused.push(waker.clone());
+            }
             return Ok(TryPush::Full(message));
         }
         inner.buffer.push_back(message);
@@ -145,11 +185,8 @@ where
 
     /// Mark the edge closed. Idempotent.
     pub fn close(&self) -> Result<(), Error> {
-        let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
-        inner.closed = true;
-        self.shared.not_empty.notify_all();
-        // Blocked producers must observe the close and return `Closed`.
-        self.shared.not_full.notify_all();
+        let inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
+        close(&self.shared, inner);
         Ok(())
     }
 }

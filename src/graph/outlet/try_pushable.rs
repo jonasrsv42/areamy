@@ -26,7 +26,8 @@ pub enum TryPush<MessageType> {
     /// The sink consumed the message.
     Pushed,
     /// The sink is full; the message is handed back. The consumer drained since this
-    /// producer was last refused (or it wasn't refused before), so retrying later can succeed.
+    /// producer was last refused (or it wasn't refused since it was created or bound), so
+    /// retrying later can succeed.
     Full(MessageType),
     /// The sink is full and nothing drained since this producer was last refused; the message
     /// is handed back. Retrying without waiting would spin.

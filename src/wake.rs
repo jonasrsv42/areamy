@@ -69,8 +69,11 @@ pub struct Waker {
 pub mod mock {
     use super::{LocalWake, LocalWaker, Waker};
 
+    use alloc::sync::Arc;
+    use alloc::task::Wake;
     use std::cell::Cell;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Test wake running a closure.
     struct MockWake<F>(F);
@@ -102,6 +105,29 @@ pub mod mock {
         let count = Rc::new(Cell::new(0));
         let counter = count.clone();
         (waker(move || counter.set(counter.get() + 1)), count)
+    }
+
+    /// Sync wake counting into a shared counter.
+    struct CountingWake(Arc<AtomicUsize>);
+
+    impl Wake for CountingWake {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// [Waker] whose sync half counts its wakes (the local half does nothing), plus the count.
+    pub fn counting_waker() -> (Waker, Arc<AtomicUsize>) {
+        let count = Arc::new(AtomicUsize::new(0));
+        let waker = Waker {
+            sync: core::task::Waker::from(Arc::new(CountingWake(count.clone()))),
+            local: noop_local_waker(),
+        };
+        (waker, count)
     }
 
     /// [Waker] whose halves both do nothing.

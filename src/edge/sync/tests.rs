@@ -1,12 +1,17 @@
+use super::shared::Shared;
 use super::*;
 use crate::Trackable;
 use crate::error::{Error, ErrorKind};
-use crate::graph::{Closeable, Get, Pushable, TryPush, TryPushable};
+use crate::graph::{Closeable, Get, Pushable, Schedule, TryPush, TryPushable};
 use crate::message::Message;
+use crate::poll::Sink as PollSink;
+use crate::wake::mock::{counting_waker, noop_local_waker};
+use crate::wake::{self, Parker};
 use crate::work::Sink;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::task::{Wake, Waker as SyncWaker};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -718,4 +723,553 @@ fn cross_thread_fan_in() {
     }
     got.sort();
     assert_eq!(got, vec![0, 1, 2, 3, 4]);
+}
+
+// ---- Schedule: a refused sender's bound waker is woken by the next pop or close ----
+
+fn wakes(count: &AtomicUsize) -> usize {
+    count.load(Ordering::SeqCst)
+}
+
+/// `waker` as a full bundle for [Schedule] (the local half is never used by a `Send` edge).
+fn bundle(sync: SyncWaker) -> wake::Waker {
+    wake::Waker {
+        sync,
+        local: noop_local_waker(),
+    }
+}
+
+/// A bound sender on a full bound-1 edge, refused once.
+fn refused() -> (
+    Receiver<usize, TestSignal>,
+    Sender<usize, TestSignal>,
+    Arc<AtomicUsize>,
+) {
+    let rx = bounded(1);
+    let mut tx = rx.sender();
+    let (waker, counter) = counting_waker();
+    Schedule::schedule(&mut tx, waker);
+    assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+    assert_eq!(
+        tx.try_push_back(Message::Data(2)).unwrap(),
+        TryPush::Full(Message::Data(2))
+    );
+    (rx, tx, counter)
+}
+
+#[test]
+fn retries_in_one_epoch_record_the_waker_once() {
+    let (rx, mut tx, counter) = refused();
+    for _ in 0..5 {
+        assert_eq!(
+            tx.try_push_back(Message::Data(3)).unwrap(),
+            TryPush::Stuck(Message::Data(3))
+        );
+    }
+    assert_eq!(wakes(&counter), 0, "a refusal alone wakes nothing");
+    rx.poll().unwrap();
+    assert_eq!(wakes(&counter), 1, "one entry, however many retries");
+    // The pop took the list: the next pop has nothing to wake.
+    assert_eq!(tx.try_push_back(Message::Data(4)).unwrap(), TryPush::Pushed);
+    rx.poll().unwrap();
+    assert_eq!(wakes(&counter), 1);
+}
+
+/// A pop that took the refused list is progress too: the next refusal is `Full`, not `Stuck`.
+#[test]
+fn a_pop_that_woke_refused_senders_counts_as_progress() {
+    let (rx, mut tx, counter) = refused();
+    rx.poll().unwrap();
+    assert_eq!(tx.try_push_back(Message::Data(3)).unwrap(), TryPush::Pushed);
+    assert!(matches!(
+        tx.try_push_back(Message::Data(4)).unwrap(),
+        TryPush::Full(_)
+    ));
+    rx.poll().unwrap();
+    assert_eq!(wakes(&counter), 2);
+}
+
+/// The scratch list is reused: a waker woken in one epoch must not resurface in a later one.
+#[test]
+fn a_woken_waker_does_not_resurface_in_later_epochs() {
+    let (rx, mut tx, counter) = refused();
+    for epoch in 1..=4 {
+        rx.poll().unwrap();
+        assert_eq!(wakes(&counter), epoch);
+        assert_eq!(tx.try_push_back(Message::Data(0)).unwrap(), TryPush::Pushed);
+        assert!(matches!(
+            tx.try_push_back(Message::Data(0)).unwrap(),
+            TryPush::Full(_)
+        ));
+    }
+    rx.poll().unwrap();
+    assert_eq!(wakes(&counter), 5);
+}
+
+/// With a refused sender present, a drain still wakes every blocked thread, not just one.
+#[test]
+fn read_all_with_refused_senders_wakes_every_blocked_producer() {
+    let rx = bounded(2);
+    let mut tx = rx.sender();
+    let (waker, counter) = counting_waker();
+    Schedule::schedule(&mut tx, waker);
+    tx.push_back(Message::Data(1)).unwrap();
+    tx.push_back(Message::Data(2)).unwrap();
+    assert!(matches!(
+        tx.try_push_back(Message::Data(0)).unwrap(),
+        TryPush::Full(_)
+    ));
+    let (tx3, tx4) = (rx.sender(), rx.sender());
+    let first = thread::spawn(move || tx3.push_back(Message::Data(3)));
+    let second = thread::spawn(move || tx4.push_back(Message::Data(4)));
+    wait_until(|| rx.producers_waiting() == 2);
+    assert_eq!(rx.read_all().unwrap().len(), 2);
+    assert_eq!(wakes(&counter), 1);
+    // Both freed slots are taken without any further pop.
+    join_within(first).unwrap();
+    join_within(second).unwrap();
+}
+
+#[test]
+fn every_pop_path_wakes_the_refused_sender() {
+    let pops: [fn(&Receiver<usize, TestSignal>); 3] = [
+        |rx| drop(rx.read_front().unwrap()),
+        |rx| drop(rx.poll().unwrap()),
+        |rx| drop(rx.read_all().unwrap()),
+    ];
+    for pop in pops {
+        let (rx, _tx, counter) = refused();
+        pop(&rx);
+        assert_eq!(wakes(&counter), 1);
+    }
+}
+
+#[test]
+fn every_refused_sender_is_woken() {
+    let rx = bounded(1);
+    let mut first = rx.sender();
+    let mut second = rx.sender();
+    let (first_waker, first_count) = counting_waker();
+    let (second_waker, second_count) = counting_waker();
+    Schedule::schedule(&mut first, first_waker);
+    Schedule::schedule(&mut second, second_waker);
+    assert_eq!(
+        first.try_push_back(Message::Data(1)).unwrap(),
+        TryPush::Pushed
+    );
+    assert!(matches!(
+        first.try_push_back(Message::Data(2)).unwrap(),
+        TryPush::Full(_)
+    ));
+    assert!(matches!(
+        second.try_push_back(Message::Data(3)).unwrap(),
+        TryPush::Full(_)
+    ));
+    rx.poll().unwrap();
+    assert_eq!((wakes(&first_count), wakes(&second_count)), (1, 1));
+}
+
+#[test]
+fn an_unbound_refusal_records_nothing_and_a_clone_is_unbound() {
+    let (rx, tx, counter) = refused();
+    let mut clone = tx.clone();
+    // Refused too, but unbound: the clone doesn't carry the waker.
+    assert!(matches!(
+        clone.try_push_back(Message::Data(3)).unwrap(),
+        TryPush::Full(_)
+    ));
+    rx.poll().unwrap();
+    // Only the original's refusal is woken.
+    assert_eq!(wakes(&counter), 1);
+}
+
+#[test]
+fn scheduling_after_an_unbound_refusal_still_gets_woken() {
+    let rx = bounded(1);
+    let mut tx = rx.sender();
+    assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+    assert!(matches!(
+        tx.try_push_back(Message::Data(2)).unwrap(),
+        TryPush::Full(_)
+    ));
+    let (waker, counter) = counting_waker();
+    Schedule::schedule(&mut tx, waker);
+    // The unbound refusal recorded nothing, so this retry must record, not be `Stuck`.
+    assert!(matches!(
+        tx.try_push_back(Message::Data(2)).unwrap(),
+        TryPush::Full(_)
+    ));
+    rx.poll().unwrap();
+    assert_eq!(wakes(&counter), 1);
+}
+
+#[test]
+fn rescheduling_replaces_the_waker() {
+    let rx = bounded(1);
+    let mut tx = rx.sender();
+    let (old, old_count) = counting_waker();
+    let (new, new_count) = counting_waker();
+    Schedule::schedule(&mut tx, old);
+    Schedule::schedule(&mut tx, new);
+    assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+    assert!(matches!(
+        tx.try_push_back(Message::Data(2)).unwrap(),
+        TryPush::Full(_)
+    ));
+    rx.poll().unwrap();
+    assert_eq!((wakes(&old_count), wakes(&new_count)), (0, 1));
+}
+
+/// The old waker's recorded refusal still fires once; the new waker records on its own `Full`.
+#[test]
+fn rescheduling_after_a_refusal_wakes_both_once() {
+    let (rx, mut tx, old_count) = refused();
+    let (new, new_count) = counting_waker();
+    Schedule::schedule(&mut tx, new);
+    // A new target resets the refusal, so this records, not `Stuck`.
+    assert!(matches!(
+        tx.try_push_back(Message::Data(3)).unwrap(),
+        TryPush::Full(_)
+    ));
+    rx.poll().unwrap();
+    assert_eq!((wakes(&old_count), wakes(&new_count)), (1, 1));
+}
+
+#[test]
+fn rescheduling_the_same_target_keeps_one_entry() {
+    let rx = bounded(1);
+    let mut tx = rx.sender();
+    let (waker, counter) = counting_waker();
+    let same = waker.sync.clone();
+    Schedule::schedule(&mut tx, waker);
+    assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+    assert!(matches!(
+        tx.try_push_back(Message::Data(2)).unwrap(),
+        TryPush::Full(_)
+    ));
+    Schedule::schedule(&mut tx, bundle(same));
+    // Still recorded this epoch: no second entry.
+    assert!(matches!(
+        tx.try_push_back(Message::Data(3)).unwrap(),
+        TryPush::Stuck(_)
+    ));
+    rx.poll().unwrap();
+    assert_eq!(wakes(&counter), 1);
+}
+
+/// Each close path checked while the other end is still alive: its own later close would wake
+/// too and hide a path that doesn't.
+#[test]
+fn every_close_path_wakes_the_refused_sender() {
+    // After each close, dropping both ends closes again: still once, so the close took the list.
+    let (rx, tx, counter) = refused();
+    tx.close().unwrap();
+    assert_eq!(wakes(&counter), 1, "Sender::close");
+    drop((rx, tx));
+    assert_eq!(wakes(&counter), 1);
+
+    let (rx, tx, counter) = refused();
+    rx.close().unwrap();
+    assert_eq!(wakes(&counter), 1, "Receiver::close");
+    drop((rx, tx));
+    assert_eq!(wakes(&counter), 1);
+
+    // The last sender's drop closes infallibly.
+    let (rx, tx, counter) = refused();
+    drop(tx);
+    assert_eq!(wakes(&counter), 1, "last Sender drop");
+    drop(rx);
+
+    let (rx, tx, counter) = refused();
+    drop(rx);
+    assert_eq!(wakes(&counter), 1, "Receiver drop");
+    // Exactly once: the first close took the list, this one finds it empty.
+    drop(tx);
+    assert_eq!(wakes(&counter), 1);
+}
+
+#[test]
+fn a_poisoned_edge_still_wakes_on_drop() {
+    let (rx, tx, counter) = refused();
+    let shared = tx.shared.clone();
+    // Poison the edge's lock.
+    let _ = thread::spawn(move || {
+        let _guard = shared.inner.lock().unwrap();
+        panic!("poison");
+    })
+    .join();
+    drop(rx);
+    assert_eq!(wakes(&counter), 1);
+    drop(tx);
+}
+
+#[test]
+fn a_dropped_refused_sender_is_still_woken() {
+    let (rx, tx, counter) = refused();
+    // Kept alive: dropping the last sender would close the edge, which wakes too.
+    let _other = rx.sender();
+    // No removal on drop: the entry stays and fires once more, harmlessly.
+    drop(tx);
+    assert_eq!(wakes(&counter), 0);
+    rx.poll().unwrap();
+    assert_eq!(wakes(&counter), 1);
+}
+
+/// With both a refused sender and a blocked thread, a pop takes the refused path, which must
+/// still notify the thread: each pop path, so a single pop's `notify_one` is pinned too.
+#[test]
+fn every_pop_path_wakes_blocked_threads_and_refused_senders() {
+    let pops: [fn(&Receiver<usize, TestSignal>); 3] = [
+        |rx| drop(rx.read_front().unwrap()),
+        |rx| drop(rx.poll().unwrap()),
+        |rx| drop(rx.read_all().unwrap()),
+    ];
+    for pop in pops {
+        let (rx, _tx, counter) = refused();
+        let blocked = rx.sender();
+        let thread = thread::spawn(move || blocked.push_back(Message::Data(9)));
+        wait_until(|| rx.producers_waiting() == 1);
+        pop(&rx);
+        assert_eq!(wakes(&counter), 1);
+        join_within(thread).unwrap();
+    }
+}
+
+/// Records whether the edge's lock was free when it was woken.
+struct Unlocked {
+    shared: Arc<Shared<usize, TestSignal>>,
+    free: AtomicUsize,
+}
+
+impl Wake for Unlocked {
+    fn wake(self: Arc<Self>) {
+        if self.shared.inner.try_lock().is_ok() {
+            self.free.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+}
+
+/// A woken producer retries at once, so every wake (from a pop or a close) must run unlocked.
+#[test]
+fn wakes_run_after_unlocking() {
+    type Path = fn(Receiver<usize, TestSignal>, Sender<usize, TestSignal>);
+    let paths: [Path; 7] = [
+        |rx, _tx| drop(rx.read_front().unwrap()),
+        |rx, _tx| drop(rx.poll().unwrap()),
+        |rx, _tx| drop(rx.read_all().unwrap()),
+        |_rx, tx| tx.close().unwrap(),
+        |rx, _tx| rx.close().unwrap(),
+        |rx, tx| {
+            drop(tx);
+            drop(rx);
+        },
+        |rx, tx| {
+            drop(rx);
+            drop(tx);
+        },
+    ];
+    for path in paths {
+        let rx = bounded(1);
+        let mut tx = rx.sender();
+        let unlocked = Arc::new(Unlocked {
+            shared: tx.shared.clone(),
+            free: AtomicUsize::new(0),
+        });
+        Schedule::schedule(&mut tx, bundle(SyncWaker::from(unlocked.clone())));
+        assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+        assert!(matches!(
+            tx.try_push_back(Message::Data(2)).unwrap(),
+            TryPush::Full(_)
+        ));
+        path(rx, tx);
+        assert_eq!(unlocked.free.load(Ordering::SeqCst), 1);
+    }
+}
+
+/// Park until woken; fail instead of hanging if the wake never comes.
+fn park_or_fail(parker: &Parker) {
+    let start = Instant::now();
+    parker.park_until(start + TIMEOUT);
+    assert!(
+        start.elapsed() < TIMEOUT,
+        "lost wake: parked a whole timeout"
+    );
+}
+
+/// Push `message`, parking on `parker` while refused. Returns how many refusals were `Full`.
+fn push_parked(
+    tx: &mut Sender<usize, TestSignal>,
+    parker: &Parker,
+    mut message: Message<usize, TestSignal>,
+) -> usize {
+    let mut fulls = 0;
+    loop {
+        match tx.try_push_back(message).unwrap() {
+            TryPush::Pushed => return fulls,
+            TryPush::Full(back) => {
+                fulls += 1;
+                message = back;
+                park_or_fail(parker);
+            }
+            // Already recorded this epoch: the wake is still owed.
+            TryPush::Stuck(back) => {
+                message = back;
+                park_or_fail(parker);
+            }
+        }
+    }
+}
+
+/// Deterministic: the producer is refused, then the pop wakes it.
+#[test]
+fn a_parked_producer_is_woken_by_the_pop() {
+    let rx = bounded(1);
+    let mut tx = rx.sender();
+    let refused = Arc::new(AtomicBool::new(false));
+    let seen = refused.clone();
+    let producer = thread::spawn(move || {
+        let parker = Parker::new();
+        Schedule::schedule(&mut tx, bundle(parker.waker()));
+        // The empty edge takes it, filling it.
+        assert_eq!(tx.try_push_back(Message::Data(1)).unwrap(), TryPush::Pushed);
+        let mut message = Message::Data(2);
+        loop {
+            match tx.try_push_back(message).unwrap() {
+                TryPush::Pushed => return,
+                TryPush::Full(back) | TryPush::Stuck(back) => {
+                    message = back;
+                    seen.store(true, Ordering::SeqCst);
+                    // A pop racing ahead of the park still left the token: no hang either way.
+                    park_or_fail(&parker);
+                }
+            }
+        }
+    });
+    wait_until(|| refused.load(Ordering::SeqCst));
+    assert_eq!(rx.read_front().unwrap(), Message::Data(1));
+    join_within(producer);
+    assert_eq!(rx.read_front().unwrap(), Message::Data(2));
+}
+
+/// Many park/wake rounds through a bound-1 edge: every message arrives and no refused producer
+/// waits a whole timeout.
+#[test]
+fn a_parked_producer_never_loses_a_wake() {
+    let rx = bounded(1);
+    let mut tx = rx.sender();
+    let producer = thread::spawn(move || {
+        let parker = Parker::new();
+        Schedule::schedule(&mut tx, bundle(parker.waker()));
+        (0..2_000)
+            .map(|id| push_parked(&mut tx, &parker, Message::Data(id)))
+            .sum::<usize>()
+    });
+    let consumer = thread::spawn(move || {
+        for id in 0..2_000 {
+            assert_eq!(rx.read_front().unwrap(), Message::Data(id));
+        }
+    });
+    join_within(consumer);
+    assert!(join_within(producer) > 0, "the producer was never refused");
+}
+
+/// Poll and blocking producers on one bound-1 edge, the consumer alternating single pops and
+/// whole drains: no producer loses a wake. Several poll producers are what can catch a drain
+/// that bumps progress and takes the list in separate critical sections.
+#[test]
+fn mixed_producers_never_lose_a_wake() {
+    const EACH: usize = 1_000;
+    const PARKED: usize = 3;
+    const BLOCKING: usize = 2;
+    let rx = bounded(1);
+    let mut parked = Vec::new();
+    for id in 0..PARKED {
+        let mut tx = rx.sender();
+        parked.push(thread::spawn(move || {
+            let parker = Parker::new();
+            Schedule::schedule(&mut tx, bundle(parker.waker()));
+            (0..EACH)
+                .map(|n| push_parked(&mut tx, &parker, Message::Data(id * EACH + n)))
+                .sum::<usize>()
+        }));
+    }
+    let mut blocking = Vec::new();
+    for id in PARKED..PARKED + BLOCKING {
+        let tx = rx.sender();
+        blocking.push(thread::spawn(move || {
+            for n in 0..EACH {
+                tx.push_back(Message::Data(id * EACH + n)).unwrap();
+            }
+        }));
+    }
+    let total = (PARKED + BLOCKING) * EACH;
+    let consumer = thread::spawn(move || {
+        let mut got = Vec::with_capacity(total);
+        while got.len() < total {
+            if got.len() % 2 == 0 {
+                got.push(rx.read_front().unwrap());
+            } else {
+                got.extend(rx.read_all().unwrap());
+            }
+        }
+        got
+    });
+    let fulls: usize = parked.into_iter().map(join_within).sum();
+    assert!(fulls > 0, "no parked producer was ever refused");
+    for producer in blocking {
+        join_within(producer);
+    }
+    let mut got: Vec<usize> = join_within(consumer)
+        .into_iter()
+        .map(|message| match message {
+            Message::Data(n) => n,
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    got.sort();
+    assert_eq!(got, (0..total).collect::<Vec<_>>());
+}
+
+/// Only parked producers, and a consumer spinning on non-blocking pops so drains race refusals
+/// as often as possible: the sharpest probe of a drain that bumps progress and takes the list in
+/// separate critical sections (a producer refused between the two would never be woken).
+#[test]
+fn racing_pops_never_lose_a_parked_wake() {
+    const EACH: usize = 2_000;
+    const PARKED: usize = 4;
+    let rx = bounded(1);
+    let mut producers = Vec::new();
+    for id in 0..PARKED {
+        let mut tx = rx.sender();
+        producers.push(thread::spawn(move || {
+            let parker = Parker::new();
+            Schedule::schedule(&mut tx, bundle(parker.waker()));
+            (0..EACH)
+                .map(|n| push_parked(&mut tx, &parker, Message::Data(id * EACH + n)))
+                .sum::<usize>()
+        }));
+    }
+    let total = PARKED * EACH;
+    let consumer = thread::spawn(move || {
+        let deadline = Instant::now() + TIMEOUT;
+        let mut got = 0;
+        while got < total {
+            assert!(
+                Instant::now() < deadline,
+                "consumer starved: a wake was lost"
+            );
+            if rx.poll().unwrap().is_some() {
+                got += 1;
+            }
+        }
+    });
+    let fulls: usize = producers.into_iter().map(join_within).sum();
+    assert!(fulls > 0, "no producer was ever refused");
+    join_within(consumer);
+}
+
+/// A `sync::Sender` is a poll sink: a poll node can push into it without blocking.
+fn _assert_sender_is_a_poll_sink(rx: &Receiver<usize, TestSignal>) {
+    let _: Box<dyn PollSink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
+        Box::new(rx.sender());
 }

@@ -23,7 +23,7 @@
 //! compaction deferred until long-timeout churn hurts in practice.
 
 use crate::poll::marker::NodeId;
-use crate::poll::waker::{Generation, SlotId, TimerKey};
+use crate::poll::timer::{Generation, SlotId, TimerKey};
 
 use alloc::vec::Vec;
 use core::cmp::Ordering;

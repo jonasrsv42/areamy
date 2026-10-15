@@ -12,8 +12,8 @@
 
 use crate::error::Error;
 use crate::poll::limit::deadline_after;
+use crate::poll::timer::{Timer, TimerGuard};
 use crate::poll::waker::ThreadLocalWaker;
-use crate::poll::wakers::TimerGuard;
 use core::task::Poll;
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -39,10 +39,9 @@ struct InputInner<T> {
     /// Std waker set by the future's `cx` on first poll; fired by
     /// [InputProducer::push] when data arrives.
     waker: Waker,
-    /// Areamy local waker for the owning node. [RecvTimeoutFut] uses
-    /// this to call [ThreadLocalWaker::schedule_at] so the node is
-    /// re-polled when its deadline elapses.
-    local: ThreadLocalWaker,
+    /// Re-polls the owning node; [RecvTimeoutFut] arms it so the node is re-polled when its
+    /// deadline elapses.
+    timer: Timer,
 }
 
 impl<T> InputInner<T> {
@@ -86,12 +85,12 @@ pub struct InputQueue<T> {
 }
 
 impl<T> InputQueue<T> {
-    pub fn new(local: ThreadLocalWaker) -> Self {
+    pub fn new(timer: Timer) -> Self {
         let inner = Rc::new(RefCell::new(InputInner {
             buffer: VecDeque::new(),
             closed: false,
             waker: Waker::noop().clone(),
-            local,
+            timer,
         }));
         Self {
             producer: InputProducer(inner.clone()),
@@ -213,7 +212,7 @@ impl<T: Unpin> Future for RecvTimeoutFut<T> {
             Poll::Ready(_) => this.timer = None,
             Poll::Pending => {
                 if this.timer.is_none() {
-                    this.timer = Some(TimerGuard::arm(&inner.local, this.deadline));
+                    this.timer = Some(TimerGuard::arm(inner.timer.clone(), this.deadline));
                 }
             }
         }
@@ -298,12 +297,12 @@ mod tests {
     use crate::poll::queue::PollQueue;
     use std::task::Context;
 
-    fn local_waker() -> ThreadLocalWaker {
-        // A real ThreadLocalWaker bound to a real Scheduler. Node id
-        // is arbitrary — we never run the consumer in these tests.
+    fn timer() -> Timer {
+        // A real Timer bound to a real Scheduler. Node id is arbitrary — we never run the
+        // consumer in these tests.
         let pq = PollQueue::new();
         let (_consumer, local_producer) = pq.local();
-        ThreadLocalWaker::from_producer(0, &local_producer)
+        Timer::new(0, &local_producer)
     }
 
     fn poll_once<F: Future + Unpin>(fut: &mut F) -> Poll<F::Output> {
@@ -330,7 +329,7 @@ mod tests {
             }
         }
 
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         q.producer.push(Input::Data(1));
         let flag = Arc::new(Flag(AtomicBool::new(false)));
         let waker = std::task::Waker::from(flag.clone());
@@ -348,7 +347,7 @@ mod tests {
     #[test]
     fn timeout_duration_max_saturates() {
         // Duration::MAX as "never" must not panic on Instant overflow.
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         let mut fut = q.consumer.recv_with_timeout(Duration::MAX);
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
     }
@@ -357,7 +356,7 @@ mod tests {
 
     #[test]
     fn timeout_returns_buffered_item() {
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         q.producer.push(Input::Data(7));
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         let Poll::Ready(Ok(Some(Input::Data(n)))) = poll_once(&mut fut) else {
@@ -368,7 +367,7 @@ mod tests {
 
     #[test]
     fn timeout_returns_flush_and_marks_closed() {
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         q.producer.push(Input::Flush);
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(
@@ -382,7 +381,7 @@ mod tests {
 
     #[test]
     fn timeout_pending_when_empty_and_deadline_future() {
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
         // The future armed the timer on first poll.
@@ -394,7 +393,7 @@ mod tests {
 
     #[test]
     fn timeout_idempotent_schedule_on_repoll() {
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
         let key = fut.timer.as_ref().map(TimerGuard::key);
@@ -410,7 +409,7 @@ mod tests {
         // Bypass the public API to construct a past deadline without
         // sleeping. RecvTimeoutFut fields are private but visible
         // from this module.
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         let mut fut = RecvTimeoutFut {
             consumer: q.consumer.clone(),
             deadline: Instant::now() - Duration::from_millis(50),
@@ -422,7 +421,7 @@ mod tests {
     #[test]
     fn timeout_in_past_with_buffered_item_returns_item() {
         // Item available — takes precedence over expired deadline.
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         q.producer.push(Input::Data(99));
         let mut fut = RecvTimeoutFut {
             consumer: q.consumer.clone(),
@@ -437,7 +436,7 @@ mod tests {
 
     #[test]
     fn timeout_resolving_with_data_releases_timer() {
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
         assert!(fut.timer.is_some());
@@ -449,7 +448,7 @@ mod tests {
 
     #[test]
     fn timeout_push_after_pending_resolves_with_data() {
-        let q = InputQueue::<usize>::new(local_waker());
+        let q = InputQueue::<usize>::new(timer());
         let mut fut = q.consumer.recv_with_timeout(Duration::from_secs(60));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
         q.producer.push(Input::Data(11));

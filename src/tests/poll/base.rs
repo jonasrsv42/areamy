@@ -30,10 +30,10 @@ struct PollDouble {
 impl PollDouble {
     fn new(wakers: LineWakers) -> Self {
         Self {
-            // work waker on InputQueue so `recv_with_timeout` would
+            // timer on InputQueue so `recv_with_timeout` would
             // re-poll the routine; output waker on OutputQueue so
             // push() wakes the Output phase to drain.
-            input: InputQueue::new(wakers.work),
+            input: InputQueue::new(wakers.timer),
             output: OutputQueue::new(wakers.output),
         }
     }
@@ -726,7 +726,7 @@ struct HalfCloseRoutine {
 impl HalfCloseRoutine {
     fn new(wakers: LineWakers, flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
         Self {
-            input: InputQueue::new(wakers.work),
+            input: InputQueue::new(wakers.timer),
             output: OutputQueue::new(wakers.output),
             flush_cycles,
             flush_cycles_remaining: 0,
@@ -994,8 +994,8 @@ fn multi_flush_then_close() -> Result<(), Error> {
 
 /// Regression: `recv_with_timeout` must actually fire at its deadline.
 ///
-/// Internally, `RecvTimeoutFut::poll` calls `schedule_at` on the local
-/// waker stored in `InputQueue`. That waker MUST be bound to the work
+/// Internally, `RecvTimeoutFut::poll` calls `schedule_at` on the timer
+/// stored in `InputQueue`. That timer MUST be bound to the work
 /// phase (the one that polls the future) — if it's bound to a different
 /// phase (e.g. output), the deadline fires the wrong phase and the
 /// future never re-polls.

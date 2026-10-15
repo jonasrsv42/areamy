@@ -5,7 +5,7 @@
 
 use super::scheduler::Scheduler;
 use crate::poll::marker::NodeId;
-use crate::poll::waker::TimerKey;
+use crate::poll::timer::TimerKey;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
@@ -46,5 +46,11 @@ impl ThreadLocalProducer {
     /// Release a timer before it fires. Dead keys are a no-op.
     pub fn cancel(&self, key: TimerKey) {
         self.inner.borrow_mut().cancel(key);
+    }
+
+    /// True iff both handles feed the same queue. Node ids alone don't identify a node on a
+    /// thread: a nested runtime numbers its nodes from 0 too.
+    pub(crate) fn same_queue(&self, other: &ThreadLocalProducer) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
     }
 }

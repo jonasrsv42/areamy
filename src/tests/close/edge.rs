@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::poll::edge::PollEdge;
 use crate::poll::future::queue::{Input, InputQueue};
 use crate::poll::input;
+use crate::poll::timer::mock::noop_timer;
 use crate::poll::waker::mock;
 use crate::sync::Receiver;
 use std::pin::Pin;
@@ -112,7 +113,7 @@ fn poll_local_edge() -> Result<(), Error> {
 /// The future input queue closes itself on Flush and reopens on reset.
 #[test]
 fn future_input_queue() -> Result<(), Error> {
-    let queue = InputQueue::<usize>::new(mock::noop_local_waker());
+    let queue = InputQueue::<usize>::new(noop_timer());
     let waker = std::task::Waker::noop();
     let mut cx = core::task::Context::from_waker(waker);
     queue.producer.push(Input::Data(1));

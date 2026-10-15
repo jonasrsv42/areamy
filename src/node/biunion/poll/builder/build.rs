@@ -101,6 +101,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -186,6 +187,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -282,6 +284,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -372,6 +375,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -466,6 +470,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -560,6 +565,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -650,6 +656,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -744,6 +751,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -846,6 +854,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -944,6 +953,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -1035,6 +1045,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(
@@ -1139,6 +1150,7 @@ where
                 right: right_waker.clone(),
             },
             work: work.value.local.clone(),
+            timer: work.value.timer.clone(),
             output: output.value.local.clone(),
         });
         let phases = node::Node::phases(

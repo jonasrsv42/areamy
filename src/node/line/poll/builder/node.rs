@@ -506,6 +506,7 @@ where
     let routine = factory.create(LineWakers {
         input: input_waker.clone(),
         work: work.value.local.clone(),
+        timer: work.value.timer.clone(),
         output: output_slot.value.local.clone(),
     });
     let (input_phase, work_phase, output_phase) = node::Node::phases(
@@ -584,6 +585,7 @@ where
     let routine = factory.create(LineWakers {
         input: input.value.local.clone(),
         work: work.value.local.clone(),
+        timer: work.value.timer.clone(),
         output: output_slot.value.local.clone(),
     });
     let (input_phase, work_phase, output_phase) = node::Node::phases(

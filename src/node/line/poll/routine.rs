@@ -96,6 +96,7 @@ pub mod tests {
     use super::LineRoutine;
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
+    use crate::poll::timer::mock::noop_timer;
     use crate::poll::waker::Waker;
     use crate::poll::waker::mock::{noop_local_waker, noop_waker};
     use crate::{Accept, Next, TrySend};
@@ -158,6 +159,7 @@ pub mod tests {
             input: noop_local_waker(),
             work: noop_local_waker(),
             output: noop_local_waker(),
+            timer: noop_timer(),
         }
     }
 

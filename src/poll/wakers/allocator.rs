@@ -14,6 +14,7 @@ use crate::poll::graph::GraphNode;
 use crate::poll::marker::NodeId;
 use crate::poll::queue::{Producer, ThreadLocalProducer};
 use crate::poll::runtime::{Node, Runtime};
+use crate::poll::timer::Timer;
 use crate::poll::waker::{self, ThreadLocalWaker};
 use crate::poll::wakers::sync;
 use crate::thread::ThreadId;
@@ -121,10 +122,7 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         for (i, slot) in slots.into_iter().enumerate() {
             match slot {
                 Some(pollable) => {
-                    let waker = waker::Waker {
-                        sync: sync::Waker::task(i, &self.producer),
-                        local: ThreadLocalWaker::from_producer(i, &self.local_producer),
-                    };
+                    let waker = self.make_waker(i);
                     result.push(Node { pollable, waker });
                 }
                 None => return Err(fatal!("build: slot {} is empty", i)),
@@ -143,6 +141,7 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         waker::Waker {
             sync: sync::Waker::task(id, &self.producer),
             local: ThreadLocalWaker::from_producer(id, &self.local_producer),
+            timer: Timer::new(id, &self.local_producer),
         }
     }
 }

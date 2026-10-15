@@ -1,14 +1,14 @@
 //! Wall-clock sleep for async routine bodies.
 //!
 //! [sleep] needs no handle: the poll loop publishes the current
-//! node's waker (`poll::thread::tls`) and the future captures it on
+//! node's timer (`poll::thread::tls`) and the future captures it on
 //! first poll — a sleep belongs to the node that first polls it,
 //! which is the only node that will ever poll it again.
 
 use crate::error::Error;
 use crate::poll::limit::deadline_after;
 use crate::poll::thread::tls;
-use crate::poll::wakers::TimerGuard;
+use crate::poll::timer::TimerGuard;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -44,12 +44,12 @@ pub fn sleep_until(deadline: Instant) -> SleepFut {
 
 /// Future returned by [sleep]. Resolves once its deadline has passed.
 ///
-/// The armed [TimerGuard] owns the waker captured at first poll and
+/// The armed [TimerGuard] owns the timer captured at first poll and
 /// cancels on early drop (lost `Select` race, cancelled routine) so
 /// no dead deadline lingers in the heap.
 pub struct SleepFut {
     deadline: Instant,
-    /// Armed timer, capturing the owning node's waker at first
+    /// Armed timer, capturing the owning node's timer at first
     /// pending poll — the sleep is frozen to that node.
     timer: Option<TimerGuard>,
 }
@@ -71,14 +71,14 @@ impl Future for SleepFut {
 
         match &this.timer {
             Some(_guard) => {
-                // A pending re-poll under a different frame's waker
+                // A pending re-poll under a different frame's timer
                 // means the future migrated nodes — its wake would
                 // never reach this frame, hanging the await. The
                 // misuse is deterministic, so debug builds catch it;
                 // release pays nothing. A TLS-less (manual) re-poll
                 // can't be judged.
                 #[cfg(debug_assertions)]
-                if tls::current_will_wake(_guard.waker()) == Some(false) {
+                if tls::current_same_target(_guard.timer()) == Some(false) {
                     return Poll::Ready(Err(crate::fatal!(
                         "poll::sleep(..) moved across nodes after first poll"
                     )));
@@ -90,7 +90,7 @@ impl Future for SleepFut {
                         "poll::sleep(..) awaited outside an areamy poll thread"
                     )));
                 };
-                this.timer = Some(TimerGuard::arm(&current, this.deadline));
+                this.timer = Some(TimerGuard::arm(current, this.deadline));
             }
         }
         Poll::Pending
@@ -102,7 +102,8 @@ mod tests {
     use super::*;
     use crate::poll::queue::PollQueue;
     use crate::poll::thread::tls::ThreadLocalGuard;
-    use crate::poll::waker::{ThreadLocalWaker, mock};
+    use crate::poll::timer::Timer;
+    use crate::poll::timer::mock::noop_timer;
     use std::task::Context;
     use std::thread;
 
@@ -127,12 +128,12 @@ mod tests {
     }
 
     #[test]
-    fn mock_waker_arms_real_timer() {
+    fn mock_timer_arms_real_timer() {
         // Mocks carry a private scheduler, so schedule_at is
         // infallible everywhere — a sleep under a mock frame parks
         // normally instead of erroring.
         let mut fut = sleep(Duration::from_secs(60));
-        let _guard = ThreadLocalGuard::set(mock::noop_local_waker());
+        let _guard = ThreadLocalGuard::set(noop_timer());
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
     }
 
@@ -140,11 +141,11 @@ mod tests {
     fn sleep_arms_and_wakes_owning_node() {
         let q = PollQueue::new();
         let (mut consumer, local) = q.local();
-        let waker = ThreadLocalWaker::from_producer(7, &local);
+        let timer = Timer::new(7, &local);
 
         let mut fut = sleep(Duration::from_millis(20));
         {
-            let _guard = ThreadLocalGuard::set(waker);
+            let _guard = ThreadLocalGuard::set(timer);
             assert!(matches!(poll_once(&mut fut), Poll::Pending));
         }
 
@@ -160,11 +161,11 @@ mod tests {
     fn dropped_sleep_cancels_its_deadline() {
         let q = PollQueue::new();
         let (mut consumer, local) = q.local();
-        let waker = ThreadLocalWaker::from_producer(7, &local);
+        let timer = Timer::new(7, &local);
 
         let mut fut = sleep(Duration::from_millis(20));
         {
-            let _guard = ThreadLocalGuard::set(waker);
+            let _guard = ThreadLocalGuard::set(timer);
             assert!(matches!(poll_once(&mut fut), Poll::Pending));
         }
         drop(fut);
@@ -180,12 +181,12 @@ mod tests {
     #[test]
     fn nested_guard_shadows_and_restores() {
         // Donated-thread nesting (Thread::run inside a poll frame):
-        // the inner guard shadows the outer waker only for its own
+        // the inner guard shadows the outer timer only for its own
         // frame; sleeps capture whichever frame first polls them.
         let q = PollQueue::new();
         let (mut consumer, local) = q.local();
-        let outer = ThreadLocalWaker::from_producer(1, &local);
-        let inner = ThreadLocalWaker::from_producer(2, &local);
+        let outer = Timer::new(1, &local);
+        let inner = Timer::new(2, &local);
 
         let mut before = sleep(Duration::from_millis(10));
         let mut nested = sleep(Duration::from_millis(20));
@@ -197,7 +198,7 @@ mod tests {
             let _inner_guard = ThreadLocalGuard::set(inner);
             assert!(matches!(poll_once(&mut nested), Poll::Pending));
         }
-        // Inner frame exited — outer waker restored.
+        // Inner frame exited — outer timer restored.
         assert!(matches!(poll_once(&mut after), Poll::Pending));
 
         assert_eq!(consumer.next().unwrap(), 1); // before → outer
@@ -209,13 +210,13 @@ mod tests {
     fn same_frame_repoll_stays_pending() {
         let q = PollQueue::new();
         let (_consumer, local) = q.local();
-        let waker = ThreadLocalWaker::from_producer(1, &local);
+        let timer = Timer::new(1, &local);
 
         let mut fut = sleep(Duration::from_secs(60));
         // Spurious re-polls under the owning frame are the normal
         // case (any wake re-polls the whole future tree) — no false
         // moved-sleep error.
-        let _guard = ThreadLocalGuard::set(waker);
+        let _guard = ThreadLocalGuard::set(timer);
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
     }
@@ -225,8 +226,8 @@ mod tests {
     fn moved_sleep_errors_under_foreign_frame() {
         let q = PollQueue::new();
         let (_consumer, local) = q.local();
-        let first = ThreadLocalWaker::from_producer(1, &local);
-        let second = ThreadLocalWaker::from_producer(2, &local);
+        let first = Timer::new(1, &local);
+        let second = Timer::new(2, &local);
 
         let mut fut = sleep(Duration::from_secs(60));
         {

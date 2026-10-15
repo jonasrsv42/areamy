@@ -36,6 +36,7 @@ pub mod tests {
     use crate::biunion;
     use crate::error::Error;
     use crate::poll::future::queue::OutputQueue;
+    use crate::poll::timer::mock::noop_timer;
     use crate::poll::waker::Waker;
     use crate::poll::waker::mock::noop_local_waker;
 
@@ -65,6 +66,7 @@ pub mod tests {
             },
             work: noop_local_waker(),
             output: noop_local_waker(),
+            timer: noop_timer(),
         }
     }
 

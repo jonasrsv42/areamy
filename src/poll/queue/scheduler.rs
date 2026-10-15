@@ -15,7 +15,7 @@ use super::core::{Item, VyukovQueue, Wait};
 use super::deadline::DeadlineHeap;
 use crate::error::Error;
 use crate::poll::marker::NodeId;
-use crate::poll::waker::TimerKey;
+use crate::poll::timer::TimerKey;
 
 use alloc::sync::Arc;
 use core::mem;

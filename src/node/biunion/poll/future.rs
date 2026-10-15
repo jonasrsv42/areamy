@@ -41,11 +41,11 @@ where
         + 'params,
 {
     pub fn new(wakers: BiunionWakers, mut factory: F) -> Self {
-        // Both InputQueues get the *work* waker so `recv_with_timeout`
-        // on either input re-polls the routine via the work phase.
+        // Both InputQueues get the timer so `recv_with_timeout` on
+        // either input re-polls the routine via the work phase.
         let input = Inputs {
-            left: InputQueue::new(wakers.work.clone()),
-            right: InputQueue::new(wakers.work),
+            left: InputQueue::new(wakers.timer.clone()),
+            right: InputQueue::new(wakers.timer),
         };
         let output = OutputQueue::new(wakers.output);
         let future = (factory)(

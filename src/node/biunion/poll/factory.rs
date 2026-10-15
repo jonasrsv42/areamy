@@ -8,6 +8,7 @@
 //! it produces) may hold borrows captured from the surrounding scope.
 
 use crate::node::biunion::Inputs;
+use crate::poll::timer::Timer;
 use crate::poll::waker::ThreadLocalWaker;
 
 /// Per-input wakers, grouped under [`BiunionWakers::input`] so a
@@ -18,14 +19,16 @@ pub type BiunionInputs = Inputs<ThreadLocalWaker, ThreadLocalWaker>;
 ///
 /// - `input.left` / `input.right` wake the two input phases. Wake a side after
 ///   [crate::node::routine::Accept::Full] on it once room frees.
-/// - `work` wakes the work phase (polls the routine). Used by
+/// - `work` wakes the work phase (polls the routine).
+/// - `output` wakes the output phase to drain.
+/// - `timer` re-polls the work phase at a deadline. Used by
 ///   `recv_with_timeout` on either input so the routine re-polls at
 ///   the deadline.
-/// - `output` wakes the output phase to drain.
 pub struct BiunionWakers {
     pub input: BiunionInputs,
     pub work: ThreadLocalWaker,
     pub output: ThreadLocalWaker,
+    pub timer: Timer,
 }
 
 /// Factory for poll biunion routines. [Send] — crosses threads.

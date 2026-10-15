@@ -182,8 +182,8 @@ fn poll_loop<ThreadIdType: ThreadId>(
             continue;
         };
 
-        // Ambient waker for handle-free leaf futures (poll::sleep).
-        let _current = tls::ThreadLocalGuard::set(waker.local.clone());
+        // Ambient timer for handle-free leaf futures (poll::sleep).
+        let _current = tls::ThreadLocalGuard::set(waker.timer.clone());
         match pollable.poll(waker) {
             Ok(core::task::Poll::Pending) => {}
             Ok(core::task::Poll::Ready(()))

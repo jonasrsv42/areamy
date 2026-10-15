@@ -11,6 +11,7 @@
 //! Defaults to `'static` for fully-owning routines via lifetime inference
 //! at every call site that doesn't introduce a borrow.
 
+use crate::poll::timer::Timer;
 use crate::poll::waker::ThreadLocalWaker;
 
 /// Phase wakers the framework hands to a line routine at construction.
@@ -18,15 +19,15 @@ use crate::poll::waker::ThreadLocalWaker;
 /// - `input` wakes the input phase (drains the input edge). Wake it after
 ///   [crate::node::routine::Accept::Full] once room frees.
 /// - `work` wakes the work phase (the one that polls the routine).
-///   `InputQueue::new(wakers.work)` is what makes deadline-driven
-///   re-polls (via `recv_with_timeout` / `schedule_at`) route back to
-///   the right place.
 /// - `output` wakes the output phase (drains the output queue). Pass
 ///   to `OutputQueue::new` so `push` nudges Output to drain.
+/// - `timer` re-polls the work phase at a deadline. Pass to
+///   `InputQueue::new` so `recv_with_timeout` re-polls the routine.
 pub struct LineWakers {
     pub input: ThreadLocalWaker,
     pub work: ThreadLocalWaker,
     pub output: ThreadLocalWaker,
+    pub timer: Timer,
 }
 
 /// Factory for poll line routines. [Send] — crosses threads.

@@ -1,4 +1,4 @@
-//! Timer identity handed out by [super::ThreadLocalWake::schedule_at].
+//! Timer identity handed out by [super::Timer::schedule_at].
 
 /// Index into the deadline heap's slot table. Transparent newtype so
 /// slot indices can't be mixed up with node ids or other counters.

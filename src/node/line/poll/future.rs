@@ -84,11 +84,11 @@ where
     F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
     pub fn new(wakers: LineWakers, mut factory: F) -> Self {
-        // InputQueue gets the *work* waker so `recv_with_timeout`'s
-        // `schedule_at` re-polls the future via the work phase (the
-        // one that actually polls the routine). OutputQueue gets the
-        // output waker so push() nudges Output to drain.
-        let input = InputQueue::new(wakers.work);
+        // InputQueue gets the timer so `recv_with_timeout` re-polls
+        // the future via the work phase (the one that actually polls
+        // the routine). OutputQueue gets the output waker so push()
+        // nudges Output to drain.
+        let input = InputQueue::new(wakers.timer);
         let output = OutputQueue::new(wakers.output);
         let future = (factory)(input.consumer.clone(), output.producer.clone());
         Self {

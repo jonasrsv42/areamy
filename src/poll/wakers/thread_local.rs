@@ -5,9 +5,7 @@
 
 use crate::poll::marker::NodeId;
 use crate::poll::queue::ThreadLocalProducer;
-use crate::poll::waker::{ThreadLocalWake, ThreadLocalWaker, TimerKey};
-
-use std::time::Instant;
+use crate::poll::waker::{ThreadLocalWake, ThreadLocalWaker};
 
 /// Thread-local wake impl backed by [ThreadLocalProducer].
 struct Wake {
@@ -18,12 +16,6 @@ struct Wake {
 impl ThreadLocalWake for Wake {
     fn wake(&self) {
         self.producer.push(self.id);
-    }
-    fn schedule_at(&self, deadline: Instant) -> TimerKey {
-        self.producer.schedule(self.id, deadline)
-    }
-    fn cancel(&self, key: TimerKey) {
-        self.producer.cancel(key);
     }
 }
 
@@ -41,7 +33,6 @@ impl ThreadLocalWaker {
 mod tests {
     use super::*;
     use crate::poll::queue::PollQueue;
-    use std::time::Duration;
 
     #[test]
     fn wake_via_thread_local_waker_drives_consumer() {
@@ -50,18 +41,5 @@ mod tests {
         let waker = ThreadLocalWaker::from_producer(7, &local);
         waker.wake();
         assert_eq!(consumer.next().unwrap(), 7);
-    }
-
-    #[test]
-    fn schedule_at_via_thread_local_waker_drives_consumer() {
-        let q = PollQueue::new();
-        let (mut consumer, local) = q.local();
-        let waker = ThreadLocalWaker::from_producer(42, &local);
-        let past = Instant::now() - Duration::from_millis(50);
-        let _ = waker.schedule_at(past);
-        // schedule_at routes through Wake → ThreadLocalProducer →
-        // Scheduler::schedule, pushing the sentinel + heap entry.
-        // Consumer's next() picks up the expired entry.
-        assert_eq!(consumer.next().unwrap(), 42);
     }
 }

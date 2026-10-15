@@ -16,6 +16,7 @@ pub mod runtime;
 mod sink;
 pub mod sleep;
 pub mod thread;
+pub mod timer;
 pub mod traits;
 pub mod try_join;
 pub mod waker;
@@ -32,9 +33,10 @@ pub use room::Room;
 pub use sink::Sink;
 pub use sleep::{SleepFut, sleep, sleep_until};
 pub use thread::{Thread, ThreadHandle};
+pub use timer::{Timer, TimerKey};
 pub use traits::AsyncParent;
 pub use try_join::try_join;
-pub use waker::{ThreadLocalWake, ThreadLocalWaker, TimerKey, Waker};
+pub use waker::{ThreadLocalWake, ThreadLocalWaker, Waker};
 pub use wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 
 pub use crate::node::biunion::poll::factory::{

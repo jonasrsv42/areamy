@@ -14,9 +14,10 @@ use alloc::rc::Rc;
 /// a bit from Std's consuming wake but it is an optimization that saves a refcount on
 /// each wake for areamy's reusable wakers.
 ///
-/// We can do this because areamy scheduling is a `Copy` of ID. The Std lib
-/// assumes scheduling may be of non-copy types so it is more generally performant in a sense
-/// but then pays the cost of a clone on wake_by_ref which we avoid here.
+/// We can do this because areamy scheduling is a `Copy` of ID. Std's `Wake` makes the
+/// consuming `wake` the primitive because its run queues may take the task itself (the woken
+/// `Arc<Task>` moves in, saving a refcount); its default `wake_by_ref` clones to call it.
+/// Ours has nothing to hand over, so by reference is the primitive and no wake clones.
 pub trait LocalWake {
     fn wake(&self);
 }

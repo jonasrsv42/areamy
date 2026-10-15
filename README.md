@@ -126,8 +126,9 @@ match input.recv_with_timeout(MAX_HOLD).await? {
 }
 ```
 
-For lower-level use, every `Waker` exposes `schedule_at(deadline)` —
-the node gets re-polled at that `Instant`.
+For lower-level use, the `timer` in `LineWakers` / `BiunionWakers` (a
+`poll::Timer`) exposes `schedule_at(deadline)` — the node gets re-polled at
+that `Instant`.
 
 ## Embedded targets
 

@@ -3,7 +3,8 @@
 use crate::poll::timer::Timer;
 use crate::wake;
 
-/// The node's wakers plus its [Timer], passed to [Pollable::poll](crate::poll::Pollable).
+/// The node's wakers plus its [Timer], passed to [Pollable::poll](crate::poll::Pollable::poll)
+/// and [routine::Poll::poll](crate::node::routine::Poll::poll).
 /// Created on the async thread during graph construction — never crosses threads.
 ///
 /// - `wake`: wakes the node, from any thread (`wake.sync`) or this one (`wake.local`)

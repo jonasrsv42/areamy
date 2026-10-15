@@ -5,10 +5,10 @@ use crate::edge::sync;
 pub use crate::edge::sync::State;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
+use crate::graph::{Closeable, Get, Outlet, Pushable, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::wake::Parker;
+use crate::wake::{self, Parker};
 use crate::work::Sink;
 use core::task::Waker;
 use std::num::NonZeroUsize;
@@ -183,6 +183,17 @@ where
     }
 }
 
+/// The inner edge's: woken at the next pop or close after a `Full`.
+impl<D, S> Schedule for Sender<D, S>
+where
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+{
+    fn schedule(&mut self, waker: wake::Waker) {
+        Schedule::schedule(&mut self.inner, waker);
+    }
+}
+
 impl<'params, D, S> Get<dyn Pushable<DataType = D, SignalType = S> + 'params> for Receiver<D, S>
 where
     D: Send + Sync + 'static,
@@ -211,6 +222,10 @@ mod tests {
     use super::*;
     use crate::edge::sync::tests::{join_within, wait_until};
     use crate::error::ErrorKind;
+    use crate::poll::Sink as PollSink;
+    use crate::wake::mock::counting_waker;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
     type Signal = &'static str;
@@ -244,6 +259,48 @@ mod tests {
         );
         // Nothing landed, so the consumer must not wake for it.
         assert!(!parker.take_woken());
+    }
+
+    /// A scheduled sender on `rx` (bound 1), refused once: nothing woken yet.
+    fn refused(rx: &Receiver<usize, Signal>) -> (Sender<usize, Signal>, Arc<AtomicUsize>) {
+        let mut tx = rx.sender();
+        let (waker, wakes) = counting_waker();
+        Schedule::schedule(&mut tx, waker);
+        assert_eq!(tx.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
+        assert!(matches!(
+            tx.try_push(Message::Data(2)).unwrap(),
+            TryPush::Full(_)
+        ));
+        assert_eq!(wakes.load(Ordering::SeqCst), 0);
+        (tx, wakes)
+    }
+
+    #[test]
+    fn a_scheduled_sender_is_woken_by_the_pop_after_full() {
+        let (_parker, left, _right) = bounded_pair(1);
+        let (_tx, wakes) = refused(&left);
+        left.poll().unwrap();
+        assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_scheduled_sender_is_woken_by_close_and_by_drop() {
+        let (_parker, left, _right) = bounded_pair(1);
+        let (_tx, wakes) = refused(&left);
+        // Asserted while `left` lives: its drop would close too.
+        left.close().unwrap();
+        assert_eq!(wakes.load(Ordering::SeqCst), 1);
+
+        let (_parker, left, _right) = bounded_pair(1);
+        let (_tx, wakes) = refused(&left);
+        drop(left);
+        assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    }
+
+    /// A multiedge `Sender` is a poll sink: a poll node can push into it without blocking.
+    fn _assert_sender_is_a_poll_sink(rx: &Receiver<usize, Signal>) {
+        let _: Box<dyn PollSink<DataType = usize, SignalType = Signal> + Send + Sync> =
+            Box::new(rx.sender());
     }
 
     #[test]

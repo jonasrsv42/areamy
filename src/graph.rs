@@ -56,6 +56,7 @@ mod inlet;
 pub mod marker;
 mod outlet;
 mod outputs;
+mod schedule;
 mod sink;
 #[cfg(any(test, doc))]
 pub mod tests;
@@ -67,4 +68,5 @@ pub use get::Get;
 pub use inlet::{Closed, Inlet, Receivable};
 pub use outlet::{Outlet, Pushable, TryPush, TryPushable};
 pub use outputs::Outputs;
+pub use schedule::Schedule;
 pub use sink::Sink;

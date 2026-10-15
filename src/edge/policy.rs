@@ -1,10 +1,10 @@
 //! Signal policy wrappers for controlling how signals are propagated through the graph.
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Outlet, Pushable, TryPush, TryPushable};
+use crate::graph::marker::Multiplicity;
+use crate::graph::{Closeable, Outlet, Pushable, Schedule, TryPush, TryPushable};
 use crate::message::Message;
-use crate::poll::Room;
-use crate::wake::Waker;
+use crate::wake;
 
 mod policied;
 
@@ -149,13 +149,15 @@ where
     }
 }
 
-/// Room is the inner sink's: the policy only drops signals, it never holds messages.
-impl<SinkType> Room for PolicyEdge<SinkType>
+/// Scheduling is the inner sink's: the policy only drops signals, it never holds messages, so
+/// it never refuses on its own.
+impl<SinkType, MultiplicityType> Schedule<MultiplicityType> for PolicyEdge<SinkType>
 where
-    SinkType: Room,
+    SinkType: Schedule<MultiplicityType>,
+    MultiplicityType: Multiplicity,
 {
-    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
-        self.inner.poll(waker)
+    fn schedule(&mut self, waker: wake::Waker) {
+        Schedule::<MultiplicityType>::schedule(&mut self.inner, waker);
     }
 }
 

@@ -3,11 +3,9 @@
 use crate::Trackable;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Outlet, TryPush, TryPushable};
+use crate::graph::{Closeable, Outlet, Schedule, TryPush, TryPushable};
 use crate::message::Message;
-use crate::poll::Room;
-use crate::wake::Waker;
-use core::task::Poll;
+use crate::wake;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -16,44 +14,43 @@ pub(crate) type Signal = Trackable<&'static str>;
 /// A poll sink with no blocking push. Clones share state, so a boxed clone can be inspected
 /// through the original.
 #[derive(Clone, Default)]
-pub(crate) struct RoomOnly {
+pub(crate) struct ScheduleOnly {
     pub(crate) items: Arc<Mutex<Vec<Message<usize, Signal>>>>,
-    pub(crate) polls: Arc<AtomicUsize>,
+    pub(crate) schedules: Arc<AtomicUsize>,
     pub(crate) closed: Arc<AtomicBool>,
 }
 
-impl Connection for RoomOnly {}
+impl Connection for ScheduleOnly {}
 
-impl Outlet for RoomOnly {
+impl Outlet for ScheduleOnly {
     type DataType = usize;
     type SignalType = Signal;
 }
 
 /// Takes everything.
-impl TryPushable for RoomOnly {
+impl TryPushable for ScheduleOnly {
     fn try_push(
         &mut self,
         msg: Message<usize, Signal>,
     ) -> Result<TryPush<Message<usize, Signal>>, Error> {
         self.items
             .lock()
-            .map_err(|_| crate::fatal!("RoomOnly poisoned"))?
+            .map_err(|_| crate::fatal!("ScheduleOnly poisoned"))?
             .push(msg);
         Ok(TryPush::Pushed)
     }
 }
 
-impl Closeable for RoomOnly {
+impl Closeable for ScheduleOnly {
     fn close(&mut self) -> Result<(), Error> {
         self.closed.store(true, Ordering::SeqCst);
         Ok(())
     }
 }
 
-/// Counts polls; always `Pending`.
-impl Room for RoomOnly {
-    fn poll(&mut self, _waker: &mut Waker) -> Result<Poll<()>, Error> {
-        self.polls.fetch_add(1, Ordering::SeqCst);
-        Ok(Poll::Pending)
+/// Counts bindings; never wakes.
+impl Schedule for ScheduleOnly {
+    fn schedule(&mut self, _waker: wake::Waker) {
+        self.schedules.fetch_add(1, Ordering::SeqCst);
     }
 }

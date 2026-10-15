@@ -505,9 +505,9 @@ where
     let input_waker = allocator.local_waker(input.slot.id);
     let routine = factory.create(LineWakers {
         input: input_waker.clone(),
-        work: work.value.local.clone(),
+        work: work.value.wake.local.clone(),
         timer: work.value.timer.clone(),
-        output: output_slot.value.local.clone(),
+        output: output_slot.value.wake.local.clone(),
     });
     let (input_phase, work_phase, output_phase) = node::Node::phases(
         Phase {
@@ -516,11 +516,11 @@ where
         },
         Phase {
             target: routine,
-            waker: work.value.local,
+            waker: work.value.wake.local,
         },
         Phase {
             target: output,
-            waker: output_slot.value.local,
+            waker: output_slot.value.wake.local,
         },
     );
     let nodes = vec![
@@ -568,7 +568,7 @@ where
     OutputType: Pushable<DataType = OutType, SignalType = SignalType> + Closeable + 'params,
 {
     let input = allocator.next();
-    let edge_waker = input.value.local.clone();
+    let edge_waker = input.value.wake.local.clone();
     let mut edges = Vec::new();
     let mut nodes = Vec::new();
 
@@ -583,23 +583,23 @@ where
     let work = allocator.next();
     let output_slot = allocator.next();
     let routine = factory.create(LineWakers {
-        input: input.value.local.clone(),
-        work: work.value.local.clone(),
+        input: input.value.wake.local.clone(),
+        work: work.value.wake.local.clone(),
         timer: work.value.timer.clone(),
-        output: output_slot.value.local.clone(),
+        output: output_slot.value.wake.local.clone(),
     });
     let (input_phase, work_phase, output_phase) = node::Node::phases(
         Phase {
             target: edges,
-            waker: input.value.local,
+            waker: input.value.wake.local,
         },
         Phase {
             target: routine,
-            waker: work.value.local,
+            waker: work.value.wake.local,
         },
         Phase {
             target: output,
-            waker: output_slot.value.local,
+            waker: output_slot.value.wake.local,
         },
     );
     nodes.push(GraphNode {

@@ -5,8 +5,8 @@ use crate::graph::marker::Multiplicity;
 use crate::graph::{Closed, Inlet, Receivable};
 use crate::message::Message;
 use crate::node::routine::{Accept, Flush, TrySend};
-use crate::poll::waker::LocalWaker;
 use crate::poll::{BUDGET, Phase};
+use crate::wake::LocalWaker;
 use std::ops::ControlFlow::{self, Break, Continue};
 
 /// One input's borrow of a node's state, feeding its routine. On close it sets CloseReady and

@@ -10,7 +10,7 @@
 //! threads. This allows routines to hold non-Send types like `Rc<RefCell<_>>`
 //! for zero-cost shared state with their futures.
 //!
-//! The factory receives a [LocalWaker](crate::poll::waker::LocalWaker)
+//! The factory receives a [LocalWaker](crate::wake::LocalWaker)
 //! for the Output phase. Routines MUST use this to wake Output when they
 //! produce data (e.g. via [OutputProducer](crate::poll::future::queue::OutputProducer)).
 //!
@@ -45,13 +45,12 @@
 //! The node's Output phase calls [routine::Next] to drain output. Output
 //! is NOT polled automatically — the routine MUST wake the Output phase
 //! when it produces data. Use [OutputProducer::push](crate::poll::future::queue::OutputProducer::push)
-//! which wakes Output via [LocalWaker](crate::poll::waker::LocalWaker).
+//! which wakes Output via [LocalWaker](crate::wake::LocalWaker).
 //!
 //! ## [routine::Poll] contract
 //!
-//! [routine::Poll::poll] receives a [Waker](crate::poll::waker::Waker)
-//! carrying a sync waker (for I/O / standard futures), a local waker
-//! (for cheap same-thread wake) and the node's timer.
+//! [routine::Poll::poll] receives the node's [Context](crate::poll::Context):
+//! its wakers and its timer.
 //!
 //! - [core::task::Poll::Pending] — async work in progress.
 //! - [core::task::Poll::Ready] — routine finished processing after
@@ -71,7 +70,7 @@
 //!
 //! ## TL;DR
 //!
-//! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [LocalWaker](crate::poll::waker::LocalWaker). Output is NOT polled automatically.
+//! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [LocalWaker](crate::wake::LocalWaker). Output is NOT polled automatically.
 //! - Full? Return [routine::Accept::Full] and wake Input once there is room.
 //! - Need async work after [routine::TrySend]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
 //! - After [routine::Flush], return [core::task::Poll::Ready] from [routine::Poll] (immediately or eventually). Deadlock otherwise.
@@ -95,10 +94,11 @@ pub trait LineRoutine<In, Out>:
 pub mod tests {
     use super::LineRoutine;
     use crate::error::Error;
+    use crate::poll::Context;
+    use crate::poll::context::mock::noop_context;
     use crate::poll::future::queue::OutputQueue;
     use crate::poll::timer::mock::noop_timer;
-    use crate::poll::waker::Waker;
-    use crate::poll::waker::mock::{noop_local_waker, noop_waker};
+    use crate::wake::mock::noop_local_waker;
     use crate::{Accept, Next, TrySend};
 
     pub struct MockLine {
@@ -142,7 +142,7 @@ pub mod tests {
     }
 
     impl crate::Poll for MockLine {
-        fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+        fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
             self.poll_count += 1;
             if self.flushed {
                 self.flushed = false;
@@ -173,11 +173,11 @@ pub mod tests {
     #[test]
     fn poll_line_poll_increments_count() {
         let mut line = MockLine::new(noop_line_wakers());
-        let mut waker = noop_waker();
+        let mut cx = noop_context();
 
         assert_eq!(line.poll_count, 0);
         assert!(matches!(
-            crate::Poll::poll(&mut line, &mut waker).unwrap(),
+            crate::Poll::poll(&mut line, &mut cx).unwrap(),
             core::task::Poll::Pending
         ));
         assert_eq!(line.poll_count, 1);

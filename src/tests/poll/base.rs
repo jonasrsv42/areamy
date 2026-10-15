@@ -15,13 +15,12 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::poll::LineWakers;
 use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
+use crate::poll::{Context, LineWakers};
+
 /// Routine that queues input in send via waker-aware Queue, then
 /// doubles it in poll. Send wakes Work via the queue's waker.
-use crate::poll::waker::{self as waker};
-
 struct PollDouble {
     input: InputQueue<usize>,
     output: OutputQueue<usize>,
@@ -60,10 +59,10 @@ impl crate::Flush for PollDouble {
 }
 
 impl crate::Poll for PollDouble {
-    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
-        let mut cx = core::task::Context::from_waker(&waker.sync);
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
+        let mut std_cx = core::task::Context::from_waker(&cx.wake.sync);
         loop {
-            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut cx) {
+            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut std_cx) {
                 core::task::Poll::Ready(Ok(Input::Data(value))) => {
                     self.output.producer.push(value * 2);
                 }
@@ -121,7 +120,7 @@ impl crate::Flush for PollAccumulator {
 }
 
 impl crate::Poll for PollAccumulator {
-    fn poll(&mut self, _waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         if self.flushed {
             self.flushed = false;
             return Ok(core::task::Poll::Ready(()));
@@ -756,13 +755,13 @@ impl crate::Flush for HalfCloseRoutine {
 }
 
 impl crate::Poll for HalfCloseRoutine {
-    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
-        let mut cx = core::task::Context::from_waker(&waker.sync);
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
+        let mut std_cx = core::task::Context::from_waker(&cx.wake.sync);
         // If mid-handshake, count down
         if self.flush_cycles_remaining > 0 {
             self.flush_cycles_remaining -= 1;
             if self.flush_cycles_remaining > 0 {
-                waker.sync.wake_by_ref();
+                cx.wake.sync.wake_by_ref();
                 return Ok(core::task::Poll::Pending);
             }
             *self.flush_count.lock().unwrap() += 1;
@@ -771,14 +770,14 @@ impl crate::Poll for HalfCloseRoutine {
 
         // Drain queue until flush or empty
         loop {
-            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut cx) {
+            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut std_cx) {
                 core::task::Poll::Ready(Ok(Input::Data(val))) => {
                     self.output.producer.push(val * 2);
                 }
                 core::task::Poll::Ready(Ok(Input::Flush)) => {
                     self.input.producer.reset().ok();
                     self.flush_cycles_remaining = self.flush_cycles;
-                    waker.sync.wake_by_ref();
+                    cx.wake.sync.wake_by_ref();
                     return Ok(core::task::Poll::Pending);
                 }
                 core::task::Poll::Ready(Err(_)) => {
@@ -907,14 +906,14 @@ impl crate::Flush for BatchRoutine {
 }
 
 impl crate::Poll for BatchRoutine {
-    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         if self.flush_requested {
             if self.flush_cycles_remaining == 0 {
                 self.flush_requested = false;
                 return Ok(core::task::Poll::Ready(()));
             }
             self.flush_cycles_remaining -= 1;
-            waker.sync.wake_by_ref();
+            cx.wake.sync.wake_by_ref();
         }
         Ok(core::task::Poll::Pending)
     }

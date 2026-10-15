@@ -9,7 +9,7 @@
 
 use crate::node::biunion::Inputs;
 use crate::poll::timer::Timer;
-use crate::poll::waker::LocalWaker;
+use crate::wake::LocalWaker;
 
 /// Per-input wakers, grouped under [`BiunionWakers::input`] so a
 /// routine accesses them via `wakers.input.left` / `wakers.input.right`.

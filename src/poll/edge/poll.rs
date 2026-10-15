@@ -13,8 +13,8 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Closeable, Closed, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
 use crate::message::Message;
-use crate::poll::waker::LocalWaker;
 use crate::signal::Origin;
+use crate::wake::LocalWaker;
 use std::collections::VecDeque;
 
 /// A same-thread async edge. No synchronization overhead.
@@ -145,7 +145,7 @@ mod tests {
     use super::*;
     use crate::Trackable;
     use crate::error::ErrorKind;
-    use crate::poll::waker::mock::{noop_local_waker, tracking_local_waker};
+    use crate::wake::mock::{noop_local_waker, tracking_local_waker};
 
     #[test]
     fn push_and_try_recv() {

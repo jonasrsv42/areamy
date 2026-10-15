@@ -1,20 +1,22 @@
-//! Waker types for areamy's poll system.
+//! Wakers: the currency every scheduling paradigm wakes with, as [Message](crate::message::Message)
+//! is the currency of dataflow.
 //!
 //! [LocalWaker] is a `!Send` waker for same-thread wake.
 //!
 //! [Waker] bundles a sync waker (for I/O, standard futures) with a
-//! local waker (for cheap same-thread wake) and the node's [Timer]. Passed to
-//! [Pollable::poll](crate::poll::Pollable).
-
-use crate::poll::timer::Timer;
+//! local waker (for cheap same-thread wake).
 
 use alloc::rc::Rc;
 
 /// A same-thread wake. `!Send`, `!Sync`.
 ///
-/// Wakes by reference: wakers are stored and woken many times, never given up. Std's consuming
-/// `Waker::wake(self)` saves a refcount when the run queue holds the task itself (the woken
-/// `Arc<Task>` moves in); ours holds a `Copy` node id, so consuming would save nothing.
+/// Wakes by reference: wakers are stored and woken many times, this makes us diverge
+/// a bit from Std's consuming wake but it is an optimization that saves a refcount on
+/// each wake for areamy's reusable wakers.
+///
+/// We can do this because areamy scheduling is a `Copy` of ID. The Std lib
+/// assumes scheduling may be of non-copy types so it is more generally performant in a sense
+/// but then pays the cost of a clone on wake_by_ref which we avoid here.
 pub trait LocalWake {
     fn wake(&self);
 }
@@ -45,26 +47,20 @@ impl LocalWaker {
     }
 }
 
-/// Waker pair plus timer for [Pollable::poll](crate::poll::Pollable).
-///
-/// Always carries both sync and local wakers. Created on the
-/// async thread during graph construction — never crosses threads.
+/// A sync and a local waker for the same target.
 ///
 /// - `sync`: for I/O registration and polling standard futures
 /// - `local`: for cheap same-thread wake (no mutex, no syscall)
-/// - `timer`: re-polls the node at a deadline
 pub struct Waker {
     pub sync: core::task::Waker,
     pub local: LocalWaker,
-    pub timer: Timer,
 }
 
 /// Shared [LocalWake] mocks for tests — this crate's, and downstream crates' via the
 /// `testing` feature (enable from `[dev-dependencies]` only).
 #[cfg(any(test, feature = "testing"))]
 pub mod mock {
-    use super::{LocalWake, LocalWaker};
-    use crate::poll::timer::mock::noop_timer;
+    use super::{LocalWake, LocalWaker, Waker};
 
     use std::cell::Cell;
     use std::rc::Rc;
@@ -101,12 +97,11 @@ pub mod mock {
         (waker(move || counter.set(counter.get() + 1)), count)
     }
 
-    /// Full [super::Waker] whose wakes do nothing and whose timer never fires.
-    pub fn noop_waker() -> super::Waker {
-        super::Waker {
+    /// [Waker] whose halves both do nothing.
+    pub fn noop_waker() -> Waker {
+        Waker {
             sync: std::task::Waker::noop().clone(),
             local: noop_local_waker(),
-            timer: noop_timer(),
         }
     }
 }

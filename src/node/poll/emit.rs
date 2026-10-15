@@ -5,8 +5,9 @@ use crate::graph::marker::Multiplicity;
 use crate::graph::{Closeable, Pushable};
 use crate::message::Message;
 use crate::node::routine::Next;
+use crate::poll::Context;
 use crate::poll::Phase;
-use crate::poll::waker::{LocalWaker, Waker};
+use crate::wake::LocalWaker;
 use std::mem;
 
 /// One output's borrow of a node's state: drains the routine's output as side `M` downstream,
@@ -26,7 +27,7 @@ impl<RoutineType, OutletType> Emit<'_, RoutineType, OutletType>
 where
     OutletType: Pushable + Closeable,
 {
-    pub(crate) fn poll<M>(mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error>
+    pub(crate) fn poll<M>(mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error>
     where
         M: Multiplicity,
         RoutineType: Next<OutletType::DataType, M>,

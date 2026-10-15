@@ -2,7 +2,8 @@ use super::NodeState;
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
 use crate::node::routine;
-use crate::poll::waker::{LocalWaker, Waker};
+use crate::poll::Context;
+use crate::wake::LocalWaker;
 use std::mem;
 
 /// Work's borrow of a node's state: polls the routine's async work, completes a flush and wakes
@@ -16,11 +17,11 @@ pub(crate) struct Drive<'a, RoutineType, SignalType> {
 }
 
 impl<RoutineType: routine::Poll, SignalType> Drive<'_, RoutineType, SignalType> {
-    pub(crate) fn poll(mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    pub(crate) fn poll(mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         match &self.state {
             NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Flushing(_) => {
-                if self.poll_routine(waker)?.is_ready() {
+                if self.poll_routine(cx)?.is_ready() {
                     let NodeState::Flushing(signal) = mem::replace(self.state, NodeState::Running)
                     else {
                         return Err(fatal!("expected Flushing state"));
@@ -33,7 +34,7 @@ impl<RoutineType: routine::Poll, SignalType> Drive<'_, RoutineType, SignalType> 
                 Ok(core::task::Poll::Pending)
             }
             NodeState::Running => {
-                if self.poll_routine(waker)?.is_ready() {
+                if self.poll_routine(cx)?.is_ready() {
                     return Err(fatal!(
                         "routine returned Ready without pending flush or close"
                     ));
@@ -43,7 +44,7 @@ impl<RoutineType: routine::Poll, SignalType> Drive<'_, RoutineType, SignalType> 
                 Ok(core::task::Poll::Pending)
             }
             NodeState::MarkerReady(_) => {
-                if self.poll_routine(waker)?.is_ready() {
+                if self.poll_routine(cx)?.is_ready() {
                     return Err(fatal!(
                         "routine returned Ready without pending flush or close"
                     ));
@@ -60,8 +61,8 @@ impl<RoutineType: routine::Poll, SignalType> Drive<'_, RoutineType, SignalType> 
 
     /// Poll the routine. `Closed` from a routine is fatal: routines handle close, never propagate
     /// it.
-    fn poll_routine(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
-        match routine::Poll::poll(self.routine, waker) {
+    fn poll_routine(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
+        match routine::Poll::poll(self.routine, cx) {
             Ok(poll) => Ok(poll),
             Err(e) if matches!(e.kind, ErrorKind::Closed) => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"

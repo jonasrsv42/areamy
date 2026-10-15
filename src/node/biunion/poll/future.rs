@@ -10,8 +10,8 @@ use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::BiunionWakers;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::{biunion, routine};
+use crate::poll::Context;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
-use crate::poll::waker;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -125,7 +125,7 @@ where
     F: FnMut(InputConsumer<Left>, InputConsumer<Right>, OutputProducer<Out>) -> BoxFut<'params>
         + 'params,
 {
-    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         let future = self.future.get_or_insert_with(|| {
             (self.factory)(
                 self.input.left.consumer.clone(),
@@ -134,8 +134,8 @@ where
             )
         });
 
-        let mut cx = core::task::Context::from_waker(&waker.sync);
-        match future.as_mut().poll(&mut cx) {
+        let mut std_cx = core::task::Context::from_waker(&cx.wake.sync);
+        match future.as_mut().poll(&mut std_cx) {
             core::task::Poll::Ready(result) => {
                 result?;
                 self.future = None;

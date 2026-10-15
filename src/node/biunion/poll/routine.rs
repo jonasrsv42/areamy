@@ -35,10 +35,10 @@ pub mod tests {
     use crate::Accept;
     use crate::biunion;
     use crate::error::Error;
+    use crate::poll::Context;
     use crate::poll::future::queue::OutputQueue;
     use crate::poll::timer::mock::noop_timer;
-    use crate::poll::waker::Waker;
-    use crate::poll::waker::mock::noop_local_waker;
+    use crate::wake::mock::noop_local_waker;
 
     /// Mock biunion routine: left input doubled, right input tripled,
     /// both pushed to output. Tracks poll_count.
@@ -98,7 +98,7 @@ pub mod tests {
     }
 
     impl crate::Poll for MockBiunion {
-        fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+        fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
             self.poll_count += 1;
             if self.flushed {
                 self.flushed = false;

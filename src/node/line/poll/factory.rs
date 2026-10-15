@@ -12,7 +12,7 @@
 //! at every call site that doesn't introduce a borrow.
 
 use crate::poll::timer::Timer;
-use crate::poll::waker::LocalWaker;
+use crate::wake::LocalWaker;
 
 /// Phase wakers the framework hands to a line routine at construction.
 ///

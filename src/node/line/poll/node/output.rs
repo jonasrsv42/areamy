@@ -2,8 +2,8 @@ use super::{Shared, SharedState, Types};
 use crate::error::Error;
 use crate::graph::marker::{Connection, Unary};
 use crate::node::poll::Emit;
+use crate::poll::Context;
 use crate::poll::Pollable;
-use crate::poll::waker::Waker;
 
 /// Output phase: drains routine output, forwards flush/close signals.
 pub struct Output<T: Types> {
@@ -21,7 +21,7 @@ impl<T: Types> Connection for Output<T> {}
 impl<T: Types> Pollable for Output<T> {
     type ThreadId = T::ThreadId;
 
-    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         let SharedState {
             input,
@@ -36,6 +36,6 @@ impl<T: Types> Pollable for Output<T> {
             work: &work.waker,
             state,
         }
-        .poll::<Unary>(waker)
+        .poll::<Unary>(cx)
     }
 }

@@ -4,8 +4,8 @@ use crate::graph::marker::Connection;
 use crate::graph::{Closed, Receivable};
 use crate::node::biunion;
 use crate::node::poll::Feed;
+use crate::poll::Context;
 use crate::poll::Pollable;
-use crate::poll::waker::Waker;
 
 /// A biunion input side: the data and inlet it carries.
 pub trait InputSide<T: Types>: biunion::Side {
@@ -96,7 +96,7 @@ impl<T: Types, S: InputSide<T>> Connection for Input<T, S> {}
 impl<T: Types, S: Feeding<T>> Pollable for Input<T, S> {
     type ThreadId = T::ThreadId;
 
-    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
             NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),

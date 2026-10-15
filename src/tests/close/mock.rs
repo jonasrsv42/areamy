@@ -1,8 +1,7 @@
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::poll::waker::Waker;
-use crate::poll::{BiunionWakers, LineWakers};
+use crate::poll::{BiunionWakers, Context, LineWakers};
 use crate::sync::Receiver;
 use crate::{
     Accept, DefaultThread, Message, Pullable, Trackable, Workable, bifurcation, biunion, closed,
@@ -92,7 +91,7 @@ impl crate::Flush for Hold {
 }
 
 impl crate::Poll for Hold {
-    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         Ok(self.poll_flushed())
     }
 }
@@ -160,13 +159,13 @@ impl<R: crate::Flush> crate::Flush for Slow<R> {
 }
 
 impl<R: crate::Poll> crate::Poll for Slow<R> {
-    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         if self.remaining > 0 {
             self.remaining -= 1;
-            waker.local.wake();
+            cx.wake.local.wake();
             return Ok(core::task::Poll::Pending);
         }
-        self.inner.poll(waker)
+        self.inner.poll(cx)
     }
 }
 
@@ -229,8 +228,8 @@ impl crate::Flush for HoldBiunion {
 }
 
 impl crate::Poll for HoldBiunion {
-    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
-        self.0.poll(waker)
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
+        self.0.poll(cx)
     }
 }
 

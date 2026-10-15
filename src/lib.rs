@@ -12,6 +12,7 @@ pub mod reader;
 mod signal;
 pub mod thread;
 pub mod typing;
+pub mod wake;
 pub mod work;
 pub mod writer;
 pub use pull::PullWriter;

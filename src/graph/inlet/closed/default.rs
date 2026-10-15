@@ -25,8 +25,8 @@ impl<T: Closed> Closed for Vec<T> {
 mod tests {
     use crate::graph::Closed;
     use crate::poll::PollEdge;
-    use crate::poll::waker::mock::noop_local_waker;
     use crate::signal::Trackable;
+    use crate::wake::mock::noop_local_waker;
     use std::cell::RefCell;
     use std::rc::Rc;
 

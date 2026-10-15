@@ -2,8 +2,8 @@ use super::{NodeState, Shared, SharedState, Types};
 use crate::error::Error;
 use crate::graph::marker::{Connection, Unary};
 use crate::node::poll::Feed;
+use crate::poll::Context;
 use crate::poll::Pollable;
-use crate::poll::waker::Waker;
 
 impl<T: Types> SharedState<T> {
     /// Feed the routine from the input. On close, wake Output to drain and close downstream.
@@ -47,7 +47,7 @@ impl<T: Types> Connection for Input<T> {}
 impl<T: Types> Pollable for Input<T> {
     type ThreadId = T::ThreadId;
 
-    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         match &s.state {
             NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),

@@ -8,7 +8,7 @@
 
 use crate::error::Error;
 use crate::graph::marker::{Multiplicity, Unary};
-use crate::poll::waker::Waker;
+use crate::poll::Context;
 
 /// [`Send`] trait is used to implement an input for a routine.  
 ///
@@ -69,20 +69,18 @@ pub trait Flush {
 
 /// [`Poll`] trait is the async component of async routines.
 ///
-/// When a node is woken, the framework calls [Poll::poll] with a
-/// [Waker] carrying a sync waker
-/// (for I/O registration / standard futures), a local waker
-/// (for cheap same-thread wake) and the node's timer.
+/// When a node is woken, the framework calls [Poll::poll] with the
+/// node's [Context]: its wakers and its timer.
 ///
 /// Routines that drive standard futures can build a [core::task::Context]
-/// from `waker.sync`: `Context::from_waker(&waker.sync)`.
+/// from `cx.wake.sync`: `core::task::Context::from_waker(&cx.wake.sync)`.
 ///
 /// Routines that do no I/O can return [core::task::Poll::Pending].
 ///
 /// Not [crate::poll::Pollable]: that is the node layer the runtime schedules. Here `Closed` is
 /// fatal; routines handle close, never propagate it.
 pub trait Poll {
-    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error>;
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error>;
 }
 
 #[cfg(test)]

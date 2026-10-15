@@ -5,7 +5,7 @@
 
 use crate::poll::marker::NodeId;
 use crate::poll::queue::ThreadLocalProducer;
-use crate::poll::waker::{LocalWake, LocalWaker};
+use crate::wake::{LocalWake, LocalWaker};
 
 /// Local wake impl backed by [ThreadLocalProducer].
 struct Wake {

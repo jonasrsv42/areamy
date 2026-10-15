@@ -13,7 +13,7 @@
 use crate::error::Error;
 use crate::poll::limit::deadline_after;
 use crate::poll::timer::{Timer, TimerGuard};
-use crate::poll::waker::LocalWaker;
+use crate::wake::LocalWaker;
 use core::task::Poll;
 use std::cell::RefCell;
 use std::collections::VecDeque;

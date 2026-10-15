@@ -174,7 +174,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
         };
 
         let slot = &mut runtime.nodes[node_id];
-        let Some(RuntimeNode { pollable, waker }) = slot.as_mut() else {
+        let Some(RuntimeNode { pollable, cx }) = slot.as_mut() else {
             // Benign: a cross-thread producer or sibling node can fire
             // this slot's waker after we eager-dropped the node on a
             // prior Ready/Closed. The wake event was already in flight
@@ -183,8 +183,8 @@ fn poll_loop<ThreadIdType: ThreadId>(
         };
 
         // Ambient timer for handle-free leaf futures (poll::sleep).
-        let _current = tls::ThreadLocalGuard::set(waker.timer.clone());
-        match pollable.poll(waker) {
+        let _current = tls::ThreadLocalGuard::set(cx.timer.clone());
+        match pollable.poll(cx) {
             Ok(core::task::Poll::Pending) => {}
             Ok(core::task::Poll::Ready(()))
             | Err(Error {

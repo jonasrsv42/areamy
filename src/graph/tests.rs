@@ -7,10 +7,9 @@ use crate::fatal;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Closeable, Get, Outlet, Outputs, Pushable, TryPush, TryPushable};
 use crate::message::Message;
-use crate::poll::Pollable;
-use crate::poll::waker::Waker;
 #[cfg(test)]
-use crate::poll::waker::mock::noop_waker;
+use crate::poll::context::mock::noop_context;
+use crate::poll::{Context, Pollable};
 use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
@@ -441,7 +440,7 @@ impl Connection for AsyncNode {}
 
 impl Pollable for AsyncNode {
     type ThreadId = DefaultThread;
-    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         match self.input.poll()? {
             Some(Message::Data(d)) => {
                 self.outputs.push(self.routine.process(d));
@@ -462,25 +461,25 @@ fn pollable_processes_available_input() {
     input.push(Message::Data(0)).unwrap();
     input.push(Message::Data(1)).unwrap();
 
-    let mut waker = noop_waker();
+    let mut cx = noop_context();
 
     // First poll processes first message
     assert!(matches!(
-        node.poll(&mut waker).unwrap(),
+        node.poll(&mut cx).unwrap(),
         core::task::Poll::Pending
     ));
     assert_eq!(node.outputs, vec![1]); // 0 * 2 + 1
 
     // Second poll processes second message
     assert!(matches!(
-        node.poll(&mut waker).unwrap(),
+        node.poll(&mut cx).unwrap(),
         core::task::Poll::Pending
     ));
     assert_eq!(node.outputs, vec![1, 4]); // 1 * 2 + 2
 
     // Third poll finds no input — still pending
     assert!(matches!(
-        node.poll(&mut waker).unwrap(),
+        node.poll(&mut cx).unwrap(),
         core::task::Poll::Pending
     ));
     assert_eq!(node.outputs, vec![1, 4]); // unchanged
@@ -495,7 +494,7 @@ impl Connection for ClosingAsyncNode {}
 
 impl Pollable for ClosingAsyncNode {
     type ThreadId = DefaultThread;
-    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         match self.input.poll() {
             Ok(Some(_)) => Ok(core::task::Poll::Pending),
             Ok(None) => Ok(core::task::Poll::Pending),
@@ -512,10 +511,10 @@ fn pollable_returns_ready_on_close() {
 
     node.input.close().unwrap();
 
-    let mut waker = noop_waker();
+    let mut cx = noop_context();
 
     assert!(matches!(
-        node.poll(&mut waker).unwrap(),
+        node.poll(&mut cx).unwrap(),
         core::task::Poll::Ready(())
     ));
 }

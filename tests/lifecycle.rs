@@ -162,10 +162,7 @@ impl Flush for PollDouble {
     }
 }
 impl areamy::Poll for PollDouble {
-    fn poll(
-        &mut self,
-        _waker: &mut areamy::poll::waker::Waker,
-    ) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut areamy::poll::Context) -> Result<core::task::Poll<()>, Error> {
         Ok(core::task::Poll::Pending)
     }
 }

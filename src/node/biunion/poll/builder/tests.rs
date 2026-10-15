@@ -9,8 +9,8 @@ use crate::poll::edge::{PollEdge, Sync};
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
-use crate::poll::waker::mock::noop_local_waker;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
+use crate::wake::mock::noop_local_waker;
 use std::cell::RefCell;
 use std::rc::Rc;
 

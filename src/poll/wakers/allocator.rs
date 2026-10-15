@@ -9,15 +9,15 @@
 
 use crate::error::Error;
 use crate::fatal;
-use crate::poll::Pollable;
 use crate::poll::graph::GraphNode;
 use crate::poll::marker::NodeId;
 use crate::poll::queue::{Producer, ThreadLocalProducer};
 use crate::poll::runtime::{Node, Runtime};
 use crate::poll::timer::Timer;
-use crate::poll::waker::{self, LocalWaker};
 use crate::poll::wakers::sync;
+use crate::poll::{Context, Pollable};
 use crate::thread::ThreadId;
+use crate::wake::{self, LocalWaker};
 
 use alloc::vec::Vec;
 use core::marker::PhantomData;
@@ -73,14 +73,14 @@ pub struct ThreadLocalWakerAllocator<ThreadIdType: ThreadId> {
 }
 
 impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
-    /// Allocate a waker pair (sync + local) for the next node.
+    /// Allocate a [Context] (sync + local wakers, timer) for the next node.
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Slot<waker::Waker> {
+    pub fn next(&mut self) -> Slot<Context> {
         let id = self.count;
         self.count += 1;
         Slot {
             id,
-            value: self.make_waker(id),
+            value: self.make_context(id),
         }
     }
 
@@ -93,7 +93,7 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
     /// Finalize allocation and build the [Runtime].
     ///
     /// Each [GraphNode] is placed at its ID index. Every allocated slot
-    /// must be filled exactly once. Creates wakers and enqueues all nodes
+    /// must be filled exactly once. Creates contexts and enqueues all nodes
     /// for initial poll.
     pub fn build<'params>(
         self,
@@ -122,8 +122,8 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         for (i, slot) in slots.into_iter().enumerate() {
             match slot {
                 Some(pollable) => {
-                    let waker = self.make_waker(i);
-                    result.push(Node { pollable, waker });
+                    let cx = self.make_context(i);
+                    result.push(Node { pollable, cx });
                 }
                 None => return Err(fatal!("build: slot {} is empty", i)),
             }
@@ -137,10 +137,12 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         Ok(Runtime { nodes: result })
     }
 
-    fn make_waker(&self, id: NodeId) -> waker::Waker {
-        waker::Waker {
-            sync: sync::Waker::task(id, &self.producer),
-            local: LocalWaker::from_producer(id, &self.local_producer),
+    fn make_context(&self, id: NodeId) -> Context {
+        Context {
+            wake: wake::Waker {
+                sync: sync::Waker::task(id, &self.producer),
+                local: LocalWaker::from_producer(id, &self.local_producer),
+            },
             timer: Timer::new(id, &self.local_producer),
         }
     }

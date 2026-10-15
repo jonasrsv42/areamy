@@ -28,7 +28,7 @@ mod tests {
     use super::*;
     use crate::graph::{Closeable, TryPush, TryPushable};
     use crate::message::Message;
-    use crate::poll::waker::mock::noop_waker;
+    use crate::wake::mock::noop_waker;
     use core::task::Poll;
     use std::sync::atomic::Ordering;
 

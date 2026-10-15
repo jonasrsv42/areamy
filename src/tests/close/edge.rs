@@ -7,8 +7,8 @@ use crate::poll::edge::PollEdge;
 use crate::poll::future::queue::{Input, InputQueue};
 use crate::poll::input;
 use crate::poll::timer::mock::noop_timer;
-use crate::poll::waker::mock;
 use crate::sync::Receiver;
+use crate::wake::mock;
 use std::pin::Pin;
 
 fn assert_closed<T: std::fmt::Debug>(result: Result<T, Error>) {

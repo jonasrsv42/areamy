@@ -2,8 +2,8 @@ use super::{Shared, SharedState, Types};
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::node::poll::Drive;
+use crate::poll::Context;
 use crate::poll::Pollable;
-use crate::poll::waker::Waker;
 
 pub struct Work<T: Types> {
     shared: Shared<T>,
@@ -20,7 +20,7 @@ impl<T: Types> Connection for Work<T> {}
 impl<T: Types> Pollable for Work<T> {
     type ThreadId = T::ThreadId;
 
-    fn poll(&mut self, waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         let mut s = self.shared.borrow_mut();
         let SharedState {
             work,
@@ -33,6 +33,6 @@ impl<T: Types> Pollable for Work<T> {
             output: &output.waker,
             state,
         }
-        .poll(waker)
+        .poll(cx)
     }
 }

@@ -8,10 +8,10 @@ use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::node;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_biunion_wakers};
+use crate::poll::context::mock::noop_context;
 use crate::poll::input;
-use crate::poll::waker;
-use crate::poll::waker::mock::{noop_waker, tracking_local_waker};
-use crate::poll::{BUDGET, BiunionInputs, Phase, Pollable};
+use crate::poll::{BUDGET, BiunionInputs, Context, Phase, Pollable};
+use crate::wake::mock::tracking_local_waker;
 use crate::{Accept, DefaultThread};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -132,11 +132,11 @@ impl<R: Routine> Biunion<R> {
 
     /// Poll both Inputs, Work and Output once each; what reached downstream.
     fn cycle(&mut self) -> Vec<Message<usize, Signal>> {
-        let mut wkr = noop_waker();
-        let _ = self.input.left.poll(&mut wkr).unwrap();
-        let _ = self.input.right.poll(&mut wkr).unwrap();
-        let _ = self.work.poll(&mut wkr).unwrap();
-        let _ = self.output.poll(&mut wkr).unwrap();
+        let mut cx = noop_context();
+        let _ = self.input.left.poll(&mut cx).unwrap();
+        let _ = self.input.right.poll(&mut cx).unwrap();
+        let _ = self.work.poll(&mut cx).unwrap();
+        let _ = self.output.poll(&mut cx).unwrap();
         self.received()
     }
 }
@@ -232,7 +232,7 @@ impl crate::Flush for Bounded {
 }
 
 impl crate::Poll for Bounded {
-    fn poll(&mut self, _waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         Ok(match std::mem::take(&mut self.flushed) {
             true => core::task::Poll::Ready(()),
             false => core::task::Poll::Pending,
@@ -270,7 +270,7 @@ impl crate::Flush for ClosedTrySend {
 }
 
 impl crate::Poll for ClosedTrySend {
-    fn poll(&mut self, _waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         Ok(core::task::Poll::Pending)
     }
 }
@@ -303,7 +303,7 @@ impl TestSide for Left {
         &b.upstream.left
     }
     fn poll<R: Routine>(b: &mut Biunion<R>) -> Result<core::task::Poll<()>, Error> {
-        b.input.left.poll(&mut noop_waker())
+        b.input.left.poll(&mut noop_context())
     }
     fn woken<R: Routine>(b: &Biunion<R>) -> &Flag {
         &b.woken.input.left
@@ -323,7 +323,7 @@ impl TestSide for Right {
         &b.upstream.right
     }
     fn poll<R: Routine>(b: &mut Biunion<R>) -> Result<core::task::Poll<()>, Error> {
-        b.input.right.poll(&mut noop_waker())
+        b.input.right.poll(&mut noop_context())
     }
     fn woken<R: Routine>(b: &Biunion<R>) -> &Flag {
         &b.woken.input.right
@@ -352,35 +352,35 @@ fn data<S: TestSide>(values: impl IntoIterator<Item = usize>) -> Vec<Message<usi
 #[test]
 fn left_input_processes_data() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.left.push_back(Message::Data(5)).unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(10))); // 5 * 2
 }
 
 #[test]
 fn right_input_processes_data() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.right.push_back(Message::Data(5)).unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(15))); // 5 * 3
 }
 
 #[test]
 fn both_inputs_process_data() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.left.push_back(Message::Data(2)).unwrap();
     b.upstream.right.push_back(Message::Data(3)).unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(4))); // 2 * 2
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(9))); // 3 * 3
 }
@@ -390,14 +390,14 @@ fn both_inputs_process_data() {
 #[test]
 fn flush_from_left_forwards() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .left
         .push_back(Message::Flush("s1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(
         b.downstream.poll().unwrap(),
         Some(Message::Flush("s1".into()))
@@ -407,14 +407,14 @@ fn flush_from_left_forwards() {
 #[test]
 fn flush_from_right_forwards() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .right
         .push_back(Message::Flush("s1".into()))
         .unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(
         b.downstream.poll().unwrap(),
         Some(Message::Flush("s1".into()))
@@ -424,14 +424,14 @@ fn flush_from_right_forwards() {
 #[test]
 fn marker_from_left_forwards() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .left
         .push_back(Message::Marker("m1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(
         b.downstream.poll().unwrap(),
         Some(Message::Marker("m1".into()))
@@ -441,14 +441,14 @@ fn marker_from_left_forwards() {
 #[test]
 fn marker_from_right_forwards() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .right
         .push_back(Message::Marker("m1".into()))
         .unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(
         b.downstream.poll().unwrap(),
         Some(Message::Marker("m1".into()))
@@ -460,16 +460,16 @@ fn marker_from_right_forwards() {
 #[test]
 fn close_from_left_propagates() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.left.close().unwrap();
-    let _ = b.input.left.poll(&mut wkr);
+    let _ = b.input.left.poll(&mut cx);
     assert!(matches!(
-        b.input.right.poll(&mut wkr).unwrap_err().kind,
+        b.input.right.poll(&mut cx).unwrap_err().kind,
         ErrorKind::Closed
     ));
-    let _ = b.work.poll(&mut wkr);
+    let _ = b.work.poll(&mut cx);
     assert!(matches!(
-        b.output.poll(&mut wkr).unwrap_err().kind,
+        b.output.poll(&mut cx).unwrap_err().kind,
         ErrorKind::Closed
     ));
 }
@@ -477,18 +477,18 @@ fn close_from_left_propagates() {
 #[test]
 fn data_then_close_drains_before_closing() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.left.push_back(Message::Data(7)).unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(14))); // 7 * 2
 
     b.upstream.left.close().unwrap();
-    let _ = b.input.left.poll(&mut wkr);
-    let _ = b.work.poll(&mut wkr);
+    let _ = b.input.left.poll(&mut cx);
+    let _ = b.work.poll(&mut cx);
     assert!(matches!(
-        b.output.poll(&mut wkr).unwrap_err().kind,
+        b.output.poll(&mut cx).unwrap_err().kind,
         ErrorKind::Closed
     ));
 }
@@ -507,21 +507,21 @@ impl<R: Routine> Biunion<R> {
             woken,
             ..
         } = self;
-        let mut wkr = noop_waker();
+        let mut cx = noop_context();
         drop(downstream);
         woken.reset();
 
         assert!(matches!(
-            output.poll(&mut wkr).unwrap_err().kind,
+            output.poll(&mut cx).unwrap_err().kind,
             ErrorKind::Closed
         ));
         assert!(woken.input.left.get(), "left input must be woken");
         assert!(woken.input.right.get(), "right input must be woken");
         assert!(woken.work.get(), "work must be woken");
         for (phase, polled) in [
-            ("left", input.left.poll(&mut wkr)),
-            ("right", input.right.poll(&mut wkr)),
-            ("work", work.poll(&mut wkr)),
+            ("left", input.left.poll(&mut cx)),
+            ("right", input.right.poll(&mut cx)),
+            ("work", work.poll(&mut cx)),
         ] {
             let kind = polled.map_err(|e| e.kind);
             assert!(
@@ -535,36 +535,36 @@ impl<R: Routine> Biunion<R> {
 #[test]
 fn closed_outlet_while_running_closes_the_node() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.left.push_back(Message::Data(7)).unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
     b.close_downstream_under_output();
 }
 
 #[test]
 fn closed_outlet_on_a_flush_closes_the_node() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .left
         .push_back(Message::Flush("s1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
     b.close_downstream_under_output();
 }
 
 #[test]
 fn closed_outlet_on_a_marker_closes_the_node() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .right
         .push_back(Message::Marker("m1".into()))
         .unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
     b.close_downstream_under_output();
 }
 
@@ -573,10 +573,10 @@ fn closed_outlet_on_a_marker_closes_the_node() {
 #[test]
 fn close_from_left_wakes_right() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream.left.close().unwrap();
-    let _ = b.input.left.poll(&mut wkr);
+    let _ = b.input.left.poll(&mut cx);
     assert!(
         b.woken.input.right.get(),
         "closing left must wake right input"
@@ -586,10 +586,10 @@ fn close_from_left_wakes_right() {
 #[test]
 fn close_from_right_wakes_left() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream.right.close().unwrap();
-    let _ = b.input.right.poll(&mut wkr);
+    let _ = b.input.right.poll(&mut cx);
     assert!(
         b.woken.input.left.get(),
         "closing right must wake left input"
@@ -601,72 +601,72 @@ fn close_from_right_wakes_left() {
 #[test]
 fn close_from_left_wakes_work() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream.left.close().unwrap();
-    let _ = b.input.left.poll(&mut wkr);
+    let _ = b.input.left.poll(&mut cx);
     assert!(b.woken.work.get(), "closing left must wake work phase");
 }
 
 #[test]
 fn close_from_right_wakes_work() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream.right.close().unwrap();
-    let _ = b.input.right.poll(&mut wkr);
+    let _ = b.input.right.poll(&mut cx);
     assert!(b.woken.work.get(), "closing right must wake work phase");
 }
 
 #[test]
 fn flush_from_left_wakes_work() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream
         .left
         .push_back(Message::Flush("s1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
     assert!(b.woken.work.get(), "flush from left must wake work phase");
 }
 
 #[test]
 fn flush_from_right_wakes_work() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream
         .right
         .push_back(Message::Flush("s1".into()))
         .unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
     assert!(b.woken.work.get(), "flush from right must wake work phase");
 }
 
 #[test]
 fn marker_from_left_wakes_work() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream
         .left
         .push_back(Message::Marker("m1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
     assert!(b.woken.work.get(), "marker from left must wake work phase");
 }
 
 #[test]
 fn marker_from_right_wakes_work() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.woken.reset();
     b.upstream
         .right
         .push_back(Message::Marker("m1".into()))
         .unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
     assert!(b.woken.work.get(), "marker from right must wake work phase");
 }
 
@@ -675,14 +675,14 @@ fn marker_from_right_wakes_work() {
 #[test]
 fn flush_ready_wakes_output() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .left
         .push_back(Message::Flush("s1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
     b.woken.reset();
-    let _ = b.work.poll(&mut wkr).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
     assert!(
         b.woken.output.get(),
         "work must wake output when flush ready"
@@ -694,24 +694,24 @@ fn close_wakes_output_directly() {
     // Fast close: Input transitions straight to CloseReady and
     // wakes Output directly (no flush, no work polling).
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.left.close().unwrap();
     b.woken.reset();
-    let _ = b.input.left.poll(&mut wkr);
+    let _ = b.input.left.poll(&mut cx);
     assert!(b.woken.output.get(), "left input must wake output on close");
 }
 
 #[test]
 fn marker_ready_wakes_output() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .left
         .push_back(Message::Marker("m1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
     b.woken.reset();
-    let _ = b.work.poll(&mut wkr).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
     assert!(
         b.woken.output.get(),
         "work must wake output when marker ready"
@@ -723,15 +723,15 @@ fn marker_ready_wakes_output() {
 #[test]
 fn flush_forwarded_wakes_both_inputs() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .left
         .push_back(Message::Flush("s1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
     b.woken.reset();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert!(
         b.woken.input.left.get(),
         "output must wake left after flush forwarded"
@@ -745,15 +745,15 @@ fn flush_forwarded_wakes_both_inputs() {
 #[test]
 fn marker_forwarded_wakes_both_inputs() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream
         .left
         .push_back(Message::Marker("m1".into()))
         .unwrap();
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.work.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
     b.woken.reset();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert!(
         b.woken.input.left.get(),
         "output must wake left after marker forwarded"
@@ -768,7 +768,7 @@ fn marker_forwarded_wakes_both_inputs() {
 
 fn held_goes_before_a_flush_queued_behind_it<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
     S::upstream(&b)
@@ -777,7 +777,7 @@ fn held_goes_before_a_flush_queued_behind_it<S: TestSide>() {
 
     // 1 fits, 2 is refused and held; the Flush behind it stays unread.
     let _ = S::poll(&mut b).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.received(), data::<S>([1]));
 
     // Taking 1 out made room: the routine woke this side, which retries 2 before the Flush.
@@ -799,7 +799,7 @@ fn right_held_goes_before_a_flush_queued_behind_it() {
 
 fn held_goes_before_a_marker_queued_behind_it<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
     S::upstream(&b)
@@ -807,7 +807,7 @@ fn held_goes_before_a_marker_queued_behind_it<S: TestSide>() {
         .unwrap();
 
     let _ = S::poll(&mut b).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.received(), data::<S>([1]));
 
     assert!(S::woken(&b).replace(false));
@@ -828,7 +828,7 @@ fn right_held_goes_before_a_marker_queued_behind_it() {
 
 fn spurious_wake_while_full_reads_nothing_past_the_held_message<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
     S::upstream(&b)
@@ -841,8 +841,8 @@ fn spurious_wake_while_full_reads_nothing_past_the_held_message<S: TestSide>() {
     // side leaves the next wake to the routine.
     let _ = S::poll(&mut b).unwrap();
     assert!(!S::woken(&b).get());
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     let mut received = b.received();
 
     received.extend(b.cycle());
@@ -863,7 +863,7 @@ fn right_spurious_wake_while_full_reads_nothing_past_the_held_message() {
 
 fn refused_messages_are_not_stranded<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     for value in 0..5 {
         S::upstream(&b).push_back(Message::Data(value)).unwrap();
     }
@@ -872,7 +872,7 @@ fn refused_messages_are_not_stranded<S: TestSide>() {
     let _ = S::poll(&mut b).unwrap();
     let mut received = Vec::new();
     loop {
-        let _ = b.output.poll(&mut wkr).unwrap();
+        let _ = b.output.poll(&mut cx).unwrap();
         received.extend(b.received());
         if !S::woken(&b).replace(false) {
             break;
@@ -894,14 +894,14 @@ fn right_refused_messages_are_not_stranded() {
 
 fn takes_at_most_budget_then_wakes_only_itself<S: TestSide>() {
     let mut b = Biunion::new();
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     for value in 0..BUDGET + 8 {
         S::upstream(&b).push_back(Message::Data(value)).unwrap();
     }
 
     // One poll takes exactly BUDGET and owes itself, not the other side, the rest.
     let _ = S::poll(&mut b).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.received(), data::<S>(0..BUDGET));
     assert!(
         S::woken(&b).replace(false),
@@ -911,7 +911,7 @@ fn takes_at_most_budget_then_wakes_only_itself<S: TestSide>() {
 
     // The rest fits: an empty edge is upstream's to wake, not ours.
     let _ = S::poll(&mut b).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.received(), data::<S>(BUDGET..BUDGET + 8));
     assert!(!S::woken(&b).get());
 }
@@ -928,7 +928,7 @@ fn right_takes_at_most_budget_then_wakes_only_itself() {
 
 fn close_delivers_what_the_routine_still_accepts<S: TestSide>() {
     let mut b = bounded::<S>(2);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     for value in 1..=3 {
         S::upstream(&b).push_back(Message::Data(value)).unwrap();
     }
@@ -937,14 +937,14 @@ fn close_delivers_what_the_routine_still_accepts<S: TestSide>() {
     S::upstream(&b).close().unwrap();
 
     // Output makes room, so the held message still goes in before the side sees the close.
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert!(S::woken(&b).get());
     assert!(matches!(
         S::poll(&mut b).unwrap_err().kind,
         ErrorKind::Closed
     ));
 
-    let result = b.output.poll(&mut wkr);
+    let result = b.output.poll(&mut cx);
     assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
     assert_eq!(b.received(), data::<S>(1..=3));
 }
@@ -1039,7 +1039,7 @@ fn right_routine_returning_closed_from_try_send_becomes_fatal() {
 
 fn one_side_holding_never_stops_the_other<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
@@ -1047,7 +1047,7 @@ fn one_side_holding_never_stops_the_other<S: TestSide>() {
     // S holds 2; the other side still flows.
     S::Other::upstream(&b).push_back(Message::Data(5)).unwrap();
     let _ = S::Other::poll(&mut b).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     let mut expected = data::<S>([1]);
     expected.extend(data::<S::Other>([5]));
     assert_eq!(b.received(), expected);
@@ -1065,7 +1065,7 @@ fn right_holding_never_stops_left() {
 
 fn held_message_lands_after_the_other_sides_flush<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
@@ -1078,16 +1078,16 @@ fn held_message_lands_after_the_other_sides_flush<S: TestSide>() {
 
     // Output takes 1 out mid-flush: the routine wakes S, but S reads nothing until Running, so
     // that wake is spent.
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert!(S::woken(&b).replace(false));
     let _ = S::poll(&mut b).unwrap();
 
     // The flush completes; Output's return to Running wakes S again, and 2 goes in after it.
-    let _ = b.work.poll(&mut wkr).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert!(S::woken(&b).replace(false));
     let _ = S::poll(&mut b).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     let mut expected = data::<S>([1]);
     expected.push(Message::Flush("f".into()));
     expected.extend(data::<S>([2]));
@@ -1106,7 +1106,7 @@ fn right_held_message_lands_after_lefts_flush() {
 
 fn held_message_lands_after_the_other_sides_marker<S: TestSide>() {
     let mut b = bounded_mute::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
@@ -1119,11 +1119,11 @@ fn held_message_lands_after_the_other_sides_marker<S: TestSide>() {
     // Output drains 1 and forwards the Marker; the routine can't wake, so Output's return to
     // Running must wake both sides. S's 2 goes in after the Marker.
     b.woken.reset();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     assert!(S::woken(&b).replace(false));
     assert!(S::Other::woken(&b).get());
     let _ = S::poll(&mut b).unwrap();
-    let _ = b.output.poll(&mut wkr).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
     let mut expected = data::<S>([1]);
     expected.push(Message::Marker("m".into()));
     expected.extend(data::<S>([2]));
@@ -1142,7 +1142,7 @@ fn right_held_message_lands_after_lefts_marker() {
 
 fn the_other_sides_close_tears_down_a_holding_side<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
@@ -1159,9 +1159,9 @@ fn the_other_sides_close_tears_down_a_holding_side<S: TestSide>() {
         S::poll(&mut b).unwrap_err().kind,
         ErrorKind::Closed
     ));
-    let result = b.work.poll(&mut wkr);
+    let result = b.work.poll(&mut cx);
     assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
-    let result = b.output.poll(&mut wkr);
+    let result = b.output.poll(&mut cx);
     assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
     assert_eq!(b.received(), data::<S>([1]));
 }
@@ -1179,19 +1179,19 @@ fn lefts_close_tears_down_a_holding_right() {
 #[test]
 fn a_shared_budget_retries_both_held_sides() {
     let mut b = Biunion::with(|wakers| Bounded::new(Room::Shared(1), wakers));
-    let mut wkr = noop_waker();
+    let mut cx = noop_context();
     b.upstream.left.push_back(Message::Data(1)).unwrap();
     b.upstream.left.push_back(Message::Data(2)).unwrap();
     b.upstream.right.push_back(Message::Data(5)).unwrap();
 
     // One slot: left takes it and holds 2; right holds 5.
-    let _ = b.input.left.poll(&mut wkr).unwrap();
-    let _ = b.input.right.poll(&mut wkr).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
 
     // Each pop frees the one slot and wakes both; they take turns until both are through.
     let mut received = Vec::new();
     loop {
-        let _ = b.output.poll(&mut wkr).unwrap();
+        let _ = b.output.poll(&mut cx).unwrap();
         received.extend(b.received());
         let left = b.woken.input.left.replace(false);
         let right = b.woken.input.right.replace(false);
@@ -1199,10 +1199,10 @@ fn a_shared_budget_retries_both_held_sides() {
             break;
         }
         if left {
-            let _ = b.input.left.poll(&mut wkr).unwrap();
+            let _ = b.input.left.poll(&mut cx).unwrap();
         }
         if right {
-            let _ = b.input.right.poll(&mut wkr).unwrap();
+            let _ = b.input.right.poll(&mut cx).unwrap();
         }
     }
     assert_eq!(

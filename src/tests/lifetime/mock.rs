@@ -9,8 +9,8 @@ use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::Error;
 use crate::graph::TryPush;
 use crate::graph::marker::Connection;
+use crate::poll::Context;
 use crate::poll::future::OutputQueue;
-use crate::poll::waker::Waker;
 use crate::work::Sink;
 use crate::{
     BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Outlet, Pushable,
@@ -94,7 +94,7 @@ impl<'a> crate::Flush for PollBorrowingLine<'a> {
 }
 
 impl<'a> crate::Poll for PollBorrowingLine<'a> {
-    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         Ok(core::task::Poll::Pending)
     }
 }
@@ -176,7 +176,7 @@ impl<'a> crate::Flush for PollBorrowingBiunion<'a> {
 }
 
 impl<'a> crate::Poll for PollBorrowingBiunion<'a> {
-    fn poll(&mut self, _waker: &mut Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         Ok(core::task::Poll::Pending)
     }
 }

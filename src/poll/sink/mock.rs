@@ -6,7 +6,7 @@ use crate::graph::marker::Connection;
 use crate::graph::{Closeable, Outlet, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::Room;
-use crate::poll::waker::Waker;
+use crate::wake::Waker;
 use core::task::Poll;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

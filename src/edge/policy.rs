@@ -4,7 +4,7 @@ use crate::graph::marker::Connection;
 use crate::graph::{Closeable, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::Room;
-use crate::poll::waker::Waker;
+use crate::wake::Waker;
 
 mod policied;
 

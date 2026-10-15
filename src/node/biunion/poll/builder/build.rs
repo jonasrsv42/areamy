@@ -10,10 +10,10 @@ use crate::poll::Phase;
 use crate::poll::edge::{Async, Deferred, PollEdge, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::traits::AsyncParent;
-use crate::poll::waker::LocalWaker;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use crate::wake::LocalWaker;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -100,9 +100,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -117,11 +117,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         let nodes = vec![
@@ -186,9 +186,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -203,11 +203,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         let nodes = vec![
@@ -268,7 +268,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
-            left_slot.value.local.clone(),
+            left_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -283,9 +283,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -300,11 +300,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -359,7 +359,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
-            left_slot.value.local.clone(),
+            left_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -374,9 +374,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -391,11 +391,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -454,7 +454,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
-            left_slot.value.local.clone(),
+            left_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -469,9 +469,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -486,11 +486,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: edge,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -549,7 +549,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
-            right_slot.value.local.clone(),
+            right_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -564,9 +564,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -581,11 +581,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -640,7 +640,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
-            right_slot.value.local.clone(),
+            right_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -655,9 +655,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -672,11 +672,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -735,7 +735,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
-            right_slot.value.local.clone(),
+            right_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -750,9 +750,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -767,11 +767,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: edge,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -830,7 +830,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
-            left_slot.value.local.clone(),
+            left_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -838,7 +838,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
-            right_slot.value.local.clone(),
+            right_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -853,9 +853,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -870,11 +870,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -929,7 +929,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
-            left_slot.value.local.clone(),
+            left_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -937,7 +937,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
-            right_slot.value.local.clone(),
+            right_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -952,9 +952,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -969,11 +969,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: self.output,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {
@@ -1044,9 +1044,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -1061,11 +1061,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: edge,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         let nodes = vec![
@@ -1126,7 +1126,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
-            left_slot.value.local.clone(),
+            left_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -1134,7 +1134,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
-            right_slot.value.local.clone(),
+            right_slot.value.wake.local.clone(),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -1149,9 +1149,9 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.local.clone(),
+            work: work.value.wake.local.clone(),
             timer: work.value.timer.clone(),
-            output: output.value.local.clone(),
+            output: output.value.wake.local.clone(),
         });
         let phases = node::Node::phases(
             Inputs {
@@ -1166,11 +1166,11 @@ where
             },
             Phase {
                 target: routine,
-                waker: work.value.local,
+                waker: work.value.wake.local,
             },
             Phase {
                 target: edge,
-                waker: output.value.local,
+                waker: output.value.wake.local,
             },
         );
         nodes.push(GraphNode {

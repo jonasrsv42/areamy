@@ -54,8 +54,8 @@ use crate::error::Error;
 use crate::node::line::poll::factory::LineWakers;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::node::routine;
+use crate::poll::Context;
 use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
-use crate::poll::waker;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -152,13 +152,13 @@ impl<'params, InType, OutType, F> routine::Poll for FutureRoutine<'params, InTyp
 where
     F: FnMut(InputConsumer<InType>, OutputProducer<OutType>) -> BoxFut<'params> + 'params,
 {
-    fn poll(&mut self, waker: &mut waker::Waker) -> Result<core::task::Poll<()>, Error> {
+    fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         let future = self.future.get_or_insert_with(|| {
             (self.factory)(self.input.consumer.clone(), self.output.producer.clone())
         });
 
-        let mut cx = core::task::Context::from_waker(&waker.sync);
-        match future.as_mut().poll(&mut cx) {
+        let mut std_cx = core::task::Context::from_waker(&cx.wake.sync);
+        match future.as_mut().poll(&mut std_cx) {
             core::task::Poll::Ready(result) => {
                 result?;
                 self.future = None;

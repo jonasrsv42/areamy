@@ -1,6 +1,7 @@
 //! Poll graphs: event-driven nodes driven by wakers through [Pollable].
 
 mod budget;
+pub mod context;
 pub mod edge;
 pub mod future;
 pub mod graph;
@@ -19,10 +20,10 @@ pub mod thread;
 pub mod timer;
 pub mod traits;
 pub mod try_join;
-pub mod waker;
 pub mod wakers;
 
 pub use budget::BUDGET;
+pub use context::Context;
 pub use edge::{Async, Deferred, Direct, Edge, Linktime, Null, PollEdge, Sync};
 pub use graph::{Graph, GraphBuilder, GraphNode};
 pub use marker::NodeId;
@@ -36,7 +37,6 @@ pub use thread::{Thread, ThreadHandle};
 pub use timer::{Timer, TimerKey};
 pub use traits::AsyncParent;
 pub use try_join::try_join;
-pub use waker::{LocalWake, LocalWaker, Waker};
 pub use wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 
 pub use crate::node::biunion::poll::factory::{

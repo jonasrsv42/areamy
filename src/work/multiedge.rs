@@ -1,5 +1,6 @@
 //! Edges for multi-input nodes: one waiter blocks on all of them at once.
 
+use crate::closed;
 use crate::edge::sync;
 pub use crate::edge::sync::State;
 use crate::error::Error;
@@ -7,88 +8,41 @@ use crate::graph::marker::Connection;
 use crate::graph::{Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
+use crate::wake::Parker;
 use crate::work::Sink;
-use crate::{closed, fatal};
-use std::mem;
+use core::task::Waker;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Condvar, Mutex};
 
-/// Wake flag shared by a group of edges. Single waiter.
-pub(crate) struct Notify {
-    flag: Mutex<Flag>,
-    /// The consumer waits here until an edge may be ready.
-    any_ready: Condvar,
-}
-
-#[derive(Default)]
-struct Flag {
-    raised: bool,
-    /// The consumer is parked on `any_ready`; raises only notify when set.
-    consumer_waiting: bool,
-}
-
-impl Notify {
-    pub(crate) fn new() -> Arc<Self> {
-        Arc::new(Self {
-            flag: Mutex::new(Flag::default()),
-            any_ready: Condvar::new(),
-        })
-    }
-
-    fn raise(&self) {
-        let mut flag = self.flag.lock().unwrap_or_else(|p| p.into_inner());
-        flag.raised = true;
-        let consumer_waiting = mem::take(&mut flag.consumer_waiting);
-        drop(flag);
-        if consumer_waiting {
-            self.any_ready.notify_one();
-        }
-    }
-
-    /// Block until raised since the last wait.
-    fn wait(&self) -> Result<(), Error> {
-        let mut flag = self.flag.lock().map_err(|e| fatal!(e))?;
-        while !flag.raised {
-            // Set on every iteration: a spurious wakeup must re-arm it.
-            flag.consumer_waiting = true;
-            flag = self.any_ready.wait(flag).map_err(|e| fatal!(e))?;
-        }
-        flag.raised = false;
-        Ok(())
-    }
-
-    /// Block until any edge is [State::Ready]. `Closed` once every edge
-    /// is [State::Exhausted].
-    pub(crate) fn wait_any(&self, edges: &[&dyn Awaitable]) -> Result<(), Error> {
-        loop {
-            let mut idle = false;
-            for edge in edges {
-                match edge.state()? {
-                    State::Ready => return Ok(()),
-                    State::Idle => idle = true,
-                    State::Exhausted => {}
-                }
+/// Block until any edge is [State::Ready], parking on `parker`, whose waker every edge's
+/// senders hold. `Closed` once every edge is [State::Exhausted].
+pub(crate) fn wait_any(parker: &Parker, edges: &[&dyn Awaitable]) -> Result<(), Error> {
+    loop {
+        let mut idle = false;
+        for edge in edges {
+            match edge.state()? {
+                State::Ready => return Ok(()),
+                State::Idle => idle = true,
+                State::Exhausted => {}
             }
-            if !idle {
-                return Err(closed!());
-            }
-            self.wait()?;
         }
+        if !idle {
+            return Err(closed!());
+        }
+        parker.park();
     }
 }
 
-/// An edge a [Notify] can wait on. One lock, one readout.
+/// An edge [wait_any] can wait on. One lock, one readout.
 pub(crate) trait Awaitable {
     fn state(&self) -> Result<State, Error>;
 }
 
-/// Raises the group flag when dropped; declared after the inner sender
-/// so the edge closes first.
-struct RaiseOnDrop(Arc<Notify>);
+/// Wakes the group when dropped; declared after the inner sender so the edge closes first.
+struct WakeOnDrop(Waker);
 
-impl Drop for RaiseOnDrop {
+impl Drop for WakeOnDrop {
     fn drop(&mut self) {
-        self.0.raise();
+        self.0.wake_by_ref();
     }
 }
 
@@ -98,7 +52,7 @@ where
     S: Origin + Send + Sync,
 {
     inner: sync::Sender<D, S>,
-    raise: RaiseOnDrop,
+    waker: WakeOnDrop,
 }
 
 pub struct Receiver<D, S>
@@ -107,7 +61,8 @@ where
     S: Origin + Send + Sync,
 {
     inner: sync::Receiver<D, S>,
-    notify: Arc<Notify>,
+    /// The group's waker, cloned into every sender.
+    waker: Waker,
 }
 
 impl<D, S> Receiver<D, S>
@@ -116,18 +71,18 @@ where
     S: Origin + Send + Sync,
 {
     /// `bound` caps this side alone; each side of a group is bounded independently.
-    pub(crate) fn new(notify: Arc<Notify>, bound: Option<NonZeroUsize>) -> Self {
+    pub(crate) fn new(waker: Waker, bound: Option<NonZeroUsize>) -> Self {
         let inner = match bound {
             Some(bound) => sync::Receiver::bounded(bound),
             None => sync::Receiver::new(),
         };
-        Self { inner, notify }
+        Self { inner, waker }
     }
 
     pub fn sender(&self) -> Sender<D, S> {
         Sender {
             inner: self.inner.sender(),
-            raise: RaiseOnDrop(self.notify.clone()),
+            waker: WakeOnDrop(self.waker.clone()),
         }
     }
 
@@ -155,17 +110,17 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    /// Blocks while a bounded side is full. Raises only after the message lands, so the woken
+    /// Blocks while a bounded side is full. Wakes only after the message lands, so the woken
     /// waiter finds it.
     pub fn push_back(&self, message: Message<D, S>) -> Result<(), Error> {
         self.inner.push_back(message)?;
-        self.raise.0.raise();
+        self.waker.0.wake_by_ref();
         Ok(())
     }
 
     pub fn close(&self) -> Result<(), Error> {
         self.inner.close()?;
-        self.raise.0.raise();
+        self.waker.0.wake_by_ref();
         Ok(())
     }
 }
@@ -198,11 +153,11 @@ where
     D: Send + Sync,
     S: Origin + Send + Sync,
 {
-    /// Raises the group flag only when the inner edge took the message.
+    /// Wakes the group only when the inner edge took the message.
     fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
         let result = TryPushable::try_push(&mut self.inner, message)?;
         if matches!(result, TryPush::Pushed) {
-            self.raise.0.raise();
+            self.waker.0.wake_by_ref();
         }
         Ok(result)
     }
@@ -260,11 +215,7 @@ mod tests {
 
     type Signal = &'static str;
 
-    type Group = (
-        Arc<Notify>,
-        Receiver<usize, Signal>,
-        Receiver<usize, Signal>,
-    );
+    type Group = (Parker, Receiver<usize, Signal>, Receiver<usize, Signal>);
 
     fn pair() -> Group {
         group(None)
@@ -275,69 +226,64 @@ mod tests {
     }
 
     fn group(bound: Option<NonZeroUsize>) -> Group {
-        let notify = Notify::new();
-        let left = Receiver::new(notify.clone(), bound);
-        let right = Receiver::new(notify.clone(), bound);
-        (notify, left, right)
-    }
-
-    /// Read and clear the flag, so later checks see only raises after this point.
-    fn take_raised(notify: &Notify) -> bool {
-        mem::take(&mut notify.flag.lock().unwrap().raised)
+        let parker = Parker::new();
+        let left = Receiver::new(parker.waker(), bound);
+        let right = Receiver::new(parker.waker(), bound);
+        (parker, left, right)
     }
 
     #[test]
-    fn try_push_raises_only_when_pushed() {
-        let (notify, left, _right) = bounded_pair(1);
+    fn try_push_wakes_only_when_pushed() {
+        let (parker, left, _right) = bounded_pair(1);
         let mut tx = left.sender();
         assert_eq!(tx.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
-        assert!(take_raised(&notify));
+        assert!(parker.take_woken());
         assert_eq!(
             tx.try_push(Message::Data(2)).unwrap(),
             TryPush::Full(Message::Data(2))
         );
         // Nothing landed, so the consumer must not wake for it.
-        assert!(!take_raised(&notify));
+        assert!(!parker.take_woken());
     }
 
     #[test]
-    fn blocked_push_raises_after_it_lands() {
-        let (notify, left, _right) = bounded_pair(1);
+    fn blocked_push_wakes_after_it_lands() {
+        let (parker, left, _right) = bounded_pair(1);
         // Kept alive: dropping the last sender would close the edge.
         let first = left.sender();
         first.push_back(Message::Data(1)).unwrap();
         let tx = left.sender();
-        // Hands the sender back: its drop raises too, which would hide a missing raise.
+        // Hands the sender back: its drop wakes too, which would hide a missing wake.
         let producer = thread::spawn(move || tx.push_back(Message::Data(2)).map(|()| tx));
 
         wait_until(|| left.inner.producers_waiting() == 1);
-        // Forget raises from before the block; only the landing may raise now.
-        take_raised(&notify);
+        // Forget wakes from before the block; only the landing may wake now.
+        parker.take_woken();
         assert_eq!(left.poll().unwrap(), Some(Message::Data(1)));
         let _tx = join_within(producer).unwrap();
-        assert!(take_raised(&notify));
+        assert!(parker.take_woken());
         assert_eq!(left.poll().unwrap(), Some(Message::Data(2)));
     }
 
     #[test]
     fn wait_any_returns_when_left_has_data() -> Result<(), Error> {
-        let (notify, left, right) = pair();
+        let (parker, left, right) = pair();
         let tx = left.sender();
         let _keep = right.sender();
         tx.push_back(Message::Data(1))?;
-        notify.wait_any(&[&left, &right])?;
+        wait_any(&parker, &[&left, &right])?;
         assert_eq!(left.poll()?, Some(Message::Data(1)));
         Ok(())
     }
 
     #[test]
     fn wait_any_wakes_on_right_from_other_thread() -> Result<(), Error> {
-        let (notify, left, right) = pair();
+        let (parker, left, right) = pair();
         let _keep = left.sender();
         let tx = right.sender();
         thread::scope(|s| -> Result<(), Error> {
             s.spawn(move || tx.push_back(Message::Data(2)));
-            notify.wait_any(&[&left, &right])?;
+            wait_any(&parker, &[&left, &right])?;
             assert_eq!(right.poll()?, Some(Message::Data(2)));
             Ok(())
         })
@@ -345,14 +291,14 @@ mod tests {
 
     #[test]
     fn wait_any_closed_without_producers() {
-        let (notify, left, right) = pair();
-        let result = notify.wait_any(&[&left, &right]);
+        let (parker, left, right) = pair();
+        let result = wait_any(&parker, &[&left, &right]);
         assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
     }
 
     #[test]
     fn wait_any_closed_after_last_sender_drops() -> Result<(), Error> {
-        let (notify, left, right) = pair();
+        let (parker, left, right) = pair();
         let left_tx = left.sender();
         let right_tx = right.sender();
         thread::scope(|s| -> Result<(), Error> {
@@ -360,7 +306,7 @@ mod tests {
                 drop(left_tx);
                 drop(right_tx);
             });
-            let result = notify.wait_any(&[&left, &right]);
+            let result = wait_any(&parker, &[&left, &right]);
             assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
             Ok(())
         })
@@ -368,13 +314,13 @@ mod tests {
 
     #[test]
     fn wait_any_keeps_waiting_while_one_side_is_live() -> Result<(), Error> {
-        let (notify, left, right) = pair();
+        let (parker, left, right) = pair();
         let left_tx = left.sender();
         let right_tx = right.sender();
         drop(left_tx);
         thread::scope(|s| -> Result<(), Error> {
             s.spawn(move || right_tx.push_back(Message::Flush("f")));
-            notify.wait_any(&[&left, &right])?;
+            wait_any(&parker, &[&left, &right])?;
             assert_eq!(right.poll()?, Some(Message::Flush("f")));
             Ok(())
         })

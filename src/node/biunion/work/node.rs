@@ -12,13 +12,13 @@ use crate::node::work::Incoming;
 use crate::node::{biunion, routine};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use crate::wake::Parker;
 use crate::work::Sink;
-use crate::work::multiedge::{self, Notify};
+use crate::work::multiedge;
 use crate::work::{Workable, work_each};
 use std::any::type_name;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
 // The contract of a `Sync` node forming a biunion.
 // it has two workable sources and inputs.
@@ -103,22 +103,22 @@ pub type Parents<'params, ThreadIdType> = Vec<Box<dyn Workable<ThreadId = Thread
 pub struct Input<T: Types> {
     pub left: multiedge::Receiver<T::Left, T::Signal>,
     pub right: multiedge::Receiver<T::Right, T::Signal>,
-    notify: Arc<Notify>,
+    parker: Parker,
 }
 
 impl<T: Types> Input<T> {
     /// Block until either side has data; `Closed` when neither can.
     fn wait_any(&self) -> Result<(), Error> {
-        self.notify.wait_any(&[&self.left, &self.right])
+        multiedge::wait_any(&self.parker, &[&self.left, &self.right])
     }
 
-    /// Both sides share one [Notify]; each has its own bound (`None` is unbounded).
+    /// Both sides wake one [Parker]; each has its own bound (`None` is unbounded).
     pub(super) fn new(left: Option<NonZeroUsize>, right: Option<NonZeroUsize>) -> Self {
-        let notify = Notify::new();
+        let parker = Parker::new();
         Self {
-            left: multiedge::Receiver::new(notify.clone(), left),
-            right: multiedge::Receiver::new(notify.clone(), right),
-            notify,
+            left: multiedge::Receiver::new(parker.waker(), left),
+            right: multiedge::Receiver::new(parker.waker(), right),
+            parker,
         }
     }
 }
@@ -392,7 +392,7 @@ pub mod tests {
     use crate::work::{self, Line, Reader, Writer};
     use crate::{At, Push, Pushable};
     use crate::{DefaultThread, Trackable};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
     use std::thread;
 
     type TestSignal = Trackable<&'static str>;

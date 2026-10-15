@@ -5,6 +5,12 @@
 //!
 //! [Waker] bundles a sync waker (for I/O, standard futures) with a
 //! local waker (for cheap same-thread wake).
+//!
+//! `Parker` blocks a thread until woken.
+
+mod parker;
+
+pub(crate) use parker::Parker;
 
 use alloc::rc::Rc;
 

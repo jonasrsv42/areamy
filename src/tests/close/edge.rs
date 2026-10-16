@@ -83,16 +83,16 @@ fn sync_edge_close_by_drop() -> Result<(), Error> {
 
 #[test]
 fn poll_input_edge() -> Result<(), Error> {
-    let rx = input::sync::Receiver::<usize, Signal>::new(std::task::Waker::noop().clone());
+    let rx = input::sync::Receiver::<usize, Signal>::new(std::task::Waker::noop().clone(), None);
     let tx = rx.sender();
     tx.push_back(Message::Data(1))?;
     tx.push_back(Message::Flush("f".into()))?;
     tx.close()?;
 
     assert_closed(tx.push_back(Message::Data(2)));
-    assert_eq!(rx.try_recv()?, Some(Message::Data(1)));
-    assert_eq!(rx.try_recv()?, Some(Message::Flush("f".into())));
-    assert_closed(rx.try_recv());
+    assert_eq!(rx.poll()?, Some(Message::Data(1)));
+    assert_eq!(rx.poll()?, Some(Message::Flush("f".into())));
+    assert_closed(rx.poll());
     Ok(())
 }
 

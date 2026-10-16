@@ -394,7 +394,8 @@ where
 // Get — Sync input only
 // ============================================================
 
-impl<'params, C, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType> Get<C>
+impl<'params, ConnectionType, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    Get<ConnectionType>
     for Node<
         'static,
         'params,
@@ -407,16 +408,16 @@ impl<'params, C, OutEdgeType, InType, OutType, SignalType, ThreadIdType, Factory
         FactoryType,
     >
 where
-    C: Connection + ?Sized,
+    ConnectionType: Connection + ?Sized,
     OutEdgeType: Edge,
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
-    input::sync::Receiver<InType, SignalType>: Get<C>,
+    input::sync::Receiver<InType, SignalType>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input.edge)
     }
 }

@@ -259,7 +259,7 @@ where
 
 impl<
     'params,
-    C,
+    ConnectionType,
     AllocState,
     RightEdge,
     OutEdge,
@@ -269,7 +269,7 @@ impl<
     SignalType,
     ThreadIdType,
     FactoryType,
-> Get<C, biunion::Left>
+> Get<ConnectionType, biunion::Left>
     for Node<
         'params,
         AllocState,
@@ -284,7 +284,7 @@ impl<
         FactoryType,
     >
 where
-    C: Connection + ?Sized,
+    ConnectionType: Connection + ?Sized,
     RightEdge: Edge,
     OutEdge: Edge,
     Left: Send + std::marker::Sync + 'static,
@@ -292,16 +292,16 @@ where
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    input::sync::Receiver<Left, SignalType>: Get<C>,
+    input::sync::Receiver<Left, SignalType>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input.left.edge)
     }
 }
 
 impl<
     'params,
-    C,
+    ConnectionType,
     AllocState,
     LeftEdge,
     OutEdge,
@@ -311,7 +311,7 @@ impl<
     SignalType,
     ThreadIdType,
     FactoryType,
-> Get<C, biunion::Right>
+> Get<ConnectionType, biunion::Right>
     for Node<
         'params,
         AllocState,
@@ -326,7 +326,7 @@ impl<
         FactoryType,
     >
 where
-    C: Connection + ?Sized,
+    ConnectionType: Connection + ?Sized,
     LeftEdge: Edge,
     OutEdge: Edge,
     Right: Send + std::marker::Sync + 'static,
@@ -334,9 +334,9 @@ where
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    input::sync::Receiver<Right, SignalType>: Get<C>,
+    input::sync::Receiver<Right, SignalType>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input.right.edge)
     }
 }

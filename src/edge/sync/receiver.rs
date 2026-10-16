@@ -4,7 +4,7 @@ use super::sender::Sender;
 use super::shared::{Freed, Inner, Shared, State, close, close_infallible, wake_all};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{BoxAs, Get};
+use crate::graph::{BoxAs, Closed, Get, Inlet};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
@@ -30,11 +30,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 /// fn require_sync<T: Sync>() {}
 /// require_sync::<areamy::edge::sync::Receiver<usize, areamy::Trackable<&'static str>>>();
 /// ```
-pub struct Receiver<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
+pub struct Receiver<DataType, SignalType: Origin> {
     shared: Arc<Shared<DataType, SignalType>>,
     /// Empty spare traded with the edge's refused list when a drain takes it, so neither
     /// reallocates. Out of the cell while waking: a re-entrant drain finds it empty.
@@ -111,20 +107,16 @@ where
     }
 }
 
-impl<D, S> Drop for Receiver<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
+impl<DataType, SignalType: Origin> Drop for Receiver<DataType, SignalType> {
     fn drop(&mut self) {
         close_infallible(&self.shared);
     }
 }
 
-impl<D, S> Receiver<D, S>
+impl<DataType, SignalType> Receiver<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     /// One-lock readout of what a waiter can do with this edge.
     pub(crate) fn state(&self) -> Result<State, Error> {
@@ -140,7 +132,7 @@ where
 
     /// Block until the buffer is non-empty. `Closed` if nothing could
     /// ever wake us.
-    fn wait_nonempty(&self) -> Result<MutexGuard<'_, Inner<D, S>>, Error> {
+    fn wait_nonempty(&self) -> Result<MutexGuard<'_, Inner<DataType, SignalType>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         while inner.buffer.is_empty() {
             if inner.closed || self.shared.producer_count.load(Ordering::Acquire) == 0 {
@@ -155,7 +147,7 @@ where
 
     /// Block until a message is available, then pop it. `Closed` if
     /// nothing could ever wake us: closed and empty, or no producer.
-    pub fn read_front(&self) -> Result<Message<D, S>, Error> {
+    pub fn read_front(&self) -> Result<Message<DataType, SignalType>, Error> {
         let mut inner = self.wait_nonempty()?;
         let Some(msg) = inner.buffer.pop_front() else {
             return fatal!("non-empty queue with no element").into();
@@ -167,7 +159,7 @@ where
     /// Block until at least one message is available, then drain the
     /// whole buffer. `Closed` if nothing could ever wake us: closed and
     /// empty, or no producer.
-    pub fn read_all(&self) -> Result<Vec<Message<D, S>>, Error> {
+    pub fn read_all(&self) -> Result<Vec<Message<DataType, SignalType>>, Error> {
         let mut inner = self.wait_nonempty()?;
         let messages = inner.buffer.drain(..).collect();
         // One drain, one bump: `Stuck` only asks whether anything drained.
@@ -178,7 +170,7 @@ where
     /// Non-blocking pop. `Ok(None)` when open and empty, `Err(Closed)`
     /// when closed and empty. Unlike the blocking reads this ignores
     /// the producer count, so an unconnected edge stays `Ok(None)`.
-    pub fn poll(&self) -> Result<Option<Message<D, S>>, Error> {
+    pub fn poll(&self) -> Result<Option<Message<DataType, SignalType>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         match inner.buffer.pop_front() {
             Some(msg) => {
@@ -197,7 +189,7 @@ where
     ///
     /// Wakers are all woken, threads are not: a blocked `push_back` is sure to retry, a waker
     /// only asks, so a slot handed to one could strand.
-    fn drained(&self, mut inner: MutexGuard<'_, Inner<D, S>>, freed: Freed) {
+    fn drained(&self, mut inner: MutexGuard<'_, Inner<DataType, SignalType>>, freed: Freed) {
         inner.progress = inner.progress.wrapping_add(1);
         // Read under the lock: producers count themselves in under the same lock before waiting,
         // so a parked producer is never missed.
@@ -217,7 +209,7 @@ where
     #[inline(never)]
     fn drained_refused(
         &self,
-        mut inner: MutexGuard<'_, Inner<D, S>>,
+        mut inner: MutexGuard<'_, Inner<DataType, SignalType>>,
         producers_waiting: bool,
         freed: Freed,
     ) {
@@ -265,32 +257,52 @@ where
     }
 }
 
-impl<D, S> Connection for Receiver<D, S>
+impl<DataType, SignalType> Connection for Receiver<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
+}
+
+impl<DataType, SignalType> Inlet for Receiver<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
+    type DataType = DataType;
+    type SignalType = SignalType;
+}
+
+/// Closed by either end or the last sender's drop; data may still be buffered.
+impl<DataType, SignalType> Closed for Receiver<DataType, SignalType>
+where
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+{
+    fn closed(&self) -> Result<bool, Error> {
+        Ok(self.shared.inner.lock().map_err(|e| fatal!(e))?.closed)
+    }
 }
 
 // Receiver acts as a connection point in the graph: `Get::get(&receiver)`
 // mints a fresh Sender so upstream nodes can push into it.
-impl<C, D, S> Get<C> for Receiver<D, S>
+impl<ConnectionType, DataType, SignalType> Get<ConnectionType> for Receiver<DataType, SignalType>
 where
-    C: Connection + ?Sized,
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-    Sender<D, S>: BoxAs<C>,
+    ConnectionType: Connection + ?Sized,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+    Sender<DataType, SignalType>: BoxAs<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Ok(self.sender().box_as())
     }
 }
 
 #[cfg(test)]
-impl<D, S> Receiver<D, S>
+impl<DataType, SignalType> Receiver<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     /// Producers currently parked on a full edge; lets tests wait for a real block.
     pub(crate) fn producers_waiting(&self) -> usize {

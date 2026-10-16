@@ -99,16 +99,16 @@ where
 {
 }
 
-impl<C, DataType, SignalType, ThreadIdType> Get<C>
+impl<ConnectionType, DataType, SignalType, ThreadIdType> Get<ConnectionType>
     for WriterBuffer<DataType, SignalType, ThreadIdType>
 where
-    C: Connection + ?Sized,
+    ConnectionType: Connection + ?Sized,
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
-    Receiver<DataType, SignalType>: Get<C>,
+    Receiver<DataType, SignalType>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input)
     }
 }

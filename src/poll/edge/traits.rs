@@ -25,7 +25,7 @@ pub trait Edge: Connection {
 }
 
 /// Sync edge — cross-thread, uses [`input::sync::Receiver`]
-/// (Mutex + Waker) with refcounted close-on-drop.
+/// (a [`waking`](crate::edge::waking) edge).
 pub struct Sync;
 
 /// Async edge — same-thread, uses [`PollEdge`](super::poll::PollEdge) (no Mutex).

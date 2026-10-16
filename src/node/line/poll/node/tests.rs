@@ -40,7 +40,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
     }
 
     fn with_input_waker(routine: R, input_waker: LocalWaker) -> Self {
-        let edge = input::sync::Receiver::new(std::task::Waker::noop().clone());
+        let edge = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
         let upstream = edge.sender();
         let downstream = edge::sync::Receiver::new();
         let (output_waker, output_woken) = tracking_local_waker();

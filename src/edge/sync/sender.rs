@@ -22,11 +22,7 @@ use std::sync::{Arc, MutexGuard};
 /// [`Schedule`]: after a [`TryPush::Full`], the scheduled waker is woken once the receiver pops
 /// or the edge closes; if bound, a [`TryPush::Stuck`] is already owed that wake. A clone is
 /// unbound, and an unbound `Full` records nothing.
-pub struct Sender<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
+pub struct Sender<DataType, SignalType: Origin> {
     pub(super) shared: Arc<Shared<DataType, SignalType>>,
     /// The edge's progress when this handle was last refused. Reset by [`Schedule`] (that
     /// refusal recorded no wake for the new waker); otherwise never cleared: only a drain frees
@@ -40,10 +36,10 @@ where
 /// Wakes once, after a refused `try_push_back` (`Full`), at the next pop or close.
 /// Re-scheduling replaces the waker; a refusal already recorded still wakes the old one, once.
 /// Same target: no-op.
-impl<D, S> Schedule for Sender<D, S>
+impl<DataType, SignalType> Schedule for Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     fn schedule(&mut self, waker: wake::Waker) {
         // Same target: its refusal, if any, is already recorded; keep it, so no second entry.
@@ -61,10 +57,10 @@ where
     }
 }
 
-impl<D, S> Clone for Sender<D, S>
+impl<DataType, SignalType> Clone for Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     fn clone(&self) -> Self {
         // Matches std::sync::Arc::clone: no synchronization needed at the
@@ -80,11 +76,7 @@ where
     }
 }
 
-impl<D, S> Drop for Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
+impl<DataType, SignalType: Origin> Drop for Sender<DataType, SignalType> {
     fn drop(&mut self) {
         if self.shared.producer_count.fetch_sub(1, Ordering::AcqRel) == 1 {
             close_infallible(&self.shared);
@@ -92,15 +84,15 @@ where
     }
 }
 
-impl<D, S> Sender<D, S>
+impl<DataType, SignalType> Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     /// Push a message onto the back of the queue. On a full bounded edge, blocks until the
     /// receiver pops or the edge closes. Returns [`crate::error::ErrorKind::Closed`] if the
     /// receiver has been dropped or the edge has been closed.
-    pub fn push_back(&self, message: Message<D, S>) -> Result<(), Error> {
+    pub fn push_back(&self, message: Message<DataType, SignalType>) -> Result<(), Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         if inner.is_full() && !inner.closed {
             inner = self.wait_for_room(inner)?;
@@ -118,8 +110,8 @@ where
     /// absorbs spurious wakeups.
     fn wait_for_room<'a>(
         &'a self,
-        mut inner: MutexGuard<'a, Inner<D, S>>,
-    ) -> Result<MutexGuard<'a, Inner<D, S>>, Error> {
+        mut inner: MutexGuard<'a, Inner<DataType, SignalType>>,
+    ) -> Result<MutexGuard<'a, Inner<DataType, SignalType>>, Error> {
         // Count in while still holding the lock, before waiting: a pop reads the count under the
         // same lock, so it can't miss us.
         inner.producers_waiting += 1;
@@ -146,8 +138,8 @@ where
     /// [`TryPush::Full`]. Returns `Closed` if the edge is closed, even when it is also full.
     pub fn try_push_back(
         &mut self,
-        message: Message<D, S>,
-    ) -> Result<TryPush<Message<D, S>>, Error> {
+        message: Message<DataType, SignalType>,
+    ) -> Result<TryPush<Message<DataType, SignalType>>, Error> {
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         if inner.closed {
             return Err(closed!());
@@ -172,7 +164,7 @@ where
 
     /// Notify the receiver only if it is blocked, after releasing the lock. The flag is set and
     /// cleared under the lock, and there is at most one waiter (`Receiver` is `!Sync`).
-    fn wake_consumer(&self, mut inner: MutexGuard<'_, Inner<D, S>>) {
+    fn wake_consumer(&self, mut inner: MutexGuard<'_, Inner<DataType, SignalType>>) {
         // Read and clear under the lock: the receiver sets it under the same lock before waiting.
         let consumer_waiting = mem::take(&mut inner.consumer_waiting);
         // Unlock before notifying, so the woken receiver doesn't immediately block on our lock.
@@ -190,60 +182,63 @@ where
     }
 }
 
-impl<D, S> Connection for Sender<D, S>
+impl<DataType, SignalType> Connection for Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
 }
 
-impl<D, S> Outlet for Sender<D, S>
+impl<DataType, SignalType> Outlet for Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
-    type DataType = D;
-    type SignalType = S;
+    type DataType = DataType;
+    type SignalType = SignalType;
 }
 
-impl<D, S> TryPushable for Sender<D, S>
+impl<DataType, SignalType> TryPushable for Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
-    fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
+    fn try_push(
+        &mut self,
+        message: Message<DataType, SignalType>,
+    ) -> Result<TryPush<Message<DataType, SignalType>>, Error> {
         self.try_push_back(message)
     }
 }
 
-impl<D, S> Pushable for Sender<D, S>
+impl<DataType, SignalType> Pushable for Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
-    fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
+    fn push(&mut self, message: Message<DataType, SignalType>) -> Result<(), Error> {
         self.push_back(message)
     }
 }
 
-impl<D, S> Closeable for Sender<D, S>
+impl<DataType, SignalType> Closeable for Sender<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     fn close(&mut self) -> Result<(), Error> {
         Sender::close(self)
     }
 }
 
-impl<C, D, S> Get<C> for Sender<D, S>
+impl<ConnectionType, DataType, SignalType> Get<ConnectionType> for Sender<DataType, SignalType>
 where
-    C: Connection + ?Sized,
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-    Sender<D, S>: BoxAs<C>,
+    ConnectionType: Connection + ?Sized,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+    Sender<DataType, SignalType>: BoxAs<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Ok(self.clone().box_as())
     }
 }

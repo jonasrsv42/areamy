@@ -293,12 +293,12 @@ fn accept<T: Types>(
 }
 
 /// Get a sink for this node's input edge.
-impl<'params, C, T: Types> Get<C> for Bifurcation<'params, T>
+impl<'params, ConnectionType, T: Types> Get<ConnectionType> for Bifurcation<'params, T>
 where
-    C: Connection + ?Sized,
-    Receiver<T::In, T::Signal>: Get<C>,
+    ConnectionType: Connection + ?Sized,
+    Receiver<T::In, T::Signal>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input)
     }
 }

@@ -1,16 +1,11 @@
-//! Edges for multi-input nodes: one waiter blocks on all of them at once.
+//! Waiting on several edges at once: one waiter blocks on all of them.
 
 use crate::closed;
-use crate::edge::sync;
 pub use crate::edge::sync::State;
+use crate::edge::waking::Receiver;
 use crate::error::Error;
-use crate::graph::marker::Connection;
-use crate::graph::{BoxAs, Closeable, Get, Outlet, Pushable, Schedule, TryPush, TryPushable};
-use crate::message::Message;
 use crate::signal::Origin;
-use crate::wake::{self, Parker};
-use core::task::Waker;
-use std::num::NonZeroUsize;
+use crate::wake::Parker;
 
 /// Block until any edge is [State::Ready], parking on `parker`, whose waker every edge's
 /// senders hold. `Closed` once every edge is [State::Exhausted].
@@ -36,278 +31,30 @@ pub(crate) trait Awaitable {
     fn state(&self) -> Result<State, Error>;
 }
 
-/// Wakes the group when dropped; declared after the inner sender so the edge closes first.
-struct WakeOnDrop(Waker);
-
-impl Drop for WakeOnDrop {
-    fn drop(&mut self) {
-        self.0.wake_by_ref();
-    }
-}
-
-pub struct Sender<D, S>
+impl<DataType, SignalType> Awaitable for Receiver<DataType, SignalType>
 where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    inner: sync::Sender<D, S>,
-    waker: WakeOnDrop,
-}
-
-pub struct Receiver<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    inner: sync::Receiver<D, S>,
-    /// The group's waker, cloned into every sender.
-    waker: Waker,
-}
-
-impl<D, S> Receiver<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    /// `bound` caps this side alone; each side of a group is bounded independently.
-    pub(crate) fn new(waker: Waker, bound: Option<NonZeroUsize>) -> Self {
-        let inner = match bound {
-            Some(bound) => sync::Receiver::bounded(bound),
-            None => sync::Receiver::new(),
-        };
-        Self { inner, waker }
-    }
-
-    pub fn sender(&self) -> Sender<D, S> {
-        Sender {
-            inner: self.inner.sender(),
-            waker: WakeOnDrop(self.waker.clone()),
-        }
-    }
-
-    pub fn poll(&self) -> Result<Option<Message<D, S>>, Error> {
-        self.inner.poll()
-    }
-
-    pub fn close(&self) -> Result<(), Error> {
-        self.inner.close()
-    }
-}
-
-impl<D, S> Awaitable for Receiver<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
 {
     fn state(&self) -> Result<State, Error> {
-        self.inner.state()
-    }
-}
-
-impl<D, S> Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    /// Blocks while a bounded side is full. Wakes only after the message lands, so the woken
-    /// waiter finds it.
-    pub fn push_back(&self, message: Message<D, S>) -> Result<(), Error> {
-        self.inner.push_back(message)?;
-        self.waker.0.wake_by_ref();
-        Ok(())
-    }
-
-    pub fn close(&self) -> Result<(), Error> {
-        self.inner.close()?;
-        self.waker.0.wake_by_ref();
-        Ok(())
-    }
-}
-
-impl<D, S> Connection for Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-}
-
-impl<D, S> Connection for Receiver<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-}
-
-impl<D, S> Outlet for Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    type DataType = D;
-    type SignalType = S;
-}
-
-impl<D, S> TryPushable for Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    /// Wakes the group only when the inner edge took the message.
-    fn try_push(&mut self, message: Message<D, S>) -> Result<TryPush<Message<D, S>>, Error> {
-        let result = TryPushable::try_push(&mut self.inner, message)?;
-        if matches!(result, TryPush::Pushed) {
-            self.waker.0.wake_by_ref();
-        }
-        Ok(result)
-    }
-}
-
-impl<D, S> Pushable for Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    fn push(&mut self, message: Message<D, S>) -> Result<(), Error> {
-        self.push_back(message)
-    }
-}
-
-impl<D, S> Closeable for Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    fn close(&mut self) -> Result<(), Error> {
-        Sender::close(self)
-    }
-}
-
-/// The inner edge's: woken at the next pop or close after a `Full`.
-impl<D, S> Schedule for Sender<D, S>
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
-    fn schedule(&mut self, waker: wake::Waker) {
-        Schedule::schedule(&mut self.inner, waker);
-    }
-}
-
-impl<C, D, S> Get<C> for Receiver<D, S>
-where
-    C: Connection + ?Sized,
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-    Sender<D, S>: BoxAs<C>,
-{
-    fn get(&self) -> Result<Box<C>, Error> {
-        Ok(self.sender().box_as())
+        Receiver::state(self)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::edge::sync::tests::{join_within, wait_until};
     use crate::error::ErrorKind;
-    use crate::poll::Sink as PollSink;
-    use crate::wake::mock::counting_waker;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crate::message::Message;
     use std::thread;
 
     type Signal = &'static str;
 
-    type Group = (Parker, Receiver<usize, Signal>, Receiver<usize, Signal>);
-
-    fn pair() -> Group {
-        group(None)
-    }
-
-    fn bounded_pair(bound: usize) -> Group {
-        group(NonZeroUsize::new(bound))
-    }
-
-    fn group(bound: Option<NonZeroUsize>) -> Group {
+    fn pair() -> (Parker, Receiver<usize, Signal>, Receiver<usize, Signal>) {
         let parker = Parker::new();
-        let left = Receiver::new(parker.waker(), bound);
-        let right = Receiver::new(parker.waker(), bound);
+        let left = Receiver::new(parker.waker(), None);
+        let right = Receiver::new(parker.waker(), None);
         (parker, left, right)
-    }
-
-    #[test]
-    fn try_push_wakes_only_when_pushed() {
-        let (parker, left, _right) = bounded_pair(1);
-        let mut tx = left.sender();
-        assert_eq!(tx.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
-        assert!(parker.take_woken());
-        assert_eq!(
-            tx.try_push(Message::Data(2)).unwrap(),
-            TryPush::Full(Message::Data(2))
-        );
-        // Nothing landed, so the consumer must not wake for it.
-        assert!(!parker.take_woken());
-    }
-
-    /// A scheduled sender on `rx` (bound 1), refused once: nothing woken yet.
-    fn refused(rx: &Receiver<usize, Signal>) -> (Sender<usize, Signal>, Arc<AtomicUsize>) {
-        let mut tx = rx.sender();
-        let (waker, wakes) = counting_waker();
-        Schedule::schedule(&mut tx, waker);
-        assert_eq!(tx.try_push(Message::Data(1)).unwrap(), TryPush::Pushed);
-        assert!(matches!(
-            tx.try_push(Message::Data(2)).unwrap(),
-            TryPush::Full(_)
-        ));
-        assert_eq!(wakes.load(Ordering::SeqCst), 0);
-        (tx, wakes)
-    }
-
-    #[test]
-    fn a_scheduled_sender_is_woken_by_the_pop_after_full() {
-        let (_parker, left, _right) = bounded_pair(1);
-        let (_tx, wakes) = refused(&left);
-        left.poll().unwrap();
-        assert_eq!(wakes.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn a_scheduled_sender_is_woken_by_close_and_by_drop() {
-        let (_parker, left, _right) = bounded_pair(1);
-        let (_tx, wakes) = refused(&left);
-        // Asserted while `left` lives: its drop would close too.
-        left.close().unwrap();
-        assert_eq!(wakes.load(Ordering::SeqCst), 1);
-
-        let (_parker, left, _right) = bounded_pair(1);
-        let (_tx, wakes) = refused(&left);
-        drop(left);
-        assert_eq!(wakes.load(Ordering::SeqCst), 1);
-    }
-
-    /// A multiedge `Sender` is a poll sink: a poll node can push into it without blocking.
-    fn _assert_sender_is_a_poll_sink(rx: &Receiver<usize, Signal>) {
-        let _: Box<dyn PollSink<DataType = usize, SignalType = Signal> + Send + Sync> =
-            Box::new(rx.sender());
-    }
-
-    #[test]
-    fn blocked_push_wakes_after_it_lands() {
-        let (parker, left, _right) = bounded_pair(1);
-        // Kept alive: dropping the last sender would close the edge.
-        let first = left.sender();
-        first.push_back(Message::Data(1)).unwrap();
-        let tx = left.sender();
-        // Hands the sender back: its drop wakes too, which would hide a missing wake.
-        let producer = thread::spawn(move || tx.push_back(Message::Data(2)).map(|()| tx));
-
-        wait_until(|| left.inner.producers_waiting() == 1);
-        // Forget wakes from before the block; only the landing may wake now.
-        parker.take_woken();
-        assert_eq!(left.poll().unwrap(), Some(Message::Data(1)));
-        let _tx = join_within(producer).unwrap();
-        assert!(parker.take_woken());
-        assert_eq!(left.poll().unwrap(), Some(Message::Data(2)));
     }
 
     #[test]

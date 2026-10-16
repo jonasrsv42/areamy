@@ -113,7 +113,7 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: Input {
-                    edge: Receiver::new(waker),
+                    edge: Receiver::new(waker, None),
                     slot,
                 },
                 right: node.input.right,
@@ -184,7 +184,7 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: Input {
-                    edge: Receiver::new(waker),
+                    edge: Receiver::new(waker, None),
                     slot,
                 },
                 right: node.input.right,
@@ -255,7 +255,7 @@ where
             factory: node.factory,
             input: BuilderInput {
                 left: Input {
-                    edge: Receiver::new(waker),
+                    edge: Receiver::new(waker, None),
                     slot,
                 },
                 right: node.input.right,
@@ -331,7 +331,7 @@ where
             input: BuilderInput {
                 left: node.input.left,
                 right: Input {
-                    edge: Receiver::new(waker),
+                    edge: Receiver::new(waker, None),
                     slot,
                 },
             },
@@ -402,7 +402,7 @@ where
             input: BuilderInput {
                 left: node.input.left,
                 right: Input {
-                    edge: Receiver::new(waker),
+                    edge: Receiver::new(waker, None),
                     slot,
                 },
             },
@@ -473,7 +473,7 @@ where
             input: BuilderInput {
                 left: node.input.left,
                 right: Input {
-                    edge: Receiver::new(waker),
+                    edge: Receiver::new(waker, None),
                     slot,
                 },
             },

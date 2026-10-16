@@ -29,7 +29,7 @@ where
         let waker = slot.value.clone();
         (
             Input {
-                edge: Receiver::new(waker),
+                edge: Receiver::new(waker, None),
                 slot,
             },
             (),

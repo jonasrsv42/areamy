@@ -221,12 +221,12 @@ fn next_message<T: Types>(
 }
 
 /// Get this node's input edge as any sink its edge is: work or poll.
-impl<'params, C, T: Types> Get<C> for Line<'params, T>
+impl<'params, ConnectionType, T: Types> Get<ConnectionType> for Line<'params, T>
 where
-    C: Connection + ?Sized,
-    Receiver<T::In, T::Signal>: Get<C>,
+    ConnectionType: Connection + ?Sized,
+    Receiver<T::In, T::Signal>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input)
     }
 }

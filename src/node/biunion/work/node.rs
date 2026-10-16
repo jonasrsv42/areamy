@@ -1,5 +1,6 @@
 use crate::closed;
 use crate::edge::fanout::Fanout;
+use crate::edge::waking;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
 use crate::graph::{Add, Get, Outputs};
@@ -107,8 +108,8 @@ pub type Parents<'params, ThreadIdType> = Vec<Box<dyn Workable<ThreadId = Thread
 
 /// Input edges grouped by biunion side.
 pub struct Input<T: Types> {
-    pub left: multiedge::Receiver<T::Left, T::Signal>,
-    pub right: multiedge::Receiver<T::Right, T::Signal>,
+    pub left: waking::Receiver<T::Left, T::Signal>,
+    pub right: waking::Receiver<T::Right, T::Signal>,
     parker: Parker,
 }
 
@@ -122,8 +123,8 @@ impl<T: Types> Input<T> {
     pub(super) fn new(left: Option<NonZeroUsize>, right: Option<NonZeroUsize>) -> Self {
         let parker = Parker::new();
         Self {
-            left: multiedge::Receiver::new(parker.waker(), left),
-            right: multiedge::Receiver::new(parker.waker(), right),
+            left: waking::Receiver::new(parker.waker(), left),
+            right: waking::Receiver::new(parker.waker(), right),
             parker,
         }
     }
@@ -286,23 +287,23 @@ where
 }
 
 /// Get a sink for the left input edge.
-impl<'params, C, T: Types> Get<C, biunion::Left> for Biunion<'params, T>
+impl<'params, ConnectionType, T: Types> Get<ConnectionType, biunion::Left> for Biunion<'params, T>
 where
-    C: Connection + ?Sized,
-    multiedge::Receiver<T::Left, T::Signal>: Get<C>,
+    ConnectionType: Connection + ?Sized,
+    waking::Receiver<T::Left, T::Signal>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input.left)
     }
 }
 
 /// Get a sink for the right input edge.
-impl<'params, C, T: Types> Get<C, biunion::Right> for Biunion<'params, T>
+impl<'params, ConnectionType, T: Types> Get<ConnectionType, biunion::Right> for Biunion<'params, T>
 where
-    C: Connection + ?Sized,
-    multiedge::Receiver<T::Right, T::Signal>: Get<C>,
+    ConnectionType: Connection + ?Sized,
+    waking::Receiver<T::Right, T::Signal>: Get<ConnectionType>,
 {
-    fn get(&self) -> Result<Box<C>, Error> {
+    fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input.right)
     }
 }

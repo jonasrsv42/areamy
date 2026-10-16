@@ -62,8 +62,8 @@ impl Biunion<MockBiunion> {
 impl<R: Routine> Biunion<R> {
     /// A node over the routine `routine` builds from the input wakers.
     fn with(routine: impl FnOnce(BiunionInputs) -> R) -> Self {
-        let left = input::sync::Receiver::new(std::task::Waker::noop().clone());
-        let right = input::sync::Receiver::new(std::task::Waker::noop().clone());
+        let left = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
+        let right = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
         let upstream = Inputs {
             left: left.sender(),
             right: right.sender(),

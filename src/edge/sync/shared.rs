@@ -26,11 +26,7 @@ pub enum State {
     Exhausted,
 }
 
-pub(super) struct Inner<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
+pub(super) struct Inner<DataType, SignalType: Origin> {
     pub(super) buffer: VecDeque<Message<DataType, SignalType>>,
     pub(super) closed: bool,
     /// The receiver is parked on `not_empty`; pushes only notify it when set.
@@ -50,22 +46,14 @@ where
     pub(super) refused: Vec<Waker>,
 }
 
-impl<DataType, SignalType> Inner<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
+impl<DataType, SignalType: Origin> Inner<DataType, SignalType> {
     pub(super) fn is_full(&self) -> bool {
         self.bound
             .is_some_and(|bound| self.buffer.len() >= bound.get())
     }
 }
 
-pub(super) struct Shared<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
+pub(super) struct Shared<DataType, SignalType: Origin> {
     pub(super) inner: Mutex<Inner<DataType, SignalType>>,
     /// Wakes the receiver when a message arrives or the edge closes.
     pub(super) not_empty: Condvar,
@@ -78,11 +66,9 @@ where
 ///
 /// Drop paths cannot panic and must still wake a blocked receiver even
 /// if a previous panic poisoned the inner mutex.
-pub(super) fn close_infallible<D, S>(shared: &Shared<D, S>)
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
+pub(super) fn close_infallible<DataType, SignalType: Origin>(
+    shared: &Shared<DataType, SignalType>,
+) {
     let inner = shared
         .inner
         .lock()
@@ -92,11 +78,10 @@ where
 
 /// Every close path ends here, so none forgets a step: mark the edge closed, wake everyone
 /// waiting on it, release the lock.
-pub(super) fn close<D, S>(shared: &Shared<D, S>, mut inner: MutexGuard<'_, Inner<D, S>>)
-where
-    D: Send + Sync,
-    S: Origin + Send + Sync,
-{
+pub(super) fn close<DataType, SignalType: Origin>(
+    shared: &Shared<DataType, SignalType>,
+    mut inner: MutexGuard<'_, Inner<DataType, SignalType>>,
+) {
     // Set before notifying, under the lock: every woken waiter re-checks `closed` after
     // re-locking.
     inner.closed = true;

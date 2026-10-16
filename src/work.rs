@@ -23,6 +23,11 @@
 //!
 //! A "blocked" with no "unblocked" can also be a producer starved by others refilling the edge
 //! first; the logs can't tell the two apart.
+//!
+//! Scheduling can't cycle: [Bidi] moves a parent into its owner. Data can, through a
+//! [crate::Push] back-edge into an upstream input; that isn't detected, so keep such an input
+//! unbounded (above). Between two threads, bound edges in one direction only: bounded both ways,
+//! each can block on the other.
 
 mod bidi;
 pub(crate) mod multiedge;

@@ -39,7 +39,8 @@ type MessageOf<EdgeType> =
 
 /// Pushes each message into every edge: clones for all but the last, which takes the move, so
 /// a single edge never clones. A refusal stops the rotation at that edge; the fan-out keeps the
-/// message, and nothing new can be pushed until the rotation completes.
+/// message, and nothing new can be pushed until the rotation completes. An edge's `Closed` ends
+/// the rotation and is returned: one closed edge closes the node.
 ///
 /// What it can do follows its edges: rotation and [Fanout::retry] need [TryPushable],
 /// [Fanout::resume] (which may block) also [Pushable], [Fanout::close] [Closeable]. Edges that
@@ -234,7 +235,8 @@ where
 {
     /// Continue a suspended rotation. `Full` suspends again: the consumer drained since the
     /// last refusal, so yielding lets it drain more. `Stuck` blocks, logging "blocked" /
-    /// "unblocked" under `node`: nothing drained, so yielding again would spin.
+    /// "unblocked" under `node`: nothing drained, so yielding again would spin. Not a `Blocked`
+    /// result for the caller: scheduling around a full edge is poll's job.
     pub fn resume(&mut self, node: &str) -> Result<Rotation, Error> {
         let Some(suspended) = self.suspended.take() else {
             return Ok(Rotation::Complete);

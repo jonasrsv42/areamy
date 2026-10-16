@@ -4,19 +4,18 @@
 //!
 //! Every read and write polls with a deadline, so a lost wake fails instead of hanging.
 
+use super::{Msg, Signal, data, one, push, read_all, read_n};
 use crate::biunion::{Left, Right};
 use crate::edge::sync::Receiver;
-use crate::error::{Error, ErrorKind};
-use crate::graph::{Closeable, TryPush, TryPushable};
+use crate::error::Error;
+use crate::graph::Closeable;
 use crate::message::Message;
 use crate::poll::future::{Input, biunion, input, line, output};
 use crate::poll::{self, Sync, try_join};
-use crate::signal::Trackable;
 use crate::thread::ThreadBundle;
 use crate::work::Writer;
 use crate::{At, Push};
 use std::future::Future;
-use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,61 +25,12 @@ use std::time::{Duration, Instant};
 
 crate::thread_id!(FutureThread);
 
-type Signal = Trackable<&'static str>;
-type Msg = Message<usize, Signal>;
-
-const TIMEOUT: Duration = Duration::from_secs(5);
+const TIMEOUT: Duration = super::TIMEOUT;
 /// Output marking a segment's end, sent by the routine on Flush.
 const FLUSHED: usize = 999;
 
-fn one() -> NonZeroUsize {
-    NonZeroUsize::MIN
-}
-
-/// Push, retrying while the edge is full.
-fn push(writer: &mut Writer<'_, usize, Signal>, mut message: Msg) {
-    let deadline = Instant::now() + TIMEOUT;
-    loop {
-        match writer.try_push(message).unwrap() {
-            TryPush::Pushed => return,
-            TryPush::Full(back) | TryPush::Stuck(back) => message = back,
-        }
-        assert!(Instant::now() < deadline, "timed out pushing");
-        thread::sleep(Duration::from_millis(1));
-    }
-}
-
-/// The next message, or `None` once the edge is closed and empty.
-fn read(output: &Receiver<usize, Signal>) -> Option<Msg> {
-    let deadline = Instant::now() + TIMEOUT;
-    loop {
-        match output.poll() {
-            Ok(Some(message)) => return Some(message),
-            Ok(None) => {}
-            Err(e) if matches!(e.kind, ErrorKind::Closed) => return None,
-            Err(e) => panic!("read failed: {e:?}"),
-        }
-        assert!(Instant::now() < deadline, "timed out reading");
-        thread::sleep(Duration::from_millis(1));
-    }
-}
-
-fn read_all(output: &Receiver<usize, Signal>) -> Vec<Msg> {
-    std::iter::from_fn(|| read(output)).collect()
-}
-
-fn read_n(output: &Receiver<usize, Signal>, count: usize) -> Vec<Msg> {
-    (0..count)
-        .map(|_| read(output).expect("closed before all arrived"))
-        .collect()
-}
-
-fn data(values: impl IntoIterator<Item = usize>) -> Vec<Msg> {
-    values.into_iter().map(Message::Data).collect()
-}
-
 /// Echoes every value; returns at Flush.
-fn echo(
+pub(super) fn echo(
     input: input::Receiver<usize>,
     output: output::Sender<usize>,
 ) -> Pin<Box<dyn Future<Output = Result<(), Error>>>> {

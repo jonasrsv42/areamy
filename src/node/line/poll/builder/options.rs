@@ -18,6 +18,8 @@ pub(crate) struct Options {
 }
 
 /// Options for a poll line, from `thread.builder().line()`; [LineBuilder::build] makes the node.
+/// Set before the node exists: its input mints every producer's sender (`.input::<Sync>()` at
+/// once), so a bound on the input covers them all.
 #[must_use = "build the line with `.build(factory)`"]
 pub struct LineBuilder<'thread, 'params, ThreadIdType: ThreadId> {
     thread: &'thread mut Thread<'params, ThreadIdType>,

@@ -67,7 +67,7 @@ pub use at::{At, Select};
 pub use box_as::BoxAs;
 pub use closeable::Closeable;
 pub use get::Get;
-pub use inlet::{Closed, Inlet, Receivable};
+pub use inlet::{Inlet, Receivable};
 pub use outlet::{Outlet, Pushable, TryPush, TryPushable};
 pub use outputs::Outputs;
 pub use schedule::Schedule;

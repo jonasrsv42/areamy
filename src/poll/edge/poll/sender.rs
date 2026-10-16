@@ -11,6 +11,8 @@ use crate::{closed, fatal};
 use std::rc::Rc;
 
 /// Producer handle. `!Send`, `!Clone`: the edge's only producer. Dropping it closes the edge.
+/// Don't share one (e.g. through `Rc<RefCell<_>>`) once bounded: the edge has one refusal flag
+/// and one waker, so a second producer loses wakes.
 ///
 /// [`Schedule`]: after a [`TryPush::Full`], the scheduled waker is woken at the next pop or when
 /// the receiver closes; a [`TryPush::Stuck`] is already owed that wake.

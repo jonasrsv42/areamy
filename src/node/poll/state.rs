@@ -7,6 +7,7 @@ pub(crate) enum NodeState<SignalType> {
     /// The routine finished its flush; Output drains what is left, then forwards the Flush.
     FlushReady(SignalType),
     /// Input read a Marker; Drive gives the routine one poll, then Output drains and forwards it.
+    /// The routine never sees the Marker, so only a Flush can overshoot its bound.
     MarkerReady(SignalType),
     /// A Flush or Marker held in Output's fan-out, refused by an edge. Input and Drive wait; its
     /// delivery returns the node to Running and wakes the inputs and Work.

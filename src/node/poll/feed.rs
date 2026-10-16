@@ -2,7 +2,7 @@ use super::NodeState;
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
 use crate::graph::marker::Multiplicity;
-use crate::graph::{Closed, Inlet, Receivable};
+use crate::graph::{Inlet, Receivable};
 use crate::message::Message;
 use crate::node::routine::{Accept, Flush, TrySend};
 use crate::poll::Phase;
@@ -24,7 +24,7 @@ pub(crate) struct Feed<'a, InletType: Inlet, RoutineType> {
 
 impl<InletType, RoutineType> Feed<'_, InletType, RoutineType>
 where
-    InletType: Receivable + Closed,
+    InletType: Receivable,
     RoutineType: Flush,
 {
     /// Feed the routine as side `M`, held message first. Each stop has a waker: empty edge →

@@ -41,7 +41,8 @@ impl<T> Sender<T> {
 
     /// Ends a segment: swaps in a fresh queue and returns its receiver, for the next future.
     /// Errors if the future didn't fully drain or didn't observe the Flush — both are routine
-    /// bugs.
+    /// bugs. Fresh, not reopened: a receiver kept from the old segment stays closed and never
+    /// sees the next one's data.
     pub fn renew(&mut self) -> Result<Receiver<T>, Error> {
         {
             let inner = self.0.borrow()?;

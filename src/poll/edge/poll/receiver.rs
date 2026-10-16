@@ -3,7 +3,7 @@
 use super::Shared;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closed, Inlet, Receivable};
+use crate::graph::{Inlet, Receivable};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
@@ -25,7 +25,8 @@ impl<DataType, SignalType: Origin> Receiver<DataType, SignalType> {
     }
 
     /// Mark the edge closed and wake a producer refused since the last pop: its retry finds the
-    /// edge closed. Idempotent.
+    /// edge closed. Idempotent. A producer not refused since then learns of it only at its next
+    /// push.
     pub fn close(&self) {
         self.shared.closed.set(true);
         if self.shared.refused.take() {
@@ -68,9 +69,3 @@ impl<DataType, SignalType: Origin> Receivable for Receiver<DataType, SignalType>
     }
 }
 
-/// Closed by either end; data may still be buffered.
-impl<DataType, SignalType: Origin> Closed for Receiver<DataType, SignalType> {
-    fn closed(&self) -> Result<bool, Error> {
-        Ok(self.shared.closed.get())
-    }
-}

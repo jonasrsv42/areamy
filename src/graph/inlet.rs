@@ -1,11 +1,9 @@
 use crate::graph::marker::Connection;
 use crate::signal::Origin;
 
-mod closed;
 mod default;
 mod receivable;
 
-pub use closed::Closed;
 pub use receivable::Receivable;
 
 /// An [`Inlet`] is a data [Connection] a node receives from, the counterpart of

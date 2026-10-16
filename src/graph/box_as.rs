@@ -3,7 +3,8 @@ use crate::graph::marker::Connection;
 /// [`BoxAs`] lifts a concrete type into dynamic dispatch: it boxes `Self` as the `dyn` connection
 /// `ConnectionType` (unsizing to a generic target, which stable Rust can't name). Each `dyn` kind
 /// implements it once, as a blanket over everything that is that kind, so one generic
-/// [crate::graph::Get] per child serves every kind its edge is.
+/// [crate::graph::Get] per child serves every kind its edge is. Every target is `+ Send + Sync`:
+/// a same-thread poll edge never lifts to a dyn sink.
 ///
 /// Only `dyn` kinds with a blanket are targets; anything else doesn't compile:
 ///

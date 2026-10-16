@@ -4,7 +4,8 @@ use crate::message::Message;
 
 mod default;
 
-/// A [`TryPushable`] pushes without ever blocking.
+/// A [`TryPushable`] pushes without ever blocking. No default body: implementing it agrees to the
+/// [TryPush::Full] / [TryPush::Stuck] contract.
 pub trait TryPushable: Outlet {
     /// Pushes without ever blocking; a full sink hands the message back. [TryPush::Pushed]
     /// means the message was consumed (delivered, or intentionally dropped by a wrapper such as
@@ -31,6 +32,8 @@ pub enum TryPush<MessageType> {
     Full(MessageType),
     /// The sink is full and nothing drained since this producer was last refused; the message
     /// is handed back. Retrying without waiting would spin.
+    ///
+    /// With `Full`, this alone decides yield vs block: no edge needs to know who drains it.
     Stuck(MessageType),
 }
 

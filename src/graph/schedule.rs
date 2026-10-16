@@ -6,6 +6,10 @@ mod default;
 /// A [`Schedule`] connection takes a waker to wake at some future point. When is up to the
 /// implementation and the [Multiplicity] marker; each implementation states it.
 ///
+/// Bound once, not passed per refusal: there is no try-then-register race, and a wake only means
+/// "retry". A concrete [wake::Waker]: not generic over the waker (a node behind a dyn sink
+/// can't pick one), not a poll `Context` (no timers in `graph`).
+///
 /// [Schedule] is generic over [Multiplicity] to allow one [Connection] to schedule several
 /// semantically different things. Per default all implementations are [Unary] unless otherwise
 /// stated to avoid specifying [Multiplicity] where not necessary.

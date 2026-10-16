@@ -3,6 +3,10 @@
 //!
 //! Optionally bounded. A refused [Sender::try_send] owes the node's Input one wake, paid by the
 //! future's next pop. A send wakes a parked [Receiver::recv] only.
+//!
+//! Not a [poll::edge](crate::poll::edge): that carries `Message`, closes for good, has one
+//! producer and binds a `wake::Waker`; this carries [Input], renews per segment, and wakes the
+//! std wakers futures park with.
 
 mod receiver;
 mod sender;

@@ -4,7 +4,7 @@ use super::sender::Sender;
 use super::shared::{Freed, Inner, Shared, State, close, close_infallible, wake_all};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{BoxAs, Closed, Get, Inlet};
+use crate::graph::{BoxAs, Get, Inlet};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
@@ -52,13 +52,15 @@ where
     /// Blocking reads on a receiver with no senders return `Closed`
     /// at once, since nothing could ever wake them. Mint senders
     /// before reading.
+    ///
+    /// Unbounded: a bound needs the topology rule in [crate::work], so it is opt-in per edge.
     pub fn new() -> Self {
         Self::with_bound(None)
     }
 
     /// Like [`Receiver::new`], but the edge holds at most `bound` messages, signals included.
     /// When full, [`Sender::push_back`] blocks and [`Sender::try_push_back`] hands the message
-    /// back.
+    /// back. Exact, on one thread too: overshooting would grow without bound, silently.
     pub fn bounded(bound: NonZeroUsize) -> Self {
         Self::with_bound(Some(bound))
     }
@@ -188,7 +190,9 @@ where
     /// everything wakes all) and wake every refused waker.
     ///
     /// Wakers are all woken, threads are not: a blocked `push_back` is sure to retry, a waker
-    /// only asks, so a slot handed to one could strand.
+    /// only asks, so a slot handed to one could strand. Not wake-one plus wake-all once empty: a
+    /// consumer that keeps a backlog never pops it empty. No low watermark either: backpressure
+    /// is rare, so a wake per pop beats batching.
     fn drained(&self, mut inner: MutexGuard<'_, Inner<DataType, SignalType>>, freed: Freed) {
         inner.progress = inner.progress.wrapping_add(1);
         // Read under the lock: producers count themselves in under the same lock before waiting,
@@ -271,17 +275,6 @@ where
 {
     type DataType = DataType;
     type SignalType = SignalType;
-}
-
-/// Closed by either end or the last sender's drop; data may still be buffered.
-impl<DataType, SignalType> Closed for Receiver<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
-    fn closed(&self) -> Result<bool, Error> {
-        Ok(self.shared.inner.lock().map_err(|e| fatal!(e))?.closed)
-    }
 }
 
 // Receiver acts as a connection point in the graph: `Get::get(&receiver)`

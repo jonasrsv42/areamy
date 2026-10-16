@@ -13,6 +13,11 @@ use std::thread;
 
 type Signal = Trackable<&'static str>;
 
+/// A pop on an empty edge takes nothing and reports whether it is closed.
+fn closed_and_empty(rx: &Receiver<usize, Signal>) -> bool {
+    matches!(rx.inner.poll(), Err(e) if matches!(e.kind, ErrorKind::Closed))
+}
+
 fn _assert_sender_send_sync() {
     fn require_send_sync<T: Send + Sync>() {}
     require_send_sync::<Sender<usize, Signal>>();
@@ -55,7 +60,8 @@ impl Wake for Probe {
 
     fn wake_by_ref(self: &Arc<Self>) {
         if let Some(rx) = self.rx.lock().unwrap().as_ref() {
-            let seen = (rx.inner.len().unwrap(), rx.inner.closed().unwrap());
+            let len = rx.inner.len().unwrap();
+            let seen = (len, len == 0 && closed_and_empty(rx));
             self.seen.lock().unwrap().push(seen);
         }
     }
@@ -149,10 +155,10 @@ fn every_drop_wakes_and_only_the_last_closes() {
     let second = rx.sender();
     drop(first);
     assert_eq!(wakes(&counter), 1);
-    assert!(!Closed::closed(&rx).unwrap());
+    assert!(!closed_and_empty(&rx));
     drop(second);
     assert_eq!(wakes(&counter), 2);
-    assert!(Closed::closed(&rx).unwrap());
+    assert!(closed_and_empty(&rx));
 }
 
 /// A scheduled sender on `rx` (bound 1), refused once: nothing woken yet.
@@ -226,13 +232,11 @@ fn try_recv_drains_then_reports_closed() {
     let (mut rx, _counter) = counted(None);
     // Unconnected: open and empty, not closed.
     assert_eq!(rx.try_recv().unwrap(), None);
-    assert!(!Closed::closed(&rx).unwrap());
     let tx = rx.sender();
     tx.push_back(Message::Data(1)).unwrap();
     tx.push_back(Message::Flush(Trackable::new("f"))).unwrap();
     drop(tx);
-    // Closed before the buffer drains, and asking takes nothing out.
-    assert!(Closed::closed(&rx).unwrap());
+    // Closed, but what is buffered still drains first.
     assert_eq!(rx.try_recv().unwrap(), Some(Message::Data(1)));
     assert_eq!(
         rx.try_recv().unwrap(),
@@ -254,9 +258,9 @@ fn get_mints_a_work_sink_and_a_poll_sink() {
     assert_eq!(rx.try_recv().unwrap(), Some(Message::Data(2)));
     // Each got sink is a producer: the edge closes after the last.
     drop(work);
-    assert!(!Closed::closed(&rx).unwrap());
+    assert!(!closed_and_empty(&rx));
     drop(poll);
-    assert!(Closed::closed(&rx).unwrap());
+    assert!(closed_and_empty(&rx));
 }
 
 /// A consumer that sleeps on every empty pop is always woken: a push racing the empty pop wakes

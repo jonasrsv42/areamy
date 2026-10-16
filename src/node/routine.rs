@@ -28,11 +28,15 @@ pub trait Send<Message, MultiplicityType: Multiplicity = Unary> {
 /// wake its sender once it has room; the sender retries the same message.
 ///
 /// [crate::error::ErrorKind::Closed] is fatal; routines handle close, never propagate it.
+///
+/// One call, not ask-then-send: no "send only after ready" contract to break, and no waker
+/// argument, since the routine holds its Input wakers from construction.
 pub trait TrySend<Message, MultiplicityType: Multiplicity = Unary> {
     fn try_send(&mut self, message: Message) -> Result<Accept<Message>, Error>;
 }
 
-/// Outcome of [TrySend::try_send].
+/// Outcome of [TrySend::try_send]. No `Stuck` (unlike [crate::graph::TryPush]): every `Full`
+/// owes a wake, so the sender never retries blind.
 #[must_use = "a refused message must be kept and retried or it is lost"]
 #[derive(Debug, PartialEq)]
 pub enum Accept<Message> {

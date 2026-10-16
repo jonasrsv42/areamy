@@ -21,7 +21,7 @@ pub(crate) struct Options {
 }
 
 /// Options for a poll biunion, from `thread.builder().biunion()`; [BiunionBuilder::build] makes
-/// the node.
+/// the node. Set before the node exists: each input mints its producers' senders at once.
 #[must_use = "build the biunion with `.build(factory)`"]
 pub struct BiunionBuilder<'thread, 'params, ThreadIdType: ThreadId> {
     thread: &'thread mut Thread<'params, ThreadIdType>,

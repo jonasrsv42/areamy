@@ -28,7 +28,7 @@
 
 use super::phases::Phases;
 use crate::edge::fanout::Fanout;
-use crate::graph::{Closed, Receivable, Schedule};
+use crate::graph::{Receivable, Schedule};
 use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::poll::NodeState;
@@ -61,8 +61,8 @@ pub trait Types {
     type Signal: Origin + Clone;
     type ThreadId: ThreadId;
     type Routine: BiunionRoutine<Self::Left, Self::Right, Self::Out>;
-    type LeftInlet: Receivable<DataType = Self::Left, SignalType = Self::Signal> + Closed;
-    type RightInlet: Receivable<DataType = Self::Right, SignalType = Self::Signal> + Closed;
+    type LeftInlet: Receivable<DataType = Self::Left, SignalType = Self::Signal>;
+    type RightInlet: Receivable<DataType = Self::Right, SignalType = Self::Signal>;
     /// One output edge; the node holds a [Fanout] of them.
     type Outlet: poll::Sink<DataType = Self::Out, SignalType = Self::Signal>;
 }
@@ -121,8 +121,8 @@ where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInletType: Receivable<DataType = Left, SignalType = SignalType> + Closed,
-    RightInletType: Receivable<DataType = Right, SignalType = SignalType> + Closed,
+    LeftInletType: Receivable<DataType = Left, SignalType = SignalType>,
+    RightInletType: Receivable<DataType = Right, SignalType = SignalType>,
     OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
     type Left = Left;
@@ -175,12 +175,13 @@ where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
-    LeftInletType: Receivable<DataType = Left, SignalType = SignalType> + Closed,
-    RightInletType: Receivable<DataType = Right, SignalType = SignalType> + Closed,
+    LeftInletType: Receivable<DataType = Left, SignalType = SignalType>,
+    RightInletType: Receivable<DataType = Right, SignalType = SignalType>,
     OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
     /// Create all four phase pollables sharing state. Binds every output edge to `output_wake`
-    /// before anything is pushed, so no refusal goes unwoken.
+    /// before anything is pushed, so no refusal goes unwoken. Here, not at `Push::connect`: the
+    /// node's wakers don't exist yet then.
     pub fn phases(
         input: Inputs<Phase<LeftInletType>, Phase<RightInletType>>,
         work: Phase<RoutineType>,

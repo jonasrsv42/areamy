@@ -4,8 +4,7 @@ use crate::edge::sync;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{
-    BoxAs, Closeable, Closed, Get, Inlet, Outlet, Pushable, Receivable, Schedule, TryPush,
-    TryPushable,
+    BoxAs, Closeable, Get, Inlet, Outlet, Pushable, Receivable, Schedule, TryPush, TryPushable,
 };
 use crate::message::Message;
 use crate::signal::Origin;
@@ -189,16 +188,6 @@ where
 {
     fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
         self.inner.poll()
-    }
-}
-
-impl<DataType, SignalType> Closed for Receiver<DataType, SignalType>
-where
-    DataType: Send + Sync,
-    SignalType: Origin + Send + Sync,
-{
-    fn closed(&self) -> Result<bool, Error> {
-        Closed::closed(&self.inner)
     }
 }
 

@@ -19,6 +19,7 @@ pub struct Reader<
     ThreadIdType: ThreadId,
 {
     workable: Box<dyn Workable<ThreadId = ThreadIdType> + 'params>,
+    /// Unbounded: read on the producer's own thread, and one `work()` may push past any bound.
     buffer: Receiver<DataType, SignalType>,
 }
 

@@ -8,7 +8,8 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-/// Sends into the queue. Held by the future.
+/// Sends into the queue. Held by the future. No `push`: an unbounded push beside the bound would
+/// defeat it.
 pub struct Sender<T>(pub(super) Rc<Shared<T>>);
 
 impl<T> Clone for Sender<T> {

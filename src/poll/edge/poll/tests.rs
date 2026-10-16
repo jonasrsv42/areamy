@@ -1,7 +1,7 @@
 use super::*;
 use crate::Trackable;
 use crate::error::{Error, ErrorKind};
-use crate::graph::{Closeable, Closed, Receivable, Schedule, TryPush, TryPushable};
+use crate::graph::{Closeable, Receivable, Schedule, TryPush, TryPushable};
 use crate::wake::mock::{counting_local_waker, counting_waker, noop_local_waker};
 use crate::wake::{LocalWake, Waker};
 use std::cell::Cell;
@@ -233,8 +233,7 @@ fn sender_drop_closes_and_wakes_the_consumer() {
     push(&mut tx, 1);
     drop(tx);
     assert_eq!(wakes.get(), 2);
-    // Closed before the buffer drains, and asking takes nothing out.
-    assert!(rx.closed().unwrap());
+    // Buffered data still drains before the close.
     assert_eq!(pop(&mut rx), Some(1));
     assert!(is_closed(rx.try_recv()));
 }

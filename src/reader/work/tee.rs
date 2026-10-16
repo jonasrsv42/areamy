@@ -12,6 +12,7 @@ where
     DataType: Send + Sync,
     SignalType: Origin + Send + Sync,
 {
+    /// Unbounded: read on the producer's own thread, and one `work()` may push past any bound.
     buffer: Receiver<DataType, SignalType>,
 }
 

@@ -43,7 +43,7 @@
 //! If strict ordering is required with async routines, use Flush instead.
 
 use crate::edge::fanout::Fanout;
-use crate::graph::{Closed, Receivable, Schedule};
+use crate::graph::{Receivable, Schedule};
 use crate::node::line::poll::routine::LineRoutine;
 use crate::node::poll::NodeState;
 use crate::poll::{self, Budget, Phase};
@@ -74,7 +74,7 @@ pub trait Types {
     type Signal: Origin + Clone;
     type ThreadId: ThreadId;
     type Routine: LineRoutine<Self::In, Self::Out>;
-    type Inlet: Receivable<DataType = Self::In, SignalType = Self::Signal> + Closed;
+    type Inlet: Receivable<DataType = Self::In, SignalType = Self::Signal>;
     /// One output edge; the node holds a [Fanout] of them.
     type Outlet: poll::Sink<DataType = Self::Out, SignalType = Self::Signal>;
 }
@@ -101,7 +101,7 @@ where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
-    InletType: Receivable<DataType = In, SignalType = SignalType> + Closed,
+    InletType: Receivable<DataType = In, SignalType = SignalType>,
     OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
     type In = In;
@@ -134,11 +134,12 @@ where
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
-    InletType: Receivable<DataType = In, SignalType = SignalType> + Closed,
+    InletType: Receivable<DataType = In, SignalType = SignalType>,
     OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
     /// Create Input, Work, and Output phase pollables sharing state. Binds every output edge to
-    /// `output_wake` before anything is pushed, so no refusal goes unwoken.
+    /// `output_wake` before anything is pushed, so no refusal goes unwoken. Here, not at
+    /// `Push::connect`: the node's wakers don't exist yet then.
     pub fn phases(
         input: Phase<InletType>,
         work: Phase<RoutineType>,

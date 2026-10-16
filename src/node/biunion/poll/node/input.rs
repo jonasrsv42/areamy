@@ -1,7 +1,7 @@
 use super::{NodeState, Shared, SharedState, Types};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closed, Receivable};
+use crate::graph::Receivable;
 use crate::node::biunion;
 use crate::node::poll::Feed;
 use crate::poll::Context;
@@ -10,7 +10,7 @@ use crate::poll::Pollable;
 /// A biunion input side: the data and inlet it carries.
 pub trait InputSide<T: Types>: biunion::Side {
     type Data;
-    type Inlet: Receivable<DataType = Self::Data, SignalType = T::Signal> + Closed;
+    type Inlet: Receivable<DataType = Self::Data, SignalType = T::Signal>;
 }
 
 /// How a side drains into the routine.

@@ -47,7 +47,9 @@
 //! The node's Output phase calls [routine::Next] to drain output. Output
 //! is NOT polled automatically — the routine MUST wake the Output phase
 //! when it produces data, through its [LocalWaker](crate::wake::LocalWaker), as the
-//! [output queue](crate::poll::future::output) does.
+//! [output queue](crate::poll::future::output) does. `next` returns data, not readiness (that
+//! would be a second protocol), and the node doesn't wake Work per pull (spurious polls): a
+//! routine bounding its output wakes whatever waits on the room `next` freed.
 //!
 //! ## [routine::Poll] contract
 //!

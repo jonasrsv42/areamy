@@ -63,6 +63,8 @@ use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
 
+pub mod once;
+
 /// Boxed future returned by a [`FutureRoutine`] factory closure. The
 /// `'params` lifetime bounds non-`'static` captures (e.g. `&Model`) the
 /// async body holds — see [`FutureRoutine`] for the cascade rationale.

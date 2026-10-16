@@ -39,24 +39,28 @@ impl<T> Sender<T> {
         Ok(())
     }
 
-    /// Ends a segment: swaps in a fresh queue and returns its receiver, for the next future.
-    /// Errors if the future didn't fully drain or didn't observe the Flush — both are routine
-    /// bugs. Fresh, not reopened: a receiver kept from the old segment stays closed and never
-    /// sees the next one's data.
-    pub fn renew(&mut self) -> Result<Receiver<T>, Error> {
-        {
-            let inner = self.0.borrow()?;
-            if !inner.buffer.is_empty() {
-                return Err(fatal!(
-                    "input queue still has items on renew — future returned without draining input"
-                ));
-            }
-            if !inner.closed {
-                return Err(fatal!(
-                    "input queue not closed on renew — future returned without receiving Flush"
-                ));
-            }
+    /// Checks a segment ended cleanly: errors if the future didn't fully drain or didn't observe
+    /// the Flush — both are routine bugs.
+    pub fn ended(&self) -> Result<(), Error> {
+        let inner = self.0.borrow()?;
+        if !inner.buffer.is_empty() {
+            return Err(fatal!(
+                "input queue still has items at segment end — future returned without draining input"
+            ));
         }
+        if !inner.closed {
+            return Err(fatal!(
+                "input queue not closed at segment end — future returned without receiving Flush"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Ends a segment ([Self::ended]), then swaps in a fresh queue and returns its receiver, for
+    /// the next future. Fresh, not reopened: a receiver kept from the old segment stays closed
+    /// and never sees the next one's data.
+    pub fn renew(&mut self) -> Result<Receiver<T>, Error> {
+        self.ended()?;
         let shared = &self.0;
         self.0 = Rc::new(Shared::new(
             shared.input.clone(),

@@ -115,8 +115,12 @@ fn poll_local_edge() -> Result<(), Error> {
 /// The future input queue closes itself on Flush; renew opens the next segment's.
 #[test]
 fn future_input_queue() -> Result<(), Error> {
-    let (mut sender, receiver) =
-        future::input::channel(mock::noop_local_waker(), noop_timer(), None);
+    let (mut sender, receiver) = future::input::channel(
+        mock::noop_local_waker(),
+        mock::noop_waker(),
+        noop_timer(),
+        None,
+    );
     let waker = std::task::Waker::noop();
     let mut cx = core::task::Context::from_waker(waker);
     assert_eq!(sender.try_send(1)?, Accept::Accepted);

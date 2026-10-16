@@ -4,7 +4,7 @@
 //! - **Input** (one per [InputSide]: left, right): drain its edge → TrySend to the routine as
 //!   that side; a refused message is held until the routine wakes that side, and no signal is
 //!   read past it
-//! - **Work**: poll routine async work (woken by InputQueue/IO)
+//! - **Work**: poll routine async work (woken by the routine's inputs or IO)
 //! - **Output**: drain Next → try_push downstream (at most BUDGET per poll), forward
 //!   flush/close/marker signals. A refusal parks it, the message held, until the edge wakes it.
 //!

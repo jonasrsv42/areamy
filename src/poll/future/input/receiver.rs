@@ -61,7 +61,7 @@ impl<T> Receiver<T> {
                 return Poll::Ready(Err(closed!()));
             }
             let Some(item) = inner.buffer.pop_front() else {
-                inner.waiters.park(cx.waker());
+                inner.waiters.park(cx.waker(), &self.0.home);
                 return Poll::Pending;
             };
             if matches!(item, Input::Flush) {

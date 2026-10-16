@@ -12,7 +12,7 @@
 //!
 //! The factory receives a [LocalWaker](crate::wake::LocalWaker)
 //! for the Output phase. Routines MUST use this to wake Output when they
-//! produce data (e.g. via [OutputProducer](crate::poll::future::queue::OutputProducer)).
+//! produce data (as the [output queue](crate::poll::future::output) does).
 //!
 //! ## [routine::TrySend] contract
 //!
@@ -37,15 +37,14 @@
 //! do not need to wake [routine::Poll].
 //!
 //! [FutureRoutine](crate::node::line::poll::future::FutureRoutine) handles this via its
-//! waker-aware [InputQueue](crate::poll::future::queue::InputQueue) —
-//! push wakes Poll automatically.
+//! [input queue](crate::poll::future::input): a send wakes a parked `recv`.
 //!
 //! ## [routine::Next] contract
 //!
 //! The node's Output phase calls [routine::Next] to drain output. Output
 //! is NOT polled automatically — the routine MUST wake the Output phase
-//! when it produces data. Use [OutputProducer::push](crate::poll::future::queue::OutputProducer::push)
-//! which wakes Output via [LocalWaker](crate::wake::LocalWaker).
+//! when it produces data, through its [LocalWaker](crate::wake::LocalWaker), as the
+//! [output queue](crate::poll::future::output) does.
 //!
 //! ## [routine::Poll] contract
 //!
@@ -70,9 +69,9 @@
 //!
 //! ## TL;DR
 //!
-//! - Output data? Wake Output via [OutputProducer](crate::poll::future::queue::OutputProducer) or the factory's [LocalWaker](crate::wake::LocalWaker). Output is NOT polled automatically.
+//! - Output data? Wake Output via the factory's [LocalWaker](crate::wake::LocalWaker). Output is NOT polled automatically.
 //! - Full? Return [routine::Accept::Full] and wake Input once there is room.
-//! - Need async work after [routine::TrySend]? Wake Work (e.g. via [InputQueue](crate::poll::future::queue::InputQueue) push).
+//! - Need async work after [routine::TrySend]? Wake Work (e.g. via the [input queue](crate::poll::future::input)).
 //! - After [routine::Flush], return [core::task::Poll::Ready] from [routine::Poll] (immediately or eventually). Deadlock otherwise.
 //! - Never return [core::task::Poll::Ready] outside flush. Fatal error.
 //! - Never return [crate::error::ErrorKind::Closed] from [routine::Poll]. Fatal error — the routine does not manage its own lifecycle.
@@ -98,7 +97,7 @@ pub mod tests {
     use crate::poll::context::mock::noop_context;
     use crate::poll::timer::mock::noop_timer;
     use crate::wake::LocalWaker;
-    use crate::wake::mock::noop_local_waker;
+    use crate::wake::mock::{noop_local_waker, noop_waker};
     use crate::{Accept, Next, TrySend};
     use std::collections::VecDeque;
 
@@ -162,7 +161,7 @@ pub mod tests {
     pub fn noop_line_wakers() -> crate::poll::LineWakers {
         crate::poll::LineWakers {
             input: noop_local_waker(),
-            work: noop_local_waker(),
+            work: noop_waker(),
             output: noop_local_waker(),
             timer: noop_timer(),
         }

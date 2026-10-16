@@ -2,7 +2,9 @@ use super::{Input, Receiver, Sender, channel};
 use crate::node::routine::Accept;
 use crate::poll::queue::PollQueue;
 use crate::poll::timer::Timer;
-use crate::wake::mock::{counting_local_waker, counting_waker, local_waker, noop_local_waker};
+use crate::wake::mock::{
+    counting_local_waker, counting_waker, local_waker, noop_local_waker, noop_waker,
+};
 use crate::wake::{self, LocalWaker};
 use core::task::{Context, Poll};
 use std::cell::Cell;
@@ -23,11 +25,15 @@ fn timer() -> Timer {
 }
 
 fn unbounded() -> (Sender<usize>, Receiver<usize>) {
-    channel(noop_local_waker(), timer(), None)
+    homed(noop_waker())
+}
+
+fn homed(home: wake::Waker) -> (Sender<usize>, Receiver<usize>) {
+    channel(noop_local_waker(), home, timer(), None)
 }
 
 fn bounded(input: LocalWaker, bound: usize) -> (Sender<usize>, Receiver<usize>) {
-    channel(input, timer(), NonZeroUsize::new(bound))
+    channel(input, noop_waker(), timer(), NonZeroUsize::new(bound))
 }
 
 fn poll_once<F: Future + Unpin>(fut: &mut F) -> Poll<F::Output> {
@@ -167,13 +173,10 @@ fn a_send_wakes_a_parked_home_recv_locally() {
     let (sync, sync_count) = counting_waker();
     let (local, local_count) = counting_local_waker();
     let cx_waker = sync.sync.clone();
-    let (sender, receiver) = unbounded();
-    sender
-        .home(&wake::Waker {
-            sync: sync.sync,
-            local,
-        })
-        .unwrap();
+    let (sender, receiver) = homed(wake::Waker {
+        sync: sync.sync,
+        local,
+    });
     let mut fut = receiver.recv();
     assert!(poll_with(&mut fut, &cx_waker).is_pending());
     accepted(&sender, 1);
@@ -185,8 +188,7 @@ fn a_send_wakes_a_parked_home_recv_locally() {
 fn a_send_wakes_a_parked_foreign_waker() {
     let (home, home_count) = counting_waker();
     let (foreign, foreign_count) = counting_waker();
-    let (sender, receiver) = unbounded();
-    sender.home(&home).unwrap();
+    let (sender, receiver) = homed(home);
     let mut fut = receiver.recv();
     assert!(poll_with(&mut fut, &foreign.sync).is_pending());
     accepted(&sender, 1);
@@ -238,13 +240,11 @@ fn renew_opens_a_fresh_queue_with_the_same_wakes_and_bound() {
     let (home, home_count) = counting_local_waker();
     let (sync, _) = counting_waker();
     let cx_waker = sync.sync.clone();
-    let (mut sender, receiver) = bounded(input, 1);
-    sender
-        .home(&wake::Waker {
-            sync: sync.sync,
-            local: home,
-        })
-        .unwrap();
+    let home = wake::Waker {
+        sync: sync.sync,
+        local: home,
+    };
+    let (mut sender, receiver) = channel(input, home, timer(), NonZeroUsize::new(1));
     sender.flush().unwrap();
     assert!(matches!(
         poll_once(&mut receiver.recv()),

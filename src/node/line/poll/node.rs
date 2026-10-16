@@ -2,8 +2,8 @@
 //! `Rc<RefCell<SharedState>>`:
 //!
 //! - **Input**: drain edge → TrySend to routine; a refused message is held until the routine
-//!   wakes Input, and no signal is read past it. Routine wakes Output via OutputProducer.
-//! - **Work**: poll routine async work (woken by InputQueue/IO)
+//!   wakes Input, and no signal is read past it. The routine wakes Output when it produces.
+//! - **Work**: poll routine async work (woken by the routine's input or IO)
 //! - **Output**: drain Next → try_push downstream (at most BUDGET per poll), forward
 //!   flush/close/marker signals. A refusal parks it, the message held, until the edge wakes it.
 //!

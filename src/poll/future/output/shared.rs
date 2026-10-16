@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::fatal;
 use crate::poll::future::waiters::Waiters;
 use crate::poll::timer::Timer;
-use crate::wake::LocalWaker;
+use crate::wake::{self, LocalWaker};
 use std::cell::{RefCell, RefMut};
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
@@ -22,12 +22,19 @@ pub(super) struct Shared<T> {
     pub(super) bound: Option<NonZeroUsize>,
     /// The node's Output phase.
     pub(super) output: LocalWaker,
+    /// The node's waker, the one the routine is polled with.
+    pub(super) home: wake::Waker,
     /// Re-polls the routine at a [send_with_timeout](super::Sender::send_with_timeout) deadline.
     pub(super) timer: Timer,
 }
 
 impl<T> Shared<T> {
-    pub(super) fn new(output: LocalWaker, timer: Timer, bound: Option<NonZeroUsize>) -> Self {
+    pub(super) fn new(
+        output: LocalWaker,
+        home: wake::Waker,
+        timer: Timer,
+        bound: Option<NonZeroUsize>,
+    ) -> Self {
         Self {
             inner: RefCell::new(Inner {
                 buffer: VecDeque::new(),
@@ -36,6 +43,7 @@ impl<T> Shared<T> {
             }),
             bound,
             output,
+            home,
             timer,
         }
     }

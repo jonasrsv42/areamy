@@ -9,7 +9,7 @@
 
 use crate::node::biunion::Inputs;
 use crate::poll::timer::Timer;
-use crate::wake::LocalWaker;
+use crate::wake::{self, LocalWaker};
 
 /// Per-input wakers, grouped under [`BiunionWakers::input`] so a
 /// routine accesses them via `wakers.input.left` / `wakers.input.right`.
@@ -19,14 +19,13 @@ pub type BiunionInputs = Inputs<LocalWaker, LocalWaker>;
 ///
 /// - `input.left` / `input.right` wake the two input phases. Wake a side after
 ///   [crate::node::routine::Accept::Full] on it once room frees.
-/// - `work` wakes the work phase (polls the routine).
+/// - `work` wakes the work phase (polls the routine): the very bundle the routine is polled with,
+///   so its `.sync` `will_wake` the `cx` a future sees.
 /// - `output` wakes the output phase to drain.
-/// - `timer` re-polls the work phase at a deadline. Used by
-///   `recv_with_timeout` on either input so the routine re-polls at
-///   the deadline.
+/// - `timer` re-polls the work phase at a deadline.
 pub struct BiunionWakers {
     pub input: BiunionInputs,
-    pub work: LocalWaker,
+    pub work: wake::Waker,
     pub output: LocalWaker,
     pub timer: Timer,
 }

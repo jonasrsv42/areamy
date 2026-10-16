@@ -12,20 +12,19 @@
 //! at every call site that doesn't introduce a borrow.
 
 use crate::poll::timer::Timer;
-use crate::wake::LocalWaker;
+use crate::wake::{self, LocalWaker};
 
 /// Phase wakers the framework hands to a line routine at construction.
 ///
 /// - `input` wakes the input phase (drains the input edge). Wake it after
 ///   [crate::node::routine::Accept::Full] once room frees.
-/// - `work` wakes the work phase (the one that polls the routine).
-/// - `output` wakes the output phase (drains the output queue). Pass
-///   to `OutputQueue::new` so `push` nudges Output to drain.
-/// - `timer` re-polls the work phase at a deadline. Pass to
-///   `InputQueue::new` so `recv_with_timeout` re-polls the routine.
+/// - `work` wakes the work phase (the one that polls the routine): the very bundle the routine
+///   is polled with, so its `.sync` `will_wake` the `cx` a future sees.
+/// - `output` wakes the output phase (drains the routine's output).
+/// - `timer` re-polls the work phase at a deadline.
 pub struct LineWakers {
     pub input: LocalWaker,
-    pub work: LocalWaker,
+    pub work: wake::Waker,
     pub output: LocalWaker,
     pub timer: Timer,
 }

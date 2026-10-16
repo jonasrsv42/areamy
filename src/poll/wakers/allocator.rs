@@ -30,24 +30,26 @@ pub struct Slot<T> {
 
 /// Stage 1: sync waker pre-allocation. `Send`.
 pub struct WakerAllocator {
-    count: usize,
     producer: Producer,
+    /// Each node's sync waker, by id, for its [Context] in stage 2.
+    sync: Vec<core::task::Waker>,
 }
 
 impl WakerAllocator {
     pub fn new(producer: Producer) -> Self {
-        Self { count: 0, producer }
+        Self {
+            producer,
+            sync: Vec::new(),
+        }
     }
 
     /// Pre-allocate a sync waker.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Slot<core::task::Waker> {
-        let id = self.count;
-        self.count += 1;
-        Slot {
-            id,
-            value: sync::Waker::task(id, &self.producer),
-        }
+        let id = self.sync.len();
+        let waker = sync::Waker::task(id, &self.producer);
+        self.sync.push(waker.clone());
+        Slot { id, value: waker }
     }
 
     /// Transition to stage 2. Must be called on the async thread.
@@ -55,10 +57,16 @@ impl WakerAllocator {
         self,
         local_producer: ThreadLocalProducer,
     ) -> ThreadLocalWakerAllocator<ThreadIdType> {
+        let contexts = self
+            .sync
+            .into_iter()
+            .enumerate()
+            .map(|(id, sync)| context(id, sync, &local_producer))
+            .collect();
         ThreadLocalWakerAllocator {
-            count: self.count,
             producer: self.producer,
             local_producer,
+            contexts,
             _thread: PhantomData,
         }
     }
@@ -66,9 +74,11 @@ impl WakerAllocator {
 
 /// Stage 2: allocates sync + local wakers. `!Send`.
 pub struct ThreadLocalWakerAllocator<ThreadIdType: ThreadId> {
-    count: usize,
     producer: Producer,
     local_producer: ThreadLocalProducer,
+    /// Each node's [Context], by id: the one its builder sees is the one the runtime polls with,
+    /// so wakers taken at build `will_wake` the runtime's.
+    contexts: Vec<Context>,
     _thread: PhantomData<ThreadIdType>,
 }
 
@@ -76,12 +86,14 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
     /// Allocate a [Context] (sync + local wakers, timer) for the next node.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Slot<Context> {
-        let id = self.count;
-        self.count += 1;
-        Slot {
+        let id = self.contexts.len();
+        let cx = context(
             id,
-            value: self.make_context(id),
-        }
+            sync::Waker::task(id, &self.producer),
+            &self.local_producer,
+        );
+        self.contexts.push(cx.clone());
+        Slot { id, value: cx }
     }
 
     /// Create a [LocalWaker] for an existing node ID.
@@ -93,13 +105,13 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
     /// Finalize allocation and build the [Runtime].
     ///
     /// Each [GraphNode] is placed at its ID index. Every allocated slot
-    /// must be filled exactly once. Creates contexts and enqueues all nodes
-    /// for initial poll.
+    /// must be filled exactly once. Pairs each with its context and enqueues all
+    /// nodes for initial poll.
     pub fn build<'params>(
         self,
         nodes: Vec<GraphNode<'params, ThreadIdType>>,
     ) -> Result<Runtime<'params, ThreadIdType>, Error> {
-        let count = self.count;
+        let count = self.contexts.len();
         let mut slots: Vec<Option<Box<dyn Pollable<ThreadId = ThreadIdType> + 'params>>> =
             Vec::with_capacity(count);
         slots.resize_with(count, || None);
@@ -119,12 +131,9 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         }
 
         let mut result = Vec::with_capacity(count);
-        for (i, slot) in slots.into_iter().enumerate() {
+        for (i, (slot, cx)) in slots.into_iter().zip(self.contexts).enumerate() {
             match slot {
-                Some(pollable) => {
-                    let cx = self.make_context(i);
-                    result.push(Node { pollable, cx });
-                }
+                Some(pollable) => result.push(Node { pollable, cx }),
                 None => return Err(fatal!("build: slot {} is empty", i)),
             }
         }
@@ -136,14 +145,59 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
 
         Ok(Runtime { nodes: result })
     }
+}
 
-    fn make_context(&self, id: NodeId) -> Context {
-        Context {
-            wake: wake::Waker {
-                sync: sync::Waker::task(id, &self.producer),
-                local: thread_local::Waker::local(id, &self.local_producer),
-            },
-            timer: Timer::new(id, &self.local_producer),
+fn context(id: NodeId, sync: core::task::Waker, local_producer: &ThreadLocalProducer) -> Context {
+    Context {
+        wake: wake::Waker {
+            sync,
+            local: thread_local::Waker::local(id, local_producer),
+        },
+        timer: Timer::new(id, local_producer),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::marker::Connection;
+    use crate::poll::queue::PollQueue;
+
+    crate::thread_id!(AllocatorThread);
+
+    struct Idle;
+
+    impl Connection for Idle {}
+
+    impl Pollable for Idle {
+        type ThreadId = AllocatorThread;
+        fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
+            Ok(core::task::Poll::Pending)
         }
+    }
+
+    fn idle(id: NodeId) -> GraphNode<'static, AllocatorThread> {
+        GraphNode {
+            id,
+            pollable: Box::new(Idle),
+        }
+    }
+
+    #[test]
+    fn the_runtime_polls_with_the_wakers_handed_out() {
+        let queue = PollQueue::new();
+        let mut stage_one = WakerAllocator::new(queue.producer());
+        let early = stage_one.next();
+        let (_consumer, local_producer) = queue.local();
+        let mut stage_two = stage_one.local::<AllocatorThread>(local_producer);
+        let late = stage_two.next();
+
+        let runtime = stage_two
+            .build(vec![idle(early.id), idle(late.id)])
+            .unwrap();
+        assert!(early.value.will_wake(&runtime.nodes[early.id].cx.wake.sync));
+        let cx = &runtime.nodes[late.id].cx;
+        assert!(late.value.wake.sync.will_wake(&cx.wake.sync));
+        assert!(late.value.wake.local.will_wake(&cx.wake.local));
     }
 }

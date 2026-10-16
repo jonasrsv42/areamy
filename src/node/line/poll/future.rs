@@ -2,7 +2,8 @@
 //! [LineRoutine].
 //!
 //! The user's async fn receives an [input::Receiver] and an [output::Sender].
-//! Data arrives as [Input::Data], flush as [Input::Flush].
+//! Data arrives as [Input::Data](crate::poll::future::Input::Data), flush as
+//! [Input::Flush](crate::poll::future::Input::Flush).
 //! The future drives I/O, reads from input, writes to output.
 //!
 //! Created via [LineRoutineFactory]
@@ -91,9 +92,15 @@ where
 {
     /// `bound` caps the input and the output queue each; `None` is unbounded.
     pub fn new(wakers: LineWakers, bound: Option<NonZeroUsize>, factory: F) -> Self {
-        // The timer re-polls the routine at a `recv_with_timeout` / `send_with_timeout` deadline.
-        let (input, receiver) = input::channel(wakers.input, wakers.timer.clone(), bound);
-        let (sender, output) = output::channel(wakers.output, wakers.timer, bound);
+        // `work` is the waker the routine is polled with: the queues' home. The timer re-polls
+        // the routine at a `*_with_timeout` deadline.
+        let (input, receiver) = input::channel(
+            wakers.input,
+            wakers.work.clone(),
+            wakers.timer.clone(),
+            bound,
+        );
+        let (sender, output) = output::channel(wakers.output, wakers.work, wakers.timer, bound);
         Self {
             input,
             receiver,
@@ -185,9 +192,6 @@ where
     F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
 {
     fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
-        // The runtime's Context is the node's for good: the queues recognise it after the first.
-        self.input.home(&cx.wake)?;
-        self.output.home(&cx.wake)?;
         let future = self
             .future
             .get_or_insert_with(|| (self.factory)(self.receiver.clone(), self.sender.clone()));

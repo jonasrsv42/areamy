@@ -38,7 +38,7 @@ pub mod tests {
     use crate::poll::Context;
     use crate::poll::timer::mock::noop_timer;
     use crate::wake::LocalWaker;
-    use crate::wake::mock::noop_local_waker;
+    use crate::wake::mock::{noop_local_waker, noop_waker};
     use std::collections::VecDeque;
 
     /// Mock biunion routine: left input doubled, right input tripled,
@@ -68,7 +68,7 @@ pub mod tests {
                 left: noop_local_waker(),
                 right: noop_local_waker(),
             },
-            work: noop_local_waker(),
+            work: noop_waker(),
             output: noop_local_waker(),
             timer: noop_timer(),
         }

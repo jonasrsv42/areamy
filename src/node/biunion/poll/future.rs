@@ -46,11 +46,21 @@ where
 {
     /// `bound` caps each input queue and the output queue; `None` is unbounded.
     pub fn new(wakers: BiunionWakers, bound: Option<NonZeroUsize>, factory: F) -> Self {
-        // Every queue gets the timer so a `*_with_timeout` deadline re-polls the routine.
-        let (left, left_receiver) = input::channel(wakers.input.left, wakers.timer.clone(), bound);
-        let (right, right_receiver) =
-            input::channel(wakers.input.right, wakers.timer.clone(), bound);
-        let (sender, output) = output::channel(wakers.output, wakers.timer, bound);
+        // `work` is the waker the routine is polled with: the queues' home. Every queue gets the
+        // timer so a `*_with_timeout` deadline re-polls the routine.
+        let (left, left_receiver) = input::channel(
+            wakers.input.left,
+            wakers.work.clone(),
+            wakers.timer.clone(),
+            bound,
+        );
+        let (right, right_receiver) = input::channel(
+            wakers.input.right,
+            wakers.work.clone(),
+            wakers.timer.clone(),
+            bound,
+        );
+        let (sender, output) = output::channel(wakers.output, wakers.work, wakers.timer, bound);
         Self {
             input: Inputs { left, right },
             receiver: Inputs {
@@ -157,10 +167,6 @@ where
         + 'params,
 {
     fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
-        // The runtime's Context is the node's for good: the queues recognise it after the first.
-        self.input.left.home(&cx.wake)?;
-        self.input.right.home(&cx.wake)?;
-        self.output.home(&cx.wake)?;
         let future = self.future.get_or_insert_with(|| {
             (self.factory)(
                 self.receiver.left.clone(),

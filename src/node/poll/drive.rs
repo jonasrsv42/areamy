@@ -8,7 +8,7 @@ use std::mem;
 
 /// Work's borrow of a node's state: polls the routine's async work, completes a flush and wakes
 /// Output on the transitions it must forward. The routine wakes Output itself when it produces
-/// data (via OutputProducer).
+/// data.
 pub(crate) struct Drive<'a, RoutineType, SignalType> {
     pub(crate) routine: &'a mut RoutineType,
     /// Output's waker.
@@ -40,7 +40,7 @@ impl<RoutineType: routine::Poll, SignalType> Drive<'_, RoutineType, SignalType> 
                     ));
                 }
                 // No wake — routine is responsible for waking Output
-                // when it produces data (via OutputProducer).
+                // when it produces data.
                 Ok(core::task::Poll::Pending)
             }
             NodeState::MarkerReady(_) => {

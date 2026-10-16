@@ -9,6 +9,9 @@ use crate::wake;
 ///
 /// - `wake`: wakes the node, from any thread (`wake.sync`) or this one (`wake.local`)
 /// - `timer`: re-polls the node at a deadline
+///
+/// A clone wakes the same node: `will_wake` holds between them.
+#[derive(Clone)]
 pub struct Context {
     pub wake: wake::Waker,
     pub timer: Timer,

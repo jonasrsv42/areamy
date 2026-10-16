@@ -14,17 +14,19 @@ pub use receiver::Receiver;
 pub use sender::Sender;
 
 use crate::poll::timer::Timer;
-use crate::wake::LocalWaker;
+use crate::wake::{self, LocalWaker};
 use shared::Shared;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
-/// A queue holding at most `bound` items (`None`: unbounded); `output` is the node's Output waker.
+/// A queue holding at most `bound` items (`None`: unbounded). `output` is the node's Output
+/// waker, `home` the node's waker the routine is polled with (`LineWakers::work`).
 pub fn channel<T>(
     output: LocalWaker,
+    home: wake::Waker,
     timer: Timer,
     bound: Option<NonZeroUsize>,
 ) -> (Sender<T>, Receiver<T>) {
-    let shared = Rc::new(Shared::new(output, timer, bound));
+    let shared = Rc::new(Shared::new(output, home, timer, bound));
     (Sender(shared.clone()), Receiver(shared))
 }

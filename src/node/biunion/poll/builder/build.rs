@@ -100,7 +100,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -185,7 +185,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -282,7 +282,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -373,7 +373,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -468,7 +468,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -563,7 +563,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -654,7 +654,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -749,7 +749,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -853,7 +853,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -953,7 +953,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -1044,7 +1044,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });
@@ -1150,7 +1150,7 @@ where
                 left: left_waker.clone(),
                 right: right_waker.clone(),
             },
-            work: work.value.wake.local.clone(),
+            work: work.value.wake.clone(),
             timer: work.value.timer.clone(),
             output: output.value.wake.local.clone(),
         });

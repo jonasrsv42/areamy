@@ -64,7 +64,7 @@ impl<T> Sender<T> {
                 .bound
                 .is_some_and(|bound| inner.buffer.len() >= bound.get())
             {
-                inner.waiters.park(cx.waker());
+                inner.waiters.park(cx.waker(), &self.0.home);
                 *item = Some(value);
                 return Poll::Pending;
             }

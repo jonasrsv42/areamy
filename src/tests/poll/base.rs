@@ -35,7 +35,7 @@ struct PollDouble {
 impl PollDouble {
     fn new(wakers: LineWakers) -> Self {
         // The timer would re-poll the routine at a `recv_with_timeout` deadline.
-        let (input, receiver) = input::channel(wakers.input, wakers.timer, None);
+        let (input, receiver) = input::channel(wakers.input, wakers.work, wakers.timer, None);
         Self {
             input,
             receiver,
@@ -781,7 +781,7 @@ struct HalfCloseRoutine {
 
 impl HalfCloseRoutine {
     fn new(wakers: LineWakers, flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
-        let (input, receiver) = input::channel(wakers.input, wakers.timer, None);
+        let (input, receiver) = input::channel(wakers.input, wakers.work, wakers.timer, None);
         Self {
             input,
             receiver,

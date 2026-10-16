@@ -511,7 +511,7 @@ where
     let input_waker = allocator.local_waker(input.slot.id);
     let routine = factory.create(LineWakers {
         input: input_waker.clone(),
-        work: work.value.wake.local.clone(),
+        work: work.value.wake.clone(),
         timer: work.value.timer.clone(),
         output: output_slot.value.wake.local.clone(),
     });
@@ -589,7 +589,7 @@ where
     let output_slot = allocator.next();
     let routine = factory.create(LineWakers {
         input: input.value.wake.local.clone(),
-        work: work.value.wake.local.clone(),
+        work: work.value.wake.clone(),
         timer: work.value.timer.clone(),
         output: output_slot.value.wake.local.clone(),
     });

@@ -1,7 +1,9 @@
 use super::{Receiver, Sender, channel};
 use crate::poll::queue::PollQueue;
 use crate::poll::timer::Timer;
-use crate::wake::mock::{counting_local_waker, counting_waker, local_waker, noop_local_waker};
+use crate::wake::mock::{
+    counting_local_waker, counting_waker, local_waker, noop_local_waker, noop_waker,
+};
 use crate::wake::{self, LocalWaker};
 use core::task::{Context, Poll};
 use std::cell::Cell;
@@ -21,11 +23,15 @@ fn timer() -> Timer {
 }
 
 fn unbounded(output: LocalWaker) -> (Sender<usize>, Receiver<usize>) {
-    channel(output, timer(), None)
+    channel(output, noop_waker(), timer(), None)
 }
 
 fn bounded(output: LocalWaker, bound: usize) -> (Sender<usize>, Receiver<usize>) {
-    channel(output, timer(), NonZeroUsize::new(bound))
+    channel(output, noop_waker(), timer(), NonZeroUsize::new(bound))
+}
+
+fn homed(home: wake::Waker, bound: usize) -> (Sender<usize>, Receiver<usize>) {
+    channel(noop_local_waker(), home, timer(), NonZeroUsize::new(bound))
 }
 
 fn poll_with<F: Future + Unpin>(fut: &mut F, waker: &Waker) -> Poll<F::Output> {
@@ -115,13 +121,13 @@ fn a_pop_wakes_a_waiting_home_send_locally() {
     let (sync, sync_count) = counting_waker();
     let (local, local_count) = counting_local_waker();
     let cx_waker = sync.sync.clone();
-    let (sender, receiver) = bounded(noop_local_waker(), 1);
-    receiver
-        .home(&wake::Waker {
+    let (sender, receiver) = homed(
+        wake::Waker {
             sync: sync.sync,
             local,
-        })
-        .unwrap();
+        },
+        1,
+    );
     sent(&sender, 1);
     let mut fut = sender.send(2);
     assert!(poll_with(&mut fut, &cx_waker).is_pending());
@@ -173,13 +179,13 @@ fn the_send_wake_runs_after_the_borrow() {
     let (local, popped) = popping(&slot);
     let (sync, _) = counting_waker();
     let cx_waker = sync.sync.clone();
-    let (sender, receiver) = bounded(noop_local_waker(), 1);
-    receiver
-        .home(&wake::Waker {
+    let (sender, receiver) = homed(
+        wake::Waker {
             sync: sync.sync,
             local,
-        })
-        .unwrap();
+        },
+        1,
+    );
     sent(&sender, 1);
     let mut fut = sender.send(2);
     assert!(poll_with(&mut fut, &cx_waker).is_pending());

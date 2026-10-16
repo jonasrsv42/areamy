@@ -9,14 +9,14 @@ use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake;
 
-/// Outcome of pushing one message through a [Fanout].
-#[must_use = "a suspended fan-out must be resumed before anything new is pushed"]
+/// Outcome of pushing one message through an output: a [Fanout], or any [Rotate].
+#[must_use = "a suspended output must be resumed before anything new is pushed"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rotation {
     /// Every edge took the message.
     Complete,
-    /// This edge refused; the fan-out holds the message until [Fanout::resume] or
-    /// [Fanout::retry] delivers it.
+    /// This edge refused; the output holds the message until a retry (or [Fanout::resume])
+    /// delivers it.
     Suspended(usize),
 }
 
@@ -82,16 +82,6 @@ impl<EdgeType: Outlet> Default for Fanout<EdgeType> {
     fn default() -> Self {
         Fanout {
             edges: Vec::new(),
-            suspended: None,
-        }
-    }
-}
-
-/// A fan-out of one: the edge always takes the move.
-impl<EdgeType: Outlet> From<EdgeType> for Fanout<EdgeType> {
-    fn from(edge: EdgeType) -> Self {
-        Fanout {
-            edges: vec![edge],
             suspended: None,
         }
     }

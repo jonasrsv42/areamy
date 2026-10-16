@@ -18,8 +18,8 @@ use std::num::NonZeroUsize;
 /// forwards Flush and Marker and wakes the inputs and Work on the return to Running, and closes
 /// downstream on CloseReady. Any error closes the node and wakes the inputs and Work to report it.
 ///
-/// Never blocks: an edge refusing parks the Output with the message held in its fan-out, whose
-/// edges are bound to the Output's waker; their wake retries it. While parked nothing new is
+/// Never blocks: an edge refusing parks the Output with the message held in its [Rotate]
+/// output, whose edges are bound to the Output's waker; their wake retries it. While parked nothing new is
 /// drained, so nothing overtakes the held message. At most `budget` messages leave per poll.
 pub(crate) struct Emit<'a, RoutineType, OutputType: Rotate> {
     pub(crate) routine: &'a mut RoutineType,

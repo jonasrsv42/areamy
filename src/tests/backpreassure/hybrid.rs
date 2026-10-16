@@ -21,19 +21,15 @@ use std::time::{Duration, Instant};
 
 crate::thread_id!(PullStage, PollStage, WorkStage);
 
-/// `count` once it holds still for 50ms: the pipeline has stalled.
-fn settled(count: &AtomicUsize) -> usize {
+/// `count` once it reaches `target` (or the deadline passes) and 50ms more: past the target means
+/// the pipeline didn't stall there. Never panics, so the caller can tear down first.
+fn settled(count: &AtomicUsize, target: usize) -> usize {
     let deadline = Instant::now() + TIMEOUT;
-    let mut last = count.load(Ordering::SeqCst);
-    loop {
-        thread::sleep(Duration::from_millis(50));
-        let now = count.load(Ordering::SeqCst);
-        if now == last {
-            return now;
-        }
-        assert!(Instant::now() < deadline, "never stalled");
-        last = now;
+    while count.load(Ordering::SeqCst) < target && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
     }
+    thread::sleep(Duration::from_millis(50));
+    count.load(Ordering::SeqCst)
 }
 
 #[test]
@@ -94,7 +90,7 @@ fn a_stalled_sink_stops_pull_work_and_poll_stages_back_to_the_writer() {
         });
 
         // Nothing read: every stage fills to its bounds and the writer stops.
-        let filled = settled(&pushed);
+        let filled = settled(&pushed, IN_FLIGHT);
 
         let received = read_n(&sink, COUNT + 1);
         // Close only once all is out: close is fast and drops what's in flight.

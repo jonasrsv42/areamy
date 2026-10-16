@@ -30,6 +30,13 @@ type Inlet = input::sync::Receiver<usize, Signal>;
 type Outlet = edge::sync::Sender<usize, Signal>;
 type Node<R> = node::Node<usize, usize, Signal, DefaultThread, R, Inlet, Fanout<Outlet>>;
 
+/// A fan-out over one edge, so these tests run the `Fanout` output; the biunion's run `Single`.
+fn fanout(edge: Outlet) -> Fanout<Outlet> {
+    let mut fanout = Fanout::new();
+    fanout.add(edge);
+    fanout
+}
+
 /// A line node with the edges into and out of it.
 struct Line<R: LineRoutine<usize, usize>> {
     input: Input<Node<R>>,
@@ -63,7 +70,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
                 target: routine,
                 waker: work_waker,
             },
-            downstream.sender().into(),
+            fanout(downstream.sender()),
             Waker {
                 sync: task::Waker::noop().clone(),
                 local: output_waker,
@@ -287,7 +294,7 @@ impl<R: LineRoutine<usize, usize>> Parked<R> {
 fn parked() -> (Parked, edge::sync::Receiver<usize, Signal>) {
     let downstream = edge::sync::Receiver::bounded(NonZeroUsize::MIN);
     (
-        Parked::draining_into(downstream.sender().into()),
+        Parked::draining_into(fanout(downstream.sender())),
         downstream,
     )
 }
@@ -298,7 +305,7 @@ fn ready_to_emit(
     signal: Option<Message<usize, Signal>>,
 ) -> (Parked, edge::sync::Receiver<usize, Signal>) {
     let downstream = edge::sync::Receiver::new();
-    let mut node = Parked::draining_into(downstream.sender().into());
+    let mut node = Parked::draining_into(fanout(downstream.sender()));
     for value in 0..count {
         node.upstream.push_back(Message::Data(value)).unwrap();
     }
@@ -344,7 +351,7 @@ fn a_node_budget_caps_input_and_output_separately() {
     let budget = Budget::default()
         .input(NonZeroUsize::new(2).unwrap())
         .output(NonZeroUsize::new(5).unwrap());
-    let mut node = Parked::budgeted(|_| mock(), downstream.sender().into(), budget);
+    let mut node = Parked::budgeted(|_| mock(), fanout(downstream.sender()), budget);
     for value in 0..10 {
         node.upstream.push_back(Message::Data(value)).unwrap();
     }
@@ -949,7 +956,7 @@ fn close_before_the_refusal_waits_for_room() {
 #[test]
 fn a_flush_before_a_close_lands_under_backpressure() {
     let downstream = edge::sync::Receiver::bounded(NonZeroUsize::MIN);
-    let mut node = Parked::with(|input| Bounded::new(1, input), downstream.sender().into());
+    let mut node = Parked::with(|input| Bounded::new(1, input), fanout(downstream.sender()));
     for value in 1..=4 {
         node.upstream.push_back(Message::Data(value)).unwrap();
     }
@@ -992,7 +999,7 @@ fn forwarding_holds_input_and_drive() {
             counts = Some((routine.sends.clone(), routine.polls.clone()));
             routine
         },
-        downstream.sender().into(),
+        fanout(downstream.sender()),
     );
     let Some((sends, polls)) = counts else {
         panic!("routine built");

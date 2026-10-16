@@ -7,7 +7,6 @@ pub trait Connection {}
 impl<ConnectionType: Connection + ?Sized> Connection for Arc<Mutex<ConnectionType>> {}
 impl<ConnectionType: Connection + ?Sized> Connection for Arc<ConnectionType> {}
 impl<ConnectionType: Connection + ?Sized> Connection for Box<ConnectionType> {}
-impl<ConnectionType: Connection> Connection for std::rc::Rc<std::cell::RefCell<ConnectionType>> {}
 impl<ConnectionType: Connection> Connection for Vec<ConnectionType> {}
 
 /// [`Multiplicity`] is an identifier of connection of a node.

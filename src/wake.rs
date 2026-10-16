@@ -1,5 +1,5 @@
 //! Wakers: the currency every scheduling paradigm wakes with, as [Message](crate::message::Message)
-//! is the currency of dataflow. Depends on nothing else in the crate.
+//! is the currency of dataflow. Outside its tests, depends on nothing else in the crate.
 //!
 //! [LocalWaker] is a `!Send` waker for same-thread wake.
 //!

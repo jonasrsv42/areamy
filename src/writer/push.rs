@@ -121,15 +121,6 @@ mod tests {
         input: Receiver<usize, Trackable<&'static str>>,
     }
 
-    impl Get<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>> for MockNode {
-        fn get(
-            &self,
-        ) -> Result<Box<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>, Error>
-        {
-            Get::get(&self.input)
-        }
-    }
-
     impl Get<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>
         for MockNode
     {

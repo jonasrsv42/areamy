@@ -3,11 +3,10 @@
 use super::shared::{Inner, Shared, close, close_infallible};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Get, Outlet, Pushable, Schedule, TryPush, TryPushable};
+use crate::graph::{BoxAs, Closeable, Get, Outlet, Pushable, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake;
-use crate::work::Sink;
 use crate::{closed, fatal};
 use core::task::Waker;
 use std::mem;
@@ -237,25 +236,14 @@ where
     }
 }
 
-impl<'params, D, S> Get<dyn Pushable<DataType = D, SignalType = S> + 'params> for Sender<D, S>
+impl<C, D, S> Get<C> for Sender<D, S>
 where
-    D: Send + Sync + 'static,
-    S: Origin + Send + Sync + 'static,
+    C: Connection + ?Sized,
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+    Sender<D, S>: BoxAs<C>,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = D, SignalType = S> + 'params>, Error> {
-        Ok(Box::new(self.clone()))
-    }
-}
-
-impl<'params, D, S> Get<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>
-    for Sender<D, S>
-where
-    D: Send + Sync + 'static,
-    S: Origin + Send + Sync + 'static,
-{
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>, Error> {
-        Ok(Box::new(self.clone()))
+    fn get(&self) -> Result<Box<C>, Error> {
+        Ok(self.clone().box_as())
     }
 }

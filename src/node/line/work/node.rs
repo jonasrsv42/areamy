@@ -10,6 +10,7 @@ use crate::node::line::routine::LineRoutine;
 use crate::node::line::work::builder::LineBuilder;
 use crate::node::routine::{Flush as _, Next as _, Send as _};
 use crate::node::work::Incoming;
+use crate::poll;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::Sink;
@@ -23,7 +24,7 @@ use std::marker::PhantomData;
 /// - The node is [Workable]
 /// - We can [Add] a [Workable] to it.
 /// - We can [Add] [Sink] to it, outbound connections to send data.
-/// - We can [Get] a [Sink] from it. Inbound connection to recieve data.
+/// - We can [Get] a [Sink] or a [poll::Sink] from it. Inbound connection to recieve data.
 ///
 /// It forms the basis if a node that recieves one input stream of data and
 /// produces one output stream of data.
@@ -38,8 +39,9 @@ pub trait LineTrait<'params, In, Out, Signal>:
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
     // We can add edges it should push into.
     + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
-    // We can retrieve its edge for others to push into.
+    // We can retrieve its edge for others to push into, work or poll.
     + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
+    + Get<dyn poll::Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
 where
     Signal: Origin,
 {
@@ -51,7 +53,8 @@ where
     LineType: Workable
         + Add<dyn Workable<ThreadId = <LineType as Workable>::ThreadId> + 'params>
         + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
-        + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,
+        + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
+        + Get<dyn poll::Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,
 {
 }
 
@@ -217,20 +220,13 @@ fn next_message<T: Types>(
     }
 }
 
-/// Get a [Sink] for this node's input edge.
-impl<'params, T: Types>
-    Get<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>
-    for Line<'params, T>
+/// Get this node's input edge as any sink its edge is: work or poll.
+impl<'params, C, T: Types> Get<C> for Line<'params, T>
 where
-    T::In: 'static,
-    T::Signal: 'static,
+    C: Connection + ?Sized,
+    Receiver<T::In, T::Signal>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<
-        Box<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>,
-        Error,
-    > {
+    fn get(&self) -> Result<Box<C>, Error> {
         Get::get(&self.input)
     }
 }

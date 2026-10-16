@@ -10,8 +10,9 @@ mod default;
 /// E.g. for recieving outgoing or ingoing connections.
 ///
 /// [Get] is generic over [Connection] to allow [Get::get] different types, for example
-/// [crate::graph::Pushable]. It is also ?Sized because we make liberal use of
-/// dynamic dispatch, hence a common pattern is to [Get::get] a `dyn Trait`.
+/// [crate::work::Sink] or [crate::poll::Sink]. It is also ?Sized because we make liberal use of
+/// dynamic dispatch, hence a common pattern is to [Get::get] a `dyn Trait`
+/// (see [crate::graph::BoxAs]).
 ///
 /// [Get] is generic over [Multiplicity] to allow [Get::get] multiple inbound
 /// [Connection] for a single node. Per default all implementations are [Unary] unless

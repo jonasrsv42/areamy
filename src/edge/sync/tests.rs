@@ -527,7 +527,7 @@ fn closeable_trait_closes_edge() {
 fn get_dyn_pushable_returns_working_handle() {
     let rx = Receiver::<usize, TestSignal>::new();
     let tx = rx.sender();
-    let mut handle: Box<dyn Pushable<DataType = usize, SignalType = TestSignal>> =
+    let mut handle: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
         Get::get(&tx).unwrap();
     handle.push(Message::Data(3)).unwrap();
     assert_eq!(rx.read_front().unwrap(), Message::Data(3));
@@ -567,7 +567,7 @@ fn get_dyn_closeable_returns_working_handle() {
 fn dropping_boxed_pushable_decrements_count() {
     let rx = Receiver::<usize, TestSignal>::new();
     let tx = rx.sender();
-    let handle: Box<dyn Pushable<DataType = usize, SignalType = TestSignal>> =
+    let handle: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
         Get::get(&tx).unwrap();
     drop(tx);
     assert_eq!(rx.poll().unwrap(), None);
@@ -685,7 +685,7 @@ fn drop_both_ends_immediately() {
 #[test]
 fn get_on_receiver_mints_sender() {
     let rx = Receiver::<usize, TestSignal>::new();
-    let mut pushable: Box<dyn Pushable<DataType = usize, SignalType = TestSignal>> =
+    let mut pushable: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
         Get::get(&rx).unwrap();
     pushable.push(Message::Data(9)).unwrap();
     assert_eq!(rx.read_front().unwrap(), Message::Data(9));

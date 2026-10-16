@@ -15,18 +15,17 @@
 
 use crate::edge::sync::Receiver;
 use crate::error::Error;
+use crate::graph::Get;
 use crate::graph::marker::Connection;
-use crate::graph::{Get, Pushable};
 use crate::message::Message;
 use crate::pull::Pullable;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
 use std::marker::PhantomData;
 
 /// A buffer that serves as the entry point to a [`Pullable`] subgraph.
 ///
-/// [`WriterBuffer`] accepts pushed data via [`Pushable`] and makes it available for pulling
+/// [`WriterBuffer`] accepts pushed data via [`Pushable`](crate::graph::Pushable) and makes it available for pulling
 /// by downstream nodes. This is useful for bridging push-based data sources into pull-based
 /// graph segments.
 ///
@@ -100,38 +99,16 @@ where
 {
 }
 
-/// [Get] the [Pushable] from [WriterBuffer].
-impl<'params, DataType, SignalType, ThreadIdType>
-    Get<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
+impl<C, DataType, SignalType, ThreadIdType> Get<C>
     for WriterBuffer<DataType, SignalType, ThreadIdType>
 where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
+    C: Connection + ?Sized,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
     ThreadIdType: ThreadId,
+    Receiver<DataType, SignalType>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>, Error>
-    {
-        Get::get(&self.input)
-    }
-}
-
-/// [Get] the [Sink] from [WriterBuffer] for closing.
-impl<'params, DataType, SignalType, ThreadIdType>
-    Get<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
-    for WriterBuffer<DataType, SignalType, ThreadIdType>
-where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
-    ThreadIdType: ThreadId,
-{
-    fn get(
-        &self,
-    ) -> Result<
-        Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
-        Error,
-    > {
+    fn get(&self) -> Result<Box<C>, Error> {
         Get::get(&self.input)
     }
 }
@@ -157,6 +134,7 @@ where
 mod tests {
     use super::*;
     use crate::DefaultThread;
+    use crate::graph::Pushable;
     use crate::work::Writer;
 
     #[test]

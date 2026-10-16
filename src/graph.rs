@@ -50,6 +50,7 @@
 
 mod add;
 mod at;
+mod box_as;
 mod closeable;
 mod get;
 mod inlet;
@@ -63,6 +64,7 @@ pub mod tests;
 
 pub use add::Add;
 pub use at::{At, Select};
+pub use box_as::BoxAs;
 pub use closeable::Closeable;
 pub use get::Get;
 pub use inlet::{Closed, Inlet, Receivable};

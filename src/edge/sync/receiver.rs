@@ -4,10 +4,9 @@ use super::sender::Sender;
 use super::shared::{Freed, Inner, Shared, State, close, close_infallible, wake_all};
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Get, Pushable};
+use crate::graph::{BoxAs, Get};
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::work::Sink;
 use crate::{closed, fatal};
 use core::task::Waker;
 use std::cell::Cell;
@@ -275,26 +274,15 @@ where
 
 // Receiver acts as a connection point in the graph: `Get::get(&receiver)`
 // mints a fresh Sender so upstream nodes can push into it.
-impl<'params, D, S> Get<dyn Pushable<DataType = D, SignalType = S> + 'params> for Receiver<D, S>
+impl<C, D, S> Get<C> for Receiver<D, S>
 where
-    D: Send + Sync + 'static,
-    S: Origin + Send + Sync + 'static,
+    C: Connection + ?Sized,
+    D: Send + Sync,
+    S: Origin + Send + Sync,
+    Sender<D, S>: BoxAs<C>,
 {
-    fn get(&self) -> Result<Box<dyn Pushable<DataType = D, SignalType = S> + 'params>, Error> {
-        Ok(Box::new(self.sender()))
-    }
-}
-
-impl<'params, D, S> Get<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>
-    for Receiver<D, S>
-where
-    D: Send + Sync + 'static,
-    S: Origin + Send + Sync + 'static,
-{
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>, Error> {
-        Ok(Box::new(self.sender()))
+    fn get(&self) -> Result<Box<C>, Error> {
+        Ok(self.sender().box_as())
     }
 }
 

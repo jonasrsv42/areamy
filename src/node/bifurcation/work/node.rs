@@ -3,7 +3,7 @@ use crate::edge::fanout::Fanout;
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Add, Get, Outputs, Pushable};
+use crate::graph::{Add, Get, Outputs};
 use crate::message::Message;
 use crate::node::bifurcation::Sides;
 use crate::node::bifurcation::routine::BifurcationRoutine;
@@ -11,6 +11,7 @@ use crate::node::bifurcation::work::builder::BifurcationBuilder;
 use crate::node::routine::{Flush as _, Send as _};
 use crate::node::work::Incoming;
 use crate::node::{bifurcation, routine};
+use crate::poll;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::Sink;
@@ -33,11 +34,9 @@ pub trait BifurcationTrait<'params, In, Left, Right, Signal>:
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
 
-    // We can retrieve pushable edges
-    + Get<dyn Pushable<DataType = In, SignalType = Signal> + 'params>
-
-    // We can retrieve a Closeable for closing the input edge.
+    // We can retrieve its input edge for others to push into, work or poll.
     + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
+    + Get<dyn poll::Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
 where
     Signal: Origin,
 {
@@ -55,8 +54,8 @@ where
             dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params,
             bifurcation::Right,
         > + Add<dyn Workable<ThreadId = <BifurcationType as Workable>::ThreadId> + 'params>
-        + Get<dyn Pushable<DataType = In, SignalType = Signal> + 'params>
-        + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,
+        + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
+        + Get<dyn poll::Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,
 {
 }
 
@@ -293,27 +292,13 @@ fn accept<T: Types>(
     Ok(())
 }
 
-impl<'params, T: Types> Get<dyn Pushable<DataType = T::In, SignalType = T::Signal> + 'params>
-    for Bifurcation<'params, T>
+/// Get a sink for this node's input edge.
+impl<'params, C, T: Types> Get<C> for Bifurcation<'params, T>
+where
+    C: Connection + ?Sized,
+    Receiver<T::In, T::Signal>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = T::In, SignalType = T::Signal> + 'params>, Error> {
-        Get::get(&self.input)
-    }
-}
-
-/// Get a [Sink] for this node's input edge.
-impl<'params, T: Types>
-    Get<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>
-    for Bifurcation<'params, T>
-{
-    fn get(
-        &self,
-    ) -> Result<
-        Box<dyn Sink<DataType = T::In, SignalType = T::Signal> + Send + Sync + 'params>,
-        Error,
-    > {
+    fn get(&self) -> Result<Box<C>, Error> {
         Get::get(&self.input)
     }
 }

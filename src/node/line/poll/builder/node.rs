@@ -391,17 +391,10 @@ where
 }
 
 // ============================================================
-// Get<dyn Sink + Send + Sync> — Sync input only
+// Get — Sync input only
 // ============================================================
 
-// `'params` on the dyn bound: without it the object-lifetime default locks
-// the impl to `'static`, and `Push::connect` from a parent with shorter
-// `'params` would fail to select this impl (`Get<T>` is invariant in `T`).
-// Reusing the node's `'params` is sufficient — the borrow checker shrinks
-// `Node<'params>` covariantly at the call site to match the caller's
-// requested lifetime.
-impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Get<dyn Sink<DataType = InType, SignalType = SignalType> + Send + std::marker::Sync + 'params>
+impl<'params, C, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType> Get<C>
     for Node<
         'static,
         'params,
@@ -414,25 +407,17 @@ impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryTyp
         FactoryType,
     >
 where
+    C: Connection + ?Sized,
     OutEdgeType: Edge,
     InType: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
+    input::sync::Receiver<InType, SignalType>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<
-        Box<
-            dyn Sink<DataType = InType, SignalType = SignalType>
-                + Send
-                + std::marker::Sync
-                + 'params,
-        >,
-        Error,
-    > {
-        Ok(Box::new(self.input.edge.sender()))
+    fn get(&self) -> Result<Box<C>, Error> {
+        Get::get(&self.input.edge)
     }
 }
 

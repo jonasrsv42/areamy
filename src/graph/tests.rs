@@ -223,16 +223,6 @@ impl Workable for Node {
 // 3. For `add`ing something elses `Workable` for scheduling.
 
 /// Method for fetching input. We put it in a `Box` for dynamic dispatch.
-impl Get<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>> for Node {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>, Error>
-    {
-        Ok(Box::new(self.input.sender()))
-    }
-}
-
-/// Get Closeable for input edge.
 impl Get<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync> for Node {
     fn get(
         &self,
@@ -282,9 +272,10 @@ fn connect_push_work_bidi_chain() {
     let mut node_2 = Node::new();
     let mut node_3 = Node::new();
 
-    let mut input =
-        Get::<dyn Pushable<DataType = usize, SignalType = Trackable<&'static str>>>::get(&node_1)
-            .unwrap();
+    let mut input = Get::<
+        dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
+    >::get(&node_1)
+    .unwrap();
 
     work::Bidi::connect(node_1, &mut node_2).unwrap();
     work::Bidi::connect(node_2, &mut node_3).unwrap();

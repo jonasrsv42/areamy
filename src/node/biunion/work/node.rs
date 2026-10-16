@@ -2,7 +2,7 @@ use crate::closed;
 use crate::edge::fanout::Fanout;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Add, Get, Outputs, Pushable};
+use crate::graph::{Add, Get, Outputs};
 use crate::message::Message;
 use crate::node::biunion::Inputs;
 use crate::node::biunion::routine::BiunionRoutine;
@@ -10,6 +10,7 @@ use crate::node::biunion::work::builder::BiunionBuilder;
 use crate::node::routine::Next as _;
 use crate::node::work::Incoming;
 use crate::node::{biunion, routine};
+use crate::poll;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::wake::Parker;
@@ -35,13 +36,13 @@ pub trait BiunionTrait<'params, Left, Right, Out, Signal>:
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params, biunion::Left>
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params, biunion::Right>
 
-    // We can retrieve pushable edges
-    + Get<dyn Pushable<DataType = Left, SignalType = Signal> + 'params, biunion::Left>
-    + Get<dyn Pushable<DataType = Right, SignalType = Signal> + 'params, biunion::Right>
-
-    // We can retrieve Closeable for closing the input edges.
+    // We can retrieve its input edges for others to push into, once per side and parent kind.
+    // Work parents push into work sinks.
     + Get<dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params, biunion::Left>
     + Get<dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params, biunion::Right>
+    // Poll parents push into poll sinks.
+    + Get<dyn poll::Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params, biunion::Left>
+    + Get<dyn poll::Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params, biunion::Right>
 where
     Signal: Origin,
 {
@@ -55,10 +56,15 @@ where
         + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
         + Add<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId> + 'params, biunion::Left>
         + Add<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId> + 'params, biunion::Right>
-        + Get<dyn Pushable<DataType = Left, SignalType = Signal> + 'params, biunion::Left>
-        + Get<dyn Pushable<DataType = Right, SignalType = Signal> + 'params, biunion::Right>
         + Get<dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params, biunion::Left>
-        + Get<dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params, biunion::Right>,
+        + Get<dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params, biunion::Right>
+        + Get<
+            dyn poll::Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params,
+            biunion::Left,
+        > + Get<
+            dyn poll::Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params,
+            biunion::Right,
+        >,
 {
 }
 
@@ -279,58 +285,24 @@ where
     Ok(())
 }
 
-impl<'params, T: Types>
-    Get<dyn Pushable<DataType = T::Left, SignalType = T::Signal> + 'params, biunion::Left>
-    for Biunion<'params, T>
+/// Get a sink for the left input edge.
+impl<'params, C, T: Types> Get<C, biunion::Left> for Biunion<'params, T>
+where
+    C: Connection + ?Sized,
+    multiedge::Receiver<T::Left, T::Signal>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = T::Left, SignalType = T::Signal> + 'params>, Error>
-    {
+    fn get(&self) -> Result<Box<C>, Error> {
         Get::get(&self.input.left)
     }
 }
 
-impl<'params, T: Types>
-    Get<dyn Pushable<DataType = T::Right, SignalType = T::Signal> + 'params, biunion::Right>
-    for Biunion<'params, T>
+/// Get a sink for the right input edge.
+impl<'params, C, T: Types> Get<C, biunion::Right> for Biunion<'params, T>
+where
+    C: Connection + ?Sized,
+    multiedge::Receiver<T::Right, T::Signal>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = T::Right, SignalType = T::Signal> + 'params>, Error>
-    {
-        Get::get(&self.input.right)
-    }
-}
-
-/// Get a [Sink] for the left input edge.
-impl<'params, T: Types>
-    Get<dyn Sink<DataType = T::Left, SignalType = T::Signal> + Send + Sync + 'params, biunion::Left>
-    for Biunion<'params, T>
-{
-    fn get(
-        &self,
-    ) -> Result<
-        Box<dyn Sink<DataType = T::Left, SignalType = T::Signal> + Send + Sync + 'params>,
-        Error,
-    > {
-        Get::get(&self.input.left)
-    }
-}
-
-/// Get a [Sink] for the right input edge.
-impl<'params, T: Types>
-    Get<
-        dyn Sink<DataType = T::Right, SignalType = T::Signal> + Send + Sync + 'params,
-        biunion::Right,
-    > for Biunion<'params, T>
-{
-    fn get(
-        &self,
-    ) -> Result<
-        Box<dyn Sink<DataType = T::Right, SignalType = T::Signal> + Send + Sync + 'params>,
-        Error,
-    > {
+    fn get(&self) -> Result<Box<C>, Error> {
         Get::get(&self.input.right)
     }
 }

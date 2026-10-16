@@ -1,5 +1,5 @@
 use crate::edge::policy::{Policied, PolicyEdge, SignalPolicy};
-use crate::graph::{self, Schedule};
+use crate::graph::{self, BoxAs, Schedule};
 use crate::signal::Origin;
 
 /// A poll [`Sink`]: a [graph::Sink] that also [Schedule]s. After a refused `try_push`, it wakes
@@ -16,6 +16,29 @@ where
 {
     fn with_policy(this: Box<Self>, policy: SignalPolicy) -> Box<Self> {
         Box::new(PolicyEdge::new(this, policy))
+    }
+}
+
+/// Anything that is a poll [`Sink`] boxes as one.
+impl<'params, T>
+    BoxAs<
+        dyn Sink<DataType = T::DataType, SignalType = T::SignalType>
+            + Send
+            + std::marker::Sync
+            + 'params,
+    > for T
+where
+    T: Sink + Send + std::marker::Sync + 'params,
+{
+    fn box_as(
+        self,
+    ) -> Box<
+        dyn Sink<DataType = T::DataType, SignalType = T::SignalType>
+            + Send
+            + std::marker::Sync
+            + 'params,
+    > {
+        Box::new(self)
     }
 }
 

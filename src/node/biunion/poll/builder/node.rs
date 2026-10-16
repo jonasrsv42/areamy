@@ -19,6 +19,7 @@ use crate::node::biunion;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
+use crate::poll::input;
 use crate::poll::thread::Thread;
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
@@ -253,14 +254,12 @@ where
 }
 
 // ============================================================
-// Get<dyn Sink, Left/Right> — Sync inputs with multiplicity
+// Get<_, Left/Right> — Sync inputs with multiplicity
 // ============================================================
 
-// `'params` on the dyn bound is required (not the object-lifetime default
-// `'static`) so `Push::connect` from a parent with shorter `'params` can
-// select these impls. See line/poll/builder/node.rs for the full rationale.
 impl<
     'params,
+    C,
     AllocState,
     RightEdge,
     OutEdge,
@@ -270,11 +269,7 @@ impl<
     SignalType,
     ThreadIdType,
     FactoryType,
->
-    Get<
-        dyn Sink<DataType = Left, SignalType = SignalType> + Send + std::marker::Sync + 'params,
-        biunion::Left,
-    >
+> Get<C, biunion::Left>
     for Node<
         'params,
         AllocState,
@@ -289,6 +284,7 @@ impl<
         FactoryType,
     >
 where
+    C: Connection + ?Sized,
     RightEdge: Edge,
     OutEdge: Edge,
     Left: Send + std::marker::Sync + 'static,
@@ -296,21 +292,16 @@ where
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    input::sync::Receiver<Left, SignalType>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<
-        Box<
-            dyn Sink<DataType = Left, SignalType = SignalType> + Send + std::marker::Sync + 'params,
-        >,
-        Error,
-    > {
-        Ok(Box::new(self.input.left.edge.sender()))
+    fn get(&self) -> Result<Box<C>, Error> {
+        Get::get(&self.input.left.edge)
     }
 }
 
 impl<
     'params,
+    C,
     AllocState,
     LeftEdge,
     OutEdge,
@@ -320,11 +311,7 @@ impl<
     SignalType,
     ThreadIdType,
     FactoryType,
->
-    Get<
-        dyn Sink<DataType = Right, SignalType = SignalType> + Send + std::marker::Sync + 'params,
-        biunion::Right,
-    >
+> Get<C, biunion::Right>
     for Node<
         'params,
         AllocState,
@@ -339,6 +326,7 @@ impl<
         FactoryType,
     >
 where
+    C: Connection + ?Sized,
     LeftEdge: Edge,
     OutEdge: Edge,
     Right: Send + std::marker::Sync + 'static,
@@ -346,19 +334,10 @@ where
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    input::sync::Receiver<Right, SignalType>: Get<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<
-        Box<
-            dyn Sink<DataType = Right, SignalType = SignalType>
-                + Send
-                + std::marker::Sync
-                + 'params,
-        >,
-        Error,
-    > {
-        Ok(Box::new(self.input.right.edge.sender()))
+    fn get(&self) -> Result<Box<C>, Error> {
+        Get::get(&self.input.right.edge)
     }
 }
 

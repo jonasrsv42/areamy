@@ -12,12 +12,11 @@
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{
-    Closeable, Closed, Get, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable,
+    BoxAs, Closeable, Closed, Get, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable,
 };
 use crate::message::Message;
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
-use crate::work::Sink;
 use crate::{closed, fatal};
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -53,6 +52,16 @@ pub struct Sender<DataType, SignalType: Origin> {
 
 /// Single-consumer handle held by the poll node. `Send + !Sync + !Clone`
 /// when `DataType` and `SignalType` are `Send`.
+///
+/// Its senders don't [`Schedule`](crate::graph::Schedule), so it serves work parents only:
+///
+/// ```compile_fail,E0277
+/// use areamy::graph::Get;
+/// use areamy::poll::{self, input::sync::Receiver};
+/// type Signal = areamy::Trackable<&'static str>;
+/// let receiver = Receiver::<usize, Signal>::new(std::task::Waker::noop().clone());
+/// let _ = Get::<dyn poll::Sink<DataType = usize, SignalType = Signal> + Send + Sync>::get(&receiver);
+/// ```
 pub struct Receiver<DataType, SignalType: Origin> {
     shared: Arc<Shared<DataType, SignalType>>,
     // PhantomData<Cell<()>> forces !Sync — the poll runtime owns the
@@ -248,69 +257,29 @@ where
     }
 }
 
-impl<'params, DataType, SignalType>
-    Get<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
-    for Sender<DataType, SignalType>
+impl<C, DataType, SignalType> Get<C> for Sender<DataType, SignalType>
 where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
+    C: Connection + ?Sized,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+    Sender<DataType, SignalType>: BoxAs<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>, Error>
-    {
-        Ok(Box::new(self.clone()))
-    }
-}
-
-impl<'params, DataType, SignalType>
-    Get<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
-    for Sender<DataType, SignalType>
-where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
-{
-    fn get(
-        &self,
-    ) -> Result<
-        Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
-        Error,
-    > {
-        Ok(Box::new(self.clone()))
+    fn get(&self) -> Result<Box<C>, Error> {
+        Ok(self.clone().box_as())
     }
 }
 
 // Receiver acts as a connection point: `Get::get(&receiver)` mints a
 // fresh Sender so upstream nodes can push into it.
-impl<'params, DataType, SignalType>
-    Get<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>
-    for Receiver<DataType, SignalType>
+impl<C, DataType, SignalType> Get<C> for Receiver<DataType, SignalType>
 where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
+    C: Connection + ?Sized,
+    DataType: Send + Sync,
+    SignalType: Origin + Send + Sync,
+    Sender<DataType, SignalType>: BoxAs<C>,
 {
-    fn get(
-        &self,
-    ) -> Result<Box<dyn Pushable<DataType = DataType, SignalType = SignalType> + 'params>, Error>
-    {
-        Ok(Box::new(self.sender()))
-    }
-}
-
-impl<'params, DataType, SignalType>
-    Get<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>
-    for Receiver<DataType, SignalType>
-where
-    DataType: Send + Sync + 'static,
-    SignalType: Origin + Send + Sync + 'static,
-{
-    fn get(
-        &self,
-    ) -> Result<
-        Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>,
-        Error,
-    > {
-        Ok(Box::new(self.sender()))
+    fn get(&self) -> Result<Box<C>, Error> {
+        Ok(self.sender().box_as())
     }
 }
 
@@ -319,6 +288,7 @@ mod tests {
     use super::*;
     use crate::Trackable;
     use crate::error::ErrorKind;
+    use crate::work::Sink;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
@@ -509,9 +479,21 @@ mod tests {
     }
 
     #[test]
+    fn dropping_a_got_sink_keeps_the_edge_open() {
+        let rx = Receiver::<usize, TestSignal>::new(noop_waker());
+        let tx = rx.sender();
+        let handle: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
+            Get::get(&tx).unwrap();
+        drop(handle);
+        assert!(!Closed::closed(&rx).unwrap());
+        drop(tx);
+        assert!(Closed::closed(&rx).unwrap());
+    }
+
+    #[test]
     fn get_on_receiver_mints_sender() {
         let rx = Receiver::<usize, TestSignal>::new(noop_waker());
-        let mut pushable: Box<dyn Pushable<DataType = usize, SignalType = TestSignal>> =
+        let mut pushable: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
             Get::get(&rx).unwrap();
         pushable.push(Message::Data(9)).unwrap();
         assert_eq!(rx.try_recv().unwrap(), Some(Message::Data(9)));

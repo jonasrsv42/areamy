@@ -3,6 +3,7 @@
 mod clean_teardown;
 mod close;
 mod cycle_test;
+mod getter;
 mod lifetime;
 mod no_clone_test;
 mod poll;

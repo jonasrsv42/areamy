@@ -3,7 +3,8 @@
 use super::mock::{Signal, is_closed};
 use crate::Message;
 use crate::error::Error;
-use crate::poll::edge::PollEdge;
+use crate::graph::{Closeable, Receivable, TryPush, TryPushable};
+use crate::poll::edge;
 use crate::poll::future::queue::{Input, InputQueue};
 use crate::poll::input;
 use crate::poll::timer::mock::noop_timer;
@@ -98,15 +99,15 @@ fn poll_input_edge() -> Result<(), Error> {
 
 #[test]
 fn poll_local_edge() -> Result<(), Error> {
-    let mut edge = PollEdge::<usize, Signal>::new(mock::noop_local_waker());
-    edge.push(Message::Data(1))?;
-    edge.push(Message::Flush("f".into()))?;
-    edge.close()?;
+    let (mut tx, mut rx) = edge::channel::<usize, Signal>(mock::noop_local_waker(), None);
+    assert_eq!(tx.try_push(Message::Data(1))?, TryPush::Pushed);
+    assert_eq!(tx.try_push(Message::Flush("f".into()))?, TryPush::Pushed);
+    tx.close()?;
 
-    assert_closed(edge.push(Message::Data(2)));
-    assert_eq!(edge.try_recv()?, Some(Message::Data(1)));
-    assert_eq!(edge.try_recv()?, Some(Message::Flush("f".into())));
-    assert_closed(edge.try_recv());
+    assert_closed(tx.try_push(Message::Data(2)).map(|_| ()));
+    assert_eq!(rx.try_recv()?, Some(Message::Data(1)));
+    assert_eq!(rx.try_recv()?, Some(Message::Flush("f".into())));
+    assert_closed(rx.try_recv());
     Ok(())
 }
 

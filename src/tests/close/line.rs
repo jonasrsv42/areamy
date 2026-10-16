@@ -1,12 +1,16 @@
 //! Line nodes: work, pull, bridged, and poll.
 
-use super::mock::{Hold, IoThread, Msg, Script, drain, drain_edge, echo, hold, slow_hold};
+use super::mock::{
+    Hold, IoThread, Msg, Script, drain, drain_edge, echo, hold, is_closed, slow_hold,
+};
+use crate::edge::sync::tests::join_within;
 use crate::error::Error;
 use crate::poll::{self, LineWakers};
 use crate::pull;
 use crate::sync::Receiver;
 use crate::work::{self, Reader, Writer};
 use crate::{Closeable, Message, Pullable, Push, Pushable};
+use std::thread;
 
 fn flushed(messages: Vec<Msg>) {
     assert_eq!(
@@ -246,6 +250,44 @@ fn poll_line_data_after_flush_then_close() -> Result<(), Error> {
 #[test]
 fn poll_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
     assert_eq!(poll_line(hold, vec![Message::Data(1)])?, vec![]);
+    Ok(())
+}
+
+/// A child closing first closes its parent through their local edge, while the parent's own
+/// input stays open: the parent's next push finds the edge closed, and its input closes.
+#[test]
+fn poll_line_chain_child_closes_first() -> Result<(), Error> {
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let parent = async_thread.line(hold).input::<poll::Sync>();
+    let mut writer = Writer::new(&parent)?;
+    let mut child = async_thread
+        .line(hold)
+        .parent(parent)
+        .output::<poll::Sync>();
+    {
+        // Dropped at once: the child's first push finds its output closed.
+        let output = Receiver::new();
+        Push::connect(&mut child, &output)?;
+    }
+    async_thread.add(child);
+
+    // Never closes the writer: it stops only once the parent closes its input. Each flush
+    // drives the parent's output.
+    let producer = thread::spawn(move || {
+        loop {
+            for message in [Message::Data(1), Message::Flush("f".into())] {
+                if let Err(error) = writer.push(message) {
+                    return error;
+                }
+            }
+            thread::yield_now();
+        }
+    });
+    // Not `start`: its scope joins on exit, so a broken cascade would hang the suite instead of
+    // failing `join_within`.
+    let run = thread::spawn(move || async_thread.run());
+    assert!(is_closed(&join_within(producer)));
+    join_within(run)?;
     Ok(())
 }
 

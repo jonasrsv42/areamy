@@ -5,14 +5,12 @@ use crate::Trackable;
 use crate::biunion::{Left, Right};
 use crate::error::Error;
 use crate::node::biunion::poll::routine::tests::MockBiunion;
-use crate::poll::edge::{PollEdge, Sync};
+use crate::poll::edge::{self, Sync};
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 crate::thread_id!(TestThread);
 
@@ -41,7 +39,7 @@ impl AsyncParent<'static> for MockParent {
 
     fn build(
         self: Box<Self>,
-        _edge: Rc<RefCell<PollEdge<usize, Trackable<&'static str>>>>,
+        _edge: edge::Sender<usize, Trackable<&'static str>>,
         allocator: ThreadLocalWakerAllocator<TestThread>,
     ) -> Result<Graph<'static, TestThread>, Error> {
         Ok(Graph {
@@ -147,8 +145,8 @@ fn sync_sync_deferred_as_parent() {
         .input::<Left, Sync>()
         .input::<Right, Sync>();
     let local = to_local(alloc);
-    let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
-    let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
+    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
+    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
 }
 
@@ -159,8 +157,8 @@ fn async_async_deferred_as_parent() {
         .parent::<Left>(MockParent)
         .parent::<Right>(MockParent);
     let local = to_local(alloc);
-    let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
-    let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
+    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
+    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
 }
 
@@ -240,8 +238,8 @@ fn async_left_sync_right_as_parent() {
         .parent::<Left>(MockParent)
         .input::<Right, Sync>();
     let local = to_local(alloc);
-    let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
-    let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
+    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
+    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
 }
 
@@ -252,8 +250,8 @@ fn sync_left_async_right_as_parent() {
         .input::<Left, Sync>()
         .parent::<Right>(MockParent);
     let local = to_local(alloc);
-    let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
-    let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
+    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
+    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
 }
 

@@ -1,231 +1,69 @@
-//! A same-thread async edge.
+//! A same-thread async edge: one producer, one consumer, both on one [crate::poll::Thread].
 //!
-//! Used for connections between async nodes on the same [crate::poll::Thread].
-//! Fires a [LocalWaker] on push to wake the consuming node.
-//!
-//! Unlike sync variants that need separate producer and consumer for clean
-//! teardown semantics this is a single shared queue, this is sound because
-//! this will only-ever be owned by a single thread and so its fully cleaned up
-//! one teardown of that thread.
+//! Optionally bounded. A push wakes the consumer; a pop after a refusal wakes the producer's
+//! scheduled waker. Dropping either end closes the edge and wakes the other.
 
-use crate::closed;
-use crate::error::Error;
-use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Closed, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable};
+mod receiver;
+mod sender;
+
+pub use receiver::Receiver;
+pub use sender::Sender;
+
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake::LocalWaker;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
+use std::rc::Rc;
 
-/// A same-thread async edge. No synchronization overhead.
-///
-/// Uses a plain [VecDeque] with no Mutex — all access happens on a single
-/// [crate::poll::Thread]. Fires a [LocalWaker] on push to
-/// enqueue the consuming node in the ready queue.
-///
-/// `PollEdge` is `!Send`, `!Sync` — it must stay on the async thread.
-pub struct PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    buffer: VecDeque<Message<DataType, SignalType>>,
-    waker: LocalWaker,
-    closed: bool,
+/// The state both ends share. Only the buffer is a `RefCell`, never borrowed across a wake.
+struct Shared<DataType, SignalType: Origin> {
+    buffer: RefCell<VecDeque<Message<DataType, SignalType>>>,
+    /// Maximum messages the buffer holds, signals included; `None` is unbounded.
+    bound: Option<NonZeroUsize>,
+    closed: Cell<bool>,
+    /// Refused since the last pop: a retry before then is `Stuck`, and the next pop wakes the
+    /// producer.
+    refused: Cell<bool>,
+    consumer: LocalWaker,
+    /// The producer's scheduled waker, read when it fires.
+    producer: Cell<Option<LocalWaker>>,
 }
 
-impl<DataType, SignalType> Connection for PollEdge<DataType, SignalType> where SignalType: Origin {}
-
-impl<DataType, SignalType> Pushable for PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    fn push(&mut self, msg: Message<DataType, SignalType>) -> Result<(), Error> {
-        PollEdge::push(self, msg)
+impl<DataType, SignalType: Origin> Shared<DataType, SignalType> {
+    fn is_full(&self, buffer: &VecDeque<Message<DataType, SignalType>>) -> bool {
+        self.bound.is_some_and(|bound| buffer.len() >= bound.get())
     }
-}
 
-impl<DataType, SignalType> Outlet for PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    type DataType = DataType;
-    type SignalType = SignalType;
-}
-
-impl<DataType, SignalType> TryPushable for PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    /// Unbounded: `push` never blocks.
-    fn try_push(
-        &mut self,
-        msg: Message<DataType, SignalType>,
-    ) -> Result<TryPush<Message<DataType, SignalType>>, Error> {
-        PollEdge::push(self, msg).map(|()| TryPush::Pushed)
-    }
-}
-
-impl<DataType, SignalType> Closeable for PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    fn close(&mut self) -> Result<(), Error> {
-        PollEdge::close(self)
-    }
-}
-
-impl<DataType, SignalType> Inlet for PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    type DataType = DataType;
-    type SignalType = SignalType;
-}
-
-impl<DataType, SignalType> Receivable for PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
-        PollEdge::try_recv(self)
-    }
-}
-
-impl<DataType, SignalType> Closed for PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    fn closed(&self) -> Result<bool, Error> {
-        Ok(self.closed)
-    }
-}
-
-impl<DataType, SignalType> PollEdge<DataType, SignalType>
-where
-    SignalType: Origin,
-{
-    pub fn new(waker: LocalWaker) -> Self {
-        Self {
-            buffer: VecDeque::new(),
-            waker,
-            closed: false,
+    /// Wake the producer, if scheduled, leaving it scheduled. Put back before waking, so a wake
+    /// that re-schedules isn't overwritten.
+    fn wake_producer(&self) {
+        let producer = self.producer.take();
+        let waker = producer.clone();
+        self.producer.set(producer);
+        if let Some(waker) = waker {
+            waker.wake();
         }
     }
+}
 
-    /// Non-blocking dequeue.
-    pub fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
-        match self.buffer.pop_front() {
-            Some(msg) => Ok(Some(msg)),
-            None if self.closed => Err(closed!()),
-            None => Ok(None),
-        }
-    }
-
-    /// Push a message and wake the consumer.
-    pub fn push(&mut self, message: Message<DataType, SignalType>) -> Result<(), Error> {
-        if self.closed {
-            return Err(closed!());
-        }
-
-        self.buffer.push_back(message);
-        self.waker.wake();
-        Ok(())
-    }
-
-    /// Close the edge and wake the consumer.
-    pub fn close(&mut self) -> Result<(), Error> {
-        self.closed = true;
-        self.waker.wake();
-        Ok(())
-    }
+/// An edge whose pushes wake `consumer`. `bound` caps the buffer, signals included; `None` is
+/// unbounded.
+pub(crate) fn channel<DataType, SignalType: Origin>(
+    consumer: LocalWaker,
+    bound: Option<NonZeroUsize>,
+) -> (Sender<DataType, SignalType>, Receiver<DataType, SignalType>) {
+    let shared = Rc::new(Shared {
+        buffer: RefCell::new(VecDeque::new()),
+        bound,
+        closed: Cell::new(false),
+        refused: Cell::new(false),
+        consumer,
+        producer: Cell::new(None),
+    });
+    (Sender::new(shared.clone()), Receiver::new(shared))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Trackable;
-    use crate::error::ErrorKind;
-    use crate::wake::mock::{noop_local_waker, tracking_local_waker};
-
-    #[test]
-    fn push_and_try_recv() {
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
-
-        edge.push(Message::Data(42)).unwrap();
-        assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(42)));
-        assert_eq!(edge.try_recv().unwrap(), None);
-    }
-
-    #[test]
-    fn try_recv_empty_returns_none() {
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
-        assert_eq!(edge.try_recv().unwrap(), None);
-    }
-
-    #[test]
-    fn closed_try_recv_returns_error() {
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
-        edge.close().unwrap();
-
-        assert!(matches!(
-            edge.try_recv().unwrap_err().kind,
-            ErrorKind::Closed
-        ));
-    }
-
-    #[test]
-    fn closed_push_returns_error() {
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
-        edge.close().unwrap();
-
-        assert!(matches!(
-            edge.push(Message::Data(1)).unwrap_err().kind,
-            ErrorKind::Closed
-        ));
-    }
-
-    #[test]
-    fn buffered_data_readable_after_close() {
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
-        edge.push(Message::Data(1)).unwrap();
-        edge.push(Message::Data(2)).unwrap();
-
-        edge.close().unwrap();
-
-        assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(1)));
-        assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(2)));
-        assert!(edge.try_recv().is_err());
-    }
-
-    #[test]
-    fn closed_reports_close_while_data_is_buffered() {
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(noop_local_waker());
-        edge.push(Message::Data(1)).unwrap();
-        assert!(!Closed::closed(&edge).unwrap());
-
-        edge.close().unwrap();
-
-        // Closed before the buffer drains, and asking takes nothing out.
-        assert!(Closed::closed(&edge).unwrap());
-        assert_eq!(edge.try_recv().unwrap(), Some(Message::Data(1)));
-    }
-
-    #[test]
-    fn push_fires_waker() {
-        let (waker, woken) = tracking_local_waker();
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(waker);
-
-        assert!(!woken.get());
-        edge.push(Message::Data(1)).unwrap();
-        assert!(woken.get());
-    }
-
-    #[test]
-    fn close_fires_waker() {
-        let (waker, woken) = tracking_local_waker();
-        let mut edge = PollEdge::<usize, Trackable<&'static str>>::new(waker);
-
-        edge.close().unwrap();
-        assert!(woken.get());
-    }
-}
+mod tests;

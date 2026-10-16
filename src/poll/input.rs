@@ -8,8 +8,8 @@
 //!
 //! - `async`: same-thread input from one or more async parent
 //!   nodes. `async::Input` bundles the parent configs;
-//!   data flows at runtime through [`PollEdge`](super::edge::PollEdge)s
-//!   built from those parents.
+//!   data flows at runtime through same-thread [`edge::poll`](super::edge::poll)
+//!   edges built from those parents.
 
 pub mod r#async;
 pub mod sync;

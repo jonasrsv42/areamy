@@ -23,7 +23,7 @@ pub mod wakers;
 
 pub use budget::BUDGET;
 pub use context::Context;
-pub use edge::{Async, Deferred, Direct, Edge, Linktime, Null, PollEdge, Sync};
+pub use edge::{Async, Deferred, Direct, Edge, Linktime, Null, Sync};
 pub use graph::{Graph, GraphBuilder, GraphNode};
 pub use marker::NodeId;
 pub use phase::Phase;

@@ -4,14 +4,12 @@ use super::node::Node;
 use crate::Trackable;
 use crate::error::Error;
 use crate::node::line::poll::routine::tests::MockLine;
-use crate::poll::edge::{Null, PollEdge, Sync};
+use crate::poll::edge::{self, Null, Sync};
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 crate::thread_id!(TestThread);
 
@@ -40,7 +38,7 @@ impl AsyncParent<'static> for MockParent {
 
     fn build(
         self: Box<Self>,
-        _edge: Rc<RefCell<PollEdge<usize, Trackable<&'static str>>>>,
+        _edge: edge::Sender<usize, Trackable<&'static str>>,
         allocator: ThreadLocalWakerAllocator<TestThread>,
     ) -> Result<Graph<'static, TestThread>, Error> {
         Ok(Graph {
@@ -146,8 +144,8 @@ fn sync_deferred_as_parent() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc).input::<Sync>();
     let local = to_local(alloc);
-    let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
-    let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
+    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
+    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
 }
 
@@ -156,8 +154,8 @@ fn async_deferred_as_parent() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc).parent(MockParent);
     let local = to_local(alloc);
-    let edge = Rc::new(RefCell::new(PollEdge::new(noop_local_waker())));
-    let graph = AsyncParent::build(Box::new(node), edge, local).unwrap();
+    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
+    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
 }
 

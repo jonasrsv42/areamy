@@ -28,7 +28,7 @@ pub trait Edge: Connection {
 /// (a [`waking`](crate::edge::waking) edge).
 pub struct Sync;
 
-/// Async edge — same-thread, uses [`PollEdge`](super::poll::PollEdge) (no Mutex).
+/// Async edge — same-thread, uses [`poll`](super::poll) edges (no Mutex).
 pub struct Async;
 
 /// Zero-sized marker indicating that output is provided at build time

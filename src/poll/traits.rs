@@ -5,14 +5,11 @@
 //! construct their parents during [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
 
 use crate::error::Error;
-use crate::poll::edge::PollEdge;
+use crate::poll::edge::Sender;
 use crate::poll::graph::Graph;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-
-use alloc::rc::Rc;
-use core::cell::RefCell;
 
 /// A parent node in an async graph.
 ///
@@ -35,7 +32,7 @@ pub trait AsyncParent<'params>: Send + 'params {
 
     fn build(
         self: Box<Self>,
-        edge: Rc<RefCell<PollEdge<Self::OutType, Self::SignalType>>>,
+        edge: Sender<Self::OutType, Self::SignalType>,
         allocator: ThreadLocalWakerAllocator<Self::ThreadIdType>,
     ) -> Result<Graph<'params, Self::ThreadIdType>, Error>;
 }

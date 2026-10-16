@@ -2,7 +2,7 @@
 //! async nodes on the same thread.
 //!
 //! [`Input`] holds the [`AsyncParent`] configs for the node. Parents
-//! are built into [`PollEdge`](crate::poll::edge::PollEdge)s
+//! are built into same-thread [`poll`](crate::poll::edge::poll) edges
 //! during [`GraphBuilder::build`](crate::poll::graph::GraphBuilder::build);
 //! data flows at runtime through those edges, not through this struct.
 

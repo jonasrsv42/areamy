@@ -31,7 +31,7 @@ use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::Phase;
-use crate::poll::edge::{Async, Deferred, Direct, Edge, Null, PollEdge, Sync};
+use crate::poll::edge::{self, Async, Deferred, Direct, Edge, Null, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::input;
 use crate::poll::thread::Thread;
@@ -40,9 +40,7 @@ use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::Sink;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 /// Unified async node builder.
 #[must_use = "node must be consumed (add to thread or pass to another builder)"]
@@ -559,11 +557,11 @@ where
     let mut nodes = Vec::new();
 
     for parent in parents {
-        let edge = Rc::new(RefCell::new(PollEdge::new(edge_waker.clone())));
-        let parent_graph = parent.build(edge.clone(), allocator)?;
+        let (sender, receiver) = edge::channel(edge_waker.clone(), None);
+        let parent_graph = parent.build(sender, allocator)?;
         allocator = parent_graph.allocator;
         nodes.extend(parent_graph.nodes);
-        edges.push(edge);
+        edges.push(receiver);
     }
 
     let work = allocator.next();
@@ -788,7 +786,7 @@ where
 
     fn build(
         self: Box<Self>,
-        edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
+        edge: edge::Sender<OutType, SignalType>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         sync_input(self.factory, self.input, edge, allocator)
@@ -822,7 +820,7 @@ where
 
     fn build(
         self: Box<Self>,
-        output_edge: Rc<RefCell<PollEdge<OutType, SignalType>>>,
+        output_edge: edge::Sender<OutType, SignalType>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         async_input(self.factory, self.input.parents, output_edge, allocator)

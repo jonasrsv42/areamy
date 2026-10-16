@@ -7,15 +7,13 @@ use crate::node::biunion::poll::factory::{BiunionRoutineFactory, BiunionWakers};
 use crate::node::biunion::poll::node;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::Phase;
-use crate::poll::edge::{Async, Deferred, PollEdge, Sync};
+use crate::poll::edge::{self, Async, Deferred, Receiver, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::wake::LocalWaker;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 /// Build async parent edges, returning edges + collected nodes + allocator.
 fn build_parents<'params, DataType, SignalType, ThreadIdType>(
@@ -33,7 +31,7 @@ fn build_parents<'params, DataType, SignalType, ThreadIdType>(
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
 ) -> Result<
     (
-        Vec<Rc<RefCell<PollEdge<DataType, SignalType>>>>,
+        Vec<Receiver<DataType, SignalType>>,
         Vec<GraphNode<'params, ThreadIdType>>,
         ThreadLocalWakerAllocator<ThreadIdType>,
     ),
@@ -47,11 +45,11 @@ where
     let mut edges = Vec::new();
     let mut nodes = Vec::new();
     for parent in parents {
-        let edge = Rc::new(RefCell::new(PollEdge::new(edge_waker.clone())));
-        let parent_graph = parent.build(edge.clone(), allocator)?;
+        let (sender, receiver) = edge::channel(edge_waker.clone(), None);
+        let parent_graph = parent.build(sender, allocator)?;
         allocator = parent_graph.allocator;
         nodes.extend(parent_graph.nodes);
-        edges.push(edge);
+        edges.push(receiver);
     }
     Ok((edges, nodes, allocator))
 }
@@ -448,7 +446,7 @@ where
 
     fn build(
         self: Box<Self>,
-        edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
+        edge: edge::Sender<Out, SignalType>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();
@@ -729,7 +727,7 @@ where
 
     fn build(
         self: Box<Self>,
-        edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
+        edge: edge::Sender<Out, SignalType>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let right_slot = allocator.next();
@@ -1030,7 +1028,7 @@ where
 
     fn build(
         self: Box<Self>,
-        edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
+        edge: edge::Sender<Out, SignalType>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let work = allocator.next();
@@ -1120,7 +1118,7 @@ where
 
     fn build(
         self: Box<Self>,
-        edge: Rc<RefCell<PollEdge<Out, SignalType>>>,
+        edge: edge::Sender<Out, SignalType>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
         let left_slot = allocator.next();

@@ -24,27 +24,27 @@ impl<T: Closed> Closed for Vec<T> {
 #[cfg(test)]
 mod tests {
     use crate::graph::Closed;
-    use crate::poll::PollEdge;
+    use crate::poll::edge::{self, Receiver, Sender};
     use crate::signal::Trackable;
     use crate::wake::mock::noop_local_waker;
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
-    type Edge = Rc<RefCell<PollEdge<usize, Trackable<&'static str>>>>;
+    type Signal = Trackable<&'static str>;
 
-    fn edge() -> Edge {
-        Rc::new(RefCell::new(PollEdge::new(noop_local_waker())))
+    fn edge() -> (Sender<usize, Signal>, Receiver<usize, Signal>) {
+        edge::channel(noop_local_waker(), None)
     }
 
     #[test]
     fn fan_in_is_closed_only_once_every_parent_is() {
-        let parents = vec![edge(), edge()];
+        let (first, first_rx) = edge();
+        let (second, second_rx) = edge();
+        let parents = vec![first_rx, second_rx];
         assert!(!parents.closed().unwrap());
 
-        parents[0].borrow_mut().close().unwrap();
+        drop(first);
         assert!(!parents.closed().unwrap());
 
-        parents[1].borrow_mut().close().unwrap();
+        drop(second);
         assert!(parents.closed().unwrap());
     }
 }

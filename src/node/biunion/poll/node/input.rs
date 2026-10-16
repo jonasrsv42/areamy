@@ -107,10 +107,11 @@ impl<T: Types, S: Feeding<T>> Pollable for Input<T, S> {
                 }
                 Ok(core::task::Poll::Pending)
             }
-            // Flushing/FlushReady/MarkerReady — Input waits for Output to transition back to Running
-            NodeState::Flushing(_) | NodeState::FlushReady(_) | NodeState::MarkerReady(_) => {
-                Ok(core::task::Poll::Pending)
-            }
+            // Input waits for Output to transition back to Running
+            NodeState::Flushing(_)
+            | NodeState::FlushReady(_)
+            | NodeState::MarkerReady(_)
+            | NodeState::Forwarding => Ok(core::task::Poll::Pending),
         }
     }
 }

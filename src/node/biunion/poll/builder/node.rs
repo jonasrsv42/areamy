@@ -18,13 +18,13 @@ use crate::graph::{Add, Get, Outputs};
 use crate::node::biunion;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
+use crate::poll::Sink;
 use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
 use crate::poll::input;
 use crate::poll::thread::Thread;
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
 use std::marker::PhantomData;
 
 /// Builder still holds `&'alloc mut WakerAllocator` — one or both inputs deferred.
@@ -385,7 +385,7 @@ where
             dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params,
         >,
     ) -> Result<(), Error> {
-        self.output.push(connection);
+        self.output.add(connection);
         Ok(())
     }
 }

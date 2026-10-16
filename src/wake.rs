@@ -58,6 +58,9 @@ impl LocalWaker {
 ///
 /// - `sync`: for I/O registration and polling standard futures
 /// - `local`: for cheap same-thread wake (no mutex, no syscall)
+///
+/// A clone wakes the same target: `will_wake` holds between them.
+#[derive(Clone)]
 pub struct Waker {
     pub sync: core::task::Waker,
     pub local: LocalWaker,

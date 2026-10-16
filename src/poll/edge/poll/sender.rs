@@ -3,7 +3,7 @@
 use super::Shared;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Outlet, Pushable, Schedule, TryPush, TryPushable};
+use crate::graph::{Closeable, Outlet, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake;
@@ -72,18 +72,6 @@ impl<DataType, SignalType: Origin> TryPushable for Sender<DataType, SignalType> 
         // Woken outside the borrow: the waker may touch the edge.
         self.shared.consumer.wake();
         Ok(TryPush::Pushed)
-    }
-}
-
-impl<DataType, SignalType: Origin> Pushable for Sender<DataType, SignalType> {
-    /// A full bounded edge is an error: a same-thread push can't wait for its consumer.
-    fn push(&mut self, message: Message<DataType, SignalType>) -> Result<(), Error> {
-        match TryPushable::try_push(self, message)? {
-            TryPush::Pushed => Ok(()),
-            TryPush::Full(_) | TryPush::Stuck(_) => Err(fatal!(
-                "bounded poll edge is full: a same-thread push can't wait"
-            )),
-        }
     }
 }
 

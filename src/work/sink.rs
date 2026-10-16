@@ -8,6 +8,10 @@ use crate::signal::Origin;
 pub trait Sink: graph::Sink + Pushable {}
 impl<T: graph::Sink + Pushable> Sink for T {}
 
+/// A boxed work [`Sink`], as nodes hold their outputs.
+pub type DynSink<'params, DataType, SignalType> =
+    Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>;
+
 impl<'params, DataType, SignalType> Policied
     for dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params
 where

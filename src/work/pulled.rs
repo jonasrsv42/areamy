@@ -3,8 +3,8 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Outputs};
 use crate::pull::Pullable;
-use crate::work::Sink;
 use crate::work::Workable;
+use crate::work::{DynSink, Sink};
 use std::any::type_name;
 
 /// [`Pulled`] runs a [Pullable] chain as a work node: each [Workable::work] pulls one message
@@ -19,7 +19,7 @@ use std::any::type_name;
 pub struct Pulled<'params, PullableType: Pullable> {
     pullable: PullableType,
     /// A refused message waits here, and nothing new is pulled until it is delivered.
-    outputs: Fanout<'params, PullableType::DataType, PullableType::SignalType>,
+    outputs: Fanout<DynSink<'params, PullableType::DataType, PullableType::SignalType>>,
 }
 
 impl<'params, PullableType: Pullable> Pulled<'params, PullableType> {

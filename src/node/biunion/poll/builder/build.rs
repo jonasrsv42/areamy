@@ -117,10 +117,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output,
+            output.value.wake,
         );
         let nodes = vec![
             GraphNode {
@@ -163,7 +161,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -203,10 +201,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output.into(),
+            output.value.wake,
         );
         let nodes = vec![
             GraphNode {
@@ -300,10 +296,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output,
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -344,7 +338,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -391,10 +385,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output.into(),
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -434,7 +426,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -486,10 +478,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: edge,
-                waker: output.value.wake.local,
-            },
+            edge.into(),
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -581,10 +571,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output,
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_id,
@@ -625,7 +613,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -672,10 +660,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output.into(),
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_id,
@@ -715,7 +701,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: Send + std::marker::Sync + 'static,
     Right: 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -767,10 +753,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: edge,
-                waker: output.value.wake.local,
-            },
+            edge.into(),
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_id,
@@ -870,10 +854,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output,
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -914,7 +896,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: 'static,
     Right: 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -969,10 +951,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: self.output,
-                waker: output.value.wake.local,
-            },
+            self.output.into(),
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -1016,7 +996,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -1061,10 +1041,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: edge,
-                waker: output.value.wake.local,
-            },
+            edge.into(),
+            output.value.wake,
         );
         let nodes = vec![
             GraphNode {
@@ -1106,7 +1084,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: 'static,
     Right: 'static,
-    Out: 'static,
+    Out: Clone + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -1166,10 +1144,8 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            Phase {
-                target: edge,
-                waker: output.value.wake.local,
-            },
+            edge.into(),
+            output.value.wake,
         );
         nodes.push(GraphNode {
             id: left_slot.id,

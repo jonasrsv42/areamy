@@ -57,7 +57,7 @@ where
         let Some(data) = self.offer::<M>(data)? else {
             return Ok(Continue(()));
         };
-        self.hold(data, held)?;
+        self.hold(data, held);
         Ok(Break(()))
     }
 
@@ -71,7 +71,7 @@ where
             Ok(Some(Message::Data(data))) => match self.offer::<M>(data)? {
                 None => Ok(Continue(())),
                 Some(data) => {
-                    self.hold(data, held)?;
+                    self.hold(data, held);
                     Ok(Break(()))
                 }
             },
@@ -92,19 +92,10 @@ where
         }
     }
 
-    /// Hold a refused message until the routine wakes this input. A closed edge can't be waited
-    /// out: its close may have woken us already, so fast close drops the message instead.
-    fn hold(
-        &mut self,
-        data: InletType::DataType,
-        held: &mut Option<InletType::DataType>,
-    ) -> Result<(), Error> {
-        if self.inlet.closed()? {
-            self.close();
-        } else {
-            *held = Some(data);
-        }
-        Ok(())
+    /// Hold a refused message until the routine wakes this input, closed edge or not: the refusal
+    /// owes that wake, so a Flush queued behind it lands before the close is read.
+    fn hold(&mut self, data: InletType::DataType, held: &mut Option<InletType::DataType>) {
+        *held = Some(data);
     }
 
     /// Offer data to the routine as side `M`; the message comes back if it is full. `Closed` from

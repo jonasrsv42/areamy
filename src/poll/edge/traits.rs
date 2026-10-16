@@ -7,12 +7,13 @@
 //! to select storage and control which wiring methods are available.
 
 use super::null::Null;
+use crate::edge::fanout::Fanout;
 use crate::graph::marker::Connection;
 use crate::poll::input;
 use crate::poll::wakers::WakerAllocator;
+use crate::poll::{self, Sink};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
 
 /// Trait for edge markers. Uses GATs to resolve storage types.
 pub trait Edge: Connection {
@@ -50,14 +51,8 @@ impl Connection for Direct {}
 impl Edge for Sync {
     type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
         input::sync::Input<InType, SignalType>;
-    type Output<'params, OutType, SignalType: Origin> = Vec<
-        Box<
-            dyn Sink<DataType = OutType, SignalType = SignalType>
-                + Send
-                + std::marker::Sync
-                + 'params,
-        >,
-    >;
+    type Output<'params, OutType, SignalType: Origin> =
+        Fanout<poll::DynSink<'params, OutType, SignalType>>;
     type Alloc<'alloc> = ();
 }
 

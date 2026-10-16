@@ -2,12 +2,11 @@
 use crate::edge::deadlock::deadlock;
 use crate::error::Error;
 use crate::fatal;
-use crate::graph::TryPush;
+use crate::graph::marker::Connection;
+use crate::graph::{Closeable, Outlet, Pushable, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
-use crate::work::Sink;
-
-type Edge<'params, D, S> = Box<dyn Sink<DataType = D, SignalType = S> + Send + Sync + 'params>;
+use crate::wake;
 
 /// Outcome of pushing one message through a [Fanout].
 #[must_use = "a suspended fan-out must be resumed before anything new is pushed"]
@@ -28,38 +27,56 @@ impl Rotation {
 
 /// Edge `index` refused `refused`; `rest` is the source for the edges after it, `None` when
 /// `index` is the last edge.
-struct Suspended<D, S: Origin> {
+struct Suspended<DataType, SignalType: Origin> {
     index: usize,
-    refused: Message<D, S>,
-    rest: Option<Message<D, S>>,
+    refused: Message<DataType, SignalType>,
+    rest: Option<Message<DataType, SignalType>>,
 }
+
+/// The message type an edge carries.
+type MessageOf<EdgeType> =
+    Message<<EdgeType as Outlet>::DataType, <EdgeType as Outlet>::SignalType>;
 
 /// Pushes each message into every edge: clones for all but the last, which takes the move, so
 /// a single edge never clones. A refusal stops the rotation at that edge; the fan-out keeps the
 /// message, and nothing new can be pushed until the rotation completes.
-pub struct Fanout<'params, D, S: Origin> {
-    edges: Vec<Edge<'params, D, S>>,
-    suspended: Option<Suspended<D, S>>,
+///
+/// What it can do follows its edges: rotation and [Fanout::retry] need [TryPushable],
+/// [Fanout::resume] (which may block) also [Pushable], [Fanout::close] [Closeable]. Edges that
+/// can't block can't be resumed:
+///
+/// ```compile_fail,E0599
+/// use areamy::edge::fanout::Fanout;
+/// type Signal = areamy::Trackable<&'static str>;
+/// type Edge = Box<dyn areamy::poll::Sink<DataType = usize, SignalType = Signal>>;
+/// fn resume(fanout: &mut Fanout<Edge>) {
+///     let _ = fanout.resume("node");
+/// }
+/// ```
+pub struct Fanout<EdgeType: Outlet> {
+    edges: Vec<EdgeType>,
+    suspended: Option<Suspended<EdgeType::DataType, EdgeType::SignalType>>,
 }
 
 /// A [Fanout] with no suspended rotation, from [Fanout::ready].
-pub struct Ready<'fanout, 'params, D, S: Origin> {
-    fanout: &'fanout mut Fanout<'params, D, S>,
+pub struct Ready<'fanout, EdgeType: Outlet> {
+    fanout: &'fanout mut Fanout<EdgeType>,
 }
 
-impl<D, S> Ready<'_, '_, D, S>
+impl<EdgeType> Ready<'_, EdgeType>
 where
-    D: Clone,
-    S: Origin + Clone,
+    EdgeType: TryPushable,
+    EdgeType::DataType: Clone,
+    EdgeType::SignalType: Clone,
 {
     /// Start a rotation. Consumes the handle: after a [Rotation::Suspended], the next
     /// [Fanout::ready] is `None`.
-    pub fn push(self, message: Message<D, S>) -> Result<Rotation, Error> {
+    pub fn push(self, message: MessageOf<EdgeType>) -> Result<Rotation, Error> {
         self.fanout.rotate(0, message)
     }
 }
 
-impl<D, S: Origin> Default for Fanout<'_, D, S> {
+impl<EdgeType: Outlet> Default for Fanout<EdgeType> {
     fn default() -> Self {
         Fanout {
             edges: Vec::new(),
@@ -68,12 +85,22 @@ impl<D, S: Origin> Default for Fanout<'_, D, S> {
     }
 }
 
-impl<'params, D, S: Origin> Fanout<'params, D, S> {
+/// A fan-out of one: the edge always takes the move.
+impl<EdgeType: Outlet> From<EdgeType> for Fanout<EdgeType> {
+    fn from(edge: EdgeType) -> Self {
+        Fanout {
+            edges: vec![edge],
+            suspended: None,
+        }
+    }
+}
+
+impl<EdgeType: Outlet> Fanout<EdgeType> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn add(&mut self, edge: Edge<'params, D, S>) {
+    pub fn add(&mut self, edge: EdgeType) {
         self.edges.push(edge);
     }
 
@@ -84,28 +111,15 @@ impl<'params, D, S: Origin> Fanout<'params, D, S> {
 
     /// A handle to push a new message; `None` while suspended, so the held message can't be
     /// overtaken.
-    pub fn ready(&mut self) -> Option<Ready<'_, 'params, D, S>> {
+    pub fn ready(&mut self) -> Option<Ready<'_, EdgeType>> {
         match self.suspended {
             Some(_) => None,
             None => Some(Ready { fanout: self }),
         }
     }
 
-    /// Close every edge, even if one fails; returns the first error. A held message is dropped.
-    pub fn close(&mut self) -> Result<(), Error> {
-        let mut result = Ok(());
-        for edge in &mut self.edges {
-            if let Err(error) = edge.close()
-                && result.is_ok()
-            {
-                result = Err(error);
-            }
-        }
-        result
-    }
-
     /// A suspended index always names an edge: edges are only ever added.
-    fn edge(&mut self, index: usize) -> Result<&mut Edge<'params, D, S>, Error> {
+    fn edge(&mut self, index: usize) -> Result<&mut EdgeType, Error> {
         self.edges
             .get_mut(index)
             .ok_or_else(|| fatal!("fan-out suspended on a missing edge {}", index))
@@ -114,8 +128,8 @@ impl<'params, D, S: Origin> Fanout<'params, D, S> {
     fn suspend(
         &mut self,
         index: usize,
-        refused: Message<D, S>,
-        rest: Option<Message<D, S>>,
+        refused: MessageOf<EdgeType>,
+        rest: Option<MessageOf<EdgeType>>,
     ) -> Rotation {
         self.suspended = Some(Suspended {
             index,
@@ -126,11 +140,43 @@ impl<'params, D, S: Origin> Fanout<'params, D, S> {
     }
 }
 
+impl<EdgeType: Outlet + Closeable> Fanout<EdgeType> {
+    /// Close every edge, even if one fails; returns the first error. A held message is dropped.
+    pub fn close(&mut self) -> Result<(), Error> {
+        self.suspended = None;
+        let mut result = Ok(());
+        for edge in &mut self.edges {
+            if let Err(error) = edge.close()
+                && result.is_ok()
+            {
+                result = Err(error);
+            }
+        }
+        result
+    }
+}
+
+impl<EdgeType: Outlet> Connection for Fanout<EdgeType> {}
+
+/// Binds every edge to `waker`, one clone each: after a [Rotation::Suspended], it is woken
+/// once the edge holding the rotation takes more or closes; then [Fanout::retry].
+impl<EdgeType: Outlet + Schedule> Schedule for Fanout<EdgeType> {
+    fn schedule(&mut self, waker: wake::Waker) {
+        if let Some((last, rest)) = self.edges.split_last_mut() {
+            for edge in rest {
+                edge.schedule(waker.clone());
+            }
+            last.schedule(waker);
+        }
+    }
+}
+
 /// Delivering a message clones it for every edge but the last.
-impl<D, S> Fanout<'_, D, S>
+impl<EdgeType> Fanout<EdgeType>
 where
-    D: Clone,
-    S: Origin + Clone,
+    EdgeType: TryPushable,
+    EdgeType::DataType: Clone,
+    EdgeType::SignalType: Clone,
 {
     /// Continue a suspended rotation without ever blocking: `Full` and `Stuck` both suspend
     /// again. For callers that must not block.
@@ -145,31 +191,10 @@ where
         }
     }
 
-    /// Continue a suspended rotation. `Full` suspends again: the consumer drained since the
-    /// last refusal, so yielding lets it drain more. `Stuck` blocks, logging "blocked" /
-    /// "unblocked" under `node`: nothing drained, so yielding again would spin.
-    pub fn resume(&mut self, node: &str) -> Result<Rotation, Error> {
-        let Some(suspended) = self.suspended.take() else {
-            return Ok(Rotation::Complete);
-        };
-        let edge = self.edge(suspended.index)?;
-        match edge.try_push(suspended.refused)? {
-            TryPush::Pushed => {}
-            TryPush::Full(refused) => {
-                return Ok(self.suspend(suspended.index, refused, suspended.rest));
-            }
-            TryPush::Stuck(refused) => {
-                deadlock(node, suspended.index, || edge.push(refused))?;
-            }
-        }
-        // The later edges only get a try: one may suspend the rotation again.
-        self.rotate_rest(suspended.index, suspended.rest)
-    }
-
     fn rotate_rest(
         &mut self,
         index: usize,
-        rest: Option<Message<D, S>>,
+        rest: Option<MessageOf<EdgeType>>,
     ) -> Result<Rotation, Error> {
         match rest {
             Some(message) => self.rotate(index + 1, message),
@@ -178,7 +203,7 @@ where
     }
 
     /// Deliver `message` to the edges from `from` on.
-    fn rotate(&mut self, from: usize, message: Message<D, S>) -> Result<Rotation, Error> {
+    fn rotate(&mut self, from: usize, message: MessageOf<EdgeType>) -> Result<Rotation, Error> {
         let Some((last, rest)) = self
             .edges
             .get_mut(from..)
@@ -200,6 +225,35 @@ where
     }
 }
 
+/// Edges that can block.
+impl<EdgeType> Fanout<EdgeType>
+where
+    EdgeType: TryPushable + Pushable,
+    EdgeType::DataType: Clone,
+    EdgeType::SignalType: Clone,
+{
+    /// Continue a suspended rotation. `Full` suspends again: the consumer drained since the
+    /// last refusal, so yielding lets it drain more. `Stuck` blocks, logging "blocked" /
+    /// "unblocked" under `node`: nothing drained, so yielding again would spin.
+    pub fn resume(&mut self, node: &str) -> Result<Rotation, Error> {
+        let Some(suspended) = self.suspended.take() else {
+            return Ok(Rotation::Complete);
+        };
+        let edge = self.edge(suspended.index)?;
+        match edge.try_push(suspended.refused)? {
+            TryPush::Pushed => {}
+            TryPush::Full(refused) => {
+                return Ok(self.suspend(suspended.index, refused, suspended.rest));
+            }
+            TryPush::Stuck(refused) => {
+                deadlock(node, suspended.index, || edge.push(refused))?;
+            }
+        }
+        // The later edges only get a try: one may suspend the rotation again.
+        self.rotate_rest(suspended.index, suspended.rest)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,7 +261,12 @@ mod tests {
     use crate::edge::sync::Receiver;
     use crate::edge::sync::tests::{join_within, wait_until};
     use crate::error::ErrorKind;
+    use crate::graph::Receivable;
     use crate::graph::tests::{Counted, FailingClose};
+    use crate::poll;
+    use crate::poll::sink::mock::ScheduleOnly;
+    use crate::wake::mock::{noop_local_waker, noop_waker};
+    use crate::work::DynSink;
     use std::num::NonZeroUsize;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -220,7 +279,10 @@ mod tests {
     /// One receiver per bound (`None` is unbounded) and a fan-out over their senders.
     fn fan<D: Clone + Send + Sync + 'static>(
         bounds: &[Option<usize>],
-    ) -> (Fanout<'static, D, Signal>, Vec<Receiver<D, Signal>>) {
+    ) -> (
+        Fanout<DynSink<'static, D, Signal>>,
+        Vec<Receiver<D, Signal>>,
+    ) {
         let receivers: Vec<Receiver<D, Signal>> = bounds
             .iter()
             .map(|bound| match bound.and_then(NonZeroUsize::new) {
@@ -228,7 +290,7 @@ mod tests {
                 None => Receiver::new(),
             })
             .collect();
-        let mut fanout = Fanout::new();
+        let mut fanout: Fanout<DynSink<'static, D, Signal>> = Fanout::new();
         for receiver in &receivers {
             fanout.add(Box::new(receiver.sender()));
         }
@@ -463,7 +525,7 @@ mod tests {
     #[test]
     fn close_closes_every_edge_and_returns_the_first_error() {
         let receiver = Receiver::<usize, Signal>::new();
-        let mut fanout: Fanout<'static, usize, Signal> = Fanout::new();
+        let mut fanout: Fanout<DynSink<'static, usize, Signal>> = Fanout::new();
         fanout.add(Box::new(FailingClose("first")));
         fanout.add(Box::new(FailingClose("second")));
         fanout.add(Box::new(receiver.sender()));
@@ -477,9 +539,73 @@ mod tests {
         ));
     }
 
+    /// A concrete, same-thread edge: no boxing, no `Pushable`.
+    #[test]
+    fn retry_on_a_concrete_poll_edge() {
+        let (sender, mut receiver) =
+            poll::edge::channel::<usize, Signal>(noop_local_waker(), NonZeroUsize::new(1));
+        let mut fanout = Fanout::new();
+        fanout.add(sender);
+        assert_eq!(
+            fanout.ready().unwrap().push(Message::Data(1)).unwrap(),
+            Rotation::Complete
+        );
+        assert_eq!(
+            fanout.ready().unwrap().push(Message::Data(2)).unwrap(),
+            Rotation::Suspended(0)
+        );
+        assert_eq!(fanout.retry().unwrap(), Rotation::Suspended(0));
+        assert_eq!(receiver.try_recv().unwrap(), Some(Message::Data(1)));
+        assert_eq!(fanout.retry().unwrap(), Rotation::Complete);
+        assert_eq!(receiver.try_recv().unwrap(), Some(Message::Data(2)));
+    }
+
+    /// Boxed poll sinks rotate and retry like work sinks.
+    #[test]
+    fn retry_on_boxed_poll_sinks() {
+        type PollSink = Box<dyn poll::Sink<DataType = usize, SignalType = Signal> + Send + Sync>;
+        let receivers = [
+            Receiver::<usize, Signal>::new(),
+            Receiver::bounded(NonZeroUsize::MIN),
+        ];
+        // Kept alive: dropping the last sender would close the edge.
+        let filler = receivers[1].sender();
+        filler.push_back(Message::Data(0)).unwrap();
+        let mut fanout: Fanout<PollSink> = Fanout::new();
+        for receiver in &receivers {
+            fanout.add(Box::new(receiver.sender()));
+        }
+        assert_eq!(
+            fanout.ready().unwrap().push(Message::Data(7)).unwrap(),
+            Rotation::Suspended(1)
+        );
+        receivers[1].poll().unwrap();
+        assert_eq!(fanout.retry().unwrap(), Rotation::Complete);
+        for receiver in &receivers {
+            assert_eq!(receiver.poll().unwrap(), Some(Message::Data(7)));
+        }
+    }
+
+    #[test]
+    fn schedule_binds_every_edge_once() {
+        let edges = [
+            ScheduleOnly::default(),
+            ScheduleOnly::default(),
+            ScheduleOnly::default(),
+        ];
+        let mut fanout = Fanout::new();
+        for edge in &edges {
+            fanout.add(edge.clone());
+        }
+        Schedule::schedule(&mut fanout, noop_waker());
+        for edge in &edges {
+            assert_eq!(edge.schedules.load(Ordering::SeqCst), 1);
+        }
+    }
+
     fn _assert_send_sync() {
         fn require_send_sync<T: Send + Sync>() {}
-        require_send_sync::<Fanout<'static, usize, Signal>>();
-        require_send_sync::<Ready<'static, 'static, usize, Signal>>();
+        require_send_sync::<Fanout<DynSink<'static, usize, Signal>>>();
+        require_send_sync::<Ready<'static, DynSink<'static, usize, Signal>>>();
     }
 }

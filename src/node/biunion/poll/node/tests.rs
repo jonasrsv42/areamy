@@ -11,11 +11,15 @@ use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_biunion_waker
 use crate::poll::context::mock::noop_context;
 use crate::poll::input;
 use crate::poll::{BUDGET, BiunionInputs, Context, Phase, Pollable};
-use crate::wake::mock::tracking_local_waker;
+use crate::wake::Waker;
+use crate::wake::mock::{counting_waker, tracking_local_waker};
 use crate::{Accept, DefaultThread};
 use std::cell::Cell;
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 type Signal = Trackable<&'static str>;
 type Inlet = input::sync::Receiver<usize, Signal>;
@@ -51,6 +55,8 @@ struct Biunion<R: Routine> {
     upstream: Inputs<input::sync::Sender<usize, Signal>, input::sync::Sender<usize, Signal>>,
     downstream: edge::sync::Receiver<usize, Signal>,
     woken: Woken,
+    /// Output woken by its edges.
+    output_wakes: Arc<AtomicUsize>,
 }
 
 impl Biunion<MockBiunion> {
@@ -62,18 +68,28 @@ impl Biunion<MockBiunion> {
 impl<R: Routine> Biunion<R> {
     /// A node over the routine `routine` builds from the input wakers.
     fn with(routine: impl FnOnce(BiunionInputs) -> R) -> Self {
+        Self::draining_into(routine, edge::sync::Receiver::new())
+    }
+
+    /// Same, draining into `downstream`.
+    fn draining_into(
+        routine: impl FnOnce(BiunionInputs) -> R,
+        downstream: edge::sync::Receiver<usize, Signal>,
+    ) -> Self {
         let left = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
         let right = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
         let upstream = Inputs {
             left: left.sender(),
             right: right.sender(),
         };
-        let downstream = edge::sync::Receiver::new();
 
         let (left_waker, left_woken) = tracking_local_waker();
         let (right_waker, right_woken) = tracking_local_waker();
         let (work_waker, work_woken) = tracking_local_waker();
         let (output_waker, output_woken) = tracking_local_waker();
+        // The edges wake Output through the sync half.
+        let (output_wake, output_wakes) = counting_waker();
+        let output_sync = output_wake.sync;
         let routine = routine(Inputs {
             left: left_waker.clone(),
             right: right_waker.clone(),
@@ -94,9 +110,10 @@ impl<R: Routine> Biunion<R> {
                 target: routine,
                 waker: work_waker,
             },
-            Phase {
-                target: downstream.sender(),
-                waker: output_waker,
+            downstream.sender().into(),
+            Waker {
+                sync: output_sync,
+                local: output_waker,
             },
         );
 
@@ -114,6 +131,7 @@ impl<R: Routine> Biunion<R> {
                 work: work_woken,
                 output: output_woken,
             },
+            output_wakes,
         }
     }
 
@@ -383,6 +401,28 @@ fn both_inputs_process_data() {
     let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(4))); // 2 * 2
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(9))); // 3 * 3
+}
+
+/// Output parks on a full edge, bound to its own waker: the pop wakes it, and the held message
+/// goes out first.
+#[test]
+fn output_parks_on_a_full_edge_and_resumes_on_the_pop() {
+    let downstream = edge::sync::Receiver::bounded(NonZeroUsize::MIN);
+    let mut b = Biunion::draining_into(|_| MockBiunion::new(noop_biunion_wakers()), downstream);
+    let mut cx = noop_context();
+    b.upstream.left.push_back(Message::Data(2)).unwrap();
+    b.upstream.right.push_back(Message::Data(3)).unwrap();
+    let _ = b.input.left.poll(&mut cx).unwrap();
+    let _ = b.input.right.poll(&mut cx).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    // 4 fills the edge; 9 is held.
+    assert!(b.output.poll(&mut cx).unwrap().is_pending());
+    assert_eq!(b.output_wakes.load(Ordering::SeqCst), 0);
+
+    assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(4)));
+    assert_eq!(b.output_wakes.load(Ordering::SeqCst), 1);
+    assert!(b.output.poll(&mut cx).unwrap().is_pending());
+    assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(9)));
 }
 
 // --- Signal forwarding ---
@@ -959,58 +999,63 @@ fn right_close_delivers_what_the_routine_still_accepts() {
     close_delivers_what_the_routine_still_accepts::<Right>();
 }
 
-fn close_while_holding_closes_at_once<S: TestSide>() {
-    let mut b = bounded::<S>(1);
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
-
-    // 2 is held, and the routine never makes room.
-    assert!(S::poll(&mut b).unwrap().is_pending());
-
-    // Close wakes the side; the held message can't be waited out, and the other side and
-    // Output must hear.
-    S::upstream(&b).close().unwrap();
+/// Once the routine makes room the side hands the held message over, sees the close, and
+/// closes the node: nothing queued before the close is dropped.
+fn hands_over_then_closes<S: TestSide>(b: &mut Biunion<Bounded>) {
+    let mut cx = noop_context();
     b.woken.reset();
-    assert!(matches!(
-        S::poll(&mut b).unwrap_err().kind,
-        ErrorKind::Closed
-    ));
-    assert!(S::Other::woken(&b).get());
-    assert!(b.woken.output.get());
+    let _ = b.output.poll(&mut cx).unwrap();
+    assert!(S::woken(b).get());
+    assert!(matches!(S::poll(b).unwrap_err().kind, ErrorKind::Closed));
+    assert!(S::Other::woken(b).get());
+    let result = b.output.poll(&mut cx);
+    assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+    assert_eq!(b.received(), data::<S>(1..=2));
 }
 
-#[test]
-fn left_close_while_holding_closes_at_once() {
-    close_while_holding_closes_at_once::<Left>();
-}
-
-#[test]
-fn right_close_while_holding_closes_at_once() {
-    close_while_holding_closes_at_once::<Right>();
-}
-
-fn close_before_the_refusal_closes_at_once<S: TestSide>() {
+/// A close behind a held message waits for the routine's room, which the refusal owes a wake.
+fn close_while_holding_waits_for_room<S: TestSide>() {
     let mut b = bounded::<S>(1);
     S::upstream(&b).push_back(Message::Data(1)).unwrap();
     S::upstream(&b).push_back(Message::Data(2)).unwrap();
-    // The close's wake is spent on the poll that then hits the refusal, so no later wake will
-    // come: that poll itself must see the close.
+
+    // 2 is held. The close wakes the side, which keeps holding.
+    assert!(S::poll(&mut b).unwrap().is_pending());
+    S::upstream(&b).close().unwrap();
+    assert!(S::poll(&mut b).unwrap().is_pending());
+    hands_over_then_closes::<S>(&mut b);
+}
+
+#[test]
+fn left_close_while_holding_waits_for_room() {
+    close_while_holding_waits_for_room::<Left>();
+}
+
+#[test]
+fn right_close_while_holding_waits_for_room() {
+    close_while_holding_waits_for_room::<Right>();
+}
+
+/// The close's wake can be spent on the poll that hits the refusal; the routine's wake still
+/// comes once it makes room.
+fn close_before_the_refusal_waits_for_room<S: TestSide>() {
+    let mut b = bounded::<S>(1);
+    S::upstream(&b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&b).push_back(Message::Data(2)).unwrap();
     S::upstream(&b).close().unwrap();
 
-    assert!(matches!(
-        S::poll(&mut b).unwrap_err().kind,
-        ErrorKind::Closed
-    ));
+    assert!(S::poll(&mut b).unwrap().is_pending());
+    hands_over_then_closes::<S>(&mut b);
 }
 
 #[test]
-fn left_close_before_the_refusal_closes_at_once() {
-    close_before_the_refusal_closes_at_once::<Left>();
+fn left_close_before_the_refusal_waits_for_room() {
+    close_before_the_refusal_waits_for_room::<Left>();
 }
 
 #[test]
-fn right_close_before_the_refusal_closes_at_once() {
-    close_before_the_refusal_closes_at_once::<Right>();
+fn right_close_before_the_refusal_waits_for_room() {
+    close_before_the_refusal_waits_for_room::<Right>();
 }
 
 fn routine_returning_closed_from_try_send_becomes_fatal<S: TestSide>() {

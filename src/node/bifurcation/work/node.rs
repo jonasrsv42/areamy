@@ -14,7 +14,7 @@ use crate::node::{bifurcation, routine};
 use crate::poll;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
+use crate::work::{DynSink, Sink};
 use crate::work::{Workable, work_each};
 use std::any::type_name;
 use std::marker::PhantomData;
@@ -96,8 +96,8 @@ where
 /// Output edges by side. Each side holds its own refused message; a side suspended on `Full`
 /// doesn't stop the other from delivering what the routine already made for it.
 pub type Fanouts<'params, T> = Sides<
-    Fanout<'params, <T as Types>::Left, <T as Types>::Signal>,
-    Fanout<'params, <T as Types>::Right, <T as Types>::Signal>,
+    Fanout<DynSink<'params, <T as Types>::Left, <T as Types>::Signal>>,
+    Fanout<DynSink<'params, <T as Types>::Right, <T as Types>::Signal>>,
 >;
 
 /// A Flush or Marker per side, held until that side's routine outputs are out.
@@ -210,7 +210,7 @@ where
 /// inferred.
 fn side_round<Out, Side, SignalType, RoutineType>(
     routine: &mut RoutineType,
-    outputs: &mut Fanout<'_, Out, SignalType>,
+    outputs: &mut Fanout<DynSink<'_, Out, SignalType>>,
     pending: &mut Option<Message<Out, SignalType>>,
     _side: Side,
 ) -> Result<bool, Error>

@@ -5,9 +5,10 @@
 
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Closeable, Outlet, Pushable, TryPush, TryPushable};
+use crate::graph::{Closeable, Outlet, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
+use crate::wake;
 use std::marker::PhantomData;
 
 /// No-op sink. Discards all data pushed to it.
@@ -27,12 +28,6 @@ impl<DataType, SignalType: Origin> Default for Null<DataType, SignalType> {
 
 impl<DataType, SignalType: Origin> Connection for Null<DataType, SignalType> {}
 
-impl<DataType, SignalType: Origin> Pushable for Null<DataType, SignalType> {
-    fn push(&mut self, _msg: Message<DataType, SignalType>) -> Result<(), Error> {
-        Ok(())
-    }
-}
-
 impl<DataType, SignalType: Origin> Outlet for Null<DataType, SignalType> {
     type DataType = DataType;
     type SignalType = SignalType;
@@ -45,6 +40,11 @@ impl<DataType, SignalType: Origin> TryPushable for Null<DataType, SignalType> {
     ) -> Result<TryPush<Message<DataType, SignalType>>, Error> {
         Ok(TryPush::Pushed)
     }
+}
+
+/// Never refuses, so it never owes a wake: the waker is dropped.
+impl<DataType, SignalType: Origin> Schedule for Null<DataType, SignalType> {
+    fn schedule(&mut self, _waker: wake::Waker) {}
 }
 
 impl<DataType, SignalType: Origin> Closeable for Null<DataType, SignalType> {

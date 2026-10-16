@@ -146,7 +146,7 @@ fn poll_async_parent_chain_borrowed() {
 }
 
 /// Add a `Box<dyn Sink + 'params>` directly onto a Sync poll line
-/// node's output `Vec`. The sink holds `&config`; without `'params` on
+/// node's output `Fanout`. The sink holds `&config`; without `'params` on
 /// `Edge::Output` and the matching `Add` impl this would not compile.
 #[test]
 fn poll_borrowed_output_sink() {

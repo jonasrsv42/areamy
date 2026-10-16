@@ -8,6 +8,11 @@ use crate::signal::Origin;
 pub trait Sink: graph::Sink + Schedule {}
 impl<T: graph::Sink + Schedule> Sink for T {}
 
+/// A boxed poll [`Sink`], as poll nodes hold their outputs.
+pub type DynSink<'params, DataType, SignalType> = Box<
+    dyn Sink<DataType = DataType, SignalType = SignalType> + Send + std::marker::Sync + 'params,
+>;
+
 impl<'params, DataType, SignalType> Policied
     for dyn Sink<DataType = DataType, SignalType = SignalType> + Send + std::marker::Sync + 'params
 where

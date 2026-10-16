@@ -7,14 +7,16 @@
 use crate::Accept;
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::Error;
+use crate::graph::Schedule;
 use crate::graph::TryPush;
 use crate::graph::marker::Connection;
 use crate::poll::Context;
+use crate::poll::Sink;
 use crate::poll::future::OutputQueue;
-use crate::work::Sink;
+use crate::wake;
 use crate::{
-    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Outlet, Pushable,
-    Trackable, TryPushable, bifurcation, biunion,
+    BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Outlet, Trackable,
+    TryPushable, bifurcation, biunion,
 };
 use std::collections::VecDeque;
 
@@ -225,7 +227,7 @@ impl<'a> crate::Flush for BorrowingBifurcation<'a> {
 impl<'a> BifurcationRoutine<usize, usize, usize> for BorrowingBifurcation<'a> {}
 
 // ============================================================
-// Borrowed Sink (for poll output Vec<Box<dyn ... + 'params>>)
+// Borrowed Sink (for poll output Fanout<Box<dyn ... + 'params>>)
 // ============================================================
 
 /// Sink that holds a non-`'static` borrow. Used by the poll output
@@ -239,9 +241,9 @@ pub(super) struct BorrowingSink<'a> {
 
 impl<'a> Connection for BorrowingSink<'a> {}
 
-impl<'a> Pushable for BorrowingSink<'a> {
-    fn push(&mut self, msg: Message<usize, Trackable<&'static str>>) -> Result<(), Error> {
-        self.forward.push(msg)
+impl<'a> Schedule for BorrowingSink<'a> {
+    fn schedule(&mut self, waker: wake::Waker) {
+        self.forward.schedule(waker);
     }
 }
 

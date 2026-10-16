@@ -1,17 +1,20 @@
 //! Integration tests for mixed sync + async graphs.
 
+use crate::edge::sync::tests::wait_until;
 use crate::error::Error;
-use crate::graph::TryPush;
 use crate::graph::marker::Connection;
+use crate::graph::{Schedule, TryPush};
 use crate::poll;
 use crate::poll::Sync;
 use crate::signal::Trackable;
 use crate::sync::Receiver;
+use crate::wake;
 use crate::work::{self, Writer};
 use crate::{
     Accept, Closeable, Message, Outlet, Push, Pushable, ThreadBundle, ThreadStream, TryPushable,
 };
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -201,6 +204,57 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
         writer.close()?;
         let errors = handle.join().errors();
         assert!(errors.is_empty());
+        Ok(())
+    })
+}
+
+/// A node parked on a full edge leaves its poll thread running: a second node on the thread keeps
+/// flowing, and the parked one finishes once its consumer drains.
+#[test]
+fn a_parked_node_leaves_its_thread_running() -> Result<(), Error> {
+    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut stalled = async_thread
+        .line(PollDouble::new)
+        .input::<Sync>()
+        .output::<Sync>();
+    let mut flowing = async_thread
+        .line(PollDouble::new)
+        .input::<Sync>()
+        .output::<Sync>();
+    let mut stalled_writer = Writer::<usize>::new(&stalled)?;
+    let mut flowing_writer = Writer::<usize>::new(&flowing)?;
+    let full = Receiver::bounded(NonZeroUsize::MIN);
+    let open = Receiver::new();
+    Push::connect(&mut stalled, &full)?;
+    Push::connect(&mut flowing, &open)?;
+    async_thread.add(stalled);
+    async_thread.add(flowing);
+
+    // Moved in: a failing assertion unwinds through their drops, closing every edge so the poll
+    // thread exits and the scope can surface the failure instead of hanging.
+    std::thread::scope(move |s| -> Result<(), Error> {
+        let handle = async_thread.start(s);
+        for value in 1..=3 {
+            stalled_writer.push(Message::Data(value))?;
+        }
+        // One delivered; the rest wait in the parked node, not in a blocked thread.
+        wait_until(|| full.len().is_ok_and(|len| len == 1));
+        for value in 1..=3 {
+            flowing_writer.push(Message::Data(value))?;
+        }
+        wait_until(|| open.len().is_ok_and(|len| len == 3));
+        for value in 1..=3 {
+            assert_eq!(open.read_front()?, Message::Data(value * 2));
+        }
+        // Each pop wakes the parked node to deliver the next.
+        for value in 1..=3 {
+            wait_until(|| full.len().is_ok_and(|len| len == 1));
+            assert_eq!(full.read_front()?, Message::Data(value * 2));
+        }
+
+        stalled_writer.close()?;
+        flowing_writer.close()?;
+        assert!(matches!(handle.join(), crate::thread::Join::Ok));
         Ok(())
     })
 }
@@ -1075,8 +1129,14 @@ fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
 // Tests for direct sink output (`.sink(...)`)
 // ============================================================
 
-/// Deliberately not `Clone` — a `Sync` output could not carry it.
+/// `Clone` only to satisfy the output's bound: a single edge takes the move, so a clone is a bug.
 struct Moved(&'static str);
+
+impl Clone for Moved {
+    fn clone(&self) -> Self {
+        panic!("a single output edge must not clone");
+    }
+}
 
 /// A caller-provided sink: forwards moved data and signals its close, so a
 /// test blocks on the channels instead of polling shared state.
@@ -1086,15 +1146,6 @@ struct Collect {
 }
 
 impl Connection for Collect {}
-
-impl Pushable for Collect {
-    fn push(&mut self, msg: Message<Moved, Self::SignalType>) -> Result<(), Error> {
-        if let Message::Data(data) = msg {
-            self.items.send(data).unwrap();
-        }
-        Ok(())
-    }
-}
 
 impl Outlet for Collect {
     type DataType = Moved;
@@ -1106,8 +1157,16 @@ impl TryPushable for Collect {
         &mut self,
         msg: Message<Moved, Self::SignalType>,
     ) -> Result<TryPush<Message<Moved, Self::SignalType>>, Error> {
-        self.push(msg).map(|()| TryPush::Pushed)
+        if let Message::Data(data) = msg {
+            self.items.send(data).unwrap();
+        }
+        Ok(TryPush::Pushed)
     }
+}
+
+/// Never refuses, so it never owes a wake.
+impl Schedule for Collect {
+    fn schedule(&mut self, _waker: wake::Waker) {}
 }
 
 impl Closeable for Collect {
@@ -1117,8 +1176,8 @@ impl Closeable for Collect {
     }
 }
 
-/// A direct sink is the node's single consumer: output moves into it — no
-/// `Clone` on the data type — and node teardown closes it.
+/// A direct sink is the node's single consumer: output moves into it, never cloned, and node
+/// teardown closes it.
 #[test]
 fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
     let (items, received) = std::sync::mpsc::channel();

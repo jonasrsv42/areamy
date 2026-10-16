@@ -54,8 +54,9 @@ impl<RoutineType: routine::Poll, SignalType> Drive<'_, RoutineType, SignalType> 
                 self.output.wake();
                 Ok(core::task::Poll::Pending)
             }
-            // FlushReady — Work is done, Output handles it
-            NodeState::FlushReady(_) => Ok(core::task::Poll::Pending),
+            // FlushReady — Work is done, Output handles it. Forwarding — the signal is in flight;
+            // the return to Running wakes Work, replaying a wake swallowed here.
+            NodeState::FlushReady(_) | NodeState::Forwarding => Ok(core::task::Poll::Pending),
         }
     }
 

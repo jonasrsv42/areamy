@@ -4,13 +4,15 @@
 //! - **Input**: drain edge → TrySend to routine; a refused message is held until the routine
 //!   wakes Input, and no signal is read past it. Routine wakes Output via OutputProducer.
 //! - **Work**: poll routine async work (woken by InputQueue/IO)
-//! - **Output**: drain Next → push downstream, forward flush/close/marker signals
+//! - **Output**: drain Next → try_push downstream (at most BUDGET per poll), forward
+//!   flush/close/marker signals. A refusal parks it, the message held, until the edge wakes it.
 //!
-//! State machine:
+//! State machine (`node::poll::NodeState`):
 //! - **Running**: Input drains, Work polls, Output drains
 //! - **Flushing**: Work polls routine until Ready → FlushReady
 //! - **FlushReady**: Output drains remaining output, forwards Flush → Running
 //! - **MarkerReady**: Work polls routine once (best-effort drain), Output forwards Marker → Running
+//! - **Forwarding**: a refused Flush or Marker waits in Output; delivered → Running
 //! - **CloseReady**: Output drains buffered output, closes → Closed
 //! - **Closed**: all phases return Closed
 //!
@@ -19,13 +21,13 @@
 //! Flush calls `routine.flush()` and polls until Ready — graceful
 //! wrap-up. Close is a *fast* path: no flush, no poll. Output drains
 //! whatever is already buffered in `routine.next()` and closes the
-//! downstream edge; the routine drops with the node, so its `Drop`
-//! is responsible for cancelling any in-flight async work.
+//! downstream edge; output an edge still refuses is dropped. The routine
+//! drops with the node, so its `Drop` is responsible for cancelling any
+//! in-flight async work.
 //!
-//! Close drops what Input can't hand over. Queued messages still reach the
-//! routine while it accepts; once it refuses on a closed edge, Input closes,
-//! dropping the refused message and everything behind it, Flush included.
-//! For a graceful end, close only after the Flush comes out downstream.
+//! Input reads the close only after everything queued before it: a message the routine refuses
+//! is held until the routine makes room, so a Flush followed by a Close always lands. For a
+//! lossless end, Flush before closing.
 //!
 //! # Marker ordering
 //!
@@ -40,12 +42,14 @@
 //! poll cycle (e.g. from an in-flight future) may arrive after the marker.
 //! If strict ordering is required with async routines, use Flush instead.
 
-use crate::graph::{Closeable, Closed, Pushable, Receivable};
+use crate::edge::fanout::Fanout;
+use crate::graph::{Closed, Receivable, Schedule};
 use crate::node::line::poll::routine::LineRoutine;
 use crate::node::poll::NodeState;
-use crate::poll::Phase;
+use crate::poll::{self, Phase};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use crate::wake;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -65,12 +69,14 @@ pub use work::Work;
 /// `T: Types`.
 pub trait Types {
     type In;
-    type Out;
+    /// `Clone` for a fan-out of several edges; a single edge takes the move.
+    type Out: Clone;
     type Signal: Origin + Clone;
     type ThreadId: ThreadId;
     type Routine: LineRoutine<Self::In, Self::Out>;
     type Inlet: Receivable<DataType = Self::In, SignalType = Self::Signal> + Closed;
-    type Outlet: Pushable<DataType = Self::Out, SignalType = Self::Signal> + Closeable;
+    /// One output edge; the node holds a [Fanout] of them.
+    type Outlet: poll::Sink<DataType = Self::Out, SignalType = Self::Signal>;
 }
 
 /// [Types] from its parts, so [Node::phases] infers them from its arguments.
@@ -91,11 +97,12 @@ pub struct Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, Outle
 impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType> Types
     for Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
 where
+    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InletType: Receivable<DataType = In, SignalType = SignalType> + Closed,
-    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
     type In = In;
     type Out = Out;
@@ -110,7 +117,7 @@ where
 pub(crate) struct SharedState<T: Types> {
     input: Phase<T::Inlet>,
     work: Phase<T::Routine>,
-    output: Phase<T::Outlet>,
+    output: Phase<Fanout<T::Outlet>>,
     state: NodeState<T::Signal>,
 }
 
@@ -122,22 +129,30 @@ pub type Phases<T> = (Input<T>, Work<T>, Output<T>);
 impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
     Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
 where
+    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InletType: Receivable<DataType = In, SignalType = SignalType> + Closed,
-    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
-    /// Create Input, Work, and Output phase pollables sharing state.
+    /// Create Input, Work, and Output phase pollables sharing state. Binds every output edge to
+    /// `output_wake` before anything is pushed, so no refusal goes unwoken.
     pub fn phases(
         input: Phase<InletType>,
         work: Phase<RoutineType>,
-        output: Phase<OutletType>,
+        mut output: Fanout<OutletType>,
+        output_wake: wake::Waker,
     ) -> Phases<Self> {
+        let waker = output_wake.local.clone();
+        Schedule::schedule(&mut output, output_wake);
         let shared = Rc::new(RefCell::new(SharedState {
             input,
             work,
-            output,
+            output: Phase {
+                target: output,
+                waker,
+            },
             state: NodeState::Running,
         }));
         (

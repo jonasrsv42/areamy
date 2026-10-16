@@ -13,7 +13,7 @@ use crate::node::work::Incoming;
 use crate::poll;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
+use crate::work::{DynSink, Sink};
 use crate::work::{Workable, work_each};
 use std::any::type_name;
 use std::marker::PhantomData;
@@ -102,7 +102,7 @@ pub struct Line<'params, T: Types> {
 
     /// Edges that we push output into. A refused message waits here, and nothing new leaves the
     /// routine until it is delivered.
-    pub outputs: Fanout<'params, T::Out, T::Signal>,
+    pub outputs: Fanout<DynSink<'params, T::Out, T::Signal>>,
 
     /// Input to our current node that parents will push into.
     pub input: Receiver<T::In, T::Signal>,

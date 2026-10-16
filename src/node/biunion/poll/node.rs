@@ -5,32 +5,37 @@
 //!   that side; a refused message is held until the routine wakes that side, and no signal is
 //!   read past it
 //! - **Work**: poll routine async work (woken by InputQueue/IO)
-//! - **Output**: drain Next → push downstream, forward flush/close/marker signals
+//! - **Output**: drain Next → try_push downstream (at most BUDGET per poll), forward
+//!   flush/close/marker signals. A refusal parks it, the message held, until the edge wakes it.
 //!
-//! State machine (same as line node):
+//! State machine (same as line node, `node::poll::NodeState`):
 //! - **Running**: Inputs drain, Work polls, Output drains
 //! - **Flushing**: Work polls routine until Ready → FlushReady
 //! - **FlushReady**: Output drains remaining output, forwards Flush → Running
 //! - **MarkerReady**: Work polls routine once (best-effort), Output forwards Marker → Running
-//! - **CloseReady**: Output drains remaining output, closes → Closed
+//! - **Forwarding**: a refused Flush or Marker waits in Output; delivered → Running
+//! - **CloseReady**: Output drains remaining output (an edge still refusing drops it), closes →
+//!   Closed
 //! - **Closed**: all phases return Closed
 //!
 //! Flush from either input triggers Flushing immediately (first-flush-wins). The other side
 //! reads nothing until Running again, so its held message lands after the Flush, as its
 //! queued ones do.
 //!
-//! Close from either input closes the node: queued messages reach the routine
-//! while it accepts; once a side drains its closed edge, or refuses on it, the node closes,
-//! dropping both sides' refused messages and everything behind them.
+//! Close from either input closes the node once that side has handed over everything queued
+//! before the close: a refused message is held until the routine makes room. The other side's
+//! held message is dropped.
 
 use super::phases::Phases;
-use crate::graph::{Closeable, Closed, Pushable, Receivable};
+use crate::edge::fanout::Fanout;
+use crate::graph::{Closed, Receivable, Schedule};
 use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::poll::NodeState;
-use crate::poll::Phase;
+use crate::poll::{self, Phase};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use crate::wake;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -51,13 +56,15 @@ pub use work::Work;
 pub trait Types {
     type Left;
     type Right;
-    type Out;
+    /// `Clone` for a fan-out of several edges; a single edge takes the move.
+    type Out: Clone;
     type Signal: Origin + Clone;
     type ThreadId: ThreadId;
     type Routine: BiunionRoutine<Self::Left, Self::Right, Self::Out>;
     type LeftInlet: Receivable<DataType = Self::Left, SignalType = Self::Signal> + Closed;
     type RightInlet: Receivable<DataType = Self::Right, SignalType = Self::Signal> + Closed;
-    type Outlet: Pushable<DataType = Self::Out, SignalType = Self::Signal> + Closeable;
+    /// One output edge; the node holds a [Fanout] of them.
+    type Outlet: poll::Sink<DataType = Self::Out, SignalType = Self::Signal>;
 }
 
 /// [Types] from its parts, so [Node::phases] infers them from its arguments.
@@ -110,12 +117,13 @@ impl<
         OutletType,
     >
 where
+    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInletType: Receivable<DataType = Left, SignalType = SignalType> + Closed,
     RightInletType: Receivable<DataType = Right, SignalType = SignalType> + Closed,
-    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
     type Left = Left;
     type Right = Right;
@@ -132,7 +140,7 @@ where
 pub(crate) struct SharedState<T: Types> {
     input: Inputs<Phase<T::LeftInlet>, Phase<T::RightInlet>>,
     work: Phase<T::Routine>,
-    output: Phase<T::Outlet>,
+    output: Phase<Fanout<T::Outlet>>,
     state: NodeState<T::Signal>,
 }
 
@@ -161,23 +169,31 @@ impl<
         OutletType,
     >
 where
+    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInletType: Receivable<DataType = Left, SignalType = SignalType> + Closed,
     RightInletType: Receivable<DataType = Right, SignalType = SignalType> + Closed,
-    OutletType: Pushable<DataType = Out, SignalType = SignalType> + Closeable,
+    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
 {
-    /// Create all four phase pollables sharing state.
+    /// Create all four phase pollables sharing state. Binds every output edge to `output_wake`
+    /// before anything is pushed, so no refusal goes unwoken.
     pub fn phases(
         input: Inputs<Phase<LeftInletType>, Phase<RightInletType>>,
         work: Phase<RoutineType>,
-        output: Phase<OutletType>,
+        mut output: Fanout<OutletType>,
+        output_wake: wake::Waker,
     ) -> Phases<Self> {
+        let waker = output_wake.local.clone();
+        Schedule::schedule(&mut output, output_wake);
         let shared = Rc::new(RefCell::new(SharedState {
             input,
             work,
-            output,
+            output: Phase {
+                target: output,
+                waker,
+            },
             state: NodeState::Running,
         }));
         Phases {

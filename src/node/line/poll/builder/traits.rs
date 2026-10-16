@@ -1,11 +1,12 @@
 //! Dispatch traits for line builder `.input::<E>()` and `.output::<E>()`.
 
+use crate::edge::fanout::Fanout;
+use crate::poll::DynSink;
 use crate::poll::edge::{Edge, Sync};
 use crate::poll::input::sync::{Input, Receiver};
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use crate::work::Sink;
 
 /// Resolve input edge. Implemented for [`Sync`] — allocates a sync waker.
 pub trait ResolveInput<'params, InType, SignalType: Origin, ThreadIdType: ThreadId>: Edge {
@@ -47,14 +48,7 @@ where
     OutType: Clone + Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
 {
-    fn resolve() -> Vec<
-        Box<
-            dyn Sink<DataType = OutType, SignalType = SignalType>
-                + Send
-                + std::marker::Sync
-                + 'params,
-        >,
-    > {
-        Vec::new()
+    fn resolve() -> Fanout<DynSink<'params, OutType, SignalType>> {
+        Fanout::new()
     }
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::Trackable;
 use crate::error::{Error, ErrorKind};
-use crate::graph::{Closeable, Closed, Pushable, Receivable, Schedule, TryPush, TryPushable};
+use crate::graph::{Closeable, Closed, Receivable, Schedule, TryPush, TryPushable};
 use crate::wake::mock::{counting_local_waker, counting_waker, noop_local_waker};
 use crate::wake::{LocalWake, Waker};
 use std::cell::Cell;
@@ -193,18 +193,6 @@ fn closed_beats_full() {
     push(&mut tx, 1);
     rx.close();
     assert!(is_closed(tx.try_push(Message::Data(2))));
-    assert!(is_closed(Pushable::push(&mut tx, Message::Data(2))));
-}
-
-/// Until hop 3: a same-thread push can't wait for room.
-#[test]
-fn a_blocking_push_into_a_full_edge_is_fatal_and_enqueues_nothing() {
-    let (mut tx, mut rx) = bounded(1);
-    Pushable::push(&mut tx, Message::Data(1)).unwrap();
-    let error = Pushable::push(&mut tx, Message::Data(2)).unwrap_err();
-    assert!(matches!(error.kind, ErrorKind::Fatal(_)));
-    assert_eq!(pop(&mut rx), Some(1));
-    assert_eq!(pop(&mut rx), None);
 }
 
 #[test]

@@ -9,15 +9,6 @@ impl<T: ?Sized + Closeable> Closeable for Box<T> {
     }
 }
 
-impl<T: Closeable> Closeable for Vec<T> {
-    fn close(&mut self) -> Result<(), Error> {
-        for edge in self.iter_mut() {
-            edge.close()?;
-        }
-        Ok(())
-    }
-}
-
 impl<T: Closeable> Closeable for Rc<RefCell<T>> {
     fn close(&mut self) -> Result<(), Error> {
         self.borrow_mut().close()

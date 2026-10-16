@@ -5,6 +5,7 @@ mod close;
 mod cycle_test;
 mod getter;
 mod lifetime;
+mod mock;
 mod no_clone_test;
 mod poll;
 mod pull;

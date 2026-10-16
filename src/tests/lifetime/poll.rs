@@ -7,7 +7,7 @@ use super::mock::{
 use crate::edge::sync::Receiver;
 use crate::graph::{Add, Get};
 use crate::poll;
-use crate::poll::future::OutputQueue;
+use crate::tests::mock::WakingOutput;
 use crate::thread::ThreadBundle;
 use crate::work::{self, ThreadStream, Writer};
 use crate::{At, Closeable, Message, Push, Pushable, biunion};
@@ -21,7 +21,7 @@ fn line_poll_borrowed() {
     let mut node = thread
         .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w.output),
+            output: WakingOutput::new(w.output),
         })
         .input::<poll::Sync>()
         .output::<poll::Sync>();
@@ -60,7 +60,7 @@ fn biunion_poll_borrowed() {
     let mut node = thread
         .biunion(move |w: poll::BiunionWakers| PollBorrowingBiunion {
             bias: bias_ref,
-            output: OutputQueue::new(w.output),
+            output: WakingOutput::new(w.output),
         })
         .input::<biunion::Left, poll::Sync>()
         .input::<biunion::Right, poll::Sync>()
@@ -106,7 +106,7 @@ fn poll_async_parent_chain_borrowed() {
     let a = thread
         .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w.output),
+            output: WakingOutput::new(w.output),
         })
         .input::<poll::Sync>();
 
@@ -115,7 +115,7 @@ fn poll_async_parent_chain_borrowed() {
     let mut b = thread
         .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w.output),
+            output: WakingOutput::new(w.output),
         })
         .parent(a)
         .output::<poll::Sync>();
@@ -158,7 +158,7 @@ fn poll_borrowed_output_sink() {
     let mut node = thread
         .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
-            output: OutputQueue::new(w.output),
+            output: WakingOutput::new(w.output),
         })
         .input::<poll::Sync>()
         .output::<poll::Sync>();
@@ -204,7 +204,7 @@ fn poll_node_input_from_borrowed_parent() {
     let mut poll_node = poll_thread
         .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: mult_ref,
-            output: OutputQueue::new(w.output),
+            output: WakingOutput::new(w.output),
         })
         .input::<poll::Sync>()
         .output::<poll::Sync>();

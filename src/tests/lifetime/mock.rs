@@ -12,7 +12,7 @@ use crate::graph::TryPush;
 use crate::graph::marker::Connection;
 use crate::poll::Context;
 use crate::poll::Sink;
-use crate::poll::future::OutputQueue;
+use crate::tests::mock::WakingOutput;
 use crate::wake;
 use crate::{
     BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Outlet, Trackable,
@@ -69,23 +69,22 @@ impl<'a> LineRoutine<usize, usize> for BorrowingLine<'a> {}
 // Borrowing line routine (poll variant — also implements Poll)
 // ============================================================
 
-/// Poll line routine. Uses [`OutputQueue`] so pushing data wakes the
-/// output phase (required by the poll/line contract).
+/// Poll line routine.
 pub(super) struct PollBorrowingLine<'a> {
     pub(super) multiplier: &'a usize,
-    pub(super) output: OutputQueue<usize>,
+    pub(super) output: WakingOutput,
 }
 
 impl<'a> crate::TrySend<usize> for PollBorrowingLine<'a> {
     fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
-        self.output.producer.push(message * *self.multiplier);
+        self.output.push(message * *self.multiplier);
         Ok(Accept::Accepted)
     }
 }
 
 impl<'a> crate::Next<usize> for PollBorrowingLine<'a> {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.consumer.pop())
+        Ok(self.output.pop())
     }
 }
 
@@ -144,30 +143,29 @@ impl<'a> BiunionRoutine<usize, usize, usize> for BorrowingBiunion<'a> {}
 // Borrowing biunion routine (poll)
 // ============================================================
 
-/// Poll biunion routine. Uses [`OutputQueue`] so pushing data wakes the
-/// output phase.
+/// Poll biunion routine.
 pub(super) struct PollBorrowingBiunion<'a> {
     pub(super) bias: &'a usize,
-    pub(super) output: OutputQueue<usize>,
+    pub(super) output: WakingOutput,
 }
 
 impl<'a> crate::TrySend<usize, biunion::Left> for PollBorrowingBiunion<'a> {
     fn try_send(&mut self, m: usize) -> Result<Accept<usize>, Error> {
-        self.output.producer.push(m + *self.bias);
+        self.output.push(m + *self.bias);
         Ok(Accept::Accepted)
     }
 }
 
 impl<'a> crate::TrySend<usize, biunion::Right> for PollBorrowingBiunion<'a> {
     fn try_send(&mut self, m: usize) -> Result<Accept<usize>, Error> {
-        self.output.producer.push(m * *self.bias);
+        self.output.push(m * *self.bias);
         Ok(Accept::Accepted)
     }
 }
 
 impl<'a> crate::Next<usize> for PollBorrowingBiunion<'a> {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.consumer.pop())
+        Ok(self.output.pop())
     }
 }
 

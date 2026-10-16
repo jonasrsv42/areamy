@@ -4,7 +4,7 @@ mod support;
 
 use areamy::error::Error;
 use areamy::poll::future::line::FutureRoutine;
-use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use areamy::poll::future::{Input, input, output};
 use areamy::sync::Receiver;
 use areamy::work::{Line, Writer};
 use areamy::{
@@ -29,10 +29,10 @@ fn sync_poll_sync(c: &mut Criterion) {
 
     let mut io_thread = poll::Thread::<'_, IoThread>::new();
     let routine = FutureRoutine::factory(
-        |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+        |input: input::Receiver<usize>, output: output::Sender<usize>| {
             Box::pin(async move {
                 while let Input::Data(value) = input.recv().await? {
-                    output.push(value);
+                    output.send(value).await?;
                 }
                 Ok::<_, Error>(())
             })

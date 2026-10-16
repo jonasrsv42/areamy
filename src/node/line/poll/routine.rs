@@ -96,14 +96,17 @@ pub mod tests {
     use crate::error::Error;
     use crate::poll::Context;
     use crate::poll::context::mock::noop_context;
-    use crate::poll::future::queue::OutputQueue;
     use crate::poll::timer::mock::noop_timer;
+    use crate::wake::LocalWaker;
     use crate::wake::mock::noop_local_waker;
     use crate::{Accept, Next, TrySend};
+    use std::collections::VecDeque;
 
     pub struct MockLine {
         state: usize,
-        output: OutputQueue<usize>,
+        output: VecDeque<usize>,
+        /// Output's waker, woken per output.
+        waker: LocalWaker,
         pub poll_count: usize,
         flushed: bool,
     }
@@ -112,7 +115,8 @@ pub mod tests {
         pub fn new(wakers: crate::poll::LineWakers) -> Self {
             MockLine {
                 state: 0,
-                output: OutputQueue::new(wakers.output),
+                output: VecDeque::new(),
+                waker: wakers.output,
                 poll_count: 0,
                 flushed: false,
             }
@@ -122,14 +126,15 @@ pub mod tests {
     impl crate::TrySend<usize> for MockLine {
         fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
             self.state += message;
-            self.output.producer.push(self.state * 2);
+            self.output.push_back(self.state * 2);
+            self.waker.wake();
             Ok(Accept::Accepted)
         }
     }
 
     impl crate::Next<usize> for MockLine {
         fn next(&mut self) -> Result<Option<usize>, Error> {
-            Ok(self.output.consumer.pop())
+            Ok(self.output.pop_front())
         }
     }
 

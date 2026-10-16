@@ -87,27 +87,28 @@ pub mod mock {
         }
     }
 
-    fn waker(on_wake: impl Fn() + 'static) -> LocalWaker {
+    /// Waker running `on_wake`.
+    pub fn local_waker(on_wake: impl Fn() + 'static) -> LocalWaker {
         LocalWaker::new(MockWake(on_wake))
     }
 
     /// Waker whose `wake()` does nothing.
     pub fn noop_local_waker() -> LocalWaker {
-        waker(|| {})
+        local_waker(|| {})
     }
 
     /// Waker plus the flag its `wake()` sets.
     pub fn tracking_local_waker() -> (LocalWaker, Rc<Cell<bool>>) {
         let woken = Rc::new(Cell::new(false));
         let flag = woken.clone();
-        (waker(move || flag.set(true)), woken)
+        (local_waker(move || flag.set(true)), woken)
     }
 
     /// Waker plus the counter its `wake()` increments.
     pub fn counting_local_waker() -> (LocalWaker, Rc<Cell<usize>>) {
         let count = Rc::new(Cell::new(0));
         let counter = count.clone();
-        (waker(move || counter.set(counter.get() + 1)), count)
+        (local_waker(move || counter.set(counter.get() + 1)), count)
     }
 
     /// Sync wake counting into a shared counter.

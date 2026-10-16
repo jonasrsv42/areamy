@@ -4,8 +4,9 @@ use super::mock::{Signal, is_closed};
 use crate::Message;
 use crate::error::Error;
 use crate::graph::{Closeable, Receivable, TryPush, TryPushable};
+use crate::node::routine::Accept;
 use crate::poll::edge;
-use crate::poll::future::queue::{Input, InputQueue};
+use crate::poll::future::{self, Input};
 use crate::poll::input;
 use crate::poll::timer::mock::noop_timer;
 use crate::sync::Receiver;
@@ -111,29 +112,30 @@ fn poll_local_edge() -> Result<(), Error> {
     Ok(())
 }
 
-/// The future input queue closes itself on Flush and reopens on reset.
+/// The future input queue closes itself on Flush; renew opens the next segment's.
 #[test]
 fn future_input_queue() -> Result<(), Error> {
-    let queue = InputQueue::<usize>::new(noop_timer());
+    let (mut sender, receiver) =
+        future::input::channel(mock::noop_local_waker(), noop_timer(), None);
     let waker = std::task::Waker::noop();
     let mut cx = core::task::Context::from_waker(waker);
-    queue.producer.push(Input::Data(1));
-    queue.producer.push(Input::Flush);
+    assert_eq!(sender.try_send(1)?, Accept::Accepted);
+    sender.flush()?;
 
-    let mut recv = queue.consumer.recv();
+    let mut recv = receiver.recv();
     assert!(matches!(
         Pin::new(&mut recv).poll(&mut cx),
         core::task::Poll::Ready(Ok(Input::Data(1)))
     ));
-    let mut recv = queue.consumer.recv();
+    let mut recv = receiver.recv();
     assert!(matches!(
         Pin::new(&mut recv).poll(&mut cx),
         core::task::Poll::Ready(Ok(Input::Flush))
     ));
-    let mut recv = queue.consumer.recv();
+    let mut recv = receiver.recv();
     match Pin::new(&mut recv).poll(&mut cx) {
         core::task::Poll::Ready(result) => assert_closed(result.map(|_| ())),
         core::task::Poll::Pending => panic!("expected Closed after Flush"),
     }
-    queue.producer.reset()
+    sender.renew().map(|_| ())
 }

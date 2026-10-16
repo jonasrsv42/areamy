@@ -8,7 +8,7 @@ use crate::biunion;
 use crate::error::Error;
 use crate::poll;
 use crate::poll::future;
-use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
 use crate::writer::push::Writer;
 use crate::{Closeable, Message, Push, Pushable};
@@ -32,9 +32,9 @@ fn biunion_audio_with_config() {
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let routine = future::biunion::FutureRoutine::factory(
-        |audio: InputConsumer<usize>,
-         config: InputConsumer<Config>,
-         output: OutputProducer<usize>| {
+        |audio: input::Receiver<usize>,
+         config: input::Receiver<Config>,
+         output: output::Sender<usize>| {
             Box::pin(async move {
                 let multiplier = Rc::new(Cell::new(1usize));
 
@@ -43,7 +43,7 @@ fn biunion_audio_with_config() {
                 let audio_task: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
                         while let Input::Data(frame) = audio.recv().await? {
-                            audio_out.push(frame * audio_mul.get());
+                            audio_out.send(frame * audio_mul.get()).await?;
                         }
                         Ok(())
                     });
@@ -116,10 +116,10 @@ fn biunion_with_async_parent() {
     // Parent line node: doubles input
     let parent = async_thread
         .line(future::line::FutureRoutine::factory(
-            |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+            |input: input::Receiver<usize>, output: output::Sender<usize>| {
                 Box::pin(async move {
                     while let Input::Data(v) = input.recv().await? {
-                        output.push(v * 2);
+                        output.send(v * 2).await?;
                     }
                     Ok(())
                 })
@@ -132,9 +132,9 @@ fn biunion_with_async_parent() {
 
     // Biunion: left from async parent, right from sync config
     let biunion_routine = future::biunion::FutureRoutine::factory(
-        |audio: InputConsumer<usize>,
-         config: InputConsumer<Config>,
-         output: OutputProducer<usize>| {
+        |audio: input::Receiver<usize>,
+         config: input::Receiver<Config>,
+         output: output::Sender<usize>| {
             Box::pin(async move {
                 let multiplier = Rc::new(Cell::new(1usize));
 
@@ -143,7 +143,7 @@ fn biunion_with_async_parent() {
                 let audio_task: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
                         while let Input::Data(frame) = audio.recv().await? {
-                            audio_out.push(frame * audio_mul.get());
+                            audio_out.send(frame * audio_mul.get()).await?;
                         }
                         Ok(())
                     });

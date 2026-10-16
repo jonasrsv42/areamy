@@ -36,14 +36,17 @@ pub mod tests {
     use crate::biunion;
     use crate::error::Error;
     use crate::poll::Context;
-    use crate::poll::future::queue::OutputQueue;
     use crate::poll::timer::mock::noop_timer;
+    use crate::wake::LocalWaker;
     use crate::wake::mock::noop_local_waker;
+    use std::collections::VecDeque;
 
     /// Mock biunion routine: left input doubled, right input tripled,
     /// both pushed to output. Tracks poll_count.
     pub struct MockBiunion {
-        output: OutputQueue<usize>,
+        output: VecDeque<usize>,
+        /// Output's waker, woken per output.
+        waker: LocalWaker,
         pub poll_count: usize,
         flushed: bool,
     }
@@ -51,7 +54,8 @@ pub mod tests {
     impl MockBiunion {
         pub fn new(wakers: crate::poll::BiunionWakers) -> Self {
             MockBiunion {
-                output: OutputQueue::new(wakers.output),
+                output: VecDeque::new(),
+                waker: wakers.output,
                 poll_count: 0,
                 flushed: false,
             }
@@ -72,21 +76,23 @@ pub mod tests {
 
     impl crate::TrySend<usize, biunion::Left> for MockBiunion {
         fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
-            self.output.producer.push(message * 2);
+            self.output.push_back(message * 2);
+            self.waker.wake();
             Ok(Accept::Accepted)
         }
     }
 
     impl crate::TrySend<usize, biunion::Right> for MockBiunion {
         fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
-            self.output.producer.push(message * 3);
+            self.output.push_back(message * 3);
+            self.waker.wake();
             Ok(Accept::Accepted)
         }
     }
 
     impl crate::Next<usize> for MockBiunion {
         fn next(&mut self) -> Result<Option<usize>, Error> {
-            Ok(self.output.consumer.pop())
+            Ok(self.output.pop_front())
         }
     }
 

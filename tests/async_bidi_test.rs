@@ -7,7 +7,7 @@
 use areamy::error::Error;
 use areamy::poll;
 use areamy::poll::future::line::FutureRoutine;
-use areamy::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use areamy::poll::future::{Input, input, output};
 use areamy::poll::try_join;
 use areamy::sync::Receiver;
 use areamy::{Closeable, Message, Push, Pushable, ThreadBundle, ThreadStream};
@@ -164,7 +164,7 @@ fn bidi_with_join() -> Result<(), Error> {
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
     let routine = FutureRoutine::factory(
-        |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+        |input: input::Receiver<usize>, output: output::Sender<usize>| {
             Box::pin(async move {
                 let socket = FakeSocket::connect("fake://server").await;
 
@@ -189,7 +189,7 @@ fn bidi_with_join() -> Result<(), Error> {
                 let reader: Pin<Box<dyn Future<Output = Result<(), Error>>>> =
                     Box::pin(async move {
                         while let Some(val) = reader_socket.read().await {
-                            reader_output.push(val + 1);
+                            reader_output.send(val + 1).await?;
                         }
                         Ok(())
                     });

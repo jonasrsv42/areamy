@@ -7,7 +7,10 @@
 //! [race](fn@super::race).
 
 pub mod biunion;
+mod deadline;
+pub mod input;
 pub mod line;
-pub mod queue;
+pub mod output;
+mod waiters;
 
-pub use queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue, RecvFut};
+pub use input::Input;

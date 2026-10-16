@@ -4,7 +4,7 @@ use super::mock::{Hold, IoThread, drain_edge};
 use crate::error::Error;
 use crate::poll;
 use crate::poll::future::line::FutureRoutine;
-use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
 use crate::work::{self, Writer};
 use crate::{Closeable, DefaultThread, Message, Push, Pushable, ThreadBundle, ThreadStream};
@@ -18,13 +18,13 @@ fn run_once() -> Result<(), Error> {
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let routine = FutureRoutine::factory(
-        |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+        |input: input::Receiver<usize>, output: output::Sender<usize>| {
             Box::pin(async move {
                 loop {
                     match input.recv().await? {
-                        Input::Data(value) => output.push(value),
+                        Input::Data(value) => output.send(value).await?,
                         Input::Flush => {
-                            output.push(FLUSHED);
+                            output.send(FLUSHED).await?;
                             return Ok(());
                         }
                     }

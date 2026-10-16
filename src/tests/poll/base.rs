@@ -15,49 +15,50 @@ use crate::{
 };
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
+use std::pin::pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::poll::future::line::FutureRoutine;
-use crate::poll::future::queue::{Input, InputConsumer, InputQueue, OutputProducer, OutputQueue};
+use crate::poll::future::{Input, input, output};
 use crate::poll::{Context, LineWakers};
+use crate::tests::mock::WakingOutput;
 
-/// Routine that queues input in send via waker-aware Queue, then
-/// doubles it in poll. Send wakes Work via the queue's waker.
+/// Routine that queues input in send via the future input queue, then
+/// doubles it in poll. A send wakes Work once poll parked on the queue.
 struct PollDouble {
-    input: InputQueue<usize>,
-    output: OutputQueue<usize>,
+    input: input::Sender<usize>,
+    receiver: input::Receiver<usize>,
+    output: WakingOutput,
 }
 
 impl PollDouble {
     fn new(wakers: LineWakers) -> Self {
+        // The timer would re-poll the routine at a `recv_with_timeout` deadline.
+        let (input, receiver) = input::channel(wakers.input, wakers.timer, None);
         Self {
-            // timer on InputQueue so `recv_with_timeout` would
-            // re-poll the routine; output waker on OutputQueue so
-            // push() wakes the Output phase to drain.
-            input: InputQueue::new(wakers.timer),
-            output: OutputQueue::new(wakers.output),
+            input,
+            receiver,
+            output: WakingOutput::new(wakers.output),
         }
     }
 }
 
 impl crate::TrySend<usize> for PollDouble {
     fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
-        self.input.producer.push(Input::Data(message));
-        Ok(Accept::Accepted)
+        self.input.try_send(message)
     }
 }
 
 impl crate::Next<usize> for PollDouble {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.consumer.pop())
+        Ok(self.output.pop())
     }
 }
 
 impl crate::Flush for PollDouble {
     fn flush(&mut self) -> Result<(), Error> {
-        self.input.producer.push(Input::Flush);
-        Ok(())
+        self.input.flush()
     }
 }
 
@@ -65,12 +66,13 @@ impl crate::Poll for PollDouble {
     fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         let mut std_cx = core::task::Context::from_waker(&cx.wake.sync);
         loop {
-            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut std_cx) {
+            let polled = pin!(self.receiver.recv()).poll(&mut std_cx);
+            match polled {
                 core::task::Poll::Ready(Ok(Input::Data(value))) => {
-                    self.output.producer.push(value * 2);
+                    self.output.push(value * 2);
                 }
                 core::task::Poll::Ready(Ok(Input::Flush)) => {
-                    self.input.producer.reset().ok();
+                    self.receiver = self.input.renew()?;
                     return Ok(core::task::Poll::Ready(()));
                 }
                 core::task::Poll::Ready(Err(_)) => {
@@ -763,14 +765,15 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
 // ============================================================
 
 /// Simulates an I/O routine with a half-close handshake on flush.
-/// Uses waker-aware Queue to wake Work on Send/Flush.
+/// Uses the future input queue to wake Work on Send/Flush.
 ///
-/// - send() pushes data to queue (wakes Work)
-/// - flush() pushes flush marker to queue (wakes Work)
+/// - send() queues data (wakes a parked poll)
+/// - flush() queues the flush marker (wakes a parked poll)
 /// - poll() drains queue, doubles data, simulates multi-cycle handshake on flush
 struct HalfCloseRoutine {
-    input: InputQueue<usize>,
-    output: OutputQueue<usize>,
+    input: input::Sender<usize>,
+    receiver: input::Receiver<usize>,
+    output: WakingOutput,
     flush_cycles: usize,
     flush_cycles_remaining: usize,
     flush_count: Arc<Mutex<usize>>,
@@ -778,9 +781,11 @@ struct HalfCloseRoutine {
 
 impl HalfCloseRoutine {
     fn new(wakers: LineWakers, flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
+        let (input, receiver) = input::channel(wakers.input, wakers.timer, None);
         Self {
-            input: InputQueue::new(wakers.timer),
-            output: OutputQueue::new(wakers.output),
+            input,
+            receiver,
+            output: WakingOutput::new(wakers.output),
             flush_cycles,
             flush_cycles_remaining: 0,
             flush_count,
@@ -790,21 +795,19 @@ impl HalfCloseRoutine {
 
 impl crate::TrySend<usize> for HalfCloseRoutine {
     fn try_send(&mut self, message: usize) -> Result<Accept<usize>, Error> {
-        self.input.producer.push(Input::Data(message));
-        Ok(Accept::Accepted)
+        self.input.try_send(message)
     }
 }
 
 impl crate::Next<usize> for HalfCloseRoutine {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.consumer.pop())
+        Ok(self.output.pop())
     }
 }
 
 impl crate::Flush for HalfCloseRoutine {
     fn flush(&mut self) -> Result<(), Error> {
-        self.input.producer.push(Input::Flush);
-        Ok(())
+        self.input.flush()
     }
 }
 
@@ -824,12 +827,13 @@ impl crate::Poll for HalfCloseRoutine {
 
         // Drain queue until flush or empty
         loop {
-            match std::pin::Pin::new(&mut self.input.consumer.recv()).poll(&mut std_cx) {
+            let polled = pin!(self.receiver.recv()).poll(&mut std_cx);
+            match polled {
                 core::task::Poll::Ready(Ok(Input::Data(val))) => {
-                    self.output.producer.push(val * 2);
+                    self.output.push(val * 2);
                 }
                 core::task::Poll::Ready(Ok(Input::Flush)) => {
-                    self.input.producer.reset().ok();
+                    self.receiver = self.input.renew()?;
                     self.flush_cycles_remaining = self.flush_cycles;
                     cx.wake.sync.wake_by_ref();
                     return Ok(core::task::Poll::Pending);
@@ -916,7 +920,7 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
 /// Takes `flush_cycles` poll cycles to complete each flush (I/O simulation).
 struct BatchRoutine {
     accumulator: usize,
-    output: OutputQueue<usize>,
+    output: WakingOutput,
     flush_requested: bool,
     flush_cycles: usize,
     flush_cycles_remaining: usize,
@@ -926,7 +930,7 @@ impl BatchRoutine {
     fn new(wakers: LineWakers, flush_cycles: usize) -> Self {
         Self {
             accumulator: 0,
-            output: OutputQueue::new(wakers.output),
+            output: WakingOutput::new(wakers.output),
             flush_requested: false,
             flush_cycles,
             flush_cycles_remaining: 0,
@@ -943,14 +947,14 @@ impl crate::TrySend<usize> for BatchRoutine {
 
 impl crate::Next<usize> for BatchRoutine {
     fn next(&mut self) -> Result<Option<usize>, Error> {
-        Ok(self.output.consumer.pop())
+        Ok(self.output.pop())
     }
 }
 
 impl crate::Flush for BatchRoutine {
     fn flush(&mut self) -> Result<(), Error> {
         if self.accumulator > 0 {
-            self.output.producer.push(self.accumulator);
+            self.output.push(self.accumulator);
         }
         self.accumulator = 0;
         self.flush_requested = true;
@@ -1047,8 +1051,8 @@ fn multi_flush_then_close() -> Result<(), Error> {
 
 /// Regression: `recv_with_timeout` must actually fire at its deadline.
 ///
-/// Internally, `RecvTimeoutFut::poll` calls `schedule_at` on the timer
-/// stored in `InputQueue`. That timer MUST be bound to the work
+/// Internally, a pending `recv_with_timeout` calls `schedule_at` on the timer
+/// stored in the input queue. That timer MUST be bound to the work
 /// phase (the one that polls the future) — if it's bound to a different
 /// phase (e.g. output), the deadline fires the wrong phase and the
 /// future never re-polls.
@@ -1064,25 +1068,24 @@ fn multi_flush_then_close() -> Result<(), Error> {
 #[test]
 fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
     use crate::poll::future::line::FutureRoutine;
-    use crate::poll::future::queue::{InputConsumer, OutputProducer};
     use crate::writer::push::Writer;
     use std::time::Duration;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let mut node = async_thread
         .line(FutureRoutine::factory(
-            |input: InputConsumer<usize>, output: OutputProducer<usize>| {
+            |input: input::Receiver<usize>, output: output::Sender<usize>| {
                 Box::pin(async move {
                     match input.recv_with_timeout(Duration::from_millis(10)).await? {
                         None => {
-                            output.push(999);
+                            output.send(999).await?;
                             // Drain until Flush so the input queue
                             // closes cleanly before we return.
                             while let Input::Data(_) = input.recv().await? {
                                 continue;
                             }
                         }
-                        Some(_) => output.push(0),
+                        Some(_) => output.send(0).await?,
                     }
                     Ok(())
                 })
@@ -1186,11 +1189,11 @@ fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let node = async_thread
         .line(FutureRoutine::factory(
-            |input: InputConsumer<Moved>, output: OutputProducer<Moved>| {
+            |input: input::Receiver<Moved>, output: output::Sender<Moved>| {
                 Box::pin(async move {
                     loop {
                         match input.recv().await? {
-                            Input::Data(data) => output.push(data),
+                            Input::Data(data) => output.send(data).await?,
                             Input::Flush => return Ok(()),
                         }
                     }

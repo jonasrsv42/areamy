@@ -5,7 +5,7 @@
 use crate::error::Error;
 use crate::poll;
 use crate::poll::future::line::FutureRoutine;
-use crate::poll::future::queue::{Input, InputConsumer, OutputProducer};
+use crate::poll::future::{Input, input, output};
 use crate::poll::try_join;
 use crate::sync::Receiver;
 use crate::work::Writer;
@@ -29,11 +29,11 @@ fn sleep_in_routine_delays_output() {
     let mut thread = poll::Thread::<'_, SleepThread>::new();
     let mut node = thread
         .line(FutureRoutine::factory(
-            |input: InputConsumer<usize>, output: OutputProducer<usize>| -> BoxFut {
+            |input: input::Receiver<usize>, output: output::Sender<usize>| -> BoxFut {
                 Box::pin(async move {
                     while let Input::Data(n) = input.recv().await? {
                         poll::sleep(STEP).await?;
-                        output.push(n);
+                        output.send(n).await?;
                     }
                     Ok(())
                 })
@@ -68,7 +68,7 @@ fn concurrent_sleeps_wake_independently() {
     let mut thread = poll::Thread::<'_, SleepThread>::new();
     let mut node = thread
         .line(FutureRoutine::factory(
-            |input: InputConsumer<usize>, output: OutputProducer<usize>| -> BoxFut {
+            |input: input::Receiver<usize>, output: output::Sender<usize>| -> BoxFut {
                 // Three overlapping sleeps: completion order proves
                 // per-timer wakes (last-wins clobbering would misorder)
                 // and total elapsed proves concurrency (serial would
@@ -77,7 +77,7 @@ fn concurrent_sleeps_wake_independently() {
                     let out = output.clone();
                     async move {
                         poll::sleep(STEP * n).await?;
-                        out.push(n as usize);
+                        out.send(n as usize).await?;
                         Ok::<_, Error>(())
                     }
                 };

@@ -4,6 +4,9 @@
 //! Prefer [FutureRoutine](crate::node::line::poll::future::FutureRoutine) over raw impls —
 //! it enforces all contracts below by construction.
 //!
+//! The two-input [BiunionRoutine](crate::poll::BiunionRoutine) follows the same contract, per
+//! side.
+//!
 //! Unlike the sync [LineRoutine](crate::node::line::routine::LineRoutine), does NOT require
 //! [std::marker::Send]. Async routines are created on the async thread via
 //! [LineRoutineFactory](super::factory::LineRoutineFactory) and never cross

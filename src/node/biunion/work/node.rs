@@ -30,8 +30,8 @@ use std::num::NonZeroUsize;
 pub trait BiunionTrait<'params, Left, Right, Out, Signal>:
     // We can work on the line to produce output.
     Workable
-    // We can add edges it should push into.
-    + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
+    // We can add edges it should push into: a `Push` parent.
+    + Outputs<Sink = dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params, biunion::Left>
@@ -54,7 +54,7 @@ impl<'params, Left, Right, Out, Signal, BiunionType> BiunionTrait<'params, Left,
 where
     Signal: Origin,
     BiunionType: Workable
-        + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
+        + Outputs<Sink = dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
         + Add<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId> + 'params, biunion::Left>
         + Add<dyn Workable<ThreadId = <BiunionType as Workable>::ThreadId> + 'params, biunion::Right>
         + Get<dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params, biunion::Left>

@@ -42,5 +42,6 @@ pub use wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 pub use crate::node::biunion::poll::factory::{
     BiunionInputs, BiunionRoutineFactory, BiunionWakers,
 };
+pub use crate::node::biunion::poll::routine::BiunionRoutine;
 pub use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 pub use crate::node::line::poll::routine::LineRoutine;

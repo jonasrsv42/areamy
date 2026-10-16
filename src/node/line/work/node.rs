@@ -37,8 +37,8 @@ pub trait LineTrait<'params, In, Out, Signal>:
     Workable
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
-    // We can add edges it should push into.
-    + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
+    // We can add edges it should push into: a `Push` parent.
+    + Outputs<Sink = dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
     // We can retrieve its edge for others to push into, work or poll.
     + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
     + Get<dyn poll::Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
@@ -52,7 +52,7 @@ where
     Signal: Origin,
     LineType: Workable
         + Add<dyn Workable<ThreadId = <LineType as Workable>::ThreadId> + 'params>
-        + Add<dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
+        + Outputs<Sink = dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
         + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
         + Get<dyn poll::Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,
 {

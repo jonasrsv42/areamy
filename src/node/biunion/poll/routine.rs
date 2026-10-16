@@ -1,6 +1,6 @@
 //! [`BiunionRoutine`] for poll biunion nodes — two typed inputs, one output.
 //!
-//! Same contract as [line's LineRoutine](crate::node::line::poll::routine::LineRoutine)
+//! Same contract as [line's LineRoutine](crate::poll::LineRoutine)
 //! but with two [routine::TrySend] impls dispatched via [Left](biunion::Left)
 //! and [Right](biunion::Right) markers.
 //!

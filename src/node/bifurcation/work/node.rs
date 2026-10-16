@@ -27,9 +27,15 @@ use std::marker::PhantomData;
 pub trait BifurcationTrait<'params, In, Left, Right, Signal>:
     // We can work on the line to produce output.
     Workable
-    // We can add edges it should push into.
-    + Add<dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params, bifurcation::Left>
-    + Add<dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params, bifurcation::Right>
+    // We can add edges it should push into: a `Push` parent per side.
+    + Outputs<
+        bifurcation::Left,
+        Sink = dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params,
+    >
+    + Outputs<
+        bifurcation::Right,
+        Sink = dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params,
+    >
 
     // We can add things for it to work on, parents nodes.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
@@ -47,12 +53,12 @@ impl<'params, In, Left, Right, Signal, BifurcationType>
 where
     Signal: Origin,
     BifurcationType: Workable
-        + Add<
-            dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params,
+        + Outputs<
             bifurcation::Left,
-        > + Add<
-            dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params,
+            Sink = dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params,
+        > + Outputs<
             bifurcation::Right,
+            Sink = dyn Sink<DataType = Right, SignalType = Signal> + Send + Sync + 'params,
         > + Add<dyn Workable<ThreadId = <BifurcationType as Workable>::ThreadId> + 'params>
         + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
         + Get<dyn poll::Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>,

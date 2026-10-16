@@ -7,11 +7,13 @@ use crate::poll::input::sync::{Input, Receiver};
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use std::num::NonZeroUsize;
 
-/// Resolve input edge. Implemented for [`Sync`] — allocates a sync waker.
+/// Resolve input edge. Implemented for [`Sync`] — allocates a sync waker. `bound` caps the edge.
 pub trait ResolveInput<'params, InType, SignalType: Origin, ThreadIdType: ThreadId>: Edge {
     fn resolve(
         alloc: &mut WakerAllocator,
+        bound: Option<NonZeroUsize>,
     ) -> (
         Self::Input<'params, InType, SignalType, ThreadIdType>,
         Self::Alloc<'static>,
@@ -25,12 +27,15 @@ where
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
 {
-    fn resolve(alloc: &mut WakerAllocator) -> (Input<InType, SignalType>, ()) {
+    fn resolve(
+        alloc: &mut WakerAllocator,
+        bound: Option<NonZeroUsize>,
+    ) -> (Input<InType, SignalType>, ()) {
         let slot = alloc.next();
         let waker = slot.value.clone();
         (
             Input {
-                edge: Receiver::new(waker, None),
+                edge: Receiver::new(waker, bound),
                 slot,
             },
             (),

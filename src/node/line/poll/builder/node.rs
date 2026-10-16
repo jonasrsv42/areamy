@@ -23,6 +23,7 @@
 //! (crosses threads during spawn). The routine is created on the async
 //! thread and does NOT need to be [Send].
 
+use super::options::Options;
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::edge::fanout::Fanout;
 use crate::error::Error;
@@ -67,6 +68,7 @@ pub struct Node<
     factory: FactoryType,
     input: InEdgeType::Input<'params, InType, SignalType, ThreadIdType>,
     output: OutEdgeType::Output<'params, OutType, SignalType>,
+    options: Options,
     _phantom: PhantomData<(fn() -> OutType, fn() -> InType, ThreadIdType)>,
 }
 
@@ -142,11 +144,21 @@ where
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
     pub fn deferred(factory: FactoryType, alloc: &'alloc mut WakerAllocator) -> Self {
+        Self::with_options(factory, alloc, Options::default())
+    }
+
+    /// A deferred node with `options`, set before any edge exists.
+    pub(crate) fn with_options(
+        factory: FactoryType,
+        alloc: &'alloc mut WakerAllocator,
+        options: Options,
+    ) -> Self {
         Self {
             alloc,
             factory,
             input: Default::default(),
             output: Null::new(),
+            options,
             _phantom: PhantomData,
         }
     }
@@ -158,12 +170,13 @@ where
         self,
     ) -> Node<'static, 'params, E, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
     {
-        let (input, alloc) = E::resolve(self.alloc);
+        let (input, alloc) = E::resolve(self.alloc, self.options.bound);
         Node {
             alloc,
             factory: self.factory,
             input,
             output: self.output,
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -179,6 +192,7 @@ where
             factory: self.factory,
             input: self.input,
             output: E::resolve(),
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -201,12 +215,13 @@ where
         self,
     ) -> Node<'static, 'params, E, Sync, InType, OutType, SignalType, ThreadIdType, FactoryType>
     {
-        let (input, alloc) = E::resolve(self.alloc);
+        let (input, alloc) = E::resolve(self.alloc, self.options.bound);
         Node {
             alloc,
             factory: self.factory,
             input,
             output: self.output,
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -235,6 +250,7 @@ where
             factory: self.factory,
             input: self.input,
             output: E::resolve(),
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -252,6 +268,7 @@ where
             factory: self.factory,
             input: self.input,
             output: Box::new(sink),
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -308,6 +325,7 @@ where
                 parents: vec![Box::new(parent)],
             },
             output: self.output,
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -332,6 +350,7 @@ where
             factory: self.factory,
             input: self.input,
             output: E::resolve(),
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -349,6 +368,7 @@ where
             factory: self.factory,
             input: self.input,
             output: Box::new(sink),
+            options: self.options,
             _phantom: PhantomData,
         }
     }
@@ -475,6 +495,7 @@ fn sync_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, O
     input: input::sync::Input<InType, SignalType>,
     output: Fanout<OutletType>,
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+    options: Options,
 ) -> Result<Graph<'params, ThreadIdType>, Error>
 where
     InType: Send + std::marker::Sync + 'static,
@@ -505,6 +526,7 @@ where
         },
         output,
         output_slot.value.wake,
+        options.budget,
     );
     let nodes = vec![
         GraphNode {
@@ -539,6 +561,7 @@ fn async_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, 
     >,
     output: Fanout<OutletType>,
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+    options: Options,
 ) -> Result<Graph<'params, ThreadIdType>, Error>
 where
     InType: 'static,
@@ -555,7 +578,7 @@ where
     let mut nodes = Vec::new();
 
     for parent in parents {
-        let (sender, receiver) = edge::channel(edge_waker.clone(), None);
+        let (sender, receiver) = edge::channel(edge_waker.clone(), options.bound);
         let parent_graph = parent.build(sender, allocator)?;
         allocator = parent_graph.allocator;
         nodes.extend(parent_graph.nodes);
@@ -581,6 +604,7 @@ where
         },
         output,
         output_slot.value.wake,
+        options.budget,
     );
     nodes.push(GraphNode {
         id: input.id,
@@ -617,7 +641,13 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(self.factory, self.input, self.output, allocator)
+        sync_input(
+            self.factory,
+            self.input,
+            self.output,
+            allocator,
+            self.options,
+        )
     }
 }
 
@@ -637,7 +667,13 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        async_input(self.factory, self.input.parents, self.output, allocator)
+        async_input(
+            self.factory,
+            self.input.parents,
+            self.output,
+            allocator,
+            self.options,
+        )
     }
 }
 
@@ -657,7 +693,13 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(self.factory, self.input, self.output.into(), allocator)
+        sync_input(
+            self.factory,
+            self.input,
+            self.output.into(),
+            allocator,
+            self.options,
+        )
     }
 }
 
@@ -692,6 +734,7 @@ where
             self.input.parents,
             self.output.into(),
             allocator,
+            self.options,
         )
     }
 }
@@ -722,7 +765,13 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(self.factory, self.input, self.output.into(), allocator)
+        sync_input(
+            self.factory,
+            self.input,
+            self.output.into(),
+            allocator,
+            self.options,
+        )
     }
 }
 
@@ -757,6 +806,7 @@ where
             self.input.parents,
             self.output.into(),
             allocator,
+            self.options,
         )
     }
 }
@@ -795,7 +845,13 @@ where
         edge: edge::Sender<OutType, SignalType>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(self.factory, self.input, edge.into(), allocator)
+        sync_input(
+            self.factory,
+            self.input,
+            edge.into(),
+            allocator,
+            self.options,
+        )
     }
 }
 
@@ -834,6 +890,7 @@ where
             self.input.parents,
             output_edge.into(),
             allocator,
+            self.options,
         )
     }
 }

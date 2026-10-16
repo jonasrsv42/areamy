@@ -12,7 +12,7 @@ use crate::node::line::poll::routine::tests::{MockLine, noop_line_wakers};
 use crate::poll::Context;
 use crate::poll::context::mock::noop_context;
 use crate::poll::input;
-use crate::poll::{BUDGET, Phase, Pollable};
+use crate::poll::{BUDGET, Budget, Phase, Pollable};
 use crate::wake::mock::{
     counting_local_waker, counting_waker, noop_local_waker, tracking_local_waker,
 };
@@ -68,6 +68,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
                 sync: task::Waker::noop().clone(),
                 local: output_waker,
             },
+            Budget::default(),
         );
         Self {
             input,
@@ -222,6 +223,14 @@ impl Parked {
 impl<R: LineRoutine<usize, usize>> Parked<R> {
     /// The routine is built from the node's Input waker.
     fn with(routine: impl FnOnce(LocalWaker) -> R, outputs: Fanout<Outlet>) -> Self {
+        Self::budgeted(routine, outputs, Budget::default())
+    }
+
+    fn budgeted(
+        routine: impl FnOnce(LocalWaker) -> R,
+        outputs: Fanout<Outlet>,
+        budget: Budget,
+    ) -> Self {
         let edge = input::sync::Receiver::new(task::Waker::noop().clone(), None);
         let upstream = edge.sender();
         let (input_waker, input_wakes) = counting_local_waker();
@@ -241,6 +250,7 @@ impl<R: LineRoutine<usize, usize>> Parked<R> {
             },
             outputs,
             output_wake,
+            budget,
         );
         Self {
             input,
@@ -325,6 +335,29 @@ fn a_signal_behind_more_than_budget_lands_last() {
     let received = (0..=BUDGET + 3).map(|_| downstream.poll().unwrap());
     assert_eq!(received.last(), Some(Some(Message::Flush("f".into()))));
     assert_eq!(downstream.poll().unwrap(), None);
+}
+
+/// A node's own budget caps each phase: Input takes 2 per poll, Output delivers 5.
+#[test]
+fn a_node_budget_caps_input_and_output_separately() {
+    let downstream = edge::sync::Receiver::new();
+    let budget = Budget::default()
+        .input(NonZeroUsize::new(2).unwrap())
+        .output(NonZeroUsize::new(5).unwrap());
+    let mut node = Parked::budgeted(|_| mock(), downstream.sender().into(), budget);
+    for value in 0..10 {
+        node.upstream.push_back(Message::Data(value)).unwrap();
+    }
+    let mut cx = noop_context();
+    let _ = node.input.poll(&mut cx).unwrap();
+    node.emit();
+    assert_eq!(downstream.len().unwrap(), 2);
+
+    for _ in 0..3 {
+        let _ = node.input.poll(&mut cx).unwrap();
+    }
+    node.emit();
+    assert_eq!(downstream.len().unwrap(), 7);
 }
 
 /// Close still delivers the routine's buffered output, BUDGET per poll, before closing.

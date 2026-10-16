@@ -5,8 +5,9 @@ use crate::graph::marker::Multiplicity;
 use crate::graph::{Closed, Inlet, Receivable};
 use crate::message::Message;
 use crate::node::routine::{Accept, Flush, TrySend};
-use crate::poll::{BUDGET, Phase};
+use crate::poll::Phase;
 use crate::wake::LocalWaker;
+use std::num::NonZeroUsize;
 use std::ops::ControlFlow::{self, Break, Continue};
 
 /// One input's borrow of a node's state, feeding its routine. On close it sets CloseReady and
@@ -17,6 +18,8 @@ pub(crate) struct Feed<'a, InletType: Inlet, RoutineType> {
     pub(crate) waker: &'a LocalWaker,
     pub(crate) work: &'a mut Phase<RoutineType>,
     pub(crate) state: &'a mut NodeState<InletType::SignalType>,
+    /// Messages taken per poll before yielding.
+    pub(crate) budget: NonZeroUsize,
 }
 
 impl<InletType, RoutineType> Feed<'_, InletType, RoutineType>
@@ -25,7 +28,7 @@ where
     RoutineType: Flush,
 {
     /// Feed the routine as side `M`, held message first. Each stop has a waker: empty edge →
-    /// upstream push; signal → Output on return to Running; refusal → routine; [BUDGET] → this
+    /// upstream push; signal → Output on return to Running; refusal → routine; budget → this
     /// input itself; closed → none (CloseReady).
     pub(crate) fn drain<M>(mut self, held: &mut Option<InletType::DataType>) -> Result<(), Error>
     where
@@ -35,7 +38,7 @@ where
         if self.retry::<M>(held)?.is_break() {
             return Ok(());
         }
-        for _ in 0..BUDGET {
+        for _ in 0..self.budget.get() {
             if self.recv::<M>(held)?.is_break() {
                 return Ok(());
             }

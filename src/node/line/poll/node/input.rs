@@ -13,12 +13,14 @@ impl<T: Types> SharedState<T> {
             work,
             output,
             state,
+            budget,
         } = self;
         Feed {
             inlet: &mut input.target,
             waker: &input.waker,
             work,
             state,
+            budget: budget.input,
         }
         .drain::<Unary>(held)?;
         if matches!(state, NodeState::CloseReady) {

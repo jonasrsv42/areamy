@@ -32,7 +32,7 @@ use crate::graph::{Closed, Receivable, Schedule};
 use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::poll::NodeState;
-use crate::poll::{self, Phase};
+use crate::poll::{self, Budget, Phase};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::wake;
@@ -142,6 +142,8 @@ pub(crate) struct SharedState<T: Types> {
     work: Phase<T::Routine>,
     output: Phase<Fanout<T::Outlet>>,
     state: NodeState<T::Signal>,
+    /// One input budget, shared by both sides.
+    budget: Budget,
 }
 
 type Shared<T> = Rc<RefCell<SharedState<T>>>;
@@ -184,6 +186,7 @@ where
         work: Phase<RoutineType>,
         mut output: Fanout<OutletType>,
         output_wake: wake::Waker,
+        budget: Budget,
     ) -> Phases<Self> {
         let waker = output_wake.local.clone();
         Schedule::schedule(&mut output, output_wake);
@@ -195,6 +198,7 @@ where
                 waker,
             },
             state: NodeState::Running,
+            budget,
         }));
         Phases {
             inputs: Inputs {

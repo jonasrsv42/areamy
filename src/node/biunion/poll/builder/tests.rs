@@ -1,18 +1,29 @@
 //! Builder tests: GraphBuilder::build, AsyncParent::build, and typestate transitions.
 
 use super::node::Node;
-use crate::Trackable;
+use super::options::Options;
 use crate::biunion::{Left, Right};
+use crate::edge::sync::Receiver;
 use crate::error::Error;
+use crate::graph::{Get, TryPushable};
+use crate::message::Message;
 use crate::node::biunion::poll::routine::tests::MockBiunion;
+use crate::poll::Budget;
+use crate::poll::context::mock::noop_context;
 use crate::poll::edge::{self, Sync};
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
+use crate::{Push, Pushable, Trackable, work};
+use std::num::NonZeroUsize;
 
 crate::thread_id!(TestThread);
+
+type WorkSink = dyn work::Sink<DataType = usize, SignalType = Trackable<&'static str>>
+    + Send
+    + std::marker::Sync;
 
 fn mock_factory() -> impl FnOnce(crate::poll::BiunionWakers) -> MockBiunion + Send {
     |wakers| MockBiunion::new(wakers)
@@ -272,4 +283,99 @@ fn node_ids_are_unique() {
     ids.sort();
     ids.dedup();
     assert_eq!(ids.len(), 4);
+}
+
+/// After 3 pushes into Left, one Left poll and one Output poll: what reached downstream.
+fn delivered_in_one_round(budget: Budget) -> usize {
+    let (mut alloc, to_local) = make_allocators();
+    let options = Options {
+        budget,
+        ..Options::default()
+    };
+    let mut node = Node::<_, _, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
+        mock_factory(),
+        &mut alloc,
+        options,
+    )
+    .input::<Left, Sync>()
+    .input::<Right, Sync>()
+    .output::<Sync>();
+    let downstream = Receiver::new();
+    Push::connect(&mut node, &downstream).unwrap();
+    let mut left: Box<WorkSink> = Get::<WorkSink, Left>::get(&node).unwrap();
+    for value in 0..3 {
+        left.push(Message::Data(value)).unwrap();
+    }
+    let mut graph = Box::new(node).build(to_local(alloc)).unwrap();
+    let mut cx = noop_context();
+    // Built Left, Right, Work, Output.
+    let _ = graph.nodes[0].pollable.poll(&mut cx).unwrap();
+    let _ = graph.nodes[3].pollable.poll(&mut cx).unwrap();
+    downstream.len().unwrap()
+}
+
+/// A parent that pushes 3 messages into its edge as it is built.
+struct PushingParent;
+
+impl AsyncParent<'static> for PushingParent {
+    type OutType = usize;
+    type SignalType = Trackable<&'static str>;
+    type ThreadIdType = TestThread;
+
+    fn build(
+        self: Box<Self>,
+        mut edge: edge::Sender<usize, Trackable<&'static str>>,
+        allocator: ThreadLocalWakerAllocator<TestThread>,
+    ) -> Result<Graph<'static, TestThread>, Error> {
+        for value in 0..3 {
+            let _ = edge.try_push(Message::Data(value))?;
+        }
+        Ok(Graph {
+            allocator,
+            nodes: vec![],
+        })
+    }
+}
+
+/// Same, with Left's 3 messages from a parent: the parented build path.
+fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
+    let (mut alloc, to_local) = make_allocators();
+    let options = Options {
+        budget,
+        ..Options::default()
+    };
+    let mut node = Node::<_, _, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
+        mock_factory(),
+        &mut alloc,
+        options,
+    )
+    .parent::<Left>(PushingParent)
+    .parent::<Right>(MockParent)
+    .output::<Sync>();
+    let downstream = Receiver::new();
+    Push::connect(&mut node, &downstream).unwrap();
+    let mut graph = Box::new(node).build(to_local(alloc)).unwrap();
+    let mut cx = noop_context();
+    // Built Left, Right, Work, Output. Left's edge closed as its parent was built.
+    let _ = graph.nodes[0].pollable.poll(&mut cx);
+    let _ = graph.nodes[3].pollable.poll(&mut cx);
+    downstream.len().unwrap()
+}
+
+#[test]
+fn the_built_parented_biunion_uses_its_budget() {
+    assert_eq!(delivered_from_a_parent_in_one_round(Budget::default()), 3);
+    let input = Budget::default().input(NonZeroUsize::MIN);
+    assert_eq!(delivered_from_a_parent_in_one_round(input), 1);
+    let output = Budget::default().output(NonZeroUsize::MIN);
+    assert_eq!(delivered_from_a_parent_in_one_round(output), 1);
+}
+
+#[test]
+fn the_built_biunion_uses_its_budget() {
+    assert_eq!(delivered_in_one_round(Budget::default()), 3);
+    let input = Budget::default().input(NonZeroUsize::MIN);
+    assert_eq!(delivered_in_one_round(input), 1);
+    let output = Budget::default().output(NonZeroUsize::MIN);
+    assert_eq!(delivered_in_one_round(output), 1);
 }

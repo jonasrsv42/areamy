@@ -1,6 +1,7 @@
 //! Poll graphs: event-driven nodes driven by wakers through [Pollable].
 
 mod budget;
+mod builder;
 pub mod context;
 pub mod edge;
 pub mod future;
@@ -21,7 +22,8 @@ pub mod traits;
 pub mod try_join;
 pub mod wakers;
 
-pub use budget::BUDGET;
+pub use budget::{BUDGET, Budget};
+pub use builder::Builder;
 pub use context::Context;
 pub use edge::{Async, Deferred, Direct, Edge, Linktime, Null, Sync};
 pub use graph::{Graph, GraphBuilder, GraphNode};

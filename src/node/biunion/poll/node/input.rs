@@ -37,12 +37,14 @@ impl<T: Types> Feeding<T> for biunion::Left {
             work,
             output,
             state,
+            budget,
         } = state;
         Feed {
             inlet: &mut input.left.target,
             waker: &input.left.waker,
             work,
             state,
+            budget: budget.input,
         }
         .drain::<biunion::Left>(held)?;
         if matches!(state, NodeState::CloseReady) {
@@ -60,12 +62,14 @@ impl<T: Types> Feeding<T> for biunion::Right {
             work,
             output,
             state,
+            budget,
         } = state;
         Feed {
             inlet: &mut input.right.target,
             waker: &input.right.waker,
             work,
             state,
+            budget: budget.input,
         }
         .drain::<biunion::Right>(held)?;
         if matches!(state, NodeState::CloseReady) {

@@ -28,6 +28,7 @@ impl<T: Types> Pollable for Output<T> {
             work,
             output,
             state,
+            budget,
         } = &mut *s;
         Emit {
             routine: &mut work.target,
@@ -35,6 +36,7 @@ impl<T: Types> Pollable for Output<T> {
             inputs: &[&input.waker],
             work: &work.waker,
             state,
+            budget: budget.output,
         }
         .poll::<Unary>(cx)
     }

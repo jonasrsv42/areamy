@@ -111,9 +111,10 @@ where
         Node {
             alloc: node.alloc,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: Input {
-                    edge: Receiver::new(waker, None),
+                    edge: Receiver::new(waker, node.options.bound.left),
                     slot,
                 },
                 right: node.input.right,
@@ -182,9 +183,10 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: Input {
-                    edge: Receiver::new(waker, None),
+                    edge: Receiver::new(waker, node.options.bound.left),
                     slot,
                 },
                 right: node.input.right,
@@ -253,9 +255,10 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: Input {
-                    edge: Receiver::new(waker, None),
+                    edge: Receiver::new(waker, node.options.bound.left),
                     slot,
                 },
                 right: node.input.right,
@@ -328,10 +331,11 @@ where
         Node {
             alloc: node.alloc,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: node.input.left,
                 right: Input {
-                    edge: Receiver::new(waker, None),
+                    edge: Receiver::new(waker, node.options.bound.right),
                     slot,
                 },
             },
@@ -399,10 +403,11 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: node.input.left,
                 right: Input {
-                    edge: Receiver::new(waker, None),
+                    edge: Receiver::new(waker, node.options.bound.right),
                     slot,
                 },
             },
@@ -470,10 +475,11 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: node.input.left,
                 right: Input {
-                    edge: Receiver::new(waker, None),
+                    edge: Receiver::new(waker, node.options.bound.right),
                     slot,
                 },
             },
@@ -544,6 +550,7 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: node.input,
             output: Default::default(),
             _phantom: PhantomData,

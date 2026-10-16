@@ -83,6 +83,7 @@ where
         Node {
             alloc: node.alloc,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: input::r#async::Input {
                     parents: vec![parent],
@@ -162,6 +163,7 @@ where
         Node {
             alloc: node.alloc,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: node.input.left,
                 right: input::r#async::Input {
@@ -242,6 +244,7 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: node.input.left,
                 right: input::r#async::Input {
@@ -322,6 +325,7 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: input::r#async::Input {
                     parents: vec![parent],
@@ -402,6 +406,7 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: input::r#async::Input {
                     parents: vec![parent],
@@ -482,6 +487,7 @@ where
         Node {
             alloc: Allocated,
             factory: node.factory,
+            options: node.options,
             input: BuilderInput {
                 left: node.input.left,
                 right: input::r#async::Input {

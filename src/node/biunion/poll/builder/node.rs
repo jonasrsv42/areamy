@@ -11,6 +11,7 @@
 //! - `Allocating` — holds `&mut WakerAllocator`, one or both inputs still Deferred
 //! - `Allocated` — both inputs resolved, allocator released
 
+use super::options::Options;
 use super::traits::{ResolveInput, ResolveOutput};
 use crate::error::Error;
 use crate::graph::marker::Connection;
@@ -75,6 +76,7 @@ pub struct Node<
     pub(crate) input:
         BuilderInput<'params, LeftEdge, RightEdge, Left, Right, SignalType, ThreadIdType>,
     pub(crate) output: OutEdge::Output<'params, Out, SignalType>,
+    pub(crate) options: Options,
     pub(crate) _phantom: PhantomData<(fn() -> Out, fn() -> Left, fn() -> Right, ThreadIdType)>,
 }
 
@@ -172,6 +174,15 @@ where
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
     pub fn deferred(factory: FactoryType, alloc: &'alloc mut WakerAllocator) -> Self {
+        Self::with_options(factory, alloc, Options::default())
+    }
+
+    /// A deferred node with `options`, set before any edge exists.
+    pub(crate) fn with_options(
+        factory: FactoryType,
+        alloc: &'alloc mut WakerAllocator,
+        options: Options,
+    ) -> Self {
         Self {
             alloc: Allocating(alloc),
             factory,
@@ -180,6 +191,7 @@ where
                 right: Default::default(),
             },
             output: Null::new(),
+            options,
             _phantom: PhantomData,
         }
     }

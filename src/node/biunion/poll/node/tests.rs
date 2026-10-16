@@ -10,7 +10,7 @@ use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::biunion::poll::routine::tests::{MockBiunion, noop_biunion_wakers};
 use crate::poll::context::mock::noop_context;
 use crate::poll::input;
-use crate::poll::{BUDGET, BiunionInputs, Context, Phase, Pollable};
+use crate::poll::{BUDGET, BiunionInputs, Budget, Context, Phase, Pollable};
 use crate::wake::Waker;
 use crate::wake::mock::{counting_waker, tracking_local_waker};
 use crate::{Accept, DefaultThread};
@@ -115,6 +115,7 @@ impl<R: Routine> Biunion<R> {
                 sync: output_sync,
                 local: output_waker,
             },
+            Budget::default(),
         );
 
         Self {

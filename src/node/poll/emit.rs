@@ -8,10 +8,11 @@ use crate::graph::{Closeable, Outlet, TryPushable};
 use crate::message::Message;
 use crate::node::routine::Next;
 use crate::poll::Context;
-use crate::poll::{BUDGET, Phase};
+use crate::poll::Phase;
 use crate::wake::LocalWaker;
 use std::any::type_name;
 use std::mem;
+use std::num::NonZeroUsize;
 
 /// One output's borrow of a node's state: drains the routine's output as side `M` downstream,
 /// forwards Flush and Marker and wakes the inputs and Work on the return to Running, and closes
@@ -19,7 +20,7 @@ use std::mem;
 ///
 /// Never blocks: an edge refusing parks the Output with the message held in its fan-out, whose
 /// edges are bound to the Output's waker; their wake retries it. While parked nothing new is
-/// drained, so nothing overtakes the held message. At most [BUDGET] messages leave per poll.
+/// drained, so nothing overtakes the held message. At most `budget` messages leave per poll.
 pub(crate) struct Emit<'a, RoutineType, OutletType: Outlet> {
     pub(crate) routine: &'a mut RoutineType,
     pub(crate) output: &'a mut Phase<Fanout<OutletType>>,
@@ -28,6 +29,8 @@ pub(crate) struct Emit<'a, RoutineType, OutletType: Outlet> {
     /// Work's waker.
     pub(crate) work: &'a LocalWaker,
     pub(crate) state: &'a mut NodeState<OutletType::SignalType>,
+    /// Messages delivered per poll before yielding.
+    pub(crate) budget: NonZeroUsize,
 }
 
 /// How a drain stopped.
@@ -36,7 +39,7 @@ enum Drained {
     Done,
     /// An edge refused; its wake retries.
     Parked,
-    /// [BUDGET] spent; the Output woke itself to go on.
+    /// Budget spent; the Output woke itself to go on.
     Yielded,
 }
 
@@ -90,7 +93,7 @@ where
             }
             NodeState::CloseReady => {
                 // Fast close: what an edge still refuses is dropped; the routine's buffered
-                // output still goes out, [BUDGET] at a time.
+                // output still goes out, a budget at a time.
                 if matches!(self.drain::<M>()?, Drained::Yielded) {
                     return Ok(core::task::Poll::Pending);
                 }
@@ -105,7 +108,7 @@ where
         }
     }
 
-    /// Deliver a held message, then up to [BUDGET] of the routine's side `M` output via [Next].
+    /// Deliver a held message, then up to `budget` of the routine's side `M` output via [Next].
     fn drain<M>(&mut self) -> Result<Drained, Error>
     where
         M: Multiplicity,
@@ -114,7 +117,7 @@ where
         if !self.settled()? {
             return Ok(Drained::Parked);
         }
-        for _ in 0..BUDGET {
+        for _ in 0..self.budget.get() {
             let Some(out) = Next::<OutletType::DataType, M>::next(self.routine)? else {
                 return Ok(Drained::Done);
             };

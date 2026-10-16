@@ -14,6 +14,7 @@ use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::wake::LocalWaker;
+use std::num::NonZeroUsize;
 
 /// Build async parent edges, returning edges + collected nodes + allocator.
 fn build_parents<'params, DataType, SignalType, ThreadIdType>(
@@ -27,6 +28,7 @@ fn build_parents<'params, DataType, SignalType, ThreadIdType>(
                 > + 'params,
         >,
     >,
+    bound: Option<NonZeroUsize>,
     edge_waker: LocalWaker,
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
 ) -> Result<
@@ -45,7 +47,7 @@ where
     let mut edges = Vec::new();
     let mut nodes = Vec::new();
     for parent in parents {
-        let (sender, receiver) = edge::channel(edge_waker.clone(), None);
+        let (sender, receiver) = edge::channel(edge_waker.clone(), bound);
         let parent_graph = parent.build(sender, allocator)?;
         allocator = parent_graph.allocator;
         nodes.extend(parent_graph.nodes);
@@ -119,6 +121,7 @@ where
             },
             self.output,
             output.value.wake,
+            self.options.budget,
         );
         let nodes = vec![
             GraphNode {
@@ -203,6 +206,7 @@ where
             },
             self.output.into(),
             output.value.wake,
+            self.options.budget,
         );
         let nodes = vec![
             GraphNode {
@@ -262,6 +266,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
+            self.options.bound.left,
             left_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -298,6 +303,7 @@ where
             },
             self.output,
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -351,6 +357,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
+            self.options.bound.left,
             left_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -387,6 +394,7 @@ where
             },
             self.output.into(),
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -444,6 +452,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
+            self.options.bound.left,
             left_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -480,6 +489,7 @@ where
             },
             edge.into(),
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -537,6 +547,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
+            self.options.bound.right,
             right_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -573,6 +584,7 @@ where
             },
             self.output,
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_id,
@@ -626,6 +638,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
+            self.options.bound.right,
             right_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -662,6 +675,7 @@ where
             },
             self.output.into(),
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_id,
@@ -719,6 +733,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
+            self.options.bound.right,
             right_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -755,6 +770,7 @@ where
             },
             edge.into(),
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_id,
@@ -812,6 +828,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
+            self.options.bound.left,
             left_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -820,6 +837,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
+            self.options.bound.right,
             right_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -856,6 +874,7 @@ where
             },
             self.output,
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -909,6 +928,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
+            self.options.bound.left,
             left_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -917,6 +937,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
+            self.options.bound.right,
             right_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -953,6 +974,7 @@ where
             },
             self.output.into(),
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_slot.id,
@@ -1043,6 +1065,7 @@ where
             },
             edge.into(),
             output.value.wake,
+            self.options.budget,
         );
         let nodes = vec![
             GraphNode {
@@ -1102,6 +1125,7 @@ where
         let left_slot = allocator.next();
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
+            self.options.bound.left,
             left_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -1110,6 +1134,7 @@ where
         let right_slot = allocator.next();
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
+            self.options.bound.right,
             right_slot.value.wake.local.clone(),
             allocator,
         )?;
@@ -1146,6 +1171,7 @@ where
             },
             edge.into(),
             output.value.wake,
+            self.options.budget,
         );
         nodes.push(GraphNode {
             id: left_slot.id,

@@ -68,4 +68,3 @@ impl<DataType, SignalType: Origin> Receivable for Receiver<DataType, SignalType>
         }
     }
 }
-

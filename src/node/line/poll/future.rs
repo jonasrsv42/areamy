@@ -139,7 +139,8 @@ pub struct Factory<InType, OutType, F> {
 
 impl<InType, OutType, F> Factory<InType, OutType, F> {
     /// Caps the input and the output queue at `bound` each; `None` is unbounded. The routine's
-    /// queues, not the node's input edges (those are the node builder's `.bounded`).
+    /// queues, not the node's input edges (those are the node builder's `.bounded`). Close drops
+    /// what the queues hold; Flush before closing to deliver it.
     pub fn bounded(mut self, bound: impl Into<Option<NonZeroUsize>>) -> Self {
         self.bound = bound.into();
         self

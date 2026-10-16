@@ -1,7 +1,7 @@
 use super::{NodeState, Shared, SharedState, Types};
 use crate::error::Error;
-use crate::graph::marker::Connection;
 use crate::graph::Receivable;
+use crate::graph::marker::Connection;
 use crate::node::biunion;
 use crate::node::poll::Feed;
 use crate::poll::Context;
@@ -101,7 +101,10 @@ impl<T: Types, S: Feeding<T>> Pollable for Input<T, S> {
     type ThreadId = T::ThreadId;
 
     fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
-        let mut s = self.shared.borrow_mut();
+        let mut s = self
+            .shared
+            .try_borrow_mut()
+            .map_err(|_| crate::fatal!("node state borrowed reentrantly"))?;
         match &s.state {
             NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Running => {

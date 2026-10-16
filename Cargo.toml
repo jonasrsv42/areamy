@@ -12,8 +12,8 @@ default = []
 # if the caller doesn't properly join. This can make debugging silent failures
 # very difficult. Enable this feature to suppress these prints.
 silent = []
-# Exposes `poll::waker::mock` (timer-backed test wakers) to
-# downstream crates. Enable from [dev-dependencies] only.
+# Exposes the test mocks (`wake::mock`, `poll::context::mock`,
+# `poll::timer::mock`) to downstream crates. Enable from [dev-dependencies] only.
 testing = []
 
 [lib]

@@ -1,17 +1,9 @@
 use crate::error::Error;
 use crate::graph::Closeable;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 impl<T: ?Sized + Closeable> Closeable for Box<T> {
     fn close(&mut self) -> Result<(), Error> {
         T::close(self.as_mut())
-    }
-}
-
-impl<T: Closeable> Closeable for Rc<RefCell<T>> {
-    fn close(&mut self) -> Result<(), Error> {
-        self.borrow_mut().close()
     }
 }
 

@@ -92,8 +92,8 @@ where
                 Ok(core::task::Poll::Pending)
             }
             NodeState::CloseReady => {
-                // Fast close: what an edge still refuses is dropped; the routine's buffered
-                // output still goes out, a budget at a time.
+                // Fast close: the routine's buffered output goes out a budget at a time until an
+                // edge refuses; that message and everything after it are dropped.
                 if matches!(self.drain::<M>()?, Drained::Yielded) {
                     return Ok(core::task::Poll::Pending);
                 }

@@ -23,9 +23,9 @@ impl<'params, T: Types> BifurcationBuilder<'params, T> {
     }
 
     /// Hold at most `bound` messages in the input, signals included; producers wait while it
-    /// is full.
-    pub fn bounded(mut self, bound: NonZeroUsize) -> Self {
-        self.bound = Some(bound);
+    /// is full. `None` is unbounded, the default.
+    pub fn bounded(mut self, bound: impl Into<Option<NonZeroUsize>>) -> Self {
+        self.bound = bound.into();
         self
     }
 

@@ -1,12 +1,5 @@
 use crate::graph::Outlet;
 use crate::signal::Origin;
-use std::cell::RefCell;
-use std::rc::Rc;
-
-impl<T: Outlet> Outlet for Rc<RefCell<T>> {
-    type DataType = T::DataType;
-    type SignalType = T::SignalType;
-}
 
 impl<PushableType: ?Sized, DataType, SignalType> Outlet for Box<PushableType>
 where

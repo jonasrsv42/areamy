@@ -4,6 +4,7 @@
 
 use super::future::echo;
 use super::{Msg, Signal, TIMEOUT, data, one, push, read_n};
+use crate::Push;
 use crate::edge::sync::Receiver;
 use crate::graph::Closeable;
 use crate::message::Message;
@@ -13,7 +14,6 @@ use crate::poll::{self, Sync};
 use crate::pull::{Pullable, WriterBuffer};
 use crate::thread::ThreadBundle;
 use crate::work::{self, Line, ThreadStream, Writer};
-use crate::Push;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;

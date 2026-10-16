@@ -95,7 +95,7 @@ CPU-bound? Sync work threads. I/O-bound? Poll thread, futures, wakers.
 Mix them in the same `ThreadBundle` — same edges, same teardown.
 
 ```rust
-let routine = FutureRoutine::factory(|input: InputConsumer<usize>, output: OutputProducer<usize>| {
+let routine = FutureRoutine::factory(|input: input::Receiver<usize>, output: output::Sender<usize>| {
     Box::pin(async move {
         let socket = FakeSocket::connect("…").await;
         let writer = async {
@@ -103,11 +103,12 @@ let routine = FutureRoutine::factory(|input: InputConsumer<usize>, output: Outpu
             socket.half_close().await; // flush → EOF for the reader
             Ok::<_, Error>(())
         };
-        let reader = async { while let Some(v) = socket.read().await { output.push(v + 1); } Ok(()) };
+        let reader = async { while let Some(v) = socket.read().await { output.send(v + 1).await?; } Ok(()) };
         areamy::poll::try_join(writer, reader).await?;
         Ok(())
     })
-});
+})
+.bounded(NonZeroUsize::new(64)); // optional: `send` waits while 64 are queued
 
 let node = io_thread.line(routine).input::<areamy::poll::Sync>().output::<areamy::poll::Sync>();
 ```

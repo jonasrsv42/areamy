@@ -12,8 +12,8 @@ pub(crate) enum NodeState<SignalType> {
     /// A Flush or Marker held in Output's fan-out, refused by an edge. Input and Drive wait; its
     /// delivery returns the node to Running and wakes the inputs and Work.
     Forwarding,
-    /// An input closed, only ever from Running. Output delivers what the routine holds (an edge
-    /// still refusing drops it), closes downstream, and the node closes.
+    /// An input closed, only ever from Running. Output delivers what the routine holds until an
+    /// edge refuses (the rest is dropped), closes downstream, and the node closes.
     CloseReady,
     /// Closed, or failed: every phase returns `Closed`.
     Closed,

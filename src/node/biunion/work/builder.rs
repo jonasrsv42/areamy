@@ -26,9 +26,9 @@ impl<'params, T: Types> BiunionBuilder<'params, T> {
     }
 
     /// Hold at most `bound` messages in side `S`'s input, signals included; its producers wait
-    /// while it is full. Each side is bounded independently.
-    pub fn bounded<S: Side>(mut self, bound: NonZeroUsize) -> Self {
-        *S::pick(&mut self.left, &mut self.right) = Some(bound);
+    /// while it is full. Each side is bounded independently. `None` is unbounded, the default.
+    pub fn bounded<S: Side>(mut self, bound: impl Into<Option<NonZeroUsize>>) -> Self {
+        *S::pick(&mut self.left, &mut self.right) = bound.into();
         self
     }
 

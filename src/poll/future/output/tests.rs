@@ -1,4 +1,5 @@
 use super::{Receiver, Sender, channel};
+use crate::node::routine::Accept;
 use crate::poll::queue::PollQueue;
 use crate::poll::timer::Timer;
 use crate::wake::mock::{
@@ -46,9 +47,12 @@ fn sent(sender: &Sender<usize>, item: usize) {
     ));
 }
 
+/// The receiver, shared so a waker can reach it.
+type Shared = Rc<Cell<Option<Rc<Receiver<usize>>>>>;
+
 /// A waker popping the receiver in `slot`, as a same-thread wake may re-enter the queue; counts
 /// the pops that didn't fail.
-fn popping(slot: &Rc<Cell<Option<Receiver<usize>>>>) -> (LocalWaker, Rc<Cell<usize>>) {
+fn popping(slot: &Shared) -> (LocalWaker, Rc<Cell<usize>>) {
     let popped = Rc::new(Cell::new(0));
     let (slot, count) = (slot.clone(), popped.clone());
     let waker = local_waker(move || {
@@ -186,14 +190,15 @@ fn the_send_wake_runs_after_the_borrow() {
         },
         1,
     );
+    let receiver = Rc::new(receiver);
+    slot.set(Some(receiver.clone()));
     sent(&sender, 1);
     let mut fut = sender.send(2);
     assert!(poll_with(&mut fut, &cx_waker).is_pending());
+    // The pop wakes the waiting send, which pops again: only fine with the borrow released.
     assert_eq!(receiver.pop().unwrap(), Some(1));
-    // The send's wake popped with no borrow held: the woken `home` sees the queue empty.
-    slot.set(Some(receiver));
+    assert_eq!(popped.get(), 1);
     assert!(poll_with(&mut fut, &cx_waker).is_ready());
-    assert_eq!(popped.get(), 0);
 }
 
 // ---- waking Output ----
@@ -231,9 +236,34 @@ fn the_output_wake_runs_after_the_borrow() {
     let slot = Rc::new(Cell::new(None));
     let (output, popped) = popping(&slot);
     let (sender, receiver) = unbounded(output);
-    slot.set(Some(receiver));
+    slot.set(Some(Rc::new(receiver)));
     sent(&sender, 1);
     assert_eq!(popped.get(), 1);
+}
+
+// ---- try_send ----
+
+#[test]
+fn try_send_refuses_exactly_at_the_bound() {
+    let (sender, receiver) = bounded(noop_local_waker(), 1);
+    assert_eq!(sender.try_send(1).unwrap(), Accept::Accepted);
+    assert_eq!(sender.try_send(2).unwrap(), Accept::Full(2));
+    assert_eq!(receiver.pop().unwrap(), Some(1));
+    assert_eq!(sender.try_send(2).unwrap(), Accept::Accepted);
+}
+
+#[test]
+fn try_send_wakes_output_like_send() {
+    let (output, count) = counting_local_waker();
+    let (sender, receiver) = unbounded(output);
+    assert_eq!(sender.try_send(1).unwrap(), Accept::Accepted);
+    assert_eq!(sender.try_send(2).unwrap(), Accept::Accepted);
+    assert_eq!(count.get(), 1);
+    assert_eq!(receiver.pop().unwrap(), Some(1));
+    assert_eq!(receiver.pop().unwrap(), Some(2));
+    assert_eq!(receiver.pop().unwrap(), None);
+    assert_eq!(sender.try_send(3).unwrap(), Accept::Accepted);
+    assert_eq!(count.get(), 2);
 }
 
 // ---- send_with_timeout ----

@@ -106,7 +106,10 @@ fn a_stalled_bounded_line_holds_its_bounds_and_loses_nothing() {
         writing.join().unwrap().close().unwrap();
         assert!(handle.join().errors().is_empty());
         // Asserted after teardown, so a failure doesn't leave the poll thread running.
-        assert!(filled <= IN_FLIGHT, "{filled} pushed past {IN_FLIGHT} slots");
+        assert!(
+            filled <= IN_FLIGHT,
+            "{filled} pushed past {IN_FLIGHT} slots"
+        );
         assert_eq!(received, data(0..COUNT));
     });
 }
@@ -182,7 +185,10 @@ fn closing_while_a_send_waits_shuts_down() {
         push(&mut writer, Message::Data(0));
         let deadline = Instant::now() + TIMEOUT;
         while !parked.load(Ordering::SeqCst) {
-            assert!(Instant::now() < deadline, "the routine never filled its output");
+            assert!(
+                Instant::now() < deadline,
+                "the routine never filled its output"
+            );
             thread::sleep(Duration::from_millis(1));
         }
         writer.close().unwrap();
@@ -283,7 +289,10 @@ fn a_stalled_bounded_biunion_holds_each_side_to_its_bounds() {
             idle.close().unwrap();
             assert!(handle.join().errors().is_empty());
             // Asserted after teardown, so a failure doesn't leave the poll thread running.
-            assert!(filled <= IN_FLIGHT, "{filled} pushed past {IN_FLIGHT} slots");
+            assert!(
+                filled <= IN_FLIGHT,
+                "{filled} pushed past {IN_FLIGHT} slots"
+            );
             assert_eq!(received, data(offset..offset + COUNT));
         });
     }
@@ -400,7 +409,10 @@ fn futures_parked_with_their_own_waker_are_woken_through_it() {
     const COUNT: usize = 50;
     let (thread, mut writer, output) = bounded_line(
         |input: input::Receiver<usize>, output: output::Sender<usize>| {
-            Box::pin(Unordered::new(echo(input, output), Box::pin(async { Ok(()) })))
+            Box::pin(Unordered::new(
+                echo(input, output),
+                Box::pin(async { Ok(()) }),
+            ))
         },
     );
     let mut bundle = ThreadBundle::new();

@@ -166,7 +166,10 @@ fn poll_loop<ThreadIdType: ThreadId>(
     while alive > 0 {
         let node_id = consumer.next();
 
-        let slot = &mut runtime.nodes[node_id];
+        // A waker or timer made for an id outside this graph.
+        let Some(slot) = runtime.nodes.get_mut(node_id) else {
+            return Err(fatal!("woken for node {node_id}, not in this graph"));
+        };
         let Some(RuntimeNode { pollable, cx }) = slot.as_mut() else {
             // Benign: a cross-thread producer or sibling node can fire
             // this slot's waker after we eager-dropped the node on a

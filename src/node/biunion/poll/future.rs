@@ -4,6 +4,12 @@
 //! The async fn receives two [input::Receiver]s (left + right) and one
 //! [output::Sender]. Use [race](fn@crate::poll::race) to await either
 //! input, or [try_join](fn@crate::poll::try_join) to serve both.
+//!
+//! A Flush on either side flushes both inputs: each gets an
+//! [Input::Flush](crate::poll::future::Input::Flush), and the segment may end only once the
+//! routine has read both (anything left unread is a fatal error). With `race`, after one side's
+//! Flush, drain the other side up to its Flush before returning; don't `recv` again on a side
+//! that read its Flush (it is closed).
 
 use crate::error::Error;
 use crate::node::biunion::Inputs;
@@ -95,7 +101,8 @@ pub struct Factory<Left, Right, Out, F> {
 
 impl<Left, Right, Out, F> Factory<Left, Right, Out, F> {
     /// Caps each input queue and the output queue at `bound`; `None` is unbounded. The routine's
-    /// queues, not the node's input edges (those are the node builder's `.bounded`).
+    /// queues, not the node's input edges (those are the node builder's `.bounded`). Close drops
+    /// what the queues hold; Flush before closing to deliver it.
     pub fn bounded(mut self, bound: impl Into<Option<NonZeroUsize>>) -> Self {
         self.bound = bound.into();
         self
@@ -201,23 +208,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    //! End-to-end lifetime check: a biunion `FutureRoutine` whose async
-    //! body borrows from the surrounding scope. Two sub-futures (one
-    //! per input side) run concurrently via [`Join`]; the bias is
-    //! captured by reference and used by both halves.
-    //!
-    //! `Join` (not `Select`) so each side receives its own `Flush` —
-    //! the [`FutureRoutine`]'s renew requires every input to be
-    //! drained and closed.
+    //! End-to-end checks of the biunion `FutureRoutine`: a body borrowing from the surrounding
+    //! scope, and the `race` pattern the module doc names.
 
     use super::*;
     use crate::edge::sync::Receiver;
     use crate::poll;
     use crate::poll::future::Input;
-    use crate::poll::try_join;
+    use crate::poll::{Either, race, try_join};
     use crate::thread::ThreadBundle;
     use crate::work::Writer;
-    use crate::{At, Closeable, Message, Push, Pushable, biunion as biu};
+    use crate::{At, Closeable, Message, Push, Pushable, Trackable, biunion as biu};
 
     crate::thread_id!(BiunionFutureThread);
 
@@ -289,5 +290,66 @@ mod tests {
         });
 
         let _ = bias;
+    }
+
+    /// A routine racing both inputs: after one side's Flush it drains the other to its Flush,
+    /// as the contract asks, so each segment ends clean and the next starts fresh.
+    #[test]
+    fn a_racing_routine_drains_the_other_side_to_its_flush() {
+        let mut thread = poll::Thread::<'_, BiunionFutureThread>::new();
+        let mut node = thread
+            .biunion(FutureRoutine::factory(
+                |left: input::Receiver<usize>,
+                 right: input::Receiver<usize>,
+                 output: output::Sender<usize>| {
+                    Box::pin(async move {
+                        let other = loop {
+                            match race(left.recv(), right.recv()).await {
+                                Either::Left(item) => match item? {
+                                    Input::Data(value) => output.send(value).await?,
+                                    Input::Flush => break &right,
+                                },
+                                Either::Right(item) => match item? {
+                                    Input::Data(value) => output.send(value).await?,
+                                    Input::Flush => break &left,
+                                },
+                            }
+                        };
+                        while let Input::Data(value) = other.recv().await? {
+                            output.send(value).await?;
+                        }
+                        Ok(())
+                    })
+                },
+            ))
+            .input::<biu::Left, poll::Sync>()
+            .input::<biu::Right, poll::Sync>()
+            .output::<poll::Sync>();
+
+        let mut left_input = Writer::new(&node.at::<biu::Left>()).unwrap();
+        let mut right_input = Writer::new(&node.at::<biu::Right>()).unwrap();
+        let output = Receiver::new();
+        Push::connect(&mut node, &output).unwrap();
+        thread.add(node);
+        let mut bundle = ThreadBundle::new();
+        bundle.add(thread);
+
+        std::thread::scope(|s| {
+            let handle = bundle.start(s);
+            for segment in 0..2 {
+                left_input.push(Message::Data(segment)).unwrap();
+                left_input
+                    .push(Message::Flush(Trackable::new("f")))
+                    .unwrap();
+                assert_eq!(output.read_front().unwrap(), Message::Data(segment));
+                assert_eq!(
+                    output.read_front().unwrap(),
+                    Message::Flush(Trackable::new("f"))
+                );
+            }
+            left_input.close().unwrap();
+            right_input.close().unwrap();
+            assert!(handle.join().errors().is_empty());
+        });
     }
 }

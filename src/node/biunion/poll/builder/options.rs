@@ -42,6 +42,9 @@ impl<'thread, 'params, ThreadIdType: ThreadId> BiunionBuilder<'thread, 'params, 
     /// bridge, or each parent's edge. Its producers wait while it is full: until Input drains it,
     /// or, once the routine refuses, until the routine makes room. Each side is bounded
     /// independently. `None` is unbounded, the default.
+    ///
+    /// Close is fast: under backpressure, what is still in flight past the routine is dropped.
+    /// Flush before closing to deliver everything.
     pub fn bounded<S: Side>(mut self, bound: impl Into<Option<NonZeroUsize>>) -> Self {
         let Inputs { left, right } = &mut self.options.bound;
         *S::pick(left, right) = bound.into();

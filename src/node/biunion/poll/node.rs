@@ -20,11 +20,12 @@
 //!
 //! Flush from either input triggers Flushing immediately (first-flush-wins). The other side
 //! reads nothing until Running again, so its held message lands after the Flush, as its
-//! queued ones do.
+//! queued ones do. A Flush on each side therefore ends two segments, the second empty.
 //!
 //! Close from either input closes the node once that side has handed over everything queued
 //! before the close: a refused message is held until the routine makes room. The other side's
-//! held message is dropped.
+//! held message and everything still queued on it, signals included, are dropped; which side's
+//! close is read first can depend on wake order.
 
 use super::phases::Phases;
 use crate::edge::fanout::Fanout;

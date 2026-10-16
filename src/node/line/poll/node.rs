@@ -36,11 +36,11 @@
 //! this is guaranteed: TrySend produces output immediately, Output drains it,
 //! then forwards the marker.
 //!
-//! For async routines (e.g. FutureRoutine), the guarantee is **best-effort**.
-//! Work gets one poll cycle to let the routine emit pending output before
-//! Output forwards the marker. Data produced by the routine *after* that
-//! poll cycle (e.g. from an in-flight future) may arrive after the marker.
-//! If strict ordering is required with async routines, use Flush instead.
+//! For async routines (e.g. FutureRoutine), the guarantee is **best-effort**:
+//! Work is woken for a poll, but Output may forward the marker before that
+//! poll runs, so data the routine produces from input accepted before the
+//! marker can land after it. If strict ordering is required with async
+//! routines, use Flush instead.
 
 use crate::edge::fanout::Fanout;
 use crate::graph::{Receivable, Schedule};

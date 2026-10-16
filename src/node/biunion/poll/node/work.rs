@@ -21,7 +21,10 @@ impl<T: Types> Pollable for Work<T> {
     type ThreadId = T::ThreadId;
 
     fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
-        let mut s = self.shared.borrow_mut();
+        let mut s = self
+            .shared
+            .try_borrow_mut()
+            .map_err(|_| crate::fatal!("node state borrowed reentrantly"))?;
         let SharedState {
             work,
             output,

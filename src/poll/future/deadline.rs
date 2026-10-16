@@ -91,13 +91,19 @@ mod tests {
     #[test]
     fn an_expired_deadline_ends_a_pending_wait() {
         let mut deadline = expired();
-        assert_eq!(deadline.poll(Poll::<()>::Pending, &timer()), Poll::Ready(None));
+        assert_eq!(
+            deadline.poll(Poll::<()>::Pending, &timer()),
+            Poll::Ready(None)
+        );
         assert!(deadline.armed.is_none());
     }
 
     #[test]
     fn a_resolved_wait_beats_an_expired_deadline() {
         let mut deadline = expired();
-        assert_eq!(deadline.poll(Poll::Ready(9), &timer()), Poll::Ready(Some(9)));
+        assert_eq!(
+            deadline.poll(Poll::Ready(9), &timer()),
+            Poll::Ready(Some(9))
+        );
     }
 }

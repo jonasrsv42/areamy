@@ -50,7 +50,10 @@ impl<T: Types> Pollable for Input<T> {
     type ThreadId = T::ThreadId;
 
     fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
-        let mut s = self.shared.borrow_mut();
+        let mut s = self
+            .shared
+            .try_borrow_mut()
+            .map_err(|_| crate::fatal!("node state borrowed reentrantly"))?;
         match &s.state {
             NodeState::Closed | NodeState::CloseReady => Err(crate::closed!()),
             NodeState::Running => {

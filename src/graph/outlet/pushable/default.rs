@@ -2,14 +2,6 @@ use crate::error::Error;
 use crate::graph::Pushable;
 use crate::message::Message;
 use crate::signal::Origin;
-use std::cell::RefCell;
-use std::rc::Rc;
-
-impl<T: Pushable> Pushable for Rc<RefCell<T>> {
-    fn push(&mut self, msg: Message<Self::DataType, Self::SignalType>) -> Result<(), Error> {
-        self.borrow_mut().push(msg)
-    }
-}
 
 impl<PushableType: ?Sized, DataType, SignalType> Pushable for Box<PushableType>
 where

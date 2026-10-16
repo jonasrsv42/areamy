@@ -40,6 +40,9 @@ impl<'thread, 'params, ThreadIdType: ThreadId> LineBuilder<'thread, 'params, Thr
     /// `.input::<Sync>()`, or each parent's edge from `.parent(p)`, each bounded on its own. Its
     /// producers wait while it is full: until Input drains it, or, once the routine refuses, until
     /// the routine makes room. `None` is unbounded, the default.
+    ///
+    /// Close is fast: under backpressure, what is still in flight past the routine is dropped.
+    /// Flush before closing to deliver everything.
     pub fn bounded(mut self, bound: impl Into<Option<NonZeroUsize>>) -> Self {
         self.options.bound = bound.into();
         self

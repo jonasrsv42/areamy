@@ -271,6 +271,22 @@ fn renew_opens_a_fresh_queue_with_the_same_wakes_and_bound() {
 }
 
 #[test]
+fn renew_rejects_an_unread_flush() {
+    // Every input's Flush must be read, even when the routine stops at another's.
+    let (mut sender, _receiver) = unbounded();
+    sender.flush().unwrap();
+    assert!(sender.renew().is_err());
+}
+
+#[test]
+fn renew_rejects_unread_data_before_a_flush() {
+    let (mut sender, _receiver) = unbounded();
+    accepted(&sender, 1);
+    sender.flush().unwrap();
+    assert!(sender.renew().is_err());
+}
+
+#[test]
 fn renew_rejects_an_open_queue() {
     let (mut sender, _receiver) = unbounded();
     assert!(sender.renew().is_err());

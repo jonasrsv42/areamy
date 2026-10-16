@@ -42,11 +42,11 @@
 //! marker can land after it. If strict ordering is required with async
 //! routines, use Flush instead.
 
-use crate::edge::fanout::Fanout;
+use crate::edge::rotate::Rotate;
 use crate::graph::{Receivable, Schedule};
 use crate::node::line::poll::routine::LineRoutine;
 use crate::node::poll::NodeState;
-use crate::poll::{self, Budget, Phase};
+use crate::poll::{Budget, Phase};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::wake;
@@ -69,18 +69,18 @@ pub use work::Work;
 /// `T: Types`.
 pub trait Types {
     type In;
-    /// `Clone` for a fan-out of several edges; a single edge takes the move.
-    type Out: Clone;
+    type Out;
     type Signal: Origin + Clone;
     type ThreadId: ThreadId;
     type Routine: LineRoutine<Self::In, Self::Out>;
     type Inlet: Receivable<DataType = Self::In, SignalType = Self::Signal>;
-    /// One output edge; the node holds a [Fanout] of them.
-    type Outlet: poll::Sink<DataType = Self::Out, SignalType = Self::Signal>;
+    /// The node's output: a [Fanout](crate::edge::fanout::Fanout) over several edges (`Out:
+    /// Clone`), or a [Single](crate::edge::single::Single) edge taking the move.
+    type Output: Rotate<DataType = Self::Out, SignalType = Self::Signal>;
 }
 
 /// [Types] from its parts, so [Node::phases] infers them from its arguments.
-pub struct Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>(
+pub struct Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutputType>(
     PhantomData<
         fn() -> (
             In,
@@ -89,20 +89,19 @@ pub struct Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, Outle
             ThreadIdType,
             RoutineType,
             InletType,
-            OutletType,
+            OutputType,
         ),
     >,
 );
 
-impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType> Types
-    for Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutputType> Types
+    for Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutputType>
 where
-    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InletType: Receivable<DataType = In, SignalType = SignalType>,
-    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Rotate<DataType = Out, SignalType = SignalType>,
 {
     type In = In;
     type Out = Out;
@@ -110,14 +109,14 @@ where
     type ThreadId = ThreadIdType;
     type Routine = RoutineType;
     type Inlet = InletType;
-    type Outlet = OutletType;
+    type Output = OutputType;
 }
 
 /// Shared state between Input, Work, and Output phases.
 pub(crate) struct SharedState<T: Types> {
     input: Phase<T::Inlet>,
     work: Phase<T::Routine>,
-    output: Phase<Fanout<T::Outlet>>,
+    output: Phase<T::Output>,
     state: NodeState<T::Signal>,
     budget: Budget,
 }
@@ -127,15 +126,14 @@ type Shared<T> = Rc<RefCell<SharedState<T>>>;
 /// The three phase pollables of one line node.
 pub type Phases<T> = (Input<T>, Work<T>, Output<T>);
 
-impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
-    Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutletType>
+impl<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutputType>
+    Node<In, Out, SignalType, ThreadIdType, RoutineType, InletType, OutputType>
 where
-    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
     InletType: Receivable<DataType = In, SignalType = SignalType>,
-    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Rotate<DataType = Out, SignalType = SignalType>,
 {
     /// Create Input, Work, and Output phase pollables sharing state. Binds every output edge to
     /// `output_wake` before anything is pushed, so no refusal goes unwoken. Here, not at
@@ -143,7 +141,7 @@ where
     pub fn phases(
         input: Phase<InletType>,
         work: Phase<RoutineType>,
-        mut output: Fanout<OutletType>,
+        mut output: OutputType,
         output_wake: wake::Waker,
         budget: Budget,
     ) -> Phases<Self> {

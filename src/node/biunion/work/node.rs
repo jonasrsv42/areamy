@@ -3,7 +3,7 @@ use crate::edge::fanout::Fanout;
 use crate::edge::waking;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::graph::{Add, Get, Outputs};
+use crate::graph::{Add, Closeable, Get, Outputs};
 use crate::message::Message;
 use crate::node::biunion::Inputs;
 use crate::node::biunion::routine::BiunionRoutine;

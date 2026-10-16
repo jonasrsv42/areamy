@@ -1,5 +1,6 @@
 //! [Fanout] pushes each message into N edges and holds the one an edge refused.
 use crate::edge::deadlock::deadlock;
+use crate::edge::rotate::Rotate;
 use crate::error::Error;
 use crate::fatal;
 use crate::graph::marker::Connection;
@@ -43,8 +44,8 @@ type MessageOf<EdgeType> =
 /// the rotation and is returned: one closed edge closes the node.
 ///
 /// What it can do follows its edges: rotation and [Fanout::retry] need [TryPushable],
-/// [Fanout::resume] (which may block) also [Pushable], [Fanout::close] [Closeable]. Edges that
-/// can't block can't be resumed:
+/// [Fanout::resume] (which may block) also [Pushable], closing [Closeable]. Edges that can't
+/// block can't be resumed:
 ///
 /// ```compile_fail,E0599
 /// use areamy::edge::fanout::Fanout;
@@ -73,7 +74,7 @@ where
     /// Start a rotation. Consumes the handle: after a [Rotation::Suspended], the next
     /// [Fanout::ready] is `None`.
     pub fn push(self, message: MessageOf<EdgeType>) -> Result<Rotation, Error> {
-        self.fanout.rotate(0, message)
+        self.fanout.rotate_from(0, message)
     }
 }
 
@@ -141,9 +142,14 @@ impl<EdgeType: Outlet> Fanout<EdgeType> {
     }
 }
 
-impl<EdgeType: Outlet + Closeable> Fanout<EdgeType> {
+impl<EdgeType: Outlet> Outlet for Fanout<EdgeType> {
+    type DataType = EdgeType::DataType;
+    type SignalType = EdgeType::SignalType;
+}
+
+impl<EdgeType: Outlet + Closeable> Closeable for Fanout<EdgeType> {
     /// Close every edge, even if one fails; returns the first error. A held message is dropped.
-    pub fn close(&mut self) -> Result<(), Error> {
+    fn close(&mut self) -> Result<(), Error> {
         self.suspended = None;
         let mut result = Ok(());
         for edge in &mut self.edges {
@@ -198,13 +204,17 @@ where
         rest: Option<MessageOf<EdgeType>>,
     ) -> Result<Rotation, Error> {
         match rest {
-            Some(message) => self.rotate(index + 1, message),
+            Some(message) => self.rotate_from(index + 1, message),
             None => Ok(Rotation::Complete),
         }
     }
 
     /// Deliver `message` to the edges from `from` on.
-    fn rotate(&mut self, from: usize, message: MessageOf<EdgeType>) -> Result<Rotation, Error> {
+    fn rotate_from(
+        &mut self,
+        from: usize,
+        message: MessageOf<EdgeType>,
+    ) -> Result<Rotation, Error> {
         let Some((last, rest)) = self
             .edges
             .get_mut(from..)
@@ -223,6 +233,30 @@ where
             None => Ok(Rotation::Complete),
             Some(refused) => Ok(self.suspend(last_index, refused, None)),
         }
+    }
+}
+
+/// A poll node's output over several edges, so its data is `Clone`.
+impl<EdgeType> Rotate for Fanout<EdgeType>
+where
+    EdgeType: TryPushable + Schedule + Closeable,
+    EdgeType::DataType: Clone,
+    EdgeType::SignalType: Clone,
+{
+    fn suspended(&self) -> Option<usize> {
+        Fanout::suspended(self)
+    }
+
+    fn retry(&mut self) -> Result<Rotation, Error> {
+        Fanout::retry(self)
+    }
+
+    fn rotate(&mut self, message: MessageOf<EdgeType>) -> Result<Rotation, Error> {
+        // Unreachable from a node: it rotates only after `retry` completes.
+        let Some(ready) = self.ready() else {
+            return Err(fatal!("output pushed past a held message"));
+        };
+        ready.push(message)
     }
 }
 

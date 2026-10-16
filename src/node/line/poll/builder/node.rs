@@ -25,7 +25,8 @@
 
 use super::options::Options;
 use super::traits::{ResolveInput, ResolveOutput};
-use crate::edge::fanout::Fanout;
+use crate::edge::rotate::Rotate;
+use crate::edge::single::Single;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Get, Outputs};
@@ -489,22 +490,22 @@ where
 // ============================================================
 
 /// Build the three phase pollables for a node with a resolved [`Sync`]
-/// input, draining into the edges of `output`.
-fn sync_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutletType>(
+/// input, draining into `output`.
+fn sync_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
     factory: FactoryType,
     input: input::sync::Input<InType, SignalType>,
-    output: Fanout<OutletType>,
+    output: OutputType,
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     options: Options,
 ) -> Result<Graph<'params, ThreadIdType>, Error>
 where
     InType: Send + std::marker::Sync + 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
-    OutletType: Sink<DataType = OutType, SignalType = SignalType> + 'params,
+    OutputType: Rotate<DataType = OutType, SignalType = SignalType> + 'params,
 {
     let work = allocator.next();
     let output_slot = allocator.next();
@@ -546,8 +547,8 @@ where
 }
 
 /// Build the parent graphs and the three phase pollables for a node with an
-/// [`Async`] input, draining into the edges of `output`.
-fn async_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutletType>(
+/// [`Async`] input, draining into `output`.
+fn async_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
     factory: FactoryType,
     parents: Vec<
         Box<
@@ -559,18 +560,18 @@ fn async_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, 
                 > + 'params,
         >,
     >,
-    output: Fanout<OutletType>,
+    output: OutputType,
     mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     options: Options,
 ) -> Result<Graph<'params, ThreadIdType>, Error>
 where
     InType: 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
-    OutletType: Sink<DataType = OutType, SignalType = SignalType> + 'params,
+    OutputType: Rotate<DataType = OutType, SignalType = SignalType> + 'params,
 {
     let input = allocator.next();
     let edge_waker = input.value.wake.local.clone();
@@ -683,7 +684,7 @@ impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
     for Node<'static, 'params, Sync, Direct, InType, OutType, SignalType, ThreadIdType, FactoryType>
 where
     InType: Send + std::marker::Sync + 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
@@ -696,7 +697,7 @@ where
         sync_input(
             self.factory,
             self.input,
-            self.output.into(),
+            Single::from(self.output),
             allocator,
             self.options,
         )
@@ -719,7 +720,7 @@ impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
     >
 where
     InType: 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
@@ -732,7 +733,7 @@ where
         async_input(
             self.factory,
             self.input.parents,
-            self.output.into(),
+            Single::from(self.output),
             allocator,
             self.options,
         )
@@ -755,7 +756,7 @@ impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
     >
 where
     InType: Send + std::marker::Sync + 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
@@ -768,7 +769,7 @@ where
         sync_input(
             self.factory,
             self.input,
-            self.output.into(),
+            Single::from(self.output),
             allocator,
             self.options,
         )
@@ -791,7 +792,7 @@ impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
     >
 where
     InType: 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
@@ -804,7 +805,7 @@ where
         async_input(
             self.factory,
             self.input.parents,
-            self.output.into(),
+            Single::from(self.output),
             allocator,
             self.options,
         )
@@ -830,7 +831,7 @@ impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParen
     >
 where
     InType: Send + std::marker::Sync + 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
@@ -848,7 +849,7 @@ where
         sync_input(
             self.factory,
             self.input,
-            edge.into(),
+            Single::from(edge),
             allocator,
             self.options,
         )
@@ -870,7 +871,7 @@ impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType> AsyncParen
     >
 where
     InType: 'static,
-    OutType: Clone + 'static,
+    OutType: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
@@ -888,7 +889,7 @@ where
         async_input(
             self.factory,
             self.input.parents,
-            output_edge.into(),
+            Single::from(output_edge),
             allocator,
             self.options,
         )

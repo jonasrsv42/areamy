@@ -28,7 +28,7 @@ use std::task;
 type Signal = Trackable<&'static str>;
 type Inlet = input::sync::Receiver<usize, Signal>;
 type Outlet = edge::sync::Sender<usize, Signal>;
-type Node<R> = node::Node<usize, usize, Signal, DefaultThread, R, Inlet, Outlet>;
+type Node<R> = node::Node<usize, usize, Signal, DefaultThread, R, Inlet, Fanout<Outlet>>;
 
 /// A line node with the edges into and out of it.
 struct Line<R: LineRoutine<usize, usize>> {

@@ -1,10 +1,10 @@
 use super::NodeState;
 use crate::edge::deadlock::{parked, resumed};
-use crate::edge::fanout::{Fanout, Rotation};
+use crate::edge::fanout::Rotation;
+use crate::edge::rotate::Rotate;
 use crate::error::Error;
 use crate::fatal;
 use crate::graph::marker::Multiplicity;
-use crate::graph::{Closeable, Outlet, TryPushable};
 use crate::message::Message;
 use crate::node::routine::Next;
 use crate::poll::Context;
@@ -21,14 +21,14 @@ use std::num::NonZeroUsize;
 /// Never blocks: an edge refusing parks the Output with the message held in its fan-out, whose
 /// edges are bound to the Output's waker; their wake retries it. While parked nothing new is
 /// drained, so nothing overtakes the held message. At most `budget` messages leave per poll.
-pub(crate) struct Emit<'a, RoutineType, OutletType: Outlet> {
+pub(crate) struct Emit<'a, RoutineType, OutputType: Rotate> {
     pub(crate) routine: &'a mut RoutineType,
-    pub(crate) output: &'a mut Phase<Fanout<OutletType>>,
+    pub(crate) output: &'a mut Phase<OutputType>,
     /// The node's inputs, woken once a forwarded signal lets them resume.
     pub(crate) inputs: &'a [&'a LocalWaker],
     /// Work's waker.
     pub(crate) work: &'a LocalWaker,
-    pub(crate) state: &'a mut NodeState<OutletType::SignalType>,
+    pub(crate) state: &'a mut NodeState<OutputType::SignalType>,
     /// Messages delivered per poll before yielding.
     pub(crate) budget: NonZeroUsize,
 }
@@ -43,16 +43,11 @@ enum Drained {
     Yielded,
 }
 
-impl<RoutineType, OutletType> Emit<'_, RoutineType, OutletType>
-where
-    OutletType: TryPushable + Closeable,
-    OutletType::DataType: Clone,
-    OutletType::SignalType: Clone,
-{
+impl<RoutineType, OutputType: Rotate> Emit<'_, RoutineType, OutputType> {
     pub(crate) fn poll<M>(mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error>
     where
         M: Multiplicity,
-        RoutineType: Next<OutletType::DataType, M>,
+        RoutineType: Next<OutputType::DataType, M>,
     {
         let result = self.step::<M>();
         if result.is_err() {
@@ -65,7 +60,7 @@ where
     fn step<M>(&mut self) -> Result<core::task::Poll<()>, Error>
     where
         M: Multiplicity,
-        RoutineType: Next<OutletType::DataType, M>,
+        RoutineType: Next<OutputType::DataType, M>,
     {
         match &self.state {
             NodeState::Closed => Err(crate::closed!()),
@@ -112,13 +107,13 @@ where
     fn drain<M>(&mut self) -> Result<Drained, Error>
     where
         M: Multiplicity,
-        RoutineType: Next<OutletType::DataType, M>,
+        RoutineType: Next<OutputType::DataType, M>,
     {
         if !self.settled()? {
             return Ok(Drained::Parked);
         }
         for _ in 0..self.budget.get() {
-            let Some(out) = Next::<OutletType::DataType, M>::next(self.routine)? else {
+            let Some(out) = Next::<OutputType::DataType, M>::next(self.routine)? else {
                 return Ok(Drained::Done);
             };
             if self.start(Message::Data(out))?.is_suspended() {
@@ -141,13 +136,9 @@ where
     /// Start a rotation; only called with nothing held.
     fn start(
         &mut self,
-        message: Message<OutletType::DataType, OutletType::SignalType>,
+        message: Message<OutputType::DataType, OutputType::SignalType>,
     ) -> Result<Rotation, Error> {
-        // Unreachable: every caller first saw nothing held. Kept as an error, not a panic.
-        let Some(ready) = self.output.target.ready() else {
-            return Err(fatal!("output pushed past a held message"));
-        };
-        let rotation = ready.push(message)?;
+        let rotation = self.output.target.rotate(message)?;
         self.log(None, rotation);
         Ok(rotation)
     }

@@ -2,6 +2,7 @@ use super::{Input, Output, Work};
 use crate::Trackable;
 use crate::biunion::{self, Left, Right};
 use crate::edge;
+use crate::edge::single::Single;
 use crate::error::{Error, ErrorKind};
 use crate::message::Message;
 use crate::node::biunion::Inputs;
@@ -24,7 +25,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 type Signal = Trackable<&'static str>;
 type Inlet = input::sync::Receiver<usize, Signal>;
 type Outlet = edge::sync::Sender<usize, Signal>;
-type Node<R> = node::Node<usize, usize, usize, Signal, DefaultThread, R, Inlet, Inlet, Outlet>;
+/// One output edge: the node takes a [Single], so these tests run its hold and retry.
+type Node<R> =
+    node::Node<usize, usize, usize, Signal, DefaultThread, R, Inlet, Inlet, Single<Outlet>>;
 type Flag = Rc<Cell<bool>>;
 
 /// A routine these tests can run a node over.

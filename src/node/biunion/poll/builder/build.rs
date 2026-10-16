@@ -1,6 +1,7 @@
 //! GraphBuilder and AsyncParent impls for all biunion edge combinations.
 
 use super::node::{Allocated, Node};
+use crate::edge::single::Single;
 use crate::error::Error;
 use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::{BiunionRoutineFactory, BiunionWakers};
@@ -164,7 +165,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -204,7 +205,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            self.output.into(),
+            Single::from(self.output),
             output.value.wake,
             self.options.budget,
         );
@@ -344,7 +345,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -392,7 +393,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            self.output.into(),
+            Single::from(self.output),
             output.value.wake,
             self.options.budget,
         );
@@ -434,7 +435,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -487,7 +488,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            edge.into(),
+            Single::from(edge),
             output.value.wake,
             self.options.budget,
         );
@@ -625,7 +626,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -673,7 +674,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            self.output.into(),
+            Single::from(self.output),
             output.value.wake,
             self.options.budget,
         );
@@ -715,7 +716,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: Send + std::marker::Sync + 'static,
     Right: 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -768,7 +769,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            edge.into(),
+            Single::from(edge),
             output.value.wake,
             self.options.budget,
         );
@@ -915,7 +916,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: 'static,
     Right: 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -972,7 +973,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            self.output.into(),
+            Single::from(self.output),
             output.value.wake,
             self.options.budget,
         );
@@ -1018,7 +1019,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -1063,7 +1064,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            edge.into(),
+            Single::from(edge),
             output.value.wake,
             self.options.budget,
         );
@@ -1107,7 +1108,7 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncPare
 where
     Left: 'static,
     Right: 'static,
-    Out: Clone + 'static,
+    Out: 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
@@ -1169,7 +1170,7 @@ where
                 target: routine,
                 waker: work.value.wake.local,
             },
-            edge.into(),
+            Single::from(edge),
             output.value.wake,
             self.options.budget,
         );

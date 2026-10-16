@@ -4,7 +4,7 @@ use crate::edge::fanout::Fanout;
 use crate::edge::sync::Receiver;
 use crate::error::{Error, ErrorKind};
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get, Outputs};
+use crate::graph::{Add, Closeable, Get, Outputs};
 use crate::message::Message;
 use crate::node::line::routine::LineRoutine;
 use crate::node::line::work::builder::LineBuilder;

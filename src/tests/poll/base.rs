@@ -1132,14 +1132,8 @@ fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
 // Tests for direct sink output (`.sink(...)`)
 // ============================================================
 
-/// `Clone` only to satisfy the output's bound: a single edge takes the move, so a clone is a bug.
+/// Not `Clone`: a single output edge takes the move, so a node with one needs no `Clone`.
 struct Moved(&'static str);
-
-impl Clone for Moved {
-    fn clone(&self) -> Self {
-        panic!("a single output edge must not clone");
-    }
-}
 
 /// A caller-provided sink: forwards moved data and signals its close, so a
 /// test blocks on the channels instead of polling shared state.

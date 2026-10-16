@@ -28,12 +28,12 @@
 //! close is read first can depend on wake order.
 
 use super::phases::Phases;
-use crate::edge::fanout::Fanout;
+use crate::edge::rotate::Rotate;
 use crate::graph::{Receivable, Schedule};
 use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::poll::NodeState;
-use crate::poll::{self, Budget, Phase};
+use crate::poll::{Budget, Phase};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::wake;
@@ -57,15 +57,15 @@ pub use work::Work;
 pub trait Types {
     type Left;
     type Right;
-    /// `Clone` for a fan-out of several edges; a single edge takes the move.
-    type Out: Clone;
+    type Out;
     type Signal: Origin + Clone;
     type ThreadId: ThreadId;
     type Routine: BiunionRoutine<Self::Left, Self::Right, Self::Out>;
     type LeftInlet: Receivable<DataType = Self::Left, SignalType = Self::Signal>;
     type RightInlet: Receivable<DataType = Self::Right, SignalType = Self::Signal>;
-    /// One output edge; the node holds a [Fanout] of them.
-    type Outlet: poll::Sink<DataType = Self::Out, SignalType = Self::Signal>;
+    /// The node's output: a [Fanout](crate::edge::fanout::Fanout) over several edges (`Out:
+    /// Clone`), or a [Single](crate::edge::single::Single) edge taking the move.
+    type Output: Rotate<DataType = Self::Out, SignalType = Self::Signal>;
 }
 
 /// [Types] from its parts, so [Node::phases] infers them from its arguments.
@@ -78,7 +78,7 @@ pub struct Node<
     RoutineType,
     LeftInletType,
     RightInletType,
-    OutletType,
+    OutputType,
 >(
     PhantomData<
         fn() -> (
@@ -90,7 +90,7 @@ pub struct Node<
             RoutineType,
             LeftInletType,
             RightInletType,
-            OutletType,
+            OutputType,
         ),
     >,
 );
@@ -104,7 +104,7 @@ impl<
     RoutineType,
     LeftInletType,
     RightInletType,
-    OutletType,
+    OutputType,
 > Types
     for Node<
         Left,
@@ -115,16 +115,15 @@ impl<
         RoutineType,
         LeftInletType,
         RightInletType,
-        OutletType,
+        OutputType,
     >
 where
-    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInletType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInletType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Rotate<DataType = Out, SignalType = SignalType>,
 {
     type Left = Left;
     type Right = Right;
@@ -134,14 +133,14 @@ where
     type Routine = RoutineType;
     type LeftInlet = LeftInletType;
     type RightInlet = RightInletType;
-    type Outlet = OutletType;
+    type Output = OutputType;
 }
 
 /// Shared state between the two Inputs, Work, and Output phases.
 pub(crate) struct SharedState<T: Types> {
     input: Inputs<Phase<T::LeftInlet>, Phase<T::RightInlet>>,
     work: Phase<T::Routine>,
-    output: Phase<Fanout<T::Outlet>>,
+    output: Phase<T::Output>,
     state: NodeState<T::Signal>,
     /// One input budget, shared by both sides.
     budget: Budget,
@@ -158,7 +157,7 @@ impl<
     RoutineType,
     LeftInletType,
     RightInletType,
-    OutletType,
+    OutputType,
 >
     Node<
         Left,
@@ -169,16 +168,15 @@ impl<
         RoutineType,
         LeftInletType,
         RightInletType,
-        OutletType,
+        OutputType,
     >
 where
-    Out: Clone,
     SignalType: Origin + Clone,
     ThreadIdType: ThreadId,
     RoutineType: BiunionRoutine<Left, Right, Out>,
     LeftInletType: Receivable<DataType = Left, SignalType = SignalType>,
     RightInletType: Receivable<DataType = Right, SignalType = SignalType>,
-    OutletType: poll::Sink<DataType = Out, SignalType = SignalType>,
+    OutputType: Rotate<DataType = Out, SignalType = SignalType>,
 {
     /// Create all four phase pollables sharing state. Binds every output edge to `output_wake`
     /// before anything is pushed, so no refusal goes unwoken. Here, not at `Push::connect`: the
@@ -186,7 +184,7 @@ where
     pub fn phases(
         input: Inputs<Phase<LeftInletType>, Phase<RightInletType>>,
         work: Phase<RoutineType>,
-        mut output: Fanout<OutletType>,
+        mut output: OutputType,
         output_wake: wake::Waker,
         budget: Budget,
     ) -> Phases<Self> {

@@ -1,10 +1,13 @@
 
 # Areamy
 
+<p align="center"><img src="assets/stream.svg" alt="A signal flowing through a streaming graph" width="100%"></p>
+
 Streaming graphs for Rust where a wrong graph doesn't compile.
 
-Areamy runs low-latency pipelines (audio in, model inference, audio out) across threads, with
-blocking and async stages side by side. It fills a role like
+Areamy runs low-latency pipelines across threads: audio, video, sensor readings or any other
+stream goes in, through stages such as model inference, and out, with blocking and async stages
+side by side. It fills a role like
 [MediaPipe](https://github.com/google-ai-edge/mediapipe), with no dependencies, and runs on an ESP32.
 
 ```rust

@@ -25,15 +25,16 @@ crate::thread_id!(PullStage, PollStage, WorkStage);
 fn a_stalled_sink_stops_pull_work_and_poll_stages_back_to_the_writer() {
     let _deadline = deadline(DEADLINE);
     const COUNT: usize = 200;
-    // One message per slot, front to back:
-    // - the buffer;
-    // - the first work line, blocked mid-push (its input stays empty: it runs its `Pulled`
-    //   parent only on an empty input, so `Pulled` is never refused and holds nothing);
-    // - the poll line: its input edge, Input's held message, the input queue, the future
-    //   waiting in `send`, the output queue, Output's parked message;
-    // - the last work line: its input edge, and itself blocked mid-push;
-    // - the sink.
-    const IN_FLIGHT: usize = 11;
+    // The first work line's input stays empty: it runs its `Pulled` parent only on an empty
+    // input, so `Pulled` is never refused and holds nothing.
+    const IN_FLIGHT: usize = 1 // the buffer
+        + 1 // the first work line, blocked mid-push
+        + 2 // the poll line's input edge, and Input's held message
+        + 1 // the input queue
+        + 1 // the future waiting in `send`
+        + 2 // the output queue, and Output's parked message
+        + 2 // the last work line's input edge, and itself blocked mid-push
+        + 1; // the sink
 
     // Pull stage, run by the first work thread: writer → bounded buffer → pull line.
     let buffer = WriterBuffer::<usize, Signal, PullStage>::bounded(one());

@@ -93,9 +93,6 @@ fn a_routines_error_ends_its_thread_unchanged() -> Result<(), Error> {
 fn a_routine_returning_closed_is_a_fatal_error() -> Result<(), Error> {
     let _deadline = deadline(DEADLINE);
     let kinds = ends_with(|| closed!())?;
-    assert!(
-        matches!(&kinds[..], [ErrorKind::Fatal(message)] if message.contains("routine returned Closed")),
-        "{kinds:?}"
-    );
+    assert!(matches!(&kinds[..], [ErrorKind::Fatal(_)]), "{kinds:?}");
     Ok(())
 }

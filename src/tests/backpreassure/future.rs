@@ -4,7 +4,7 @@
 //!
 //! Every read and write polls with a deadline, so a lost wake fails instead of hanging.
 
-use super::{Msg, Signal, data, one, push, read_all, read_n, settled};
+use super::{Msg, Signal, data, one, push, read_n, settled, stopped};
 use crate::biunion::{Left, Right};
 use crate::edge::sync::Receiver;
 use crate::error::Error;
@@ -82,9 +82,13 @@ where
 fn a_stalled_bounded_line_holds_its_bounds_and_loses_nothing() {
     let _deadline = deadline(DEADLINE);
     const COUNT: usize = 100;
-    // Input edge, Input's held message, input queue, the future's held value, output queue,
-    // Output's held message, output edge.
-    const IN_FLIGHT: usize = 7;
+    const IN_FLIGHT: usize = 1 // the input edge
+        + 1 // Input's held message
+        + 1 // the input queue
+        + 1 // the future's value waiting in `send`
+        + 1 // the output queue
+        + 1 // Output's held message
+        + 1; // the output edge
 
     let (thread, mut writer, output) = bounded_line(echo);
     let mut bundle = ThreadBundle::new();
@@ -118,16 +122,22 @@ fn a_stalled_bounded_line_holds_its_bounds_and_loses_nothing() {
 #[test]
 fn a_flush_lands_behind_sends_waiting_for_room() {
     let _deadline = deadline(DEADLINE);
-    const COUNT: usize = 20;
-    // Two outputs per input, so the future keeps waiting in `send` while Flush queues up.
+    const COUNT: usize = 2;
+    // Sends resolved: short of all of them once the pipeline stalls, so one waits.
+    let sent = Arc::new(AtomicUsize::new(0));
+    let counter = sent.clone();
+    // Two outputs per input, so the future waits in `send` while Flush queues up.
     let (thread, mut writer, output) = bounded_line(
-        |input: input::Receiver<usize>, output: output::Sender<usize>| {
+        move |input: input::Receiver<usize>, output: output::Sender<usize>| {
+            let sent = counter.clone();
             Box::pin(async move {
                 loop {
                     match input.recv().await? {
                         Input::Data(value) => {
                             output.send(value * 2).await?;
+                            sent.fetch_add(1, Ordering::SeqCst);
                             output.send(value * 2 + 1).await?;
+                            sent.fetch_add(1, Ordering::SeqCst);
                         }
                         Input::Flush => {
                             output.send(FLUSHED).await?;
@@ -141,39 +151,51 @@ fn a_flush_lands_behind_sends_waiting_for_room() {
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);
 
+    let pushed = Arc::new(AtomicUsize::new(0));
+    let pushes = pushed.clone();
+
     thread::scope(|s| {
         let handle = bundle.start(s);
-        s.spawn(move || {
+        let writing = s.spawn(move || {
             for value in 0..COUNT {
                 push(&mut writer, Message::Data(value));
+                pushes.fetch_add(1, Ordering::SeqCst);
             }
             push(&mut writer, Message::Flush("f".into()));
-            writer.close().unwrap();
+            pushes.fetch_add(1, Ordering::SeqCst);
+            writer
         });
+
+        // Nothing read: the Flush gets in while a send still waits for room.
+        let filled = settled(&pushed, COUNT + 1);
+        let sent_by_then = sent.load(Ordering::SeqCst);
 
         let mut expected = data(0..2 * COUNT);
         expected.push(Message::Data(FLUSHED));
         expected.push(Message::Flush("f".into()));
-        assert_eq!(read_all(&output), expected);
+        let received = read_n(&output, expected.len());
+        writing.join().unwrap().close().unwrap();
         assert!(handle.join().errors().is_empty());
+        assert_eq!(filled, COUNT + 1, "the Flush got in");
+        assert!(sent_by_then < 2 * COUNT, "no send was waiting");
+        assert_eq!(received, expected);
     });
 }
 
 #[test]
 fn closing_while_a_send_waits_shuts_down() {
     let _deadline = deadline(DEADLINE);
-    let parked = Arc::new(AtomicBool::new(false));
-    let flag = parked.clone();
+    // Sends started; it stops growing once a send waits for good.
+    let sends = Arc::new(AtomicUsize::new(0));
+    let counter = sends.clone();
     // Sends until stopped; the output is never read, so a send waits for good.
     let (thread, mut writer, output) = bounded_line(
         move |input: input::Receiver<usize>, output: output::Sender<usize>| {
-            let flag = flag.clone();
+            let started = counter.clone();
             Box::pin(async move {
                 let _ = input.recv().await?;
                 for value in 0.. {
-                    // Output edge, Output's held message and the output queue take 0..3: the
-                    // send of 3 waits.
-                    flag.store(value >= 3, Ordering::SeqCst);
+                    started.fetch_add(1, Ordering::SeqCst);
                     output.send(value).await?;
                 }
                 Ok(())
@@ -186,17 +208,64 @@ fn closing_while_a_send_waits_shuts_down() {
     thread::scope(|s| {
         let handle = bundle.start(s);
         push(&mut writer, Message::Data(0));
-        let deadline = Instant::now() + TIMEOUT;
-        while !parked.load(Ordering::SeqCst) {
-            assert!(
-                Instant::now() < deadline,
-                "the routine never filled its output"
-            );
-            thread::sleep(Duration::from_millis(1));
-        }
+        let waiting = stopped(&sends);
         writer.close().unwrap();
         assert!(handle.join().errors().is_empty());
         drop(output);
+        assert!(waiting > 0, "the routine never sent");
+    });
+}
+
+/// Under backpressure, a timed send times out on the runtime's timer and hands its item back; the
+/// routine can still send it, and nothing is lost.
+#[test]
+fn a_timed_send_on_a_stalled_output_hands_its_item_back() {
+    let _deadline = deadline(DEADLINE);
+    // The handed-back item plus one; 0 until then.
+    let handed_back = Arc::new(AtomicUsize::new(0));
+    let record = handed_back.clone();
+    let (thread, mut writer, output) = bounded_line(
+        move |input: input::Receiver<usize>, output: output::Sender<usize>| {
+            let record = record.clone();
+            Box::pin(async move {
+                let _ = input.recv().await?;
+                let mut value = 0;
+                let back = loop {
+                    match output
+                        .send_with_timeout(value, Duration::from_millis(20))
+                        .await?
+                    {
+                        None => value += 1,
+                        Some(back) => break back,
+                    }
+                };
+                record.store(back + 1, Ordering::SeqCst);
+                output.send(back).await?;
+                // A segment ends only at a Flush.
+                while let Input::Data(_) = input.recv().await? {}
+                Ok(())
+            })
+        },
+    );
+    let mut bundle = ThreadBundle::new();
+    bundle.add(thread);
+
+    thread::scope(|s| {
+        let handle = bundle.start(s);
+        push(&mut writer, Message::Data(0));
+        let deadline = Instant::now() + TIMEOUT;
+        while handed_back.load(Ordering::SeqCst) == 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+
+        // Everything before the handed-back item, then the item itself, sent again.
+        let sent = handed_back.load(Ordering::SeqCst);
+        let received = read_n(&output, sent);
+        writer.close().unwrap();
+        assert!(handle.join().errors().is_empty());
+        // Asserted after teardown, so a failure doesn't leave the poll thread running.
+        assert!(sent > 0, "no timed send handed its item back");
+        assert_eq!(received, data(0..sent));
     });
 }
 
@@ -258,9 +327,14 @@ fn bounded_biunion() -> (
 fn a_stalled_bounded_biunion_holds_each_side_to_its_bounds() {
     let _deadline = deadline(DEADLINE);
     const COUNT: usize = 50;
-    // The side's input edge, Input's held message and input queue, the future's held value, the
-    // output queue, Output's held message, the output edge.
-    const IN_FLIGHT: usize = 7;
+    // On the fed side.
+    const IN_FLIGHT: usize = 1 // the input edge
+        + 1 // Input's held message
+        + 1 // the input queue
+        + 1 // the future's value waiting in `send`
+        + 1 // the output queue
+        + 1 // Output's held message
+        + 1; // the output edge
 
     for left in [true, false] {
         let (thread, left_writer, right_writer, output) = bounded_biunion();

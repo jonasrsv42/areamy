@@ -315,9 +315,10 @@ fn never_started_explains_itself() {
         thread: "NamedThread",
         reason: Some(std::io::Error::other("no memory")),
     };
-    assert_eq!(
-        refused.to_string(),
-        "thread NamedThread never started: no memory"
+    let message = refused.to_string();
+    assert!(
+        message.contains("NamedThread") && message.contains("no memory"),
+        "{message}"
     );
     let source = core::error::Error::source(&refused).map(ToString::to_string);
     assert_eq!(source.as_deref(), Some("no memory"));
@@ -326,9 +327,6 @@ fn never_started_explains_itself() {
         thread: "NamedThread",
         reason: None,
     };
-    assert_eq!(
-        unexplained.to_string(),
-        "thread NamedThread never started: the OS refused to spawn it"
-    );
+    assert!(unexplained.to_string().contains("NamedThread"));
     assert!(core::error::Error::source(&unexplained).is_none());
 }

@@ -41,8 +41,9 @@ fn write(
 fn slow_consumer_blocks_the_producer_thread() {
     let _deadline = deadline(DEADLINE);
     const BURST: usize = 50;
-    // The source's input edge, the source blocked mid-push, the sink's input edge.
-    const IN_FLIGHT: usize = 1 + 1 + BOUND.get();
+    const IN_FLIGHT: usize = 1 // the source's input edge
+        + 1 // the source, blocked mid-push
+        + BOUND.get(); // the sink's input edge
     // Producer thread: source → Push side path → bounded sink, read on this thread.
     let mut source = Line::builder().bounded(one()).build(MockWaitLine::new(1));
     let writer = source.writer().unwrap();
@@ -76,8 +77,10 @@ fn slow_biunion_blocks_producers_on_both_bounded_inputs() {
     const BURST: usize = 25;
     const RIGHT: usize = 100;
     const SIDE_BOUND: NonZeroUsize = NonZeroUsize::new(2).unwrap();
-    // Per side: the source's input edge, the source blocked mid-push, the biunion's input edge.
-    const IN_FLIGHT: usize = 1 + 1 + SIDE_BOUND.get();
+    // Per side.
+    const IN_FLIGHT: usize = 1 // the source's input edge
+        + 1 // the source, blocked mid-push
+        + SIDE_BOUND.get(); // the biunion's input edge
     // Two producer threads, each: source → Push side path → one bounded biunion input.
     let mut to_left_source = Line::builder().bounded(one()).build(MockWaitLine::new(1));
     let mut to_right_source = Line::builder().bounded(one()).build(MockWaitLine::new(1));
@@ -133,9 +136,9 @@ fn slow_biunion_blocks_producers_on_both_bounded_inputs() {
 fn slow_consumers_block_a_producing_bifurcation() {
     let _deadline = deadline(DEADLINE);
     const BURST: usize = 25;
-    // Its input edge, itself blocked mid-push, and each sink's input edge holding the same
-    // messages.
-    const IN_FLIGHT: usize = 1 + 1 + BOUND.get();
+    const IN_FLIGHT: usize = 1 // its input edge
+        + 1 // itself, blocked mid-push
+        + BOUND.get(); // each sink's input edge, both holding the same messages
     // Producer thread: bifurcation → a Push side path per side → a bounded sink per side.
     let mut bifurcation = Bifurcation::builder()
         .bounded(one())

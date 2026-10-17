@@ -409,27 +409,40 @@ fn output_parks_on_a_full_edge_and_resumes_on_the_pop() {
     assert_eq!(downstream.poll().unwrap(), Some(Message::Data(6)));
 }
 
-/// While parked nothing new leaves the routine, so later output can't overtake the held one;
-/// a spurious wake delivers nothing.
+/// Over two edges, the second refusing: Output parks there with the first already served. The
+/// second's pop wakes it, the held copy goes only to the second, and the next message parks
+/// there again.
 #[test]
-fn parked_output_keeps_order_and_ignores_spurious_wakes() {
-    let (mut node, downstream) = parked();
+fn output_parks_on_a_later_edge_and_resumes_there() {
+    let first = edge::sync::Receiver::new();
+    let second = edge::sync::Receiver::bounded(NonZeroUsize::MIN);
+    let mut outputs = fanout(first.sender());
+    outputs.add(second.sender());
+    let mut node = Parked::draining_into(outputs);
+    let drained = |edge: &edge::sync::Receiver<usize, Signal>| {
+        core::iter::from_fn(|| edge.poll().unwrap()).collect::<Vec<_>>()
+    };
+
+    // 2 goes to both; 6 goes to the first and the second refuses it.
     node.feed([Message::Data(1), Message::Data(2)]);
     node.emit();
+    // Parked: 12 waits in the routine, and a spurious wake delivers nothing.
     node.feed([Message::Data(3)]);
     node.emit();
-    assert_eq!(downstream.poll().unwrap(), Some(Message::Data(2)));
-    assert_eq!(downstream.poll().unwrap(), None);
+    assert_eq!(drained(&first), vec![Message::Data(2), Message::Data(6)]);
+    assert_eq!(node.output_wakes(), 0);
 
+    assert_eq!(second.poll().unwrap(), Some(Message::Data(2)));
+    assert_eq!(node.output_wakes(), 1);
+    // 6 goes to the second only; 12 goes to the first and the second refuses it again.
     node.emit();
+    assert_eq!(drained(&first), vec![Message::Data(12)]);
+    assert_eq!(second.poll().unwrap(), Some(Message::Data(6)));
     node.emit();
-    assert_eq!(downstream.poll().unwrap(), Some(Message::Data(6)));
-    node.emit();
-    assert_eq!(downstream.poll().unwrap(), Some(Message::Data(12)));
+    assert_eq!(drained(&second), vec![Message::Data(12)]);
+    assert_eq!(drained(&first), vec![]);
 }
 
-/// A refused Flush leaves the node Forwarding: Input and Work wait. It goes out once, after the
-/// pop, and only then are Input and Work woken.
 #[test]
 fn a_refused_flush_waits_then_resumes_the_node() {
     let (mut node, downstream) = parked();
@@ -460,6 +473,43 @@ fn a_refused_flush_waits_then_resumes_the_node() {
     node.feed([]);
     node.emit();
     assert_eq!(downstream.poll().unwrap(), Some(Message::Data(10)));
+}
+
+/// Same for a refused Marker: Forwarding until the pop, delivered once, then the node resumes.
+#[test]
+fn a_refused_marker_waits_then_resumes_the_node() {
+    let (mut node, downstream) = parked();
+    node.feed([
+        Message::Data(1),
+        Message::Marker("m".into()),
+        Message::Data(5),
+    ]);
+    // Work gave the routine its poll; Output delivers 2 and the Marker is refused.
+    node.emit();
+    let (input_wakes, work_wakes) = (node.input_wakes.get(), node.work_wakes.get());
+
+    // Forwarding: a spurious wake delivers nothing, and Input reads nothing past the Marker.
+    node.emit();
+    let _ = node.input.poll(&mut noop_context()).unwrap();
+    let _ = node.input.poll(&mut noop_context()).unwrap();
+    assert_eq!(downstream.poll().unwrap(), Some(Message::Data(2)));
+    assert_eq!(
+        (node.input_wakes.get(), node.work_wakes.get()),
+        (input_wakes, work_wakes)
+    );
+
+    node.emit();
+    assert_eq!(
+        downstream.poll().unwrap(),
+        Some(Message::Marker("m".into()))
+    );
+    assert_eq!(downstream.poll().unwrap(), None);
+    assert_eq!(node.input_wakes.get(), input_wakes + 1);
+    assert_eq!(node.work_wakes.get(), work_wakes + 1);
+    // Running again: the data behind the Marker flows (a Marker keeps the sum).
+    node.feed([]);
+    node.emit();
+    assert_eq!(downstream.poll().unwrap(), Some(Message::Data(12)));
 }
 
 /// Close is a fast shutdown: what an edge still refuses is dropped, and the edge closes.

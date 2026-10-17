@@ -231,8 +231,9 @@ fn sender_drop_closes_and_wakes_the_consumer() {
     let (consumer, wakes) = counting_local_waker();
     let (mut tx, mut rx) = channel::<usize, Signal>(consumer, None);
     push(&mut tx, 1);
+    let before = wakes.get();
     drop(tx);
-    assert_eq!(wakes.get(), 2);
+    assert_eq!(wakes.get(), before + 1);
     // Buffered data still drains before the close.
     assert_eq!(pop(&mut rx), Some(1));
     assert!(is_closed(rx.try_recv()));

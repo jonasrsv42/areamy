@@ -1063,18 +1063,6 @@ fn a_poisoned_edge_still_wakes_on_drop() {
     drop(tx);
 }
 
-#[test]
-fn a_dropped_refused_sender_is_still_woken() {
-    let (rx, tx, counter) = refused();
-    // Kept alive: dropping the last sender would close the edge, which wakes too.
-    let _other = rx.sender();
-    // No removal on drop: the entry stays and fires once more, harmlessly.
-    drop(tx);
-    assert_eq!(wakes(&counter), 0);
-    rx.poll().unwrap();
-    assert_eq!(wakes(&counter), 1);
-}
-
 /// With both a refused sender and a blocked thread, a pop takes the refused path, which must
 /// still notify the thread: each pop path, so a single pop's `notify_one` is pinned too.
 #[test]

@@ -55,10 +55,6 @@ fn read(output: &Receiver<usize, Signal>) -> Option<Msg> {
     }
 }
 
-fn read_all(output: &Receiver<usize, Signal>) -> Vec<Msg> {
-    core::iter::from_fn(|| read(output)).collect()
-}
-
 fn read_n(output: &Receiver<usize, Signal>, count: usize) -> Vec<Msg> {
     (0..count)
         .map(|_| read(output).expect("closed before all arrived"))
@@ -74,6 +70,21 @@ fn settled(count: &AtomicUsize, target: usize) -> usize {
     }
     thread::sleep(Duration::from_millis(50));
     count.load(Ordering::SeqCst)
+}
+
+/// `count` once it stops growing: nonzero and unchanged for 50ms, or at the deadline. Never
+/// panics, so the caller can tear down first.
+fn stopped(count: &AtomicUsize) -> usize {
+    let deadline = Instant::now() + TIMEOUT;
+    let mut last = 0;
+    loop {
+        thread::sleep(Duration::from_millis(50));
+        let now = count.load(Ordering::SeqCst);
+        if (now == last && now > 0) || Instant::now() >= deadline {
+            return now;
+        }
+        last = now;
+    }
 }
 
 fn data(values: impl IntoIterator<Item = usize>) -> Vec<Msg> {

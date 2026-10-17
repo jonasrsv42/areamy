@@ -526,6 +526,45 @@ mod tests {
     }
 
     #[test]
+    fn retry_refused_again_still_owes_the_later_edges() {
+        let (mut fanout, receivers) = fan::<usize>(&[None, Some(1), None]);
+        let filler = receivers[1].sender();
+        filler.push_back(Message::Data(0)).unwrap();
+        assert_eq!(
+            fanout.ready().unwrap().push(Message::Data(7)).unwrap(),
+            Rotation::Suspended(1)
+        );
+
+        // Nothing drained: refused again, and edge 2 still waits for its copy.
+        assert_eq!(fanout.retry().unwrap(), Rotation::Suspended(1));
+        assert_eq!(receivers[2].poll().unwrap(), None);
+        receivers[1].poll().unwrap();
+        assert_eq!(fanout.retry().unwrap(), Rotation::Complete);
+        assert_eq!(receivers[1].poll().unwrap(), Some(Message::Data(7)));
+        assert_eq!(receivers[2].poll().unwrap(), Some(Message::Data(7)));
+    }
+
+    #[test]
+    fn close_drops_a_held_message() {
+        let (mut fanout, receivers) = fan::<usize>(&[Some(1), None]);
+        let filler = receivers[0].sender();
+        filler.push_back(Message::Data(0)).unwrap();
+        assert_eq!(
+            fanout.ready().unwrap().push(Message::Data(7)).unwrap(),
+            Rotation::Suspended(0)
+        );
+
+        fanout.close().unwrap();
+        assert_eq!(fanout.suspended(), None);
+        // Nothing to deliver: a retry completes at once, and neither edge ever gets it.
+        assert_eq!(fanout.retry().unwrap(), Rotation::Complete);
+        assert_eq!(receivers[0].poll().unwrap(), Some(Message::Data(0)));
+        drop(filler);
+        assert!(receivers[0].poll().unwrap_err().is_closed());
+        assert!(receivers[1].poll().unwrap_err().is_closed());
+    }
+
+    #[test]
     fn close_while_blocked_errors_without_suspending() {
         let _deadline = deadline(DEADLINE);
         let (mut fanout, mut receivers) = fan::<usize>(&[Some(1), None]);

@@ -26,6 +26,7 @@ pub use budget::{BUDGET, Budget};
 pub use builder::Builder;
 pub use context::Context;
 pub use edge::{Async, Deferred, Direct, Edge, Linktime, Null, Sync};
+pub use future::line::FutureRoutine;
 pub use graph::{Graph, GraphBuilder, GraphNode};
 pub use marker::NodeId;
 pub use phase::Phase;

@@ -8,6 +8,7 @@ use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::{Input, input, output};
 use crate::poll::try_join;
 use crate::sync::Receiver;
+use crate::thread::Join;
 use crate::{Closeable, Message, Pushable, Pushes, ThreadBundle, Writes};
 use core::future::Future;
 use core::pin::Pin;
@@ -118,4 +119,79 @@ fn concurrent_sleeps_wake_independently() {
         writer.close().unwrap();
         assert!(handle.join().errors().is_empty());
     });
+}
+
+/// Regression: `recv_with_timeout` must actually fire at its deadline.
+///
+/// Internally, a pending `recv_with_timeout` calls `schedule_at` on the timer
+/// stored in the input queue. That timer MUST be bound to the work
+/// phase (the one that polls the future) — if it's bound to a different
+/// phase (e.g. output), the deadline fires the wrong phase and the
+/// future never re-polls.
+///
+/// Routine: try `recv_with_timeout(10ms)` once. On `None` (timeout
+/// fired), push 999 + drain to Flush. On `Some(_)` (input arrived
+/// first — which means the test pushed Flush before the timeout
+/// fired, indicating the waker is mis-routed), push 0.
+///
+/// Test: don't push anything for 100ms (plenty of slack for the 10ms
+/// timeout). Then close the writer to terminate. Assert first output
+/// is 999. With the bug, it's 0.
+#[test]
+fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
+    let mut async_thread = poll::Thread::<SleepThread>::new();
+    let mut node = async_thread
+        .line(FutureRoutine::factory(
+            |input: input::Receiver<usize>, output: output::Sender<usize>| {
+                Box::pin(async move {
+                    match input.recv_with_timeout(Duration::from_millis(10)).await? {
+                        None => {
+                            output.send(999).await?;
+                            // Drain until Flush so the input queue
+                            // closes cleanly before we return.
+                            while let Input::Data(_) = input.recv().await? {
+                                continue;
+                            }
+                        }
+                        Some(_) => output.send(0).await?,
+                    }
+                    Ok(())
+                })
+            },
+        ))
+        .input()
+        .output();
+
+    let mut writer = node.writer().unwrap();
+    let output = Receiver::new();
+    node.pushes(&output)?;
+    async_thread.add(node);
+
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = async_thread.start(s);
+
+        // Sleep well past the 10ms timeout. If the waker is wired
+        // correctly, recv_with_timeout returns None during this window
+        // and the routine emits 999.
+        std::thread::sleep(Duration::from_millis(100));
+        writer.close()?;
+
+        match output.read_front() {
+            Ok(Message::Data(999)) => {}
+            Ok(other) => panic!(
+                "recv_with_timeout did not fire — got {:?} instead of 999. \
+                 schedule_at is likely routing to the wrong phase.",
+                other
+            ),
+            Err(e) => panic!(
+                "no output received: {} — recv_with_timeout never resolved.",
+                e
+            ),
+        }
+
+        match handle.join() {
+            Join::Ok => Ok(()),
+            other => panic!("async thread did not exit cleanly: {:?}", other),
+        }
+    })
 }

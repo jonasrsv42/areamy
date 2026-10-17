@@ -90,8 +90,8 @@ Nodes are minted by their thread and wired with the same verbs. `.input()` and `
 where the async part meets the rest of the program:
 
 ```rust
-use areamy::poll::future::line::FutureRoutine;
-use areamy::{Tees, Via, Writes, poll};
+use areamy::poll::{self, FutureRoutine};
+use areamy::{Tees, Via, Writes};
 
 let mut io = poll::Thread::<IoThread>::new();
 

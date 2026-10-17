@@ -3,6 +3,7 @@
 use crate::error::Error;
 use crate::poll;
 use crate::signal::Trackable;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
 use crate::work;
 use crate::{Closeable, Message, Pushable, Tees, Via, Writes};
@@ -13,6 +14,7 @@ use crate::poll::AsyncParent;
 /// Nodes mint in any order: none holds the thread borrow. A poll node with `.output()` tees.
 #[test]
 fn mint_then_wire() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut thread = poll::Thread::<IoThread>::new();
     let a = thread.line(PollDouble::new);
     let b = thread.line(PollDouble::new);
@@ -95,6 +97,7 @@ fn optional_stage(stage: bool) -> Result<usize, Error> {
 
 #[test]
 fn optional_upstream_stage() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     assert_eq!(optional_stage(false)?, 4);
     assert_eq!(optional_stage(true)?, 8);
     Ok(())

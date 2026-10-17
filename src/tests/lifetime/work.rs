@@ -2,6 +2,7 @@
 
 use super::mock::{BorrowingBifurcation, BorrowingBiunion, BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::ThreadBundle;
 use crate::work;
 use crate::{At, Closeable, Message, Pushable, Pushes, Streams, Writes, bifurcation, biunion};
@@ -9,6 +10,7 @@ use alloc::collections::VecDeque;
 
 #[test]
 fn line_work_borrowed() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 3;
     let mut line = work::Line::of(BorrowingLine::new(&multiplier));
 
@@ -42,6 +44,7 @@ fn line_work_borrowed() {
 /// both holding `&Model`). Cross-thread connection via `pushes`.
 #[test]
 fn multi_thread_shared_borrow() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 3;
 
     let mut line_a = work::Line::of(BorrowingLine::new(&multiplier));
@@ -78,6 +81,7 @@ fn multi_thread_shared_borrow() {
 
 #[test]
 fn biunion_work_borrowed() {
+    let _deadline = deadline(DEADLINE);
     let bias: usize = 10;
     let mut biun = work::Biunion::of(BorrowingBiunion {
         bias: &bias,
@@ -113,6 +117,7 @@ fn biunion_work_borrowed() {
 
 #[test]
 fn bifurcation_work_borrowed() {
+    let _deadline = deadline(DEADLINE);
     let threshold: usize = 5;
     let mut bif = work::Bifurcation::of(BorrowingBifurcation {
         threshold: &threshold,

@@ -3,6 +3,7 @@
 
 use super::mock::{BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::ThreadBundle;
 use crate::work;
 use crate::writer::pull::WriterBuffer;
@@ -10,6 +11,7 @@ use crate::{Closeable, Message, Pullable, Pushable, Pushes, Streams, Via, Writes
 
 #[test]
 fn line_pull_borrowed() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 4;
 
     // Pull chain: WriterBuffer -> BorrowingLine (pull) -> bridged into work-line

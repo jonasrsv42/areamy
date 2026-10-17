@@ -6,6 +6,7 @@ use crate::message::Message;
 use crate::node::bifurcation::routine::tests::HoldBifurcation;
 use crate::node::biunion::routine::tests::HoldBiunion;
 use crate::node::line::routine::tests::MockWaitLine;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
 use crate::work::{Bifurcation, Biunion, Line};
 use crate::{At, Pushes, Reads, Streams, Writes, bifurcation, biunion};
@@ -52,6 +53,7 @@ fn slow_consumer_blocks_the_producer_thread() {
 
 #[test]
 fn slow_biunion_blocks_producers_on_both_bounded_inputs() {
+    let _deadline = deadline(DEADLINE);
     const BURST: usize = 25;
     const RIGHT: usize = 100;
     // Two producer threads, each: source → Push side path → one bounded biunion input.

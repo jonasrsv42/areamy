@@ -46,6 +46,7 @@ mod tests {
     use super::*;
     use crate::error::ErrorKind;
     use crate::message::Message;
+    use crate::tests::support::{DEADLINE, deadline};
     use std::thread;
 
     type Signal = &'static str;
@@ -70,6 +71,7 @@ mod tests {
 
     #[test]
     fn wait_any_wakes_on_right_from_other_thread() -> Result<(), Error> {
+        let _deadline = deadline(DEADLINE);
         let (parker, left, right) = pair();
         let _keep = left.sender();
         let tx = right.sender();
@@ -90,6 +92,7 @@ mod tests {
 
     #[test]
     fn wait_any_closed_after_last_sender_drops() -> Result<(), Error> {
+        let _deadline = deadline(DEADLINE);
         let (parker, left, right) = pair();
         let left_tx = left.sender();
         let right_tx = right.sender();
@@ -106,6 +109,7 @@ mod tests {
 
     #[test]
     fn wait_any_keeps_waiting_while_one_side_is_live() -> Result<(), Error> {
+        let _deadline = deadline(DEADLINE);
         let (parker, left, right) = pair();
         let left_tx = left.sender();
         let right_tx = right.sender();

@@ -217,6 +217,7 @@ mod tests {
     use crate::edge::sync::Receiver;
     use crate::poll;
     use crate::poll::future::Input;
+    use crate::tests::support::{DEADLINE, deadline};
     use crate::thread::ThreadBundle;
     use crate::work;
     use crate::{Closeable, Message, Pushable, Pushes, Streams, Writes};
@@ -225,6 +226,7 @@ mod tests {
 
     #[test]
     fn future_routine_can_borrow_from_scope() {
+        let _deadline = deadline(DEADLINE);
         let multiplier: usize = 7;
         let mult_ref: &usize = &multiplier;
 

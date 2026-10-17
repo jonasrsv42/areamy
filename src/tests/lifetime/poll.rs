@@ -8,12 +8,14 @@ use crate::edge::sync::Receiver;
 use crate::graph::{Add, Get};
 use crate::poll;
 use crate::tests::mock::WakingOutput;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::ThreadBundle;
 use crate::work;
 use crate::{At, Closeable, Message, Pushable, Pushes, Streams, Via, Writes, biunion};
 
 #[test]
 fn line_poll_borrowed() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 5;
     let mut thread = poll::Thread::<LifetimePollThread>::new();
 
@@ -53,6 +55,7 @@ fn line_poll_borrowed() {
 
 #[test]
 fn biunion_poll_borrowed() {
+    let _deadline = deadline(DEADLINE);
     let bias: usize = 7;
     let mut thread = poll::Thread::<LifetimePollThread>::new();
 
@@ -98,6 +101,7 @@ fn biunion_poll_borrowed() {
 /// `&multiplier`.
 #[test]
 fn poll_async_parent_chain_borrowed() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 4;
     let mut thread = poll::Thread::<LifetimePollThread>::new();
 
@@ -150,6 +154,7 @@ fn poll_async_parent_chain_borrowed() {
 /// `Edge::Output` and the matching `Add` impl this would not compile.
 #[test]
 fn poll_borrowed_output_sink() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 2;
     let config: usize = 99;
     let mut thread = poll::Thread::<LifetimePollThread>::new();
@@ -196,6 +201,7 @@ fn poll_borrowed_output_sink() {
 /// parent fails to compile.
 #[test]
 fn poll_node_input_from_borrowed_parent() {
+    let _deadline = deadline(DEADLINE);
     let mult: usize = 2;
     let mut work_line = work::Line::of(BorrowingLine::new(&mult));
 

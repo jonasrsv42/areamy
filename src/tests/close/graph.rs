@@ -6,6 +6,7 @@ use crate::poll;
 use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::work;
 use crate::{Closeable, DefaultThread, Message, Pushable, Pushes, Streams, ThreadBundle, Writes};
 
@@ -69,6 +70,7 @@ fn run_once() -> Result<(), Error> {
 
 #[test]
 fn sync_to_async_flush_then_immediate_close() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     for _ in 0..10 {
         run_once()?;
     }

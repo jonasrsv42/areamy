@@ -10,6 +10,7 @@ use crate::poll;
 use crate::poll::future;
 use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
 use crate::{At, Closeable, Message, Pushable, Pushes, Trackable, Via, Writes};
 use alloc::rc::Rc;
@@ -29,6 +30,7 @@ struct Config {
 /// The routine applies the current config multiplier to audio frames.
 #[test]
 fn biunion_audio_with_config() {
+    let _deadline = deadline(DEADLINE);
     let mut async_thread = poll::Thread::<IoThread>::new();
 
     let routine = future::biunion::FutureRoutine::factory(
@@ -112,6 +114,7 @@ fn biunion_audio_with_config() {
 /// parent (doubles) → biunion (applies config multiplier) → output
 #[test]
 fn biunion_with_async_parent() {
+    let _deadline = deadline(DEADLINE);
     let mut async_thread = poll::Thread::<IoThread>::new();
 
     // Parent line node: doubles input
@@ -239,6 +242,7 @@ fn double(input: input::Receiver<usize>, output: output::Sender<usize>) -> BoxFu
 /// A biunion minted before its parent, its output resolved before its inputs.
 #[test]
 fn biunion_mints_and_resolves_in_any_order() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut thread = poll::Thread::<IoThread>::new();
     let merge = thread
         .biunion(future::biunion::FutureRoutine::factory(left_plus_hundred))

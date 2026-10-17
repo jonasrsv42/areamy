@@ -6,6 +6,7 @@ use crate::graph::{Schedule, TryPush};
 use crate::poll;
 use crate::signal::Trackable;
 use crate::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
 use crate::wake;
 use crate::work;
@@ -34,6 +35,7 @@ use crate::poll::future::{Input, input, output};
 /// `pushes` edges allow fan-out at the cost of Mutex.
 #[test]
 fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
@@ -88,6 +90,7 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
 /// Child drains from both parents. Output receives doubled values from both.
 #[test]
 fn merge_two_parents_into_child() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_a_node = work::Line::of(Double::new());
     let mut writer_a = writer_a_node.writer()?;
 
@@ -148,6 +151,7 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
 /// ```
 #[test]
 fn merge_three_parents_via_linked() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_a_node = work::Line::of(Double::new());
     let mut writer_a = writer_a_node.writer()?;
 
@@ -212,6 +216,7 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
 /// Sink: Deferred output, data discarded via Null.
 #[test]
 fn node_sink_deferred_output() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
@@ -376,6 +381,7 @@ impl Closeable for Collect {
 /// teardown closes it.
 #[test]
 fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let (items, received) = std::sync::mpsc::channel();
     let (closed, close_signal) = std::sync::mpsc::channel();
 

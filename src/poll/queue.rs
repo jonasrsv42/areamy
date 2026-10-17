@@ -83,6 +83,7 @@ impl PollQueue {
 mod tests {
     use super::*;
     use crate::edge::sync::tests::wait_until;
+    use crate::tests::support::{DEADLINE, deadline};
     use std::sync::mpsc;
     use std::thread;
 
@@ -121,6 +122,7 @@ mod tests {
 
     #[test]
     fn cross_thread_blocks_until_woken() {
+        let _deadline = deadline(DEADLINE);
         let config = PollQueue::new();
         let producer = config.producer();
         let parked = config.parker.parked_probe();
@@ -140,6 +142,7 @@ mod tests {
     /// leave the consumer parked on an item it never sees.
     #[test]
     fn cross_thread_ping_pong_never_loses_a_wake() {
+        let _deadline = deadline(DEADLINE);
         let config = PollQueue::new();
         let producer = config.producer();
         let (mut consumer, _) = config.local();

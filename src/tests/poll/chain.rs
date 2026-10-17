@@ -4,6 +4,7 @@ use crate::edge::sync::tests::wait_until;
 use crate::error::Error;
 use crate::poll;
 use crate::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
 use crate::work;
 use crate::{
@@ -17,6 +18,7 @@ use super::mock::{Double, IoThread, PollDouble};
 /// Data only appears in output after poll() processes it.
 #[test]
 fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
@@ -52,6 +54,7 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
 /// flowing, and the parked one finishes once its consumer drains.
 #[test]
 fn a_parked_node_leaves_its_thread_running() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut async_thread = poll::Thread::<IoThread>::new();
     let mut stalled = async_thread.line(PollDouble::new).input().output();
     let mut flowing = async_thread.line(PollDouble::new).input().output();
@@ -97,6 +100,7 @@ fn a_parked_node_leaves_its_thread_running() -> Result<(), Error> {
 /// Both async nodes use poll() to process data.
 #[test]
 fn async_chain_with_local_edges() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
@@ -133,6 +137,7 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
 /// Five async nodes chained with `via`: a → b → c → d → e.
 #[test]
 fn long_async_chain() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 

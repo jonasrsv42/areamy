@@ -254,6 +254,7 @@ mod tests {
     use crate::edge::sync::Receiver;
     use crate::graph::Get;
     use crate::node::line::poll::routine::tests::MockLine;
+    use crate::tests::support::{DEADLINE, deadline};
     use crate::work::Sink;
     use crate::{Closeable, Message, Pushes, Via};
 
@@ -280,6 +281,7 @@ mod tests {
 
     #[test]
     fn async_thread_processes_data() {
+        let _deadline = deadline(DEADLINE);
         let mut thread = Thread::<IoThread>::new();
 
         let mut node = thread.line(MockLine::new).input().output();
@@ -371,6 +373,7 @@ mod tests {
     /// and close the output edge.
     #[test]
     fn close_propagates_through_chain() {
+        let _deadline = deadline(DEADLINE);
         let mut thread = Thread::<IoThread>::new();
 
         let parent = thread.line(MockLine::new).input();

@@ -10,6 +10,7 @@ use crate::message::Message;
 use crate::poll::future::line::once;
 use crate::poll::future::{Input, input, output};
 use crate::signal::Trackable;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::work::Writer;
 use crate::{Closeable, Pushable, Pushes, ThreadBundle, Writes, poll};
 use core::future::Future;
@@ -97,6 +98,7 @@ fn segment(writer: &mut Writer<'_, usize, Signal>, values: &[usize]) {
 
 #[test]
 fn one_segment_is_delivered_then_close_is_clean() {
+    let _deadline = deadline(DEADLINE);
     let scale = 10;
     let (thread, mut writer, output) = once_line(Session { factor: 2 }, &scale);
     let mut bundle = ThreadBundle::new();
@@ -125,6 +127,7 @@ fn one_segment_is_delivered_then_close_is_clean() {
 
 #[test]
 fn data_after_the_segment_ends_the_thread_as_exhausted() {
+    let _deadline = deadline(DEADLINE);
     let scale = 1;
     let (thread, mut writer, output) = once_line(Session { factor: 1 }, &scale);
     let mut bundle = ThreadBundle::new();
@@ -152,6 +155,7 @@ fn data_after_the_segment_ends_the_thread_as_exhausted() {
 
 #[test]
 fn a_second_flush_ends_the_thread_as_exhausted() {
+    let _deadline = deadline(DEADLINE);
     let scale = 1;
     let (thread, mut writer, output) = once_line(Session { factor: 1 }, &scale);
     let mut bundle = ThreadBundle::new();

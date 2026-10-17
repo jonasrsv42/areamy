@@ -3,6 +3,7 @@
 use crate::error::Error;
 use crate::poll;
 use crate::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::work;
 use crate::{
     Accept, Closeable, DefaultThread, Message, Pushable, Pushes, Streams, ThreadBundle, Via, Writes,
@@ -110,6 +111,7 @@ impl poll::LineRoutine<usize, usize> for HalfCloseRoutine {}
 /// Data sent before the flush is doubled and forwarded.
 #[test]
 fn flush_waits_for_routine_ready() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
@@ -241,6 +243,7 @@ impl poll::LineRoutine<usize, usize> for BatchRoutine {}
 ///   Close                          → empty flush, close propagates
 #[test]
 fn multi_flush_then_close() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 

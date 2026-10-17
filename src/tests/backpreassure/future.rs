@@ -12,6 +12,7 @@ use crate::graph::Closeable;
 use crate::message::Message;
 use crate::poll::future::{Input, biunion, input, line, output};
 use crate::poll::{self, try_join};
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::ThreadBundle;
 use crate::work::Writer;
 use crate::{At, Pushes, Writes};
@@ -79,6 +80,7 @@ where
 
 #[test]
 fn a_stalled_bounded_line_holds_its_bounds_and_loses_nothing() {
+    let _deadline = deadline(DEADLINE);
     const COUNT: usize = 100;
     // Input edge, Input's held message, input queue, the future's held value, output queue,
     // Output's held message, output edge.
@@ -119,6 +121,7 @@ fn a_stalled_bounded_line_holds_its_bounds_and_loses_nothing() {
 
 #[test]
 fn a_flush_lands_behind_sends_waiting_for_room() {
+    let _deadline = deadline(DEADLINE);
     const COUNT: usize = 20;
     // Two outputs per input, so the future keeps waiting in `send` while Flush queues up.
     let (thread, mut writer, output) = bounded_line(
@@ -162,6 +165,7 @@ fn a_flush_lands_behind_sends_waiting_for_room() {
 
 #[test]
 fn closing_while_a_send_waits_shuts_down() {
+    let _deadline = deadline(DEADLINE);
     let parked = Arc::new(AtomicBool::new(false));
     let flag = parked.clone();
     // Sends until stopped; the output is never read, so a send waits for good.
@@ -256,6 +260,7 @@ fn bounded_biunion() -> (
 
 #[test]
 fn a_stalled_bounded_biunion_holds_each_side_to_its_bounds() {
+    let _deadline = deadline(DEADLINE);
     const COUNT: usize = 50;
     // The side's input edge, Input's held message and input queue, the future's held value, the
     // output queue, Output's held message, the output edge.
@@ -303,6 +308,7 @@ fn a_stalled_bounded_biunion_holds_each_side_to_its_bounds() {
 
 #[test]
 fn a_bounded_biunion_serves_both_sides_through_one_output() {
+    let _deadline = deadline(DEADLINE);
     const COUNT: usize = 30;
     let (thread, mut left_writer, mut right_writer, output) = bounded_biunion();
     let mut bundle = ThreadBundle::new();
@@ -409,6 +415,7 @@ impl Future for Unordered {
 
 #[test]
 fn futures_parked_with_their_own_waker_are_woken_through_it() {
+    let _deadline = deadline(DEADLINE);
     const COUNT: usize = 50;
     let (thread, mut writer, output) = bounded_line(
         |input: input::Receiver<usize>, output: output::Sender<usize>| {

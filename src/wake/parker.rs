@@ -153,6 +153,7 @@ impl Wake for Inner {
 mod tests {
     use super::*;
     use crate::edge::sync::tests::wait_until;
+    use crate::tests::support::{DEADLINE, deadline};
     use core::time::Duration;
     use std::thread;
 
@@ -182,6 +183,7 @@ mod tests {
 
     #[test]
     fn park_returns_when_woken_while_asleep() {
+        let _deadline = deadline(DEADLINE);
         let parker = Parker::new();
         let waker = parker.waker();
         let parked = parker.parked_probe();
@@ -240,6 +242,7 @@ mod tests {
 
     #[test]
     fn park_until_returns_when_woken_while_asleep() {
+        let _deadline = deadline(DEADLINE);
         let parker = Parker::new();
         let waker = parker.waker();
         let parked = parker.parked_probe();

@@ -11,6 +11,7 @@ use crate::node::line::routine::tests::MockWaitLine;
 use crate::poll;
 use crate::poll::future::line::FutureRoutine;
 use crate::pull::{Pullable, WriterBuffer};
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::ThreadBundle;
 use crate::work::{self, Line, Writer};
 use crate::{Pushes, Streams, Via, Writes};
@@ -35,6 +36,7 @@ fn settled(count: &AtomicUsize, target: usize) -> usize {
 
 #[test]
 fn a_stalled_sink_stops_pull_work_and_poll_stages_back_to_the_writer() {
+    let _deadline = deadline(DEADLINE);
     const COUNT: usize = 200;
     // One message per slot, front to back:
     // - the buffer;

@@ -5,6 +5,7 @@ use crate::error::{Error, ErrorKind};
 use crate::graph::{Closeable, Get, Pushable, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::poll::Sink as PollSink;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::wake::mock::{counting_waker, noop_local_waker};
 use crate::wake::{self, Parker};
 use crate::work::Sink;
@@ -430,6 +431,7 @@ fn dropping_last_sender_closes_receiver() {
 
 #[test]
 fn dropping_last_sender_unblocks_waiting_receiver() {
+    let _deadline = deadline(DEADLINE);
     let rx = Receiver::<usize, TestSignal>::new();
     let tx = rx.sender();
 
@@ -634,6 +636,7 @@ fn dropping_boxed_pushable_decrements_count() {
 
 #[test]
 fn wait_front_unblocked_by_last_sender_drop() {
+    let _deadline = deadline(DEADLINE);
     let rx = Receiver::<usize, TestSignal>::new();
     let tx = rx.sender();
 
@@ -657,6 +660,7 @@ fn wait_front_unblocked_by_last_sender_drop() {
 
 #[test]
 fn read_all_unblocked_by_last_sender_drop() {
+    let _deadline = deadline(DEADLINE);
     let rx = Receiver::<usize, TestSignal>::new();
     let tx = rx.sender();
 
@@ -1177,6 +1181,7 @@ fn push_parked(
 /// Deterministic: the producer is refused, then the pop wakes it.
 #[test]
 fn a_parked_producer_is_woken_by_the_pop() {
+    let _deadline = deadline(DEADLINE);
     let rx = bounded(1);
     let mut tx = rx.sender();
     let refused = Arc::new(AtomicBool::new(false));
@@ -1209,6 +1214,7 @@ fn a_parked_producer_is_woken_by_the_pop() {
 /// waits a whole timeout.
 #[test]
 fn a_parked_producer_never_loses_a_wake() {
+    let _deadline = deadline(DEADLINE);
     let rx = bounded(1);
     let mut tx = rx.sender();
     let producer = thread::spawn(move || {
@@ -1232,6 +1238,7 @@ fn a_parked_producer_never_loses_a_wake() {
 /// that bumps progress and takes the list in separate critical sections.
 #[test]
 fn mixed_producers_never_lose_a_wake() {
+    let _deadline = deadline(DEADLINE);
     const EACH: usize = 1_000;
     const PARKED: usize = 3;
     const BLOCKING: usize = 2;
@@ -1289,6 +1296,7 @@ fn mixed_producers_never_lose_a_wake() {
 /// separate critical sections (a producer refused between the two would never be woken).
 #[test]
 fn racing_pops_never_lose_a_parked_wake() {
+    let _deadline = deadline(DEADLINE);
     const EACH: usize = 2_000;
     const PARKED: usize = 4;
     let rx = bounded(1);

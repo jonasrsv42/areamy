@@ -198,6 +198,7 @@ mod tests {
     use crate::poll;
     use crate::poll::future::Input;
     use crate::poll::{Either, race, try_join};
+    use crate::tests::support::{DEADLINE, deadline};
     use crate::thread::ThreadBundle;
     use crate::{At, Closeable, Message, Pushable, Pushes, Trackable, Writes, biunion as biu};
 
@@ -205,6 +206,7 @@ mod tests {
 
     #[test]
     fn future_routine_can_borrow_from_scope() {
+        let _deadline = deadline(DEADLINE);
         let bias: usize = 5;
         let bias_ref: &usize = &bias;
 
@@ -277,6 +279,7 @@ mod tests {
     /// as the contract asks, so each segment ends clean and the next starts fresh.
     #[test]
     fn a_racing_routine_drains_the_other_side_to_its_flush() {
+        let _deadline = deadline(DEADLINE);
         let mut thread = poll::Thread::<BiunionFutureThread>::new();
         let mut node = thread
             .biunion(FutureRoutine::factory(

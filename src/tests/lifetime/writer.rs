@@ -7,6 +7,7 @@
 
 use super::mock::{BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::ThreadBundle;
 use crate::work;
 use crate::writer::pull::WriterBuffer;
@@ -15,6 +16,7 @@ use crate::{Closeable, Message, Pullable, Pushable, Pushes, Streams, Via, Writes
 /// [`Writes::writer`] on a borrowed work-line node.
 #[test]
 fn work_writer_of_borrowed_line() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 3;
     let mut line = work::Line::of(BorrowingLine::new(&multiplier));
 
@@ -44,6 +46,7 @@ fn work_writer_of_borrowed_line() {
 /// Exercises `WriterBuffer`'s `Get<dyn Sink + 'params>` impl.
 #[test]
 fn work_writer_from_buffer_with_borrowed_pull() {
+    let _deadline = deadline(DEADLINE);
     let multiplier: usize = 2;
     let buffer = WriterBuffer::new();
     let mut writer = buffer.writer().unwrap();

@@ -3,6 +3,7 @@ use crate::Trackable;
 use crate::edge::sync::tests::{join_within, wait_until};
 use crate::error::ErrorKind;
 use crate::poll::Sink as PollSink;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::wake::Parker;
 use crate::wake::mock::counting_waker;
 use crate::work::Sink as WorkSink;
@@ -270,6 +271,7 @@ fn get_mints_a_work_sink_and_a_poll_sink() {
 /// after it lands. The sender outlives the run, so no close or drop wake can rescue it.
 #[test]
 fn a_racing_push_never_strands_the_consumer() {
+    let _deadline = deadline(DEADLINE);
     const MESSAGES: usize = 10_000;
     let parker = Parker::new();
     let rx = Receiver::<usize, Signal>::new(parker.waker(), None);

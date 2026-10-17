@@ -174,6 +174,7 @@ impl Scheduler {
 mod tests {
     use super::*;
     use crate::edge::sync::tests::wait_until;
+    use crate::tests::support::{DEADLINE, deadline};
     use core::time::Duration;
     use std::thread;
 
@@ -192,6 +193,7 @@ mod tests {
 
     #[test]
     fn next_blocks_until_cross_thread_push() {
+        let _deadline = deadline(DEADLINE);
         let mut s = sched();
         let shared = s.queue.clone();
         let waker = s.parker.waker();
@@ -208,6 +210,7 @@ mod tests {
 
     #[test]
     fn next_parks_for_real_after_a_stale_token() {
+        let _deadline = deadline(DEADLINE);
         let mut s = sched();
         // Pushed and woken, then popped without parking: the token is left stale.
         s.queue.push(1);
@@ -359,6 +362,7 @@ mod tests {
 
     #[test]
     fn future_deadline_park_yields_to_real_wake() {
+        let _deadline = deadline(DEADLINE);
         let mut s = sched();
         s.schedule(99, Instant::now() + Duration::from_secs(60));
         let shared = s.queue.clone();

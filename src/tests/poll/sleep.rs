@@ -8,6 +8,7 @@ use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::{Input, input, output};
 use crate::poll::try_join;
 use crate::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
 use crate::{Closeable, Message, Pushable, Pushes, ThreadBundle, Writes};
 use core::future::Future;
@@ -27,6 +28,7 @@ type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 
 #[test]
 fn sleep_in_routine_delays_output() {
+    let _deadline = deadline(DEADLINE);
     let mut thread = poll::Thread::<SleepThread>::new();
     let mut node = thread
         .line(FutureRoutine::factory(
@@ -66,6 +68,7 @@ fn sleep_in_routine_delays_output() {
 
 #[test]
 fn concurrent_sleeps_wake_independently() {
+    let _deadline = deadline(DEADLINE);
     let mut thread = poll::Thread::<SleepThread>::new();
     let mut node = thread
         .line(FutureRoutine::factory(
@@ -139,6 +142,7 @@ fn concurrent_sleeps_wake_independently() {
 /// is 999. With the bug, it's 0.
 #[test]
 fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut async_thread = poll::Thread::<SleepThread>::new();
     let mut node = async_thread
         .line(FutureRoutine::factory(

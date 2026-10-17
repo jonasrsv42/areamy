@@ -17,7 +17,7 @@ fn work_reader_owns_borrowed_line() {
     let multiplier: usize = 3;
     let line = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let writer = line.writer::<usize>().unwrap();
+    let writer = line.writer().unwrap();
     let reader = line.reader().unwrap();
     let mut io = LineIo::new(writer, reader);
 

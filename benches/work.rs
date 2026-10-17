@@ -1,4 +1,4 @@
-//! Work graphs: blocking lines scheduled by their children.
+//! Work graphs: blocking lines scheduled by their downstreams.
 
 mod support;
 
@@ -17,7 +17,7 @@ areamy::thread_id!(Helper);
 
 type Signal = Trackable<&'static str>;
 
-/// Three pass-through lines chained with bidi on one thread.
+/// Three pass-through lines chained with `via` on one thread.
 fn three_lines<T: Clone + Send + Sync + 'static>() -> (Writer<'static, T>, Reader<'static, T>) {
     let first = Line::of(Pass::<T>::new());
     let writer = first.writer().unwrap();
@@ -55,7 +55,7 @@ fn pipeline(c: &mut Criterion) {
     group.finish();
 }
 
-/// One line pushing each frame into `outputs` sinks: the owning child plus plain edges.
+/// One line pushing each frame into `outputs` sinks: the owning downstream plus `pushes` edges.
 fn fan_out(c: &mut Criterion) {
     let mut group = c.benchmark_group("work/fan_out_frame");
     group.throughput(Throughput::Elements(1));

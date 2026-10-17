@@ -10,6 +10,7 @@ use crate::poll;
 use crate::poll::future;
 use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
+use crate::thread::Join;
 use crate::{At, Closeable, Message, Pushable, Pushes, Via, Writes};
 use std::cell::Cell;
 use std::future::Future;
@@ -68,8 +69,8 @@ fn biunion_audio_with_config() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut audio_writer = node.at_ref::<biunion::Left>().writer::<usize>().unwrap();
-    let mut config_writer = node.at_ref::<biunion::Right>().writer::<Config>().unwrap();
+    let mut audio_writer = node.at_ref::<biunion::Left>().writer().unwrap();
+    let mut config_writer = node.at_ref::<biunion::Right>().writer().unwrap();
 
     let output_edge = Receiver::new();
     node.pushes(&output_edge).unwrap();
@@ -102,7 +103,7 @@ fn biunion_audio_with_config() {
         // Close audio — should close the whole node (wakes right input too)
         audio_writer.close().unwrap();
 
-        assert!(matches!(handle.join(), crate::thread::Join::Ok));
+        assert!(matches!(handle.join(), Join::Ok));
     });
 }
 
@@ -127,7 +128,7 @@ fn biunion_with_async_parent() {
         .input::<poll::Sync>();
 
     // Writer pushes into parent
-    let mut audio_writer = parent.writer::<usize>().unwrap();
+    let mut audio_writer = parent.writer().unwrap();
 
     // Biunion: left from async parent, right from sync config
     let biunion_routine = future::biunion::FutureRoutine::factory(
@@ -168,7 +169,7 @@ fn biunion_with_async_parent() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut config_writer = node.at_ref::<biunion::Right>().writer::<Config>().unwrap();
+    let mut config_writer = node.at_ref::<biunion::Right>().writer().unwrap();
 
     let output_edge = Receiver::new();
     node.pushes(&output_edge).unwrap();
@@ -196,6 +197,6 @@ fn biunion_with_async_parent() {
         assert_eq!(output_edge.read_front().unwrap(), Message::Data(30));
 
         audio_writer.close().unwrap();
-        assert!(matches!(handle.join(), crate::thread::Join::Ok));
+        assert!(matches!(handle.join(), Join::Ok));
     });
 }

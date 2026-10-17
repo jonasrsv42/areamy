@@ -141,14 +141,14 @@ fn poll_parent_into_work_children() {
     assert_eq!(line.input.read_front().unwrap(), Message::Data(7));
 }
 
-fn poll_parent_connects_line<'params>(
+fn poll_parent_pushes_line<'params>(
     parent: &mut PollParent<'params, usize>,
     line: &impl LineTrait<'params, usize, usize, Signal>,
 ) {
     parent.pushes(line).unwrap();
 }
 
-fn poll_parent_connects_biunion<'params>(
+fn poll_parent_pushes_biunion<'params>(
     left: &mut PollParent<'params, usize>,
     right: &mut PollParent<'params, f64>,
     biunion: &impl BiunionTrait<'params, usize, f64, usize, Signal>,
@@ -157,7 +157,7 @@ fn poll_parent_connects_biunion<'params>(
     right.pushes(&biunion.at_ref::<biunion::Right>()).unwrap();
 }
 
-fn poll_parent_connects_bifurcation<'params>(
+fn poll_parent_pushes_bifurcation<'params>(
     parent: &mut PollParent<'params, usize>,
     bifurcation: &impl BifurcationTrait<'params, usize, usize, usize, Signal>,
 ) {
@@ -178,14 +178,14 @@ fn node_traits_promise_a_poll_sink() {
     };
     let line: Line<LineNode<usize, usize, Signal, DefaultThread, MockWaitLine>> =
         Line::of(MockWaitLine::new(1));
-    poll_parent_connects_line(&mut parent, &line);
-    let mut biunion: Biunion<BiunionNode<usize, f64, usize, Signal, DefaultThread, Mixed>> =
+    poll_parent_pushes_line(&mut parent, &line);
+    let biunion: Biunion<BiunionNode<usize, f64, usize, Signal, DefaultThread, Mixed>> =
         Biunion::of(Mixed(VecDeque::new()));
-    poll_parent_connects_biunion(&mut parent, &mut f64_parent, &mut biunion);
+    poll_parent_pushes_biunion(&mut parent, &mut f64_parent, &biunion);
     let bifurcation: Bifurcation<
         BifurcationNode<usize, usize, usize, Signal, DefaultThread, MockBifurcation>,
     > = Bifurcation::of(MockBifurcation::new());
-    poll_parent_connects_bifurcation(&mut parent, &bifurcation);
+    poll_parent_pushes_bifurcation(&mut parent, &bifurcation);
     assert_eq!(parent.outputs.len(), 3);
     assert_eq!(f64_parent.outputs.len(), 1);
 }

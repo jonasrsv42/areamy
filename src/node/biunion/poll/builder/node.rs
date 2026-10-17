@@ -49,7 +49,7 @@ pub struct BuilderInput<
 }
 
 /// Biunion node builder.
-#[must_use = "node must be consumed (add to thread or pass to another builder)"]
+#[must_use = "a node does nothing until owned (`via`) or added to a thread"]
 pub struct Node<
     'params,
     AllocState,

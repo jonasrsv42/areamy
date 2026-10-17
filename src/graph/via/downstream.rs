@@ -14,13 +14,15 @@ use crate::error::Error;
 /// {
 ///     type Out = Self;
 ///     fn own(mut self, upstream: Up) -> Result<Self, Error> {
-///         let sink = self.get()?;
+///         let sink = Get::get(&self)?;
 ///         let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
-///         self.add(upstream)?;
+///         Add::add(&mut self, upstream)?;
 ///         Ok(self)
 ///     }
 /// }
 /// ```
+///
+/// Poll builders take an [crate::poll::AsyncParent] instead.
 ///
 /// `DataType` is a trait parameter so the caller may state it; `OwnedType` carries each impl's
 /// otherwise unconstrained parameters.
@@ -32,6 +34,7 @@ use crate::error::Error;
     note = "a work node cannot own a poll builder and a poll node cannot own a work node: bridge with a Sync input (`.input::<Sync>()` + `pushes`)"
 )]
 pub trait Downstream<UpstreamType, DataType, OwnedType> {
+    /// What `via` returns: this node, or the resolved builder.
     type Out;
     /// Owns `upstream`: `down.own(up)` is `up.via(down)`.
     fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error>;

@@ -27,7 +27,7 @@ use std::marker::PhantomData;
 pub trait BifurcationTrait<'params, In, Left, Right, Signal>:
     // We can work on the line to produce output.
     Workable
-    // We can add edges it should push into: a `Push` parent per side.
+    // Edges it pushes into, per side (`pushes` / `via` downstreams).
     + Outputs<
         bifurcation::Left,
         Sink = dyn Sink<DataType = Left, SignalType = Signal> + Send + Sync + 'params,
@@ -114,19 +114,19 @@ pub(super) type Pending<T> = Sides<
 
 /// A work node with one input and two outputs.
 ///
-/// To have a child schedule it, connect the side that feeds the child and the scheduling
-/// separately, since a bifurcation has two outputs to choose from:
+/// Own it from one side: `router.at::<Left>().via(child)?`. For signals that follow data,
+/// borrow instead:
 ///
 /// ```ignore
-/// bifurcation.at_mut::<Left>().pushes(&child)?;
-/// child.schedules(bifurcation)?;
+/// router.at_mut::<Left>().pushes(&child)?;
+/// child.schedules(router)?;
 /// ```
 #[must_use = "a node does nothing until owned (`via` / `schedules`) or added to a thread"]
 pub struct Bifurcation<'params, T: Types> {
     /// The coroutine of this node.
     pub routine: T::Routine,
 
-    /// Parent workables.
+    /// Upstream workables.
     pub workers: Vec<Box<dyn Workable<ThreadId = T::ThreadId> + 'params>>,
 
     /// Output edges, grouped by side.

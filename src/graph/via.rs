@@ -13,6 +13,7 @@ pub use downstream::Downstream;
 /// Scheduling can't cycle: `up` is moved. Signals are forwarded
 /// ([crate::SignalPolicy::Forward]), which is safe for the same reason.
 pub trait Via<DownstreamType, OwnedType>: Sized {
+    /// Moves this node into `downstream`, which schedules it and takes its output.
     fn via<DataType>(self, downstream: DownstreamType) -> Result<DownstreamType::Out, Error>
     where
         DownstreamType: Downstream<Self, DataType, OwnedType>;

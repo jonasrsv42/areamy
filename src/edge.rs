@@ -3,7 +3,7 @@
 pub(crate) mod deadlock;
 pub mod fanout;
 pub mod policy;
-pub mod push;
+mod pushes;
 pub mod rotate;
 pub mod single;
 pub mod sync;

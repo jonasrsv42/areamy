@@ -112,7 +112,7 @@ fn test_cycle_with_signal_policies() {
     // bifurcation.left → biunion.left (back-edge, FollowData)
     bifurcation
         .at_mut::<bifurcation::Left>()
-        .pushes::<usize>(&biunion.at_ref::<biunion::Left>())
+        .pushes(&biunion.at_ref::<biunion::Left>())
         .unwrap();
 
     // biunion → bifurcation (forward, Forward policy via `via`)
@@ -134,7 +134,7 @@ fn test_cycle_with_multiple_values() {
 
     bifurcation
         .at_mut::<bifurcation::Left>()
-        .pushes::<usize>(&biunion.at_ref::<biunion::Left>())
+        .pushes(&biunion.at_ref::<biunion::Left>())
         .unwrap();
 
     let bifurcation = biunion.via(bifurcation).unwrap();
@@ -191,14 +191,13 @@ fn test_cycle_with_line_node() {
 
     let writer = line.writer().unwrap();
 
-    // Connect bifurcation's left output back to line's input (backward connection)
-    // This creates a cycle where values <= 5 go back to the line
+    // Bifurcation's left pushes back (FollowData) into the line: values <= 5 cycle
     bifurcation
         .at_mut::<bifurcation::Left>()
-        .pushes::<usize>(&line)
+        .pushes(&line)
         .unwrap();
 
-    // Connect line's output to bifurcation's input (forward connection)
+    // `via`: line owns the bifurcation (forward)
     let bifurcation = line.via(bifurcation).unwrap();
 
     let reader = bifurcation.at::<bifurcation::Right>().reader().unwrap();

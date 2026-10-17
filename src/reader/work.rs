@@ -1,3 +1,5 @@
+//! Work readers: [Reads] owns and drives a node, [Tees] reads one something else owns.
+
 mod reader;
 pub mod tee;
 

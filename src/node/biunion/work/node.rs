@@ -30,7 +30,7 @@ use std::num::NonZeroUsize;
 pub trait BiunionTrait<'params, Left, Right, Out, Signal>:
     // We can work on the line to produce output.
     Workable
-    // We can add edges it should push into: a `Push` parent.
+    // Edges it pushes into (`pushes` / `via` downstreams).
     + Outputs<Sink = dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
 
     // We can add things for it to work on, parents nodes.
@@ -361,10 +361,11 @@ pub mod tests {
     use crate::edge::sync::Receiver;
     use crate::edge::sync::tests::{join_within, wait_until};
     use crate::graph::TryPush;
+    use crate::graph::marker::Connection;
     use crate::node::biunion::routine::tests::{HoldBiunion, MockBiunion};
     use crate::node::line::routine::tests::MockWaitLine;
     use crate::work::Line;
-    use crate::{At, Push, Pushable, Reads, Via, Writes};
+    use crate::{At, Expects, Pushable, Reads, Via, Writes};
     use crate::{DefaultThread, Trackable};
     use std::thread;
 
@@ -553,7 +554,7 @@ pub mod tests {
     #[test]
     fn typed_unfed_left_input_stays_open() {
         let biun = Biunion::of(MockBiunion::new());
-        Push::<usize>::open(&biun.at_ref::<biunion::Left>());
+        biun.at_ref::<biunion::Left>().expects::<usize>();
         let mut right_writer = biun.at_ref::<biunion::Right>().writer().unwrap();
         let mut reader = biun.reader().unwrap();
 
@@ -608,9 +609,6 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_work_chain() {
-        use crate::closed;
-        use crate::graph::marker::Connection;
-
         // Create a mock workable that returns Closed error
         struct ClosingWorkable;
         impl Connection for ClosingWorkable {}

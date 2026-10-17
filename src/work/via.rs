@@ -22,29 +22,28 @@ pub struct OwnedWork<ShapeType, SignalType, ThreadIdType>(
     PhantomData<(ShapeType, SignalType, ThreadIdType)>,
 );
 
-type ViaSink<'params, DataType, SignalType> =
+type UpstreamSink<'params, DataType, SignalType> =
     dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params;
 
-/// The child owns the upstream: it lends its schedule to the upstream, and the upstream pushes
-/// into the child.
+/// The downstream owns the upstream: it schedules it, and the upstream pushes into its input.
 ///
-/// Signals are forwarded ([SignalPolicy::Forward]): the upstream is moved into the child, so
+/// Signals are forwarded ([SignalPolicy::Forward]): the upstream is moved into the downstream, so
 /// owning chains can't cycle and forwarding can't loop.
-fn adopt<'params, DataType, SignalType, ThreadIdType, ShapeType, ChildMultiplicity>(
+fn adopt<'params, DataType, SignalType, ThreadIdType, ShapeType, DownstreamMultiplicity>(
     upstream: impl Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType>,
-    child: &mut (
-             impl Add<dyn Workable<ThreadId = ThreadIdType> + 'params, ChildMultiplicity>
-             + Get<ViaSink<'params, DataType, SignalType>, ChildMultiplicity>
+    downstream: &mut (
+             impl Add<dyn Workable<ThreadId = ThreadIdType> + 'params, DownstreamMultiplicity>
+             + Get<UpstreamSink<'params, DataType, SignalType>, DownstreamMultiplicity>
          ),
 ) -> Result<(), Error>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
-    ChildMultiplicity: Multiplicity,
+    DownstreamMultiplicity: Multiplicity,
 {
-    let sink = child.get()?;
+    let sink = downstream.get()?;
     let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
-    Add::add(child, upstream)
+    Add::add(downstream, upstream)
 }
 
 impl<'params, 'node, T, UpstreamType, ShapeType, DataType, SignalType, ThreadIdType>
@@ -53,14 +52,14 @@ impl<'params, 'node, T, UpstreamType, ShapeType, DataType, SignalType, ThreadIdT
 where
     T: LineTypes,
     Self: Add<dyn Workable<ThreadId = ThreadIdType> + 'params, Unary>
-        + Get<ViaSink<'params, DataType, SignalType>, Unary>,
+        + Get<UpstreamSink<'params, DataType, SignalType>, Unary>,
     UpstreamType: Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType>,
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 {
     type Out = Self;
     fn own(mut self, upstream: UpstreamType) -> Result<Self, Error> {
-        adopt::<_, _, _, _, Unary>(upstream, &mut self)?;
+        adopt(upstream, &mut self)?;
         Ok(self)
     }
 }
@@ -71,14 +70,14 @@ impl<'params, 'node, T, UpstreamType, ShapeType, DataType, SignalType, ThreadIdT
 where
     T: BifurcationTypes,
     Self: Add<dyn Workable<ThreadId = ThreadIdType> + 'params, Unary>
-        + Get<ViaSink<'params, DataType, SignalType>, Unary>,
+        + Get<UpstreamSink<'params, DataType, SignalType>, Unary>,
     UpstreamType: Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType>,
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 {
     type Out = Self;
     fn own(mut self, upstream: UpstreamType) -> Result<Self, Error> {
-        adopt::<_, _, _, _, Unary>(upstream, &mut self)?;
+        adopt(upstream, &mut self)?;
         Ok(self)
     }
 }
@@ -98,7 +97,7 @@ impl<
 where
     T: BiunionTypes,
     Biunion<'node, T>: Add<dyn Workable<ThreadId = ThreadIdType> + 'params, MultiplicityType>
-        + Get<ViaSink<'params, DataType, SignalType>, MultiplicityType>,
+        + Get<UpstreamSink<'params, DataType, SignalType>, MultiplicityType>,
     MultiplicityType: Multiplicity,
     UpstreamType: Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType>,
     DataType: Send + Sync + 'static,
@@ -107,7 +106,7 @@ where
     type Out = Biunion<'node, T>;
     fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
         let mut node = self.into_node();
-        adopt::<_, _, _, _, MultiplicityType>(upstream, &mut node)?;
+        adopt(upstream, &mut node)?;
         Ok(node)
     }
 }

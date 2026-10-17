@@ -42,10 +42,11 @@ where
 
 /// [`Writes`] opens a [Writer] into a node's input: `let mut input = node.writer()?`.
 ///
-/// The signal is [Trackable]; for another, use [Writer::of]. Name a side with
-/// [crate::At::at_ref]: `node.at_ref::<Left>().writer()?`. The data type is an optional
-/// annotation: `node.writer::<Frame>()?`.
+/// Name a side with [crate::At::at_ref]: `node.at_ref::<Left>().writer()?`. The data type is an
+/// optional annotation: `node.writer::<Frame>()?`. The signal is [Trackable]; for another, use
+/// [Writer::of].
 pub trait Writes<'params> {
+    /// Opens a [Writer] into this node's input.
     fn writer<DataType>(&self) -> Result<Writer<'params, DataType>, Error>
     where
         DataType: Send + Sync + 'static,
@@ -71,6 +72,36 @@ impl<'params, NodeType: Connection> Writes<'params> for NodeType {
             >,
     {
         Writer::of(self)
+    }
+}
+
+/// [`Expects`] pins the data type of an input nothing connects to here, the inputs a [Writer]
+/// can feed: `node.expects::<Frame>()`. A type annotation only; it connects nothing.
+///
+/// Name a side with [crate::At::at_ref]: `node.at_ref::<Left>().expects::<Frame>()`.
+pub trait Expects<'params, SignalType> {
+    /// Pins the input's data type; connects nothing.
+    fn expects<DataType>(&self)
+    where
+        DataType: Send + Sync + 'static,
+        SignalType: Origin + Send + Sync + 'static,
+        Self: Get<
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                Unary,
+            >;
+}
+
+// Bounded on the impl, so `&mut` bindings and guards autoderef to the node.
+impl<'params, NodeType: Connection, SignalType> Expects<'params, SignalType> for NodeType {
+    fn expects<DataType>(&self)
+    where
+        DataType: Send + Sync + 'static,
+        SignalType: Origin + Send + Sync + 'static,
+        Self: Get<
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                Unary,
+            >,
+    {
     }
 }
 

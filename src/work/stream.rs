@@ -55,7 +55,7 @@ fn work_loop<'params, ThreadIdType: ThreadId>(
 fn run<'params, ThreadIdType: ThreadId>(
     mut workables: Workables<'params, ThreadIdType>,
 ) -> Result<(), Error> {
-    work_loop::<ThreadIdType>(&mut workables)
+    work_loop(&mut workables)
 }
 
 /// An idle thread that can have workables added and be started.
@@ -68,7 +68,7 @@ fn run<'params, ThreadIdType: ThreadId>(
 /// ```ignore
 /// thread_id!(MyThread);
 ///
-/// let thread = some_vertex.stream::<MyThread>();
+/// let thread = root.stream::<MyThread>();
 /// std::thread::scope(|s| {
 ///     let handle = thread.start(s);  // consumes ThreadStream, returns handle
 ///     // ...
@@ -87,6 +87,7 @@ where
 ///
 /// The thread is an optional annotation when the root's type already fixes it.
 pub trait Streams<'params>: Sized {
+    /// Moves this root onto a thread of its own.
     fn stream<ThreadIdType>(self) -> ThreadStream<'params, ThreadIdType>
     where
         ThreadIdType: ThreadId,
@@ -175,7 +176,7 @@ where
     pub(crate) fn run(self) -> Result<(), Error> {
         let Self { workables, on_done } = self;
         let mut guard = PanicGuard::new(on_done);
-        let result = run::<ThreadIdType>(workables);
+        let result = run(workables);
         let callbacks = guard.drain();
         let done = match &result {
             Ok(()) => Done::Close,
@@ -237,7 +238,6 @@ impl<'params, ThreadIdType: ThreadId> Add<dyn Workable<ThreadId = ThreadIdType> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::marker::Connection;
     use crate::{closed, fatal};
 
     crate::thread_id!(TestThread);

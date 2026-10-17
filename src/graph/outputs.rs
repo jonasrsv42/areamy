@@ -1,7 +1,7 @@
 use crate::graph::Add;
 use crate::graph::marker::{Connection, Multiplicity, Unary};
 
-/// [`Outputs`] names the sink a node's push output takes, so a connection asks the child for
+/// [`Outputs`] names the sink a node's push output takes, so a connection asks the downstream for
 /// exactly that. [Outputs::Sink] is a dyn [crate::graph::Outlet] composite, such as
 /// [crate::work::Sink] or [crate::poll::Sink]; [Add] stores it.
 ///

@@ -13,8 +13,7 @@ pub use try_pushable::{TryPush, TryPushable};
 /// types for the [crate::message::Message<DataType, SignalType>] that can be pushed through
 /// this [Connection]. How a push behaves is up to [TryPushable] and [Pushable].
 ///
-/// Child nodes will typically hold [Outlet] references to queues owned by a parent
-/// and push [crate::message::Message] into them when scheduled.
+/// An upstream holds an [Outlet] into its downstream's input and pushes into it when worked.
 ///
 /// <div class="warning"> Nodes should never implement [Outlet] as it
 /// easily leads to circualar references and memory leaks </div>

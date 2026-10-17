@@ -7,6 +7,7 @@ use crate::signal::{Origin, Trackable};
 use crate::thread::DefaultThread;
 use crate::work::Sink;
 
+/// A tee [`Reader`] buffers what a node it doesn't own pushes. See [Tees].
 pub struct Reader<DataType, SignalType = Trackable<&'static str>>
 where
     DataType: Send + Sync,
@@ -22,7 +23,10 @@ where
 /// Name a side with [crate::At::at_mut]: `node.at_mut::<Left>().tee()?`. The data type is an
 /// optional annotation: `node.tee::<Frame>()?`. To own and drive the node, use
 /// [crate::Reads::reader].
+///
+/// The tee gets every message the node pushes, signals included.
 pub trait Tees<'params, SignalType> {
+    /// Adds a buffered output to this node and returns its reader.
     fn tee<DataType>(&mut self) -> Result<Reader<DataType, SignalType>, Error>
     where
         DataType: Send + Sync + 'static,
@@ -54,6 +58,7 @@ where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 {
+    /// Blocks until the node pushes, then returns the oldest message.
     pub fn read(&mut self) -> Result<Message<DataType, SignalType>, Error> {
         let output = self.buffer.read_front()?;
         Ok(output)
@@ -81,8 +86,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::work::Sink;
-    use crate::{DefaultThread, Workable, marker::Connection};
+    use crate::Workable;
 
     struct MockNode {
         output: Message<usize, Trackable<&'static str>>,

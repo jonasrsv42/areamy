@@ -1,7 +1,6 @@
-use crate::edge::policy::{Policied, SignalPolicy};
 use crate::error::Error;
 use crate::graph::marker::Unary;
-use crate::graph::{Add, Get, Outputs};
+use crate::graph::{Get, Outlet, Outputs};
 
 /// [`Pushes`] is the data-only edge: `up.pushes(&down)?`. `up` keeps running where it is and
 /// pushes into `down`'s input.
@@ -10,7 +9,7 @@ use crate::graph::{Add, Get, Outputs};
 /// [crate::At::at_ref] (downstream). The data type is an optional annotation:
 /// `up.pushes::<Frame>(&down)?`.
 ///
-/// Signals follow data ([SignalPolicy::FollowData]): a push can be a back-edge, where
+/// Signals follow data ([crate::SignalPolicy::FollowData]): a push can be a back-edge, where
 /// forwarding every signal would loop.
 ///
 /// ```ignore
@@ -24,19 +23,8 @@ use crate::graph::{Add, Get, Outputs};
     note = "`at` moves the node and only feeds `via`; `pushes` takes `at_mut`"
 )]
 pub trait Pushes: Outputs<Unary> {
+    /// Pushes this node's output into `down`'s input.
     fn pushes<DataType>(&mut self, down: &impl Get<Self::Sink, Unary>) -> Result<(), Error>
     where
-        DataType: Send + Sync + 'static,
-        Self::Sink: Policied<DataType = DataType>;
-}
-
-impl<NodeType: Outputs<Unary>> Pushes for NodeType {
-    fn pushes<DataType>(&mut self, down: &impl Get<Self::Sink, Unary>) -> Result<(), Error>
-    where
-        DataType: Send + Sync + 'static,
-        Self::Sink: Policied<DataType = DataType>,
-    {
-        let sink = Policied::with_policy(down.get()?, SignalPolicy::FollowData);
-        Add::add(self, sink)
-    }
+        Self::Sink: Outlet<DataType = DataType>;
 }

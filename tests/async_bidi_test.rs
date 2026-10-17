@@ -10,7 +10,8 @@ use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::{Input, input, output};
 use areamy::poll::try_join;
 use areamy::sync::Receiver;
-use areamy::{Closeable, Message, Pushable, Pushes, Streams, ThreadBundle, Writes};
+use areamy::work::Line;
+use areamy::{Closeable, DefaultThread, Message, Pushable, Pushes, Streams, ThreadBundle, Writes};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -158,7 +159,7 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 /// Multi-segment: flush resets the future, reconnects.
 #[test]
 fn bidi_with_join() -> Result<(), Error> {
-    let mut inputs = areamy::work::Line::of(Double::new());
+    let mut inputs = Line::of(Double::new());
     let mut writer = inputs.writer()?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
@@ -202,8 +203,8 @@ fn bidi_with_join() -> Result<(), Error> {
 
     let mut session = async_thread
         .line(routine)
-        .input::<areamy::poll::Sync>()
-        .output::<areamy::poll::Sync>();
+        .input::<poll::Sync>()
+        .output::<poll::Sync>();
     inputs.pushes(&session)?;
 
     let outputs = Receiver::new();
@@ -211,7 +212,7 @@ fn bidi_with_join() -> Result<(), Error> {
 
     async_thread.add(session);
 
-    let sync_thread = inputs.stream::<areamy::DefaultThread>();
+    let sync_thread = inputs.stream::<DefaultThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);

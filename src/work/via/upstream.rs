@@ -1,11 +1,9 @@
+use super::UpstreamSink;
 use crate::error::Error;
 use crate::graph::marker::{Multiplicity, Unary};
 use crate::graph::{Add, Select};
-use crate::work::{Sink, Workable};
+use crate::work::Workable;
 use std::marker::PhantomData;
-
-type UpstreamSink<'params, DataType, SignalType> =
-    dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params;
 
 /// [`Upstream`] is a work node something can own: a single-sided node ([Whole]) or a node moved
 /// at a side ([Sided], from [crate::At::at]). Owning edges ([crate::Via]) and readers
@@ -59,7 +57,7 @@ where
         sink: Box<UpstreamSink<'params, DataType, SignalType>>,
     ) -> Result<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>, Error> {
         let mut node = self.into_node();
-        Add::<_, MultiplicityType>::add(&mut node, sink)?;
+        Add::add(&mut node, sink)?;
         Ok(Box::new(node))
     }
 }

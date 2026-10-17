@@ -43,7 +43,7 @@ fn work_writer_of_borrowed_line() {
 /// [`Writes::writer`] on a [`WriterBuffer`] feeding a borrowed pull-line.
 /// Exercises `WriterBuffer`'s `Get<dyn Sink + 'params>` impl.
 #[test]
-fn work_writer_new_from_buffer_with_borrowed_pull() {
+fn work_writer_from_buffer_with_borrowed_pull() {
     let multiplier: usize = 2;
     let buffer = WriterBuffer::new();
     let mut writer = buffer.writer().unwrap();

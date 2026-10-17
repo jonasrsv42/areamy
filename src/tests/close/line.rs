@@ -41,9 +41,8 @@ fn work_line_flush_then_close() -> Result<(), Error> {
 #[test]
 fn work_line_stacked_flush_then_close() -> Result<(), Error> {
     let first = work::Line::of(Hold::new());
-    let second = work::Line::of(Hold::new());
     let mut writer = first.writer()?;
-    let second = first.via(second)?;
+    let second = first.via(work::Line::of(Hold::new()))?;
     let mut reader = second.reader()?;
 
     writer.push(Message::Data(1))?;

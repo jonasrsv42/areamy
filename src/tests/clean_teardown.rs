@@ -82,15 +82,15 @@ fn middle_thread_error_does_not_deadlock_drain() {
     let mut middle = work::Line::of(FailingMiddle);
     let sink_node = work::Line::of(PassThrough::new());
 
-    let writer = middle.writer::<usize>().unwrap();
-    middle.pushes::<usize>(&sink_node).unwrap();
+    let writer = middle.writer().unwrap();
+    middle.pushes(&sink_node).unwrap();
 
     let middle_thread = middle.stream::<MiddleThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(middle_thread);
 
-    let reader = sink_node.reader::<usize>().unwrap();
+    let reader = sink_node.reader().unwrap();
     let mut io = LineIo::new(writer, reader);
 
     std::thread::scope(|s| {
@@ -215,19 +215,19 @@ fn fan_out_bifurcation_into_two_consumer_threads() {
     let mut consumer_a = work::Line::of(PassThrough::new());
     let mut consumer_b = work::Line::of(PassThrough::new());
 
-    let mut writer = tee.writer::<usize>().unwrap();
+    let mut writer = tee.writer().unwrap();
 
     tee.at_mut::<bifurcation::Left>()
-        .pushes::<usize>(&consumer_a)
+        .pushes(&consumer_a)
         .unwrap();
     tee.at_mut::<bifurcation::Right>()
-        .pushes::<usize>(&consumer_b)
+        .pushes(&consumer_b)
         .unwrap();
 
     let output_a: Receiver<usize, Trackable<&'static str>> = Receiver::new();
     let output_b: Receiver<usize, Trackable<&'static str>> = Receiver::new();
-    consumer_a.pushes::<usize>(&output_a).unwrap();
-    consumer_b.pushes::<usize>(&output_b).unwrap();
+    consumer_a.pushes(&output_a).unwrap();
+    consumer_b.pushes(&output_b).unwrap();
 
     let producer_thread = tee.stream::<ProducerThread>();
     let consumer_a_thread = consumer_a.stream::<Consumer1>();

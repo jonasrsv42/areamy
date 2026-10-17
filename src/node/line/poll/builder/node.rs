@@ -46,7 +46,7 @@ use crate::thread::ThreadId;
 use std::marker::PhantomData;
 
 /// Unified async node builder.
-#[must_use = "node must be consumed (add to thread or pass to another builder)"]
+#[must_use = "a node does nothing until owned (`via`) or added to a thread"]
 pub struct Node<
     'alloc,
     'params,
@@ -275,63 +275,6 @@ where
     }
 }
 
-// ============================================================
-// parent() — Deferred→Async transition + Async→Async
-// ============================================================
-
-/// First parent on Deferred input: transitions to Async. Releases allocator.
-impl<'alloc, 'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<
-        'alloc,
-        'params,
-        Deferred,
-        OutEdgeType,
-        InType,
-        OutType,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    OutEdgeType: Edge,
-    InType: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory<'params>,
-    FactoryType::Routine: LineRoutine<InType, OutType>,
-{
-    fn parent(
-        self,
-        parent: impl AsyncParent<
-            'params,
-            OutType = InType,
-            SignalType = SignalType,
-            ThreadIdType = ThreadIdType,
-        > + 'params,
-    ) -> Node<
-        'static,
-        'params,
-        Async,
-        OutEdgeType,
-        InType,
-        OutType,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    > {
-        Node {
-            alloc: (),
-            factory: self.factory,
-            input: input::r#async::Input {
-                parents: vec![Box::new(parent)],
-            },
-            output: self.output,
-            options: self.options,
-            _phantom: PhantomData,
-        }
-    }
-}
-
 /// Resolve output on Node<Async, Deferred>. Input stays Async.
 impl<'params, InType, OutType, SignalType, ThreadIdType, FactoryType>
     Node<'static, 'params, Async, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
@@ -375,40 +318,9 @@ where
     }
 }
 
-/// Additional parent on Async input: adds parent, stays Async.
-impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType>
-    Node<
-        'static,
-        'params,
-        Async,
-        OutEdgeType,
-        InType,
-        OutType,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    OutEdgeType: Edge,
-    InType: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory<'params>,
-    FactoryType::Routine: LineRoutine<InType, OutType>,
-{
-    fn parent(
-        mut self,
-        parent: impl AsyncParent<
-            'params,
-            OutType = InType,
-            SignalType = SignalType,
-            ThreadIdType = ThreadIdType,
-        > + 'params,
-    ) -> Self {
-        self.input.parents.push(Box::new(parent));
-        self
-    }
-}
+// ============================================================
+// own() — `up.via(line)`: Deferred→Async transition + Async→Async
+// ============================================================
 
 /// `up.via(line)`: first parent, input Deferred → Async.
 impl<
@@ -440,8 +352,7 @@ where
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
-    UpstreamType: AsyncParent<'params, OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
-        + 'params,
+    UpstreamType: AsyncParent<'params, OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>,
 {
     type Out = Node<
         'static,
@@ -456,7 +367,16 @@ where
     >;
 
     fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
-        Ok(self.parent(upstream))
+        Ok(Node {
+            alloc: (),
+            factory: self.factory,
+            input: input::r#async::Input {
+                parents: vec![Box::new(upstream)],
+            },
+            output: self.output,
+            options: self.options,
+            _phantom: PhantomData,
+        })
     }
 }
 
@@ -481,13 +401,13 @@ where
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
-    UpstreamType: AsyncParent<'params, OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
-        + 'params,
+    UpstreamType: AsyncParent<'params, OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>,
 {
     type Out = Self;
 
-    fn own(self, upstream: UpstreamType) -> Result<Self, Error> {
-        Ok(self.parent(upstream))
+    fn own(mut self, upstream: UpstreamType) -> Result<Self, Error> {
+        self.input.parents.push(Box::new(upstream));
+        Ok(self)
     }
 }
 

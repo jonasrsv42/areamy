@@ -6,6 +6,7 @@ use crate::signal::{Origin, Trackable};
 use crate::thread::{DefaultThread, ThreadId};
 use crate::work::{Upstream, Workable};
 
+/// A [`Reader`] owns a node and works it on read. See [Reads].
 #[must_use = "a reader owns the node it drives; dropping it drops the subgraph"]
 pub struct Reader<
     'params,
@@ -26,10 +27,11 @@ pub struct Reader<
 /// [Reader::read] works the node until it has output.
 ///
 /// Reading is owning, so a side is moved with [crate::At::at]:
-/// `bifurcation.at::<Right>().reader()?`. The thread is [DefaultThread]; for another, use
-/// [Reader::of]. The data type is an optional annotation: `node.reader::<Frame>()?`. To read
-/// a node something else owns, use [crate::Tees::tee].
+/// `bifurcation.at::<Right>().reader()?`. The data type is an optional annotation:
+/// `node.reader::<Frame>()?`. The thread is [DefaultThread]; for another, use [Reader::of]. To
+/// read a node something else owns, use [crate::Tees::tee].
 pub trait Reads<'params, SignalType, ShapeType>: Sized {
+    /// Owns this node and reads its output.
     fn reader<DataType>(self) -> Result<Reader<'params, DataType, SignalType>, Error>
     where
         DataType: Send + Sync + 'static,
@@ -67,6 +69,7 @@ where
         Ok(Self { workable, buffer })
     }
 
+    /// Works the node until it has output, then returns the oldest message.
     pub fn read(&mut self) -> Result<Message<DataType, SignalType>, Error> {
         let mut output_is_empty = self.buffer.is_empty()?;
         while output_is_empty {

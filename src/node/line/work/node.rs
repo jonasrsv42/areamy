@@ -35,9 +35,9 @@ use std::marker::PhantomData;
 pub trait LineTrait<'params, In, Out, Signal>:
     // We can work on the line to produce output.
     Workable
-    // We can add things for it to work on, parents nodes.
+    // Upstreams it schedules.
     + Add<dyn Workable<ThreadId = <Self as Workable>::ThreadId> + 'params>
-    // We can add edges it should push into: a `Push` parent.
+    // Edges it pushes into (`pushes` / `via` downstreams).
     + Outputs<Sink = dyn Sink<DataType = Out, SignalType = Signal> + Send + Sync + 'params>
     // We can retrieve its edge for others to push into, work or poll.
     + Get<dyn Sink<DataType = In, SignalType = Signal> + Send + Sync + 'params>
@@ -98,14 +98,14 @@ pub struct Line<'params, T: Types> {
     /// Worker or `Coroutine` associated with the current node.
     pub worker: T::Routine,
 
-    /// Parent nodes that we can schedule to work.
+    /// Upstreams we schedule.
     pub workers: Vec<Box<dyn Workable<ThreadId = T::ThreadId> + 'params>>,
 
     /// Edges that we push output into. A refused message waits here, and nothing new leaves the
     /// routine until it is delivered.
     pub outputs: Fanout<DynSink<'params, T::Out, T::Signal>>,
 
-    /// Input to our current node that parents will push into.
+    /// Input to our current node that upstreams push into.
     pub input: Receiver<T::In, T::Signal>,
 
     /// A Flush or Marker held until the routine is drained; outputs go out one per round.
@@ -661,10 +661,9 @@ pub mod tests {
     #[test]
     fn line_can_be_stacked() {
         let line_1 = Line::of(MockLine::new());
-        let line_2 = Line::of(MockLine::new());
 
         let mut writer = line_1.writer().unwrap();
-        let line_2 = line_1.via(line_2).unwrap();
+        let line_2 = line_1.via(Line::of(MockLine::new())).unwrap();
 
         let mut reader = line_2.reader().unwrap();
 
@@ -788,29 +787,12 @@ pub mod tests {
 
         let mut writer = line_0.writer().unwrap();
 
-        let line_1 = Line::of(MockLine::new());
-        let line_2 = Line::of(MockLine::new());
-        let line_3 = Line::of(MockLine::new());
-        let line_4 = Line::of(MockLine::new());
-        let line_5 = Line::of(MockLine::new());
-        let line_6 = Line::of(MockLine::new());
-        let line_7 = Line::of(MockLine::new());
-        let line_8 = Line::of(MockLine::new());
-        let line_9 = Line::of(MockLine::new());
-        let line_10 = Line::of(MockLine::new());
+        let mut last = line_0;
+        for _ in 0..10 {
+            last = last.via(Line::of(MockLine::new())).unwrap();
+        }
 
-        let line_1 = line_0.via(line_1).unwrap();
-        let line_2 = line_1.via(line_2).unwrap();
-        let line_3 = line_2.via(line_3).unwrap();
-        let line_4 = line_3.via(line_4).unwrap();
-        let line_5 = line_4.via(line_5).unwrap();
-        let line_6 = line_5.via(line_6).unwrap();
-        let line_7 = line_6.via(line_7).unwrap();
-        let line_8 = line_7.via(line_8).unwrap();
-        let line_9 = line_8.via(line_9).unwrap();
-        let line_10 = line_9.via(line_10).unwrap();
-
-        let mut reader = line_10.reader::<usize>().unwrap();
+        let mut reader = last.reader().unwrap();
 
         let before = Instant::now();
         for _ in 0..10000 {
@@ -847,11 +829,10 @@ pub mod tests {
     #[test]
     fn close_propagates_through_work_chain() {
         let line_1 = Line::of(MockLine::new());
-        let line_2 = Line::of(MockLine::new());
 
         let mut writer = line_1.writer().unwrap();
-        let line_2 = line_1.via(line_2).unwrap();
-        let mut reader = line_2.reader::<usize>().unwrap();
+        let line_2 = line_1.via(Line::of(MockLine::new())).unwrap();
+        let mut reader = line_2.reader().unwrap();
 
         // Push some data through the chain
         writer.push(Message::Data(1)).unwrap();

@@ -4,10 +4,10 @@ Areamy trades flexibility for compile-time guarantees. A wrong graph shouldn't c
 
 ## Ownership is the scheduling graph
 
-- `work::Bidi` / `work::Schedule` / `Pullable::then` / poll `.parent()` **move** the parent into the child. Each node has one owner: a child, or its thread if it's a root.
+- `via` / `schedules` / `reader` / `Pullable::then` **move** the upstream into its owner. Each node has one owner: a downstream, or its thread if it's a root.
 - Ownership is a forest rooted at threads, so scheduling cycles can't be written.
-- `Push` / `.input::<Sync>()` **borrow**: the parent holds a `Sender` to the child's input. Push edges may form cycles; they carry data, never scheduling. Back-edges use `SignalPolicy::FollowData`.
-- Fan-out: one consumer owns the node, the rest get `push`.
+- `pushes` / `tee` / `.input::<Sync>()` **borrow**: the upstream holds a `Sender` to the downstream's input. Push edges may form cycles; they carry data, never scheduling. Back-edges use `SignalPolicy::FollowData`.
+- Fan-out: one consumer owns the node, the rest get `pushes` or `tee`.
 
 This rules out designs that decouple nodes from ownership: arenas, index or handle graphs, and runtime-validated topologies. They turn a type error into a runtime check.
 
@@ -22,19 +22,20 @@ This rules out designs that decouple nodes from ownership: arenas, index or hand
 
 - The connection kind is chosen at the call site. Ownership, scheduling and edge cost are visible where they happen.
 - Routine traits are implemented explicitly: each impl whitelists a valid In→Out pair. No blanket impls.
-- Data-type annotations (`Push::<T>`, `work::Bidi::<T>`) are welcome; they document the graph. Sides are named on the node (`node.at::<Left>()`).
+- Data-type annotations (`via::<T>`, `pushes::<T>`) are welcome; they document the graph.
+- Sides are named, never inferred from data types: `at` moves a side (owning edges), `at_mut` / `at_ref` borrow it.
 
 ## Pay at build time, not per message
 
-- Allocation, boxing and binding happen while the graph is built. Nodes and parents are passed by value; a `Box` appears only where a node stores a parent as `dyn`.
+- Allocation, boxing and binding happen while the graph is built. Nodes and upstreams are passed by value; a `Box` appears only where a node stores an upstream as `dyn`.
 - The hot path avoids extra heap allocation, locks and syscalls where placement allows.
 
 ## Layers
 
-- `graph` is the vocabulary (`Outlet`, `TryPushable`, `Pushable`, `Closeable`, `Schedule`, `Add`, `Get`, `Outputs`, `graph::Sink`). Outside its tests and doc links it uses only `message`, `wake`, `signal` and `error`.
+- `graph` is the vocabulary (`Outlet`, `TryPushable`, `Pushable`, `Closeable`, `Schedule`, `Add`, `Get`, `Outputs`, `graph::Sink`) and declares the wiring verbs (`Via` / `Downstream`, `Pushes`, `At`); the runtimes and `edge` implement them. Outside its tests and doc links it uses only `message`, `wake`, `signal` and `error`.
 - `message` and `wake` are the currencies every layer carries: what flows, and how a node is woken. `wake` uses nothing else in the crate.
 - `work` and `poll` are runtimes built on `graph`, each with its own capabilities (`work::Sink`; `poll::Context`, `poll::Sink`). Runtime types stay in their runtime: `poll::Context` carries the scheduler's timer beside the `wake` wakers.
-- `edge` holds the concrete edges between nodes and runtimes (`sync::Sender`, `PolicyEdge`, `Fanout`, `Push`), so it uses `work` and `poll` types. The runtimes use `edge` back (their `Policied` impls, `work` on `edge::sync`): these are modules of one crate, not a strict stack. The rule is placement: a capability is implemented next to its type, and runtime types stay in their runtime.
+- `edge` holds the concrete edges between nodes and runtimes (`sync::Sender`, `PolicyEdge`, `Fanout`, the `Pushes` impl), so it uses `work` and `poll` types. The runtimes use `edge` back (their `Policied` impls, `work` on `edge::sync`): these are modules of one crate, not a strict stack. The rule is placement: a capability is implemented next to its type, and runtime types stay in their runtime.
 
 ## Small surface
 

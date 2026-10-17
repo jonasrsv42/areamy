@@ -15,7 +15,7 @@ use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
 use crate::work::{OwnedWork, Sink, Upstream, Workable};
-use crate::{Pushes, Via};
+use crate::{Pushes, Via, Writes};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -127,7 +127,7 @@ impl Routine {
     }
 }
 
-/// `Node`  variants. Can be used to connect `Routine(s)` in a multi-threaded graph.
+/// `Node`  variants. Can be used to wire `Routine(s)` in a multi-threaded graph.
 ///
 /// ```bash
 ///   default thread
@@ -165,7 +165,7 @@ pub struct Node {
         >,
     >,
 
-    /// Outgoing data connections. Lets us shovel data into our child nodes.
+    /// Outgoing data connections. Lets us shovel data into our downstream nodes.
     pub outputs:
         Vec<Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>>,
 }
@@ -192,7 +192,7 @@ impl Node {
 impl Connection for Node {}
 
 /// Let's make our Node capable of being part of a `push`, `pull` graph by implementing
-/// `Workable` and `Pushable`
+/// `Workable`, `Get`/`Add`/`Outputs` (for `pushes`) and `Downstream` (for `via`).
 impl Workable for Node {
     fn work(&mut self) -> Result<(), Error> {
         let is_empty = self.input.is_empty()?;
@@ -265,7 +265,7 @@ impl Add<dyn Workable<ThreadId = DefaultThread>> for Node {
 }
 
 /// A custom node owns its upstream like areamy's nodes do: a forwarding edge into its input,
-/// then the upstream added as a parent. See [crate::graph::Downstream].
+/// then the upstream added as a workable. See [crate::graph::Downstream].
 impl<UpstreamType, ShapeType>
     Downstream<UpstreamType, usize, OwnedWork<ShapeType, Trackable<&'static str>, DefaultThread>>
     for Node
@@ -284,9 +284,9 @@ where
     }
 }
 
-/// A boxed node stays a push parent.
+/// A boxed node pushes.
 #[test]
-fn boxed_node_connects_as_push_parent() {
+fn boxed_node_pushes() {
     let sink = Receiver::new();
 
     let mut boxed = Box::new(Node::new());
@@ -298,15 +298,12 @@ fn boxed_node_connects_as_push_parent() {
 /// [crate::sync::Sender] / [crate::sync::Receiver] pairs, the same chain
 /// works across threads — see the multi-threaded graph example above.
 #[test]
-fn connect_push_work_bidi_chain() {
+fn via_chain_pushes_into_sink() {
     let node_1 = Node::new();
     let node_2 = Node::new();
     let node_3 = Node::new();
 
-    let mut input = Get::<
-        dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
-    >::get(&node_1)
-    .unwrap();
+    let mut input = node_1.writer().unwrap();
 
     let mut node_3 = node_1.via(node_2).unwrap().via(node_3).unwrap();
 
@@ -406,7 +403,7 @@ impl
 
 /// A chain that has `pull` connection, not using unnecessary mutexes, arcs and convars.
 #[test]
-fn connect_pull_bidi_chain() {
+fn pull_chain() {
     let node_1 = Box::new(Node::new());
     let mut node_2 = Box::new(Node::new());
     let mut node_3 = Box::new(Node::new());

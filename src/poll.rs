@@ -35,7 +35,7 @@ pub use sink::{DynSink, Sink};
 pub use sleep::{SleepFut, sleep, sleep_until};
 pub use thread::{Thread, ThreadHandle};
 pub use timer::{Timer, TimerKey};
-pub use traits::AsyncParent;
+pub use traits::{AsyncParent, OwnedPoll};
 pub use try_join::try_join;
 pub use wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 

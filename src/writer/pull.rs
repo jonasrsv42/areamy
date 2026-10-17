@@ -60,7 +60,7 @@ where
     /// The input queue to the [Pullable] chain.
     pub input: Receiver<DataType, SignalType>,
 
-    /// The threadId that belongs to the child nodes.
+    /// The threadId of the downstream chain.
     thread: PhantomData<ThreadIdType>,
 }
 

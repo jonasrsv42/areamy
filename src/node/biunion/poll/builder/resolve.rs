@@ -1,5 +1,5 @@
 // ============================================================
-// Resolve — `up.via(node.at::<Side>())` dispatches via Resolve trait
+// Resolve — `up.via(node.at::<Side>())` dispatches via `ResolveParent`
 // ============================================================
 
 use super::node::{Allocated, Allocating, BuilderInput, Node};
@@ -566,7 +566,7 @@ where
             OutType = MultiplicityType::Data,
             SignalType = SignalType,
             ThreadIdType = ThreadIdType,
-        > + 'params,
+        >,
 {
     type Out = MultiplicityType::Resolved;
 

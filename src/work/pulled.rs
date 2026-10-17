@@ -8,7 +8,7 @@ use crate::work::{DynSink, Sink};
 use std::any::type_name;
 
 /// [`Pulled`] runs a [Pullable] chain as a work node: each [Workable::work] pulls one message
-/// and pushes it into every connected child.
+/// and pushes it into every downstream edge.
 ///
 /// The pull → work boundary is an ordinary connection:
 ///
@@ -216,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn pulled_chain_fans_out_to_bidi_and_push_children() {
+    fn pulled_chain_fans_out_to_owned_and_pushed_children() {
         let buffer = WriterBuffer::new();
         let mut writer = buffer.writer().unwrap();
 

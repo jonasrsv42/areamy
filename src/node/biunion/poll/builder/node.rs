@@ -1,15 +1,14 @@
 //! Biunion node builder with edge kind typestates.
 //!
 //! Created via [`poll::Thread::biunion`](crate::poll::Thread). Edge kinds
-//! are resolved via typestate transitions:
+//! are resolved via typestate transitions, in any order:
 //!
-//! - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
+//! - `.input::<Left>()` / `.input::<Right>()` → Sync input
 //! - `up.via(node.at::<Left>())` / `up.via(node.at::<Right>())` → Async input
-//! - `.output::<Sync>()` → resolve output to Sync
+//! - `.output()` → resolve output to Sync
 //!
-//! Allocator lifecycle:
-//! - `Allocating` — holds `&mut WakerAllocator`, one or both inputs still Deferred
-//! - `Allocated` — both inputs resolved, allocator released
+//! Both input wake slots are reserved at mint, so nodes mint in any order and a node never added
+//! leaves its slots empty at build.
 
 use super::options::Options;
 use super::traits::{ResolveInput, ResolveOutput};
@@ -17,22 +16,17 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Get, Outputs};
 use crate::node::biunion;
+use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::Sink;
-use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
+use crate::poll::edge::{Deferred, Edge, Null, Sync};
 use crate::poll::input;
 use crate::poll::thread::Thread;
 use crate::poll::wakers::WakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::marker::PhantomData;
-
-/// Builder still holds `&'alloc mut WakerAllocator` — one or both inputs deferred.
-pub struct Allocating<'alloc>(pub(crate) &'alloc mut WakerAllocator);
-
-/// Both inputs resolved — allocator borrow released.
-pub struct Allocated;
 
 /// Builder input edges grouped together.
 pub struct BuilderInput<
@@ -52,7 +46,6 @@ pub struct BuilderInput<
 #[must_use = "a node does nothing until owned (`via`) or added to a thread"]
 pub struct Node<
     'params,
-    AllocState,
     LeftEdge,
     RightEdge,
     OutEdge,
@@ -71,7 +64,7 @@ pub struct Node<
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
-    pub(crate) alloc: AllocState,
+    pub(crate) alloc: Inputs<LeftEdge::Alloc, RightEdge::Alloc>,
     pub(crate) factory: FactoryType,
     pub(crate) input:
         BuilderInput<'params, LeftEdge, RightEdge, Left, Right, SignalType, ThreadIdType>,
@@ -80,22 +73,10 @@ pub struct Node<
     pub(crate) _phantom: PhantomData<(fn() -> Out, fn() -> Left, fn() -> Right, ThreadIdType)>,
 }
 
-impl<
-    'params,
-    AllocState,
-    LeftEdge,
-    RightEdge,
-    OutEdge,
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    FactoryType,
-> Connection
+impl<'params, LeftEdge, RightEdge, OutEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    Connection
     for Node<
         'params,
-        AllocState,
         LeftEdge,
         RightEdge,
         OutEdge,
@@ -125,15 +106,14 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     /// Create a biunion node with two deferred inputs and deferred output.
     ///
     /// Resolve inputs and output via wiring methods:
-    /// - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
+    /// - `.input::<Left>()` / `.input::<Right>()` → Sync input
     /// - `up.via(node.at::<Left>())` / `up.via(node.at::<Right>())` → Async input
-    /// - `.output::<Sync>()` → Sync output
+    /// - `.output()` → Sync output
     pub fn biunion<Left, Right, Out, SignalType, FactoryType>(
         &mut self,
         factory: FactoryType,
     ) -> Node<
         'params,
-        Allocating<'_>,
         Deferred,
         Deferred,
         Deferred,
@@ -153,10 +133,9 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     }
 }
 
-impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
         'params,
-        Allocating<'alloc>,
         Deferred,
         Deferred,
         Deferred,
@@ -173,18 +152,22 @@ where
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
-    pub fn deferred(factory: FactoryType, alloc: &'alloc mut WakerAllocator) -> Self {
+    pub(crate) fn deferred(factory: FactoryType, alloc: &mut WakerAllocator) -> Self {
         Self::with_options(factory, alloc, Options::default())
     }
 
     /// A deferred node with `options`, set before any edge exists.
     pub(crate) fn with_options(
         factory: FactoryType,
-        alloc: &'alloc mut WakerAllocator,
+        alloc: &mut WakerAllocator,
         options: Options,
     ) -> Self {
         Self {
-            alloc: Allocating(alloc),
+            // Reserved at mint: a node never added leaves its slots empty at build.
+            alloc: Inputs {
+                left: alloc.next(),
+                right: alloc.next(),
+            },
             factory,
             input: BuilderInput {
                 left: Default::default(),
@@ -198,50 +181,15 @@ where
 }
 
 // ============================================================
-// .input::<Side, Edge>() — dispatched via ResolveInput
+// .input::<Side>() / .output() — Sync, dispatched via ResolveInput / ResolveOutput
 // ============================================================
 
-macro_rules! impl_input {
-    ($left:ty, $right:ty $(, $alloc_lt:lifetime)?) => {
-        impl<$($alloc_lt,)? 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-            Node<
-                'params,
-                Allocating<$($alloc_lt)?>, $left, $right, Deferred, Left, Right, Out,
-                SignalType, ThreadIdType, FactoryType,
-            >
-        where
-            SignalType: Origin,
-            ThreadIdType: ThreadId,
-            FactoryType: BiunionRoutineFactory<'params>,
-            FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-        {
-            pub fn input<S, E>(self) -> S::Resolved
-            where
-                S: ResolveInput<E, Self>,
-            {
-                S::resolve(self)
-            }
-        }
-    };
-}
-
-impl_input!(Deferred, Deferred, 'alloc);
-impl_input!(Sync, Deferred, 'alloc);
-impl_input!(Async, Deferred, 'alloc);
-impl_input!(Deferred, Sync, 'alloc);
-impl_input!(Deferred, Async, 'alloc);
-
-// ============================================================
-// .output::<Edge>() — dispatched via ResolveOutput
-// ============================================================
-
-impl<'params, LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, LeftEdge, RightEdge, OutEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     Node<
         'params,
-        Allocated,
         LeftEdge,
         RightEdge,
-        Deferred,
+        OutEdge,
         Left,
         Right,
         Out,
@@ -252,16 +200,26 @@ impl<'params, LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, F
 where
     LeftEdge: Edge,
     RightEdge: Edge,
+    OutEdge: Edge,
     SignalType: Origin,
     ThreadIdType: ThreadId,
     FactoryType: BiunionRoutineFactory<'params>,
     FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
 {
-    pub fn output<E>(self) -> E::Resolved
+    /// Resolve side `S`'s input to [`Sync`]: a sync→poll bridge woken by its reserved slot.
+    pub fn input<S>(self) -> <S as ResolveInput<Sync, Self>>::Resolved
     where
-        E: ResolveOutput<Self>,
+        S: ResolveInput<Sync, Self>,
     {
-        E::resolve(self)
+        S::resolve(self)
+    }
+
+    /// Resolve the output to [`Sync`].
+    pub fn output(self) -> <Sync as ResolveOutput<Self>>::Resolved
+    where
+        Sync: ResolveOutput<Self>,
+    {
+        <Sync as ResolveOutput<Self>>::resolve(self)
     }
 }
 
@@ -272,7 +230,6 @@ where
 impl<
     'params,
     ConnectionType,
-    AllocState,
     RightEdge,
     OutEdge,
     Left,
@@ -284,7 +241,6 @@ impl<
 > Get<ConnectionType, biunion::Left>
     for Node<
         'params,
-        AllocState,
         Sync,
         RightEdge,
         OutEdge,
@@ -314,7 +270,6 @@ where
 impl<
     'params,
     ConnectionType,
-    AllocState,
     LeftEdge,
     OutEdge,
     Left,
@@ -326,7 +281,6 @@ impl<
 > Get<ConnectionType, biunion::Right>
     for Node<
         'params,
-        AllocState,
         LeftEdge,
         Sync,
         OutEdge,
@@ -357,21 +311,10 @@ where
 // Add<dyn Sink> — Sync output
 // ============================================================
 
-impl<
-    'params,
-    AllocState,
-    LeftEdge,
-    RightEdge,
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    FactoryType,
-> Add<dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params>
+impl<'params, LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+    Add<dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params>
     for Node<
         'params,
-        AllocState,
         LeftEdge,
         RightEdge,
         Sync,
@@ -402,21 +345,9 @@ where
     }
 }
 
-impl<
-    'params,
-    AllocState,
-    LeftEdge,
-    RightEdge,
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    FactoryType,
-> Outputs
+impl<'params, LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType> Outputs
     for Node<
         'params,
-        AllocState,
         LeftEdge,
         RightEdge,
         Sync,

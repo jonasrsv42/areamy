@@ -16,7 +16,7 @@ fn run_once() -> Result<(), Error> {
     let mut sync_node = work::Line::of(Hold::new());
     let mut writer = sync_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
     let routine = FutureRoutine::factory(
         |input: input::Receiver<usize>, output: output::Sender<usize>| {
             Box::pin(async move {
@@ -32,10 +32,7 @@ fn run_once() -> Result<(), Error> {
             })
         },
     );
-    let mut async_node = async_thread
-        .line(routine)
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+    let mut async_node = async_thread.line(routine).input().output();
     sync_node.pushes(&async_node)?;
 
     let output = Receiver::new();

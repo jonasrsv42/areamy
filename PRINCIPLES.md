@@ -6,7 +6,7 @@ Areamy trades flexibility for compile-time guarantees. A wrong graph shouldn't c
 
 - `via` / `schedules` / `reader` / `Pullable::then` **move** the upstream into its owner. Each node has one owner: a downstream, or its thread if it's a root.
 - Ownership is a forest rooted at threads, so scheduling cycles can't be written.
-- `pushes` / `tee` / `.input::<Sync>()` **borrow**: the upstream holds a `Sender` to the downstream's input. Push edges may form cycles; they carry data, never scheduling. Back-edges use `SignalPolicy::FollowData`.
+- `pushes` / `tee` / `.input()` **borrow**: the upstream holds a `Sender` to the downstream's input. Push edges may form cycles; they carry data, never scheduling. Back-edges use `SignalPolicy::FollowData`.
 - Fan-out: one consumer owns the node, the rest get `pushes` or `tee`.
 
 This rules out designs that decouple nodes from ownership: arenas, index or handle graphs, and runtime-validated topologies. They turn a type error into a runtime check.

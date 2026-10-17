@@ -14,4 +14,5 @@ pub mod line;
 pub mod output;
 mod waiters;
 
-pub use input::Input;
+pub use input::{Input, Receiver};
+pub use output::Sender;

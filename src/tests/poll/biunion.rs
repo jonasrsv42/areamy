@@ -11,7 +11,7 @@ use crate::poll::future;
 use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
 use crate::thread::Join;
-use crate::{At, Closeable, Message, Pushable, Pushes, Via, Writes};
+use crate::{At, Closeable, Message, Pushable, Pushes, Trackable, Via, Writes};
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
@@ -29,7 +29,7 @@ struct Config {
 /// The routine applies the current config multiplier to audio frames.
 #[test]
 fn biunion_audio_with_config() {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
     let routine = future::biunion::FutureRoutine::factory(
         |audio: input::Receiver<usize>,
@@ -65,9 +65,9 @@ fn biunion_audio_with_config() {
 
     let mut node = async_thread
         .biunion(routine)
-        .input::<biunion::Left, poll::Sync>()
-        .input::<biunion::Right, poll::Sync>()
-        .output::<poll::Sync>();
+        .input::<biunion::Left>()
+        .input::<biunion::Right>()
+        .output();
 
     let mut audio_writer = node.at_ref::<biunion::Left>().writer().unwrap();
     let mut config_writer = node.at_ref::<biunion::Right>().writer().unwrap();
@@ -111,7 +111,7 @@ fn biunion_audio_with_config() {
 /// parent (doubles) → biunion (applies config multiplier) → output
 #[test]
 fn biunion_with_async_parent() {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
     // Parent line node: doubles input
     let parent = async_thread
@@ -125,7 +125,7 @@ fn biunion_with_async_parent() {
                 })
             },
         ))
-        .input::<poll::Sync>();
+        .input();
 
     // Writer pushes into parent
     let mut audio_writer = parent.writer().unwrap();
@@ -166,8 +166,8 @@ fn biunion_with_async_parent() {
     let mut node = parent
         .via(async_thread.biunion(biunion_routine).at::<biunion::Left>())
         .unwrap()
-        .input::<biunion::Right, poll::Sync>()
-        .output::<poll::Sync>();
+        .input::<biunion::Right>()
+        .output();
 
     let mut config_writer = node.at_ref::<biunion::Right>().writer().unwrap();
 
@@ -199,4 +199,92 @@ fn biunion_with_async_parent() {
         audio_writer.close().unwrap();
         assert!(matches!(handle.join(), Join::Ok));
     });
+}
+
+type BoxFuture = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
+
+/// Forwards left data plus 100, until left ends; right is drained alongside.
+fn left_plus_hundred(
+    left: input::Receiver<usize>,
+    right: input::Receiver<usize>,
+    output: output::Sender<usize>,
+) -> BoxFuture {
+    Box::pin(async move {
+        let forward: BoxFuture = Box::pin(async move {
+            while let Input::Data(v) = left.recv().await? {
+                output.send(v + 100).await?;
+            }
+            Ok(())
+        });
+        let drain: BoxFuture = Box::pin(async move {
+            while let Ok(Input::Data(_)) = right.recv().await {}
+            Ok(())
+        });
+        crate::poll::try_join(forward, drain).await?;
+        Ok(())
+    })
+}
+
+fn double(input: input::Receiver<usize>, output: output::Sender<usize>) -> BoxFuture {
+    Box::pin(async move {
+        while let Input::Data(v) = input.recv().await? {
+            output.send(v * 2).await?;
+        }
+        Ok(())
+    })
+}
+
+/// A biunion minted before its parent, its output resolved before its inputs.
+#[test]
+fn biunion_mints_and_resolves_in_any_order() -> Result<(), Error> {
+    let mut thread = poll::Thread::<IoThread>::new();
+    let merge = thread
+        .biunion(future::biunion::FutureRoutine::factory(left_plus_hundred))
+        .output();
+    let parent = thread
+        .line(future::line::FutureRoutine::factory(double))
+        .input();
+    let mut writer = parent.writer()?;
+    let mut merge = parent
+        .via(merge.at::<biunion::Left>())?
+        .input::<biunion::Right>();
+    let mut right = merge.at_ref::<biunion::Right>().writer::<usize>()?;
+    let output = Receiver::new();
+    merge.pushes(&output)?;
+    thread.add(merge);
+
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = thread.start(s);
+        writer.push(Message::Data(1))?;
+        assert_eq!(output.read_front()?, Message::Data(102));
+        writer.close()?;
+        right.close()?;
+        assert!(matches!(handle.join(), Join::Ok));
+        Ok(())
+    })
+}
+
+/// A minted biunion never wired nor added leaves its reserved slots empty: the thread fails at
+/// build.
+#[test]
+fn forgotten_biunion_fails_at_build() -> Result<(), Error> {
+    let mut thread = poll::Thread::<IoThread>::new();
+    let _orphan = thread.biunion::<usize, usize, usize, Trackable<&'static str>, _>(
+        future::biunion::FutureRoutine::factory(left_plus_hundred),
+    );
+    let node = thread
+        .line(future::line::FutureRoutine::factory(double))
+        .input();
+    let mut writer = node.writer::<usize>()?;
+    thread.add(node);
+
+    std::thread::scope(|s| {
+        let handle = thread.start(s);
+        let _ = writer.close();
+        match handle.join() {
+            Join::Error(e) => assert!(e.to_string().contains("slot 0 is empty"), "{e}"),
+            _ => panic!("expected a slot-empty build error"),
+        }
+    });
+    Ok(())
 }

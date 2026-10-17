@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::graph::Closeable;
 use crate::message::Message;
 use crate::poll::future::{Input, biunion, input, line, output};
-use crate::poll::{self, Sync, try_join};
+use crate::poll::{self, try_join};
 use crate::thread::ThreadBundle;
 use crate::work::Writer;
 use crate::{At, Pushes, Writes};
@@ -59,14 +59,14 @@ where
         + Send
         + 'static,
 {
-    let mut thread = poll::Thread::<'_, FutureThread>::new();
+    let mut thread = poll::Thread::<FutureThread>::new();
     let mut node = thread
         .builder()
         .line()
         .bounded(one())
         .build(line::FutureRoutine::factory(routine).bounded(one()))
-        .input::<Sync>()
-        .output::<Sync>();
+        .input()
+        .output();
     let writer = node.writer().unwrap();
     let output = Receiver::bounded(one());
     node.pushes(&output).unwrap();
@@ -205,7 +205,7 @@ fn bounded_biunion() -> (
     Writer<'static, usize, Signal>,
     Receiver<usize, Signal>,
 ) {
-    let mut thread = poll::Thread::<'_, FutureThread>::new();
+    let mut thread = poll::Thread::<FutureThread>::new();
     let mut node = thread
         .builder()
         .biunion()
@@ -240,9 +240,9 @@ fn bounded_biunion() -> (
             )
             .bounded(one()),
         )
-        .input::<Left, Sync>()
-        .input::<Right, Sync>()
-        .output::<Sync>();
+        .input::<Left>()
+        .input::<Right>()
+        .output();
     let left_writer = node.at_ref::<Left>().writer().unwrap();
     let right_writer = node.at_ref::<Right>().writer().unwrap();
     let output = Receiver::bounded(one());

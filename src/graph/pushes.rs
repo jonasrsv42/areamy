@@ -20,7 +20,8 @@ use crate::graph::{Get, Outlet, Outputs};
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no single output to push from",
     note = "a node with several outputs needs a borrowed side: `node.at_mut::<Left>().pushes(..)`",
-    note = "`at` moves the node and only feeds `via`; `pushes` takes `at_mut`"
+    note = "`at` moves the node and only feeds `via`; `pushes` takes `at_mut`",
+    note = "a poll node has an output after `.output()`"
 )]
 pub trait Pushes: Outputs<Unary> {
     /// Pushes this node's output into `down`'s input.

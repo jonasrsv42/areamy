@@ -25,7 +25,7 @@ type BoxFut = Pin<Box<dyn Future<Output = Result<(), Error>>>>;
 
 #[test]
 fn sleep_in_routine_delays_output() {
-    let mut thread = poll::Thread::<'_, SleepThread>::new();
+    let mut thread = poll::Thread::<SleepThread>::new();
     let mut node = thread
         .line(FutureRoutine::factory(
             |input: input::Receiver<usize>, output: output::Sender<usize>| -> BoxFut {
@@ -38,8 +38,8 @@ fn sleep_in_routine_delays_output() {
                 })
             },
         ))
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+        .input()
+        .output();
 
     let mut writer = node.writer().unwrap();
     let output = Receiver::new();
@@ -64,7 +64,7 @@ fn sleep_in_routine_delays_output() {
 
 #[test]
 fn concurrent_sleeps_wake_independently() {
-    let mut thread = poll::Thread::<'_, SleepThread>::new();
+    let mut thread = poll::Thread::<SleepThread>::new();
     let mut node = thread
         .line(FutureRoutine::factory(
             |input: input::Receiver<usize>, output: output::Sender<usize>| -> BoxFut {
@@ -88,8 +88,8 @@ fn concurrent_sleeps_wake_independently() {
                 })
             },
         ))
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+        .input()
+        .output();
 
     let mut writer = node.writer().unwrap();
     let output = Receiver::new();

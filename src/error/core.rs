@@ -148,6 +148,11 @@ impl Error {
             _ => false,
         }
     }
+
+    /// Whether this is [ErrorKind::Closed]: the normal end of a connection, not a failure.
+    pub fn is_closed(&self) -> bool {
+        matches!(self.kind, ErrorKind::Closed)
+    }
 }
 
 impl std::fmt::Display for ErrorKind {

@@ -15,7 +15,7 @@ use crate::{At, Closeable, Message, Pushable, Pushes, Streams, Via, Writes, biun
 #[test]
 fn line_poll_borrowed() {
     let multiplier: usize = 5;
-    let mut thread = poll::Thread::<'_, LifetimePollThread>::new();
+    let mut thread = poll::Thread::<LifetimePollThread>::new();
 
     let multiplier_ref = &multiplier;
     let mut node = thread
@@ -23,8 +23,8 @@ fn line_poll_borrowed() {
             multiplier: multiplier_ref,
             output: WakingOutput::new(w.output),
         })
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+        .input()
+        .output();
 
     let mut input = node.writer().unwrap();
     let output = Receiver::new();
@@ -54,7 +54,7 @@ fn line_poll_borrowed() {
 #[test]
 fn biunion_poll_borrowed() {
     let bias: usize = 7;
-    let mut thread = poll::Thread::<'_, LifetimePollThread>::new();
+    let mut thread = poll::Thread::<LifetimePollThread>::new();
 
     let bias_ref = &bias;
     let mut node = thread
@@ -62,9 +62,9 @@ fn biunion_poll_borrowed() {
             bias: bias_ref,
             output: WakingOutput::new(w.output),
         })
-        .input::<biunion::Left, poll::Sync>()
-        .input::<biunion::Right, poll::Sync>()
-        .output::<poll::Sync>();
+        .input::<biunion::Left>()
+        .input::<biunion::Right>()
+        .output();
 
     let mut left = node.at_ref::<biunion::Left>().writer().unwrap();
     let mut right = node.at_ref::<biunion::Right>().writer().unwrap();
@@ -99,7 +99,7 @@ fn biunion_poll_borrowed() {
 #[test]
 fn poll_async_parent_chain_borrowed() {
     let multiplier: usize = 4;
-    let mut thread = poll::Thread::<'_, LifetimePollThread>::new();
+    let mut thread = poll::Thread::<LifetimePollThread>::new();
 
     let multiplier_ref = &multiplier;
 
@@ -108,7 +108,7 @@ fn poll_async_parent_chain_borrowed() {
             multiplier: multiplier_ref,
             output: WakingOutput::new(w.output),
         })
-        .input::<poll::Sync>();
+        .input();
 
     let mut input = a.writer().unwrap();
 
@@ -118,7 +118,7 @@ fn poll_async_parent_chain_borrowed() {
             output: WakingOutput::new(w.output),
         }))
         .unwrap()
-        .output::<poll::Sync>();
+        .output();
 
     let output = Receiver::new();
     b.pushes(&output).unwrap();
@@ -152,7 +152,7 @@ fn poll_async_parent_chain_borrowed() {
 fn poll_borrowed_output_sink() {
     let multiplier: usize = 2;
     let config: usize = 99;
-    let mut thread = poll::Thread::<'_, LifetimePollThread>::new();
+    let mut thread = poll::Thread::<LifetimePollThread>::new();
 
     let multiplier_ref = &multiplier;
     let mut node = thread
@@ -160,8 +160,8 @@ fn poll_borrowed_output_sink() {
             multiplier: multiplier_ref,
             output: WakingOutput::new(w.output),
         })
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+        .input()
+        .output();
 
     let mut input = node.writer().unwrap();
     let output = Receiver::new();
@@ -199,15 +199,15 @@ fn poll_node_input_from_borrowed_parent() {
     let mult: usize = 2;
     let mut work_line = work::Line::of(BorrowingLine::new(&mult));
 
-    let mut poll_thread = poll::Thread::<'_, LifetimePollThread>::new();
+    let mut poll_thread = poll::Thread::<LifetimePollThread>::new();
     let mult_ref = &mult;
     let mut poll_node = poll_thread
         .line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: mult_ref,
             output: WakingOutput::new(w.output),
         })
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+        .input()
+        .output();
 
     let mut input = work_line.writer().unwrap();
     work_line.pushes(&poll_node).unwrap();

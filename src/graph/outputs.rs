@@ -10,7 +10,8 @@ use crate::graph::marker::{Connection, Multiplicity, Unary};
     message = "`{Self}` has no single push output here",
     label = "no `Outputs<{MultiplicityType}>`",
     note = "a node with several outputs needs a borrowed side: `node.at_mut::<Left>().pushes(..)`",
-    note = "`at` moves the node and only feeds `via`; `pushes` takes `at_mut`"
+    note = "`at` moves the node and only feeds `via`; `pushes` takes `at_mut`",
+    note = "a poll node has an output after `.output()`"
 )]
 pub trait Outputs<MultiplicityType: Multiplicity = Unary>:
     Add<Self::Sink, MultiplicityType>

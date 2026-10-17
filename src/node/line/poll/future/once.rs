@@ -6,7 +6,6 @@
 //! Any later data or Flush is a wiring bug, raised as [Exhausted] so callers can match it with
 //! [Error::is].
 
-use super::BoxFut;
 use crate::any_err;
 use crate::error::{AnyErr, Error};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
@@ -15,8 +14,10 @@ use crate::node::routine;
 use crate::poll::Context;
 use crate::poll::future::{input, output};
 use std::fmt;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
+use std::pin::Pin;
 
 /// A spent once routine was handed data or a Flush.
 #[derive(Debug)]
@@ -38,19 +39,22 @@ fn exhausted() -> Error {
 }
 
 /// Async routine running one future, built from an [FnOnce].
-pub struct FutureRoutine<'params, InType, OutType> {
+pub struct FutureRoutine<InType, OutType, Fut> {
     input: input::Sender<InType>,
     output: output::Receiver<OutType>,
     /// `None` once the segment ended: the routine is spent.
-    future: Option<BoxFut<'params>>,
+    future: Option<Pin<Box<Fut>>>,
 }
 
-impl<'params, InType, OutType> FutureRoutine<'params, InType, OutType> {
+impl<InType, OutType, Fut> FutureRoutine<InType, OutType, Fut>
+where
+    Fut: Future<Output = Result<(), Error>>,
+{
     /// `bound` caps the input and the output queue each; `None` is unbounded. Calls `factory`
     /// at once: that only builds the future, which runs from the first poll.
     pub fn new<F>(wakers: LineWakers, bound: Option<NonZeroUsize>, factory: F) -> Self
     where
-        F: FnOnce(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params>,
+        F: FnOnce(input::Receiver<InType>, output::Sender<OutType>) -> Fut,
     {
         let (input, receiver) = input::channel(
             wakers.input,
@@ -62,14 +66,23 @@ impl<'params, InType, OutType> FutureRoutine<'params, InType, OutType> {
         Self {
             input,
             output,
-            future: Some(factory(receiver, sender)),
+            future: Some(Box::pin(factory(receiver, sender))),
         }
     }
 
-    /// Create a [LineRoutineFactory] from an async closure, unbounded until [Factory::bounded].
+    /// Create a [LineRoutineFactory] from an `async fn` or a closure returning a future,
+    /// unbounded until [Factory::bounded].
+    ///
+    /// ```ignore
+    /// let routine = once::FutureRoutine::factory(move |input, output| async move {
+    ///     let connection = connection; // moved in: the closure runs once
+    ///     /* ... */
+    ///     Ok(())
+    /// });
+    /// ```
     pub fn factory<F>(factory: F) -> Factory<InType, OutType, F>
     where
-        F: FnOnce(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params>,
+        F: FnOnce(input::Receiver<InType>, output::Sender<OutType>) -> Fut,
     {
         Factory {
             factory,
@@ -96,20 +109,21 @@ impl<InType, OutType, F> Factory<InType, OutType, F> {
     }
 }
 
-impl<'params, InType, OutType, F> LineRoutineFactory<'params> for Factory<InType, OutType, F>
+impl<'params, InType, OutType, F, Fut> LineRoutineFactory<'params> for Factory<InType, OutType, F>
 where
     InType: 'params,
     OutType: 'params,
-    F: FnOnce(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + Send + 'params,
+    F: FnOnce(input::Receiver<InType>, output::Sender<OutType>) -> Fut + Send + 'params,
+    Fut: Future<Output = Result<(), Error>> + 'params,
 {
-    type Routine = FutureRoutine<'params, InType, OutType>;
+    type Routine = FutureRoutine<InType, OutType, Fut>;
 
     fn create(self, wakers: LineWakers) -> Self::Routine {
         FutureRoutine::new(wakers, self.bound, self.factory)
     }
 }
 
-impl<InType, OutType> routine::TrySend<InType> for FutureRoutine<'_, InType, OutType> {
+impl<InType, OutType, Fut> routine::TrySend<InType> for FutureRoutine<InType, OutType, Fut> {
     fn try_send(&mut self, message: InType) -> Result<routine::Accept<InType>, Error> {
         // Checked here, not at the next poll: the queue would take it and nobody reads it.
         if self.future.is_none() {
@@ -119,13 +133,13 @@ impl<InType, OutType> routine::TrySend<InType> for FutureRoutine<'_, InType, Out
     }
 }
 
-impl<InType, OutType> routine::Next<OutType> for FutureRoutine<'_, InType, OutType> {
+impl<InType, OutType, Fut> routine::Next<OutType> for FutureRoutine<InType, OutType, Fut> {
     fn next(&mut self) -> Result<Option<OutType>, Error> {
         self.output.pop()
     }
 }
 
-impl<InType, OutType> routine::Flush for FutureRoutine<'_, InType, OutType> {
+impl<InType, OutType, Fut> routine::Flush for FutureRoutine<InType, OutType, Fut> {
     fn flush(&mut self) -> Result<(), Error> {
         // Must error: the node would enter Flushing with no future to finish it, and hang.
         if self.future.is_none() {
@@ -135,7 +149,10 @@ impl<InType, OutType> routine::Flush for FutureRoutine<'_, InType, OutType> {
     }
 }
 
-impl<InType, OutType> routine::Poll for FutureRoutine<'_, InType, OutType> {
+impl<InType, OutType, Fut> routine::Poll for FutureRoutine<InType, OutType, Fut>
+where
+    Fut: Future<Output = Result<(), Error>>,
+{
     fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         // Spent: nothing to drive. Never Flushing here, as `flush` refuses first.
         let Some(future) = self.future.as_mut() else {
@@ -154,7 +171,10 @@ impl<InType, OutType> routine::Poll for FutureRoutine<'_, InType, OutType> {
     }
 }
 
-impl<InType, OutType> LineRoutine<InType, OutType> for FutureRoutine<'_, InType, OutType> {}
+impl<InType, OutType, Fut> LineRoutine<InType, OutType> for FutureRoutine<InType, OutType, Fut> where
+    Fut: Future<Output = Result<(), Error>>
+{
+}
 
 #[cfg(test)]
 mod tests {
@@ -168,28 +188,24 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    type Routine = FutureRoutine<'static, usize, usize>;
-
     /// Echoes every value; returns at Flush.
-    fn echo(bound: Option<NonZeroUsize>) -> Routine {
-        FutureRoutine::new(noop_line_wakers(), bound, |input, output| {
-            Box::pin(async move {
-                while let Input::Data(value) = input.recv().await? {
-                    output.send(value).await?;
-                }
-                Ok(())
-            })
+    fn echo(bound: Option<NonZeroUsize>) -> impl LineRoutine<usize, usize> {
+        FutureRoutine::new(noop_line_wakers(), bound, |input, output| async move {
+            while let Input::Data(value) = input.recv().await? {
+                output.send(value).await?;
+            }
+            Ok(())
         })
     }
 
-    /// Returns at once, reading nothing.
-    fn returns_at_once() -> Routine {
+    /// Returns at once, reading nothing. Boxed by hand: still just a future.
+    fn returns_at_once() -> impl LineRoutine<usize, usize> {
         FutureRoutine::new(noop_line_wakers(), None, |_input, _output| {
             Box::pin(async { Ok(()) })
         })
     }
 
-    fn poll(routine: &mut Routine) -> Result<core::task::Poll<()>, Error> {
+    fn poll(routine: &mut impl Poll) -> Result<core::task::Poll<()>, Error> {
         Poll::poll(routine, &mut noop_context())
     }
 
@@ -274,10 +290,11 @@ mod tests {
 
     #[test]
     fn the_futures_error_comes_back_unchanged() {
-        let mut routine: Routine =
-            FutureRoutine::new(noop_line_wakers(), None, |_input, _output| {
-                Box::pin(async { Err(fatal!("boom")) })
-            });
+        let mut routine = FutureRoutine::<usize, usize, _>::new(
+            noop_line_wakers(),
+            None,
+            |_input, _output| async { Err(fatal!("boom")) },
+        );
         match poll(&mut routine) {
             Err(Error {
                 kind: ErrorKind::Fatal(message),
@@ -300,14 +317,15 @@ mod tests {
     fn the_closure_moves_its_captures_into_the_future_which_drops_them_unpolled() {
         let dropped = Rc::new(Cell::new(false));
         let lease = Lease(dropped.clone());
-        let routine: Routine =
-            FutureRoutine::new(noop_line_wakers(), None, move |input, _output| {
-                Box::pin(async move {
-                    let _lease = lease;
-                    while let Input::Data(_) = input.recv().await? {}
-                    Ok(())
-                })
-            });
+        let routine = FutureRoutine::<usize, usize, _>::new(
+            noop_line_wakers(),
+            None,
+            move |input, _output| async move {
+                let _lease = lease;
+                while let Input::Data(_) = input.recv().await? {}
+                Ok(())
+            },
+        );
         assert!(!dropped.get());
         drop(routine);
         assert!(dropped.get());

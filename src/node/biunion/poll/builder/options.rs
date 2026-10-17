@@ -1,7 +1,7 @@
 //! [BiunionBuilder] sets a poll biunion's options before it exists, from
 //! `thread.builder().biunion()`.
 
-use super::node::{Allocating, Node};
+use super::node::Node;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::biunion::{Inputs, Side};
@@ -63,7 +63,6 @@ impl<'thread, 'params, ThreadIdType: ThreadId> BiunionBuilder<'thread, 'params, 
         factory: FactoryType,
     ) -> Node<
         'params,
-        Allocating<'thread>,
         Deferred,
         Deferred,
         Deferred,
@@ -93,7 +92,7 @@ mod tests {
 
     #[test]
     fn bounded_sets_only_its_side_and_budget_the_options() {
-        let mut thread = Thread::<'_, TestThread>::new();
+        let mut thread = Thread::<TestThread>::new();
         let budget = Budget::default().output(NonZeroUsize::MIN);
         let two = NonZeroUsize::MIN.saturating_add(1);
         let options = thread

@@ -5,15 +5,14 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Schedule, TryPush};
 use crate::poll;
-use crate::poll::Sync;
 use crate::signal::Trackable;
 use crate::sync::Receiver;
 use crate::thread::Join;
 use crate::wake;
 use crate::work;
 use crate::{
-    Accept, Closeable, DefaultThread, Message, Outlet, Pushable, Pushes, Streams, ThreadBundle,
-    TryPushable, Via, Writes,
+    Accept, Closeable, DefaultThread, Message, Outlet, Pushable, Pushes, Streams, Tees,
+    ThreadBundle, TryPushable, Via, Writes,
 };
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
@@ -23,7 +22,7 @@ use std::time::Duration;
 
 use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::{Input, input, output};
-use crate::poll::{Context, LineWakers};
+use crate::poll::{AsyncParent, Context, LineWakers};
 use crate::tests::mock::WakingOutput;
 
 /// Routine that queues input in send via the future input queue, then
@@ -181,11 +180,8 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
-    let mut node = async_thread
-        .line(PollDouble::new)
-        .input::<Sync>()
-        .output::<Sync>();
+    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut node = async_thread.line(PollDouble::new).input().output();
 
     writer_node.pushes(&node)?;
 
@@ -216,15 +212,9 @@ fn sync_to_async_terminal_to_sync() -> Result<(), Error> {
 /// flowing, and the parked one finishes once its consumer drains.
 #[test]
 fn a_parked_node_leaves_its_thread_running() -> Result<(), Error> {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
-    let mut stalled = async_thread
-        .line(PollDouble::new)
-        .input::<Sync>()
-        .output::<Sync>();
-    let mut flowing = async_thread
-        .line(PollDouble::new)
-        .input::<Sync>()
-        .output::<Sync>();
+    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut stalled = async_thread.line(PollDouble::new).input().output();
+    let mut flowing = async_thread.line(PollDouble::new).input().output();
     let mut stalled_writer = stalled.writer()?;
     let mut flowing_writer = flowing.writer()?;
     let full = Receiver::bounded(NonZeroUsize::MIN);
@@ -270,14 +260,12 @@ fn async_chain_with_local_edges() -> Result<(), Error> {
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let parent = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent = async_thread.line(PollDouble::new).input();
     writer_node.pushes(&parent)?;
 
-    let mut child = parent
-        .via(async_thread.line(PollDouble::new))?
-        .output::<Sync>();
+    let mut child = parent.via(async_thread.line(PollDouble::new))?.output();
 
     let output = Receiver::new();
     child.pushes(&output)?;
@@ -308,9 +296,9 @@ fn long_async_chain() -> Result<(), Error> {
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let a = async_thread.line(PollDouble::new).input::<Sync>();
+    let a = async_thread.line(PollDouble::new).input();
     writer_node.pushes(&a)?;
 
     let mut e = a
@@ -318,7 +306,7 @@ fn long_async_chain() -> Result<(), Error> {
         .via(async_thread.line(PollDouble::new))?
         .via(async_thread.line(PollDouble::new))?
         .via(async_thread.line(PollDouble::new))?
-        .output::<Sync>();
+        .output();
 
     let output = Receiver::new();
     e.pushes(&output)?;
@@ -364,20 +352,11 @@ fn async_fan_out_via_sync_bridge() -> Result<(), Error> {
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let mut node_a = async_thread
-        .line(PollDouble::new)
-        .input::<Sync>()
-        .output::<Sync>();
-    let mut node_b = async_thread
-        .line(PollDouble::new)
-        .input::<Sync>()
-        .output::<Sync>();
-    let mut node_c = async_thread
-        .line(PollDouble::new)
-        .input::<Sync>()
-        .output::<Sync>();
+    let mut node_a = async_thread.line(PollDouble::new).input().output();
+    let mut node_b = async_thread.line(PollDouble::new).input().output();
+    let mut node_c = async_thread.line(PollDouble::new).input().output();
 
     writer_node.pushes(&node_a)?;
     node_a.pushes(&node_b)?;
@@ -430,16 +409,16 @@ fn merge_two_parents_into_child() -> Result<(), Error> {
     let mut writer_b_node = work::Line::of(Double::new());
     let mut writer_b = writer_b_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let parent_a = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_a = async_thread.line(PollDouble::new).input();
     writer_a_node.pushes(&parent_a)?;
 
-    let parent_b = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_b = async_thread.line(PollDouble::new).input();
     writer_b_node.pushes(&parent_b)?;
 
     let child = parent_a.via(async_thread.line(PollDouble::new))?;
-    let mut child = parent_b.via(child)?.output::<Sync>();
+    let mut child = parent_b.via(child)?.output();
 
     let output = Receiver::new();
     child.pushes(&output)?;
@@ -493,15 +472,15 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     let mut writer_c_node = work::Line::of(Double::new());
     let mut writer_c = writer_c_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let parent_a = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_a = async_thread.line(PollDouble::new).input();
     writer_a_node.pushes(&parent_a)?;
 
-    let parent_b = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_b = async_thread.line(PollDouble::new).input();
     writer_b_node.pushes(&parent_b)?;
 
-    let parent_c = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_c = async_thread.line(PollDouble::new).input();
     writer_c_node.pushes(&parent_c)?;
 
     // All three parents merged into one linked node
@@ -509,9 +488,7 @@ fn merge_three_parents_via_linked() -> Result<(), Error> {
     let linked = parent_b.via(linked)?;
     let linked = parent_c.via(linked)?;
 
-    let mut child = linked
-        .via(async_thread.line(PollDouble::new))?
-        .output::<Sync>();
+    let mut child = linked.via(async_thread.line(PollDouble::new))?.output();
 
     let output = Receiver::new();
     child.pushes(&output)?;
@@ -553,9 +530,9 @@ fn node_sink_deferred_output() -> Result<(), Error> {
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let parent = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent = async_thread.line(PollDouble::new).input();
     writer_node.pushes(&parent)?;
 
     let sink = parent.via(async_thread.line(PollDouble::new))?;
@@ -599,15 +576,15 @@ fn async_only_multiple_sinks() -> Result<(), Error> {
     let mut writer_c_node = work::Line::of(Double::new());
     let mut writer_c = writer_c_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let parent_a = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_a = async_thread.line(PollDouble::new).input();
     writer_a_node.pushes(&parent_a)?;
 
-    let parent_b = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_b = async_thread.line(PollDouble::new).input();
     writer_b_node.pushes(&parent_b)?;
 
-    let parent_c = async_thread.line(PollDouble::new).input::<Sync>();
+    let parent_c = async_thread.line(PollDouble::new).input();
     writer_c_node.pushes(&parent_c)?;
 
     let collected_1 = Arc::new(Mutex::new(Vec::new()));
@@ -771,7 +748,7 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
     let mut writer = writer_node.writer()?;
 
     let flush_count = Arc::new(Mutex::new(0));
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
     // HalfCloseRoutine needs 3 poll cycles to complete flush handshake
     let parent = async_thread
@@ -779,13 +756,11 @@ fn flush_waits_for_routine_ready() -> Result<(), Error> {
             let fc = flush_count.clone();
             move |w| HalfCloseRoutine::new(w, 3, fc)
         })
-        .input::<Sync>();
+        .input();
     writer_node.pushes(&parent)?;
 
     // Child collects output to verify flush ordering
-    let mut child = parent
-        .via(async_thread.line(PollDouble::new))?
-        .output::<Sync>();
+    let mut child = parent.via(async_thread.line(PollDouble::new))?.output();
 
     let output = Receiver::new();
     child.pushes(&output)?;
@@ -903,16 +878,12 @@ fn multi_flush_then_close() -> Result<(), Error> {
     let mut writer_node = work::Line::of(Double::new());
     let mut writer = writer_node.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
-    let parent = async_thread
-        .line(|w| BatchRoutine::new(w, 2))
-        .input::<Sync>();
+    let parent = async_thread.line(|w| BatchRoutine::new(w, 2)).input();
     writer_node.pushes(&parent)?;
 
-    let mut child = parent
-        .via(async_thread.line(PollDouble::new))?
-        .output::<Sync>();
+    let mut child = parent.via(async_thread.line(PollDouble::new))?.output();
 
     let output = Receiver::new();
     child.pushes(&output)?;
@@ -974,7 +945,7 @@ fn multi_flush_then_close() -> Result<(), Error> {
 /// is 999. With the bug, it's 0.
 #[test]
 fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
     let mut node = async_thread
         .line(FutureRoutine::factory(
             |input: input::Receiver<usize>, output: output::Sender<usize>| {
@@ -994,8 +965,8 @@ fn recv_with_timeout_fires_on_deadline() -> Result<(), Error> {
                 })
             },
         ))
-        .input::<Sync>()
-        .output::<Sync>();
+        .input()
+        .output();
 
     let mut writer = node.writer().unwrap();
     let output = Receiver::new();
@@ -1083,7 +1054,7 @@ fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
     let (items, received) = std::sync::mpsc::channel();
     let (closed, close_signal) = std::sync::mpsc::channel();
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
     let node = async_thread
         .line(FutureRoutine::factory(
             |input: input::Receiver<Moved>, output: output::Sender<Moved>| {
@@ -1097,7 +1068,7 @@ fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
                 })
             },
         ))
-        .input::<Sync>()
+        .input()
         .sink(Collect { items, closed });
     let mut writer = node.writer()?;
     async_thread.add(node);
@@ -1121,4 +1092,94 @@ fn node_direct_sink_moves_output_and_closes() -> Result<(), Error> {
             .expect("node teardown closes the sink");
         Ok(())
     })
+}
+
+/// Nodes mint in any order: none holds the thread borrow. A poll node with `.output()` tees.
+#[test]
+fn mint_then_wire() -> Result<(), Error> {
+    let mut thread = poll::Thread::<IoThread>::new();
+    let a = thread.line(PollDouble::new);
+    let b = thread.line(PollDouble::new);
+    let c = thread.line(PollDouble::new);
+
+    let a = a.input();
+    let mut writer = a.writer()?;
+    let mut tail = a.via(b)?.via(c)?.output();
+    let mut reader = tail.tee()?;
+    thread.add(tail);
+
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = thread.start(s);
+        writer.push(Message::Data(1))?;
+        assert_eq!(reader.read()?, Message::Data(8));
+        writer.close()?;
+        assert!(matches!(handle.join(), Join::Ok));
+        Ok(())
+    })
+}
+
+/// A minted node never wired nor added leaves its reserved slot empty: the thread fails at build.
+#[test]
+fn forgotten_deferred_node_fails_at_build() -> Result<(), Error> {
+    let mut thread = poll::Thread::<IoThread>::new();
+    let head = thread.line(PollDouble::new).input();
+    let mut writer = head.writer::<usize>()?;
+    let tail = head.via(thread.line(PollDouble::new))?;
+    thread.add(tail);
+    let _orphan = thread.line::<usize, usize, Trackable<&'static str>, _>(PollDouble::new);
+
+    std::thread::scope(|s| {
+        let handle = thread.start(s);
+        let _ = writer.close();
+        match handle.join() {
+            Join::Error(e) => assert!(e.to_string().contains("is empty"), "{e}"),
+            _ => panic!("expected a slot-empty build error"),
+        }
+    });
+    Ok(())
+}
+
+type Upstream<'params> = Box<
+    dyn AsyncParent<
+            'params,
+            OutType = usize,
+            SignalType = Trackable<&'static str>,
+            ThreadIdType = IoThread,
+        > + 'params,
+>;
+
+/// An optional stage before `core`, chosen at runtime behind one box: x2 core, x2 tail, and x2
+/// more with the stage.
+fn optional_stage(stage: bool) -> Result<usize, Error> {
+    let mut thread = poll::Thread::<IoThread>::new();
+    let core = thread.line(PollDouble::new);
+    let (mut writer, core): (work::Writer<usize>, Upstream) = if stage {
+        let pre = thread.line(PollDouble::new).input();
+        (pre.writer()?, Box::new(pre.via(core)?))
+    } else {
+        let core = core.input();
+        (core.writer()?, Box::new(core))
+    };
+    let mut tail = core.via(thread.line(PollDouble::new))?.output();
+    let mut reader = tail.tee()?;
+    thread.add(tail);
+
+    std::thread::scope(|s| -> Result<usize, Error> {
+        let handle = thread.start(s);
+        writer.push(Message::Data(1))?;
+        let delivered = reader.read()?;
+        writer.close()?;
+        assert!(matches!(handle.join(), Join::Ok));
+        match delivered {
+            Message::Data(value) => Ok(value),
+            other => panic!("expected data, got {other:?}"),
+        }
+    })
+}
+
+#[test]
+fn optional_upstream_stage() -> Result<(), Error> {
+    assert_eq!(optional_stage(false)?, 4);
+    assert_eq!(optional_stage(true)?, 8);
+    Ok(())
 }

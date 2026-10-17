@@ -51,6 +51,20 @@ impl<T> Shared<T> {
         }
     }
 
+    /// As [Self::new] left it, keeping the buffer's capacity.
+    pub(super) fn reset(&mut self) {
+        let Inner {
+            buffer,
+            closed,
+            refused,
+            waiters,
+        } = self.inner.get_mut();
+        buffer.clear();
+        *closed = false;
+        *refused = false;
+        *waiters = Waiters::default();
+    }
+
     pub(super) fn borrow(&self) -> Result<RefMut<'_, Inner<T>>, Error> {
         self.inner
             .try_borrow_mut()

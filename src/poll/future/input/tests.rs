@@ -301,6 +301,42 @@ fn renew_rejects_an_undrained_queue() {
     assert!(sender.renew().is_err());
 }
 
+#[test]
+fn renew_reuses_the_block_once_the_receiver_is_gone() {
+    let (mut sender, receiver) = bounded(noop_local_waker(), 1);
+    let before = Rc::as_ptr(&sender.0);
+    sender.flush().unwrap();
+    assert!(matches!(
+        poll_once(&mut receiver.recv()),
+        Poll::Ready(Ok(Input::Flush))
+    ));
+    drop(receiver);
+    let receiver = sender.renew().unwrap();
+    assert_eq!(Rc::as_ptr(&sender.0), before);
+    // Open again, bound kept.
+    accepted(&sender, 7);
+    assert_eq!(sender.try_send(8).unwrap(), Accept::Full(8));
+    assert!(matches!(
+        poll_once(&mut receiver.recv()),
+        Poll::Ready(Ok(Input::Data(7)))
+    ));
+}
+
+#[test]
+fn renew_allocates_when_a_receiver_is_kept() {
+    let (mut sender, receiver) = unbounded();
+    let before = Rc::as_ptr(&sender.0);
+    sender.flush().unwrap();
+    assert!(poll_once(&mut receiver.recv()).is_ready());
+    let _fresh = sender.renew().unwrap();
+    assert_ne!(Rc::as_ptr(&sender.0), before);
+    // The kept receiver stays on the old, closed queue.
+    assert!(matches!(
+        poll_once(&mut receiver.recv()),
+        Poll::Ready(Err(e)) if e.is_closed()
+    ));
+}
+
 // ---- recv_with_timeout: data / flush / closed paths ----
 
 #[test]

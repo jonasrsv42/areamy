@@ -89,12 +89,12 @@ fn poll_biunion<R>(routine: fn(BiunionWakers) -> R, close_left: bool) -> Result<
 where
     R: PollBiunionRoutine<usize, usize, usize> + 'static,
 {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
     let mut node = async_thread
         .biunion(routine)
-        .input::<biunion::Left, poll::Sync>()
-        .input::<biunion::Right, poll::Sync>()
-        .output::<poll::Sync>();
+        .input::<biunion::Left>()
+        .input::<biunion::Right>()
+        .output();
     let mut left = node.at_ref::<biunion::Left>().writer()?;
     let mut right = node.at_ref::<biunion::Right>().writer()?;
     let output = Receiver::new();
@@ -134,8 +134,8 @@ fn poll_biunion_slow_flush_close_right() -> Result<(), Error> {
 /// Left input is an async parent line; closing it closes the biunion.
 #[test]
 fn poll_biunion_async_parent_flush_then_close() -> Result<(), Error> {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
-    let parent = async_thread.line(hold).input::<poll::Sync>();
+    let mut async_thread = poll::Thread::<IoThread>::new();
+    let parent = async_thread.line(hold).input();
     let mut left = parent.writer()?;
     let mut node = parent
         .via(
@@ -143,8 +143,8 @@ fn poll_biunion_async_parent_flush_then_close() -> Result<(), Error> {
                 .biunion(slow_hold_biunion)
                 .at::<biunion::Left>(),
         )?
-        .input::<biunion::Right, poll::Sync>()
-        .output::<poll::Sync>();
+        .input::<biunion::Right>()
+        .output();
     let mut right = node.at_ref::<biunion::Right>().writer()?;
     let output = Receiver::new();
     node.pushes(&output)?;

@@ -160,11 +160,8 @@ fn poll_line<R>(routine: fn(LineWakers) -> R, messages: Vec<Msg>) -> Result<Vec<
 where
     R: poll::LineRoutine<usize, usize> + 'static,
 {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
-    let mut node = async_thread
-        .line(routine)
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut node = async_thread.line(routine).input().output();
     let mut writer = node.writer()?;
     let output = Receiver::new();
     node.pushes(&output)?;
@@ -254,10 +251,10 @@ fn poll_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
 /// input stays open: the parent's next push finds the edge closed, and its input closes.
 #[test]
 fn poll_line_chain_child_closes_first() -> Result<(), Error> {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
-    let parent = async_thread.line(hold).input::<poll::Sync>();
+    let mut async_thread = poll::Thread::<IoThread>::new();
+    let parent = async_thread.line(hold).input();
     let mut writer = parent.writer()?;
-    let mut child = parent.via(async_thread.line(hold))?.output::<poll::Sync>();
+    let mut child = parent.via(async_thread.line(hold))?.output();
     {
         // Dropped at once: the child's first push finds its output closed.
         let output = Receiver::new();
@@ -288,12 +285,10 @@ fn poll_line_chain_child_closes_first() -> Result<(), Error> {
 /// Parent and child poll lines joined by a local async edge.
 #[test]
 fn poll_line_chain_flush_then_close() -> Result<(), Error> {
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
-    let parent = async_thread.line(slow_hold).input::<poll::Sync>();
+    let mut async_thread = poll::Thread::<IoThread>::new();
+    let parent = async_thread.line(slow_hold).input();
     let mut writer = parent.writer()?;
-    let mut child = parent
-        .via(async_thread.line(slow_hold))?
-        .output::<poll::Sync>();
+    let mut child = parent.via(async_thread.line(slow_hold))?.output();
     let output = Receiver::new();
     child.pushes(&output)?;
     async_thread.add(child);

@@ -221,11 +221,8 @@ fn build_graph<'params>(
 
     // Poll segment: a poll line on a dedicated async thread with a
     // sync→poll bridge on input and a sync edge on output.
-    let mut poll_thread = poll::Thread::<'_, PollThread>::new();
-    let mut poll_node = poll_thread
-        .line(PollDouble::new)
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+    let mut poll_thread = poll::Thread::<PollThread>::new();
+    let mut poll_node = poll_thread.line(PollDouble::new).input().output();
 
     // Sink-side `Receiver` on the main thread, drained by a helper
     // thread so the orchestrator can verify real data flowed in

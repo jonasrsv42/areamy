@@ -10,7 +10,7 @@ use crate::message::Message;
 use crate::node::biunion::poll::routine::tests::MockBiunion;
 use crate::poll::Budget;
 use crate::poll::context::mock::noop_context;
-use crate::poll::edge::{self, Sync};
+use crate::poll::edge;
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
@@ -63,7 +63,7 @@ impl AsyncParent<'static> for MockParent {
 /// Macro to create a deferred biunion node with correct type annotation.
 macro_rules! deferred {
     ($alloc:expr) => {
-        Node::<_, _, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::deferred(
+        Node::<_, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::deferred(
             mock_factory(),
             $alloc,
         )
@@ -78,9 +78,9 @@ macro_rules! deferred {
 fn sync_sync_sync_builds_four_nodes() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
-        .input::<Left, Sync>()
-        .input::<Right, Sync>()
-        .output::<Sync>();
+        .input::<Left>()
+        .input::<Right>()
+        .output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -89,9 +89,7 @@ fn sync_sync_sync_builds_four_nodes() {
 #[test]
 fn sync_sync_deferred_builds_four_nodes() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc)
-        .input::<Left, Sync>()
-        .input::<Right, Sync>();
+    let node = deferred!(&mut alloc).input::<Left>().input::<Right>();
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -107,8 +105,8 @@ fn async_left_sync_right_sync_output() {
     let node = MockParent
         .via(deferred!(&mut alloc).at::<Left>())
         .unwrap()
-        .input::<Right, Sync>()
-        .output::<Sync>();
+        .input::<Right>()
+        .output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -121,8 +119,8 @@ fn async_left_sync_right_sync_output() {
 #[test]
 fn sync_left_async_right_sync_output() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Left, Sync>();
-    let node = MockParent.via(node.at::<Right>()).unwrap().output::<Sync>();
+    let node = deferred!(&mut alloc).input::<Left>();
+    let node = MockParent.via(node.at::<Right>()).unwrap().output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -136,7 +134,7 @@ fn sync_left_async_right_sync_output() {
 fn async_async_sync_output() {
     let (mut alloc, to_local) = make_allocators();
     let node = MockParent.via(deferred!(&mut alloc).at::<Left>()).unwrap();
-    let node = MockParent.via(node.at::<Right>()).unwrap().output::<Sync>();
+    let node = MockParent.via(node.at::<Right>()).unwrap().output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -149,9 +147,7 @@ fn async_async_sync_output() {
 #[test]
 fn sync_sync_deferred_as_parent() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc)
-        .input::<Left, Sync>()
-        .input::<Right, Sync>();
+    let node = deferred!(&mut alloc).input::<Left>().input::<Right>();
     let local = to_local(alloc);
     let (sender, _receiver) = edge::channel(noop_local_waker(), None);
     let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
@@ -179,8 +175,8 @@ fn right_async_then_left_sync() {
     let node = MockParent
         .via(deferred!(&mut alloc).at::<Right>())
         .unwrap()
-        .input::<Left, Sync>()
-        .output::<Sync>();
+        .input::<Left>()
+        .output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -190,7 +186,7 @@ fn right_async_then_left_sync() {
 fn right_async_then_left_async() {
     let (mut alloc, to_local) = make_allocators();
     let node = MockParent.via(deferred!(&mut alloc).at::<Right>()).unwrap();
-    let node = MockParent.via(node.at::<Left>()).unwrap().output::<Sync>();
+    let node = MockParent.via(node.at::<Left>()).unwrap().output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -206,7 +202,7 @@ fn async_left_sync_right_deferred_sink() {
     let node = MockParent
         .via(deferred!(&mut alloc).at::<Left>())
         .unwrap()
-        .input::<Right, Sync>();
+        .input::<Right>();
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
@@ -215,7 +211,7 @@ fn async_left_sync_right_deferred_sink() {
 #[test]
 fn sync_left_async_right_deferred_sink() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Left, Sync>();
+    let node = deferred!(&mut alloc).input::<Left>();
     let node = MockParent.via(node.at::<Right>()).unwrap();
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
@@ -242,7 +238,7 @@ fn async_left_sync_right_as_parent() {
     let node = MockParent
         .via(deferred!(&mut alloc).at::<Left>())
         .unwrap()
-        .input::<Right, Sync>();
+        .input::<Right>();
     let local = to_local(alloc);
     let (sender, _receiver) = edge::channel(noop_local_waker(), None);
     let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
@@ -252,12 +248,69 @@ fn async_left_sync_right_as_parent() {
 #[test]
 fn sync_left_async_right_as_parent() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Left, Sync>();
+    let node = deferred!(&mut alloc).input::<Left>();
     let node = MockParent.via(node.at::<Right>()).unwrap();
     let local = to_local(alloc);
     let (sender, _receiver) = edge::channel(noop_local_waker(), None);
     let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
     assert_eq!(graph.nodes.len(), 4);
+}
+
+// ============================================================
+// Builder order — output before inputs
+// ============================================================
+
+#[test]
+fn output_then_sync_inputs() {
+    let (mut alloc, to_local) = make_allocators();
+    let node = deferred!(&mut alloc)
+        .output()
+        .input::<Right>()
+        .input::<Left>();
+    let graph = Box::new(node).build(to_local(alloc)).unwrap();
+    assert_eq!(graph.nodes.len(), 4);
+}
+
+#[test]
+fn output_then_async_inputs() {
+    let (mut alloc, to_local) = make_allocators();
+    let node = deferred!(&mut alloc).output();
+    let node = MockParent.via(node.at::<Left>()).unwrap();
+    let node = MockParent.via(node.at::<Right>()).unwrap();
+    let graph = Box::new(node).build(to_local(alloc)).unwrap();
+    assert_eq!(graph.nodes.len(), 4);
+}
+
+// ============================================================
+// Input slots are reserved at mint
+// ============================================================
+
+#[test]
+fn a_minted_biunion_never_built_leaves_its_slots_empty() {
+    let (mut alloc, to_local) = make_allocators();
+    let _orphan = deferred!(&mut alloc);
+    match to_local(alloc).build(Vec::new()) {
+        Err(e) => assert!(e.to_string().contains("slot 0 is empty"), "{e}"),
+        Ok(_) => panic!("an unbuilt biunion's reserved slots must fail the build"),
+    }
+}
+
+#[test]
+fn inputs_build_into_the_slots_reserved_at_mint() {
+    let (mut alloc, to_local) = make_allocators();
+    let first = deferred!(&mut alloc);
+    let second = deferred!(&mut alloc).input::<Left>().input::<Right>();
+    // `first`'s sides resolve after `second` exists: one Async, one Sync.
+    let first = MockParent.via(first.at::<Right>()).unwrap().input::<Left>();
+    let graph = GraphBuilder::build(Box::new(second), to_local(alloc)).unwrap();
+    let mut nodes = graph.nodes;
+    let graph = GraphBuilder::build(Box::new(first), graph.allocator).unwrap();
+    let mut first_ids: Vec<_> = graph.nodes.iter().map(|n| n.id).collect();
+    first_ids.sort();
+    // Left and right reserved first (0, 1); work and output allocated at build.
+    assert_eq!(first_ids[..2], [0, 1]);
+    nodes.extend(graph.nodes);
+    assert!(graph.allocator.build(nodes).is_ok());
 }
 
 // ============================================================
@@ -268,9 +321,9 @@ fn sync_left_async_right_as_parent() {
 fn node_ids_are_unique() {
     let (mut alloc, to_local) = make_allocators();
     let node = deferred!(&mut alloc)
-        .input::<Left, Sync>()
-        .input::<Right, Sync>()
-        .output::<Sync>();
+        .input::<Left>()
+        .input::<Right>()
+        .output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     let mut ids: Vec<_> = graph.nodes.iter().map(|n| n.id).collect();
@@ -286,14 +339,15 @@ fn delivered_in_one_round(budget: Budget) -> usize {
         budget,
         ..Options::default()
     };
-    let mut node = Node::<_, _, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
-        mock_factory(),
-        &mut alloc,
-        options,
-    )
-    .input::<Left, Sync>()
-    .input::<Right, Sync>()
-    .output::<Sync>();
+    let mut node =
+        Node::<_, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
+            mock_factory(),
+            &mut alloc,
+            options,
+        )
+        .input::<Left>()
+        .input::<Right>()
+        .output();
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
     let mut left: Box<WorkSink> = Get::<WorkSink, Left>::get(&node).unwrap();
@@ -338,13 +392,14 @@ fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
         budget,
         ..Options::default()
     };
-    let node = Node::<_, _, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
-        mock_factory(),
-        &mut alloc,
-        options,
-    );
+    let node =
+        Node::<_, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
+            mock_factory(),
+            &mut alloc,
+            options,
+        );
     let node = PushingParent.via(node.at::<Left>()).unwrap();
-    let mut node = MockParent.via(node.at::<Right>()).unwrap().output::<Sync>();
+    let mut node = MockParent.via(node.at::<Right>()).unwrap().output();
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
     let mut graph = Box::new(node).build(to_local(alloc)).unwrap();

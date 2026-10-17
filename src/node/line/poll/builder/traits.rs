@@ -1,22 +1,23 @@
-//! Dispatch traits for line builder `.input::<E>()` and `.output::<E>()`.
+//! Bounds for line builder `.input()` and `.output()`.
 
 use crate::edge::fanout::Fanout;
 use crate::poll::DynSink;
 use crate::poll::edge::{Edge, Sync};
 use crate::poll::input::sync::{Input, Receiver};
-use crate::poll::wakers::WakerAllocator;
+use crate::poll::wakers::Slot;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::num::NonZeroUsize;
+use std::task::Waker;
 
-/// Resolve input edge. Implemented for [`Sync`] — allocates a sync waker. `bound` caps the edge.
+/// Resolve input edge. Implemented for [`Sync`] — wakes the reserved `slot`. `bound` caps the edge.
 pub trait ResolveInput<'params, InType, SignalType: Origin, ThreadIdType: ThreadId>: Edge {
     fn resolve(
-        alloc: &mut WakerAllocator,
+        slot: Slot<Waker>,
         bound: Option<NonZeroUsize>,
     ) -> (
         Self::Input<'params, InType, SignalType, ThreadIdType>,
-        Self::Alloc<'static>,
+        Self::Alloc,
     );
 }
 
@@ -27,11 +28,7 @@ where
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
 {
-    fn resolve(
-        alloc: &mut WakerAllocator,
-        bound: Option<NonZeroUsize>,
-    ) -> (Input<InType, SignalType>, ()) {
-        let slot = alloc.next();
+    fn resolve(slot: Slot<Waker>, bound: Option<NonZeroUsize>) -> (Input<InType, SignalType>, ()) {
         let waker = slot.value.clone();
         (
             Input {
@@ -53,7 +50,7 @@ where
 ///
 /// struct NotClone;
 ///
-/// let mut thread = poll::Thread::<'_, DefaultThread>::new();
+/// let mut thread = poll::Thread::<DefaultThread>::new();
 /// let mut node = thread
 ///     .line(FutureRoutine::factory(
 ///         |input: input::Receiver<usize>, output: output::Sender<NotClone>| {
@@ -65,8 +62,8 @@ where
 ///             })
 ///         },
 ///     ))
-///     .input::<poll::Sync>()
-///     .output::<poll::Sync>();
+///     .input()
+///     .output();
 /// let downstream = Receiver::<NotClone, Trackable<&'static str>>::new();
 /// node.pushes(&downstream).unwrap();
 /// ```

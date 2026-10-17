@@ -31,7 +31,7 @@ use crate::error::Error;
     label = "no owning edge from `{UpstreamType}` into this",
     note = "a node with several sides needs one named: `up.at::<Side>().via(down.at::<Side>())`",
     note = "an owning edge moves its ends: `at` moves a side, `at_mut` / `at_ref` only borrow",
-    note = "a work node cannot own a poll builder and a poll node cannot own a work node: bridge with a Sync input (`.input::<Sync>()` + `pushes`)"
+    note = "a work node cannot own a poll builder and a poll node cannot own a work node: bridge with a Sync input (`.input()` + `pushes`)"
 )]
 pub trait Downstream<UpstreamType, DataType, OwnedType> {
     /// What `via` returns: this node, or the resolved builder.

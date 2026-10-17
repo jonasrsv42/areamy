@@ -8,8 +8,8 @@ use crate::edge::sync::Receiver;
 use crate::graph::Closeable;
 use crate::message::Message;
 use crate::node::line::routine::tests::MockWaitLine;
+use crate::poll;
 use crate::poll::future::line::FutureRoutine;
-use crate::poll::{self, Sync};
 use crate::pull::{Pullable, WriterBuffer};
 use crate::thread::ThreadBundle;
 use crate::work::{self, Line, Writer};
@@ -54,14 +54,14 @@ fn a_stalled_sink_stops_pull_work_and_poll_stages_back_to_the_writer() {
         .unwrap();
 
     // Poll stage: bounded input edge, routine queues and output.
-    let mut poll_thread = poll::Thread::<'_, PollStage>::new();
+    let mut poll_thread = poll::Thread::<PollStage>::new();
     let mut middle = poll_thread
         .builder()
         .line()
         .bounded(one())
         .build(FutureRoutine::factory(echo).bounded(one()))
-        .input::<Sync>()
-        .output::<Sync>();
+        .input()
+        .output();
     first.pushes(&middle).unwrap();
 
     // Second work stage into a bounded sink that isn't read until the chain has stalled.

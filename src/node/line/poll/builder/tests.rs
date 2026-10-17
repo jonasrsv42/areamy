@@ -9,7 +9,7 @@ use crate::message::Message;
 use crate::node::line::poll::routine::tests::MockLine;
 use crate::poll::Budget;
 use crate::poll::context::mock::noop_context;
-use crate::poll::edge::{self, Null, Sync};
+use crate::poll::edge::{self, Null};
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
@@ -71,7 +71,7 @@ macro_rules! deferred {
 #[test]
 fn input_sync_output_sync() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Sync>().output::<Sync>();
+    let node = deferred!(&mut alloc).input().output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -80,7 +80,7 @@ fn input_sync_output_sync() {
 #[test]
 fn input_sync_deferred_sink() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Sync>();
+    let node = deferred!(&mut alloc).input();
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -93,7 +93,7 @@ fn input_sync_deferred_sink() {
 #[test]
 fn output_sync_input_sync() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).output::<Sync>().input::<Sync>();
+    let node = deferred!(&mut alloc).output().input();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -102,9 +102,7 @@ fn output_sync_input_sync() {
 #[test]
 fn output_sync_then_parent() {
     let (mut alloc, to_local) = make_allocators();
-    let node = MockParent
-        .via(deferred!(&mut alloc).output::<Sync>())
-        .unwrap();
+    let node = MockParent.via(deferred!(&mut alloc).output()).unwrap();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -117,10 +115,7 @@ fn output_sync_then_parent() {
 #[test]
 fn parent_output_sync() {
     let (mut alloc, to_local) = make_allocators();
-    let node = MockParent
-        .via(deferred!(&mut alloc))
-        .unwrap()
-        .output::<Sync>();
+    let node = MockParent.via(deferred!(&mut alloc)).unwrap().output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -139,7 +134,7 @@ fn parent_deferred_sink() {
 fn multiple_parents_output_sync() {
     let (mut alloc, to_local) = make_allocators();
     let node = MockParent.via(deferred!(&mut alloc)).unwrap();
-    let node = MockParent.via(node).unwrap().output::<Sync>();
+    let node = MockParent.via(node).unwrap().output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -152,7 +147,7 @@ fn multiple_parents_output_sync() {
 #[test]
 fn sync_deferred_as_parent() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Sync>();
+    let node = deferred!(&mut alloc).input();
     let local = to_local(alloc);
     let (sender, _receiver) = edge::channel(noop_local_waker(), None);
     let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
@@ -176,7 +171,7 @@ fn async_deferred_as_parent() {
 #[test]
 fn input_sync_direct_sink() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Sync>().sink(Null::new());
+    let node = deferred!(&mut alloc).input().sink(Null::new());
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -215,8 +210,8 @@ fn delivered_in_one_round(budget: Budget) -> usize {
             &mut alloc,
             options,
         )
-        .input::<Sync>()
-        .output::<Sync>();
+        .input()
+        .output();
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
     let mut upstream: Box<WorkSink> = Get::get(&node).unwrap();
@@ -272,7 +267,7 @@ fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
             _,
         >::with_options(mock_factory(), &mut alloc, options))
         .unwrap()
-        .output::<Sync>();
+        .output();
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
     let mut graph = Box::new(node).build(to_local(alloc)).unwrap();
@@ -335,8 +330,8 @@ fn options_survive_output_first_and_a_sink() {
             &mut alloc,
             one,
         )
-        .output::<Sync>()
-        .input::<Sync>();
+        .output()
+        .input();
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
     let upstream = Get::get(&node).unwrap();
@@ -350,11 +345,40 @@ fn options_survive_output_first_and_a_sink() {
         &mut alloc,
         one,
     )
-    .input::<Sync>()
+    .input()
     .sink(downstream.sender());
     let upstream = Get::get(&node).unwrap();
     one_round(node, upstream, to_local(alloc));
     assert_eq!(downstream.len().unwrap(), 1);
+}
+
+// ============================================================
+// The input slot is reserved at mint
+// ============================================================
+
+#[test]
+fn a_minted_node_never_built_leaves_its_slot_empty() {
+    let (mut alloc, to_local) = make_allocators();
+    let _orphan = deferred!(&mut alloc);
+    match to_local(alloc).build(Vec::new()) {
+        Err(e) => assert!(e.to_string().contains("slot 0 is empty"), "{e}"),
+        Ok(_) => panic!("an unbuilt node's reserved slot must fail the build"),
+    }
+}
+
+#[test]
+fn nodes_wired_out_of_mint_order_fill_every_slot() {
+    let (mut alloc, to_local) = make_allocators();
+    let first = deferred!(&mut alloc);
+    let second = deferred!(&mut alloc).input();
+    let first = MockParent.via(first).unwrap().output();
+    let graph = GraphBuilder::build(Box::new(second), to_local(alloc)).unwrap();
+    let mut nodes = graph.nodes;
+    let graph = Box::new(first).build(graph.allocator).unwrap();
+    // The parented input landed in the slot reserved at mint, before `second`'s.
+    assert!(graph.nodes.iter().any(|n| n.id == 0));
+    nodes.extend(graph.nodes);
+    assert!(graph.allocator.build(nodes).is_ok());
 }
 
 // ============================================================
@@ -364,7 +388,7 @@ fn options_survive_output_first_and_a_sink() {
 #[test]
 fn node_ids_are_unique() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input::<Sync>().output::<Sync>();
+    let node = deferred!(&mut alloc).input().output();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     let mut ids: Vec<_> = graph.nodes.iter().map(|n| n.id).collect();

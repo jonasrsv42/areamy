@@ -39,7 +39,7 @@ fn once_line<'params>(
     Writer<'params, usize, Signal>,
     Receiver<usize, Signal>,
 ) {
-    let mut thread = poll::Thread::<'_, OnceThread>::new();
+    let mut thread = poll::Thread::<OnceThread>::new();
     let mut node = thread
         .line(once::FutureRoutine::factory(
             move |input: input::Receiver<usize>,
@@ -54,8 +54,8 @@ fn once_line<'params>(
                 })
             },
         ))
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+        .input()
+        .output();
     let writer = node.writer().unwrap();
     let output = Receiver::new();
     node.pushes(&output).unwrap();

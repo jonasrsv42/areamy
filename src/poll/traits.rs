@@ -29,8 +29,9 @@ pub struct OwnedPoll;
 /// and returns the allocator inside it. The child creates the edge and calls
 /// [AsyncParent::build] during its own [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a poll node",
-    note = "a work node can't be owned by a poll node: bridge with a Sync input (`.input::<Sync>()` + `pushes`)"
+    message = "`{Self}` can't be owned by a poll node",
+    note = "a work node can't be owned by a poll node: bridge with a Sync input (`.input()` + `pushes`)",
+    note = "a poll node with `.output()` can't also be owned (`via`): feed consumers with `pushes` or `tee`"
 )]
 pub trait AsyncParent<'params>: Send + 'params {
     type OutType;
@@ -42,4 +43,32 @@ pub trait AsyncParent<'params>: Send + 'params {
         edge: Sender<Self::OutType, Self::SignalType>,
         allocator: ThreadLocalWakerAllocator<Self::ThreadIdType>,
     ) -> Result<Graph<'params, Self::ThreadIdType>, Error>;
+}
+
+/// A boxed parent: picks a stage at runtime (`Some(mic)` or not), one box at build time.
+impl<'params, OutType, SignalType, ThreadIdType> AsyncParent<'params>
+    for Box<
+        dyn AsyncParent<
+                'params,
+                OutType = OutType,
+                SignalType = SignalType,
+                ThreadIdType = ThreadIdType,
+            > + 'params,
+    >
+where
+    OutType: 'params,
+    SignalType: Origin + 'params,
+    ThreadIdType: ThreadId,
+{
+    type OutType = OutType;
+    type SignalType = SignalType;
+    type ThreadIdType = ThreadIdType;
+
+    fn build(
+        self: Box<Self>,
+        edge: Sender<OutType, SignalType>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        (*self).build(edge, allocator)
+    }
 }

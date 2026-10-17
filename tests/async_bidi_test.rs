@@ -162,7 +162,7 @@ fn bidi_with_join() -> Result<(), Error> {
     let mut inputs = Line::of(Double::new());
     let mut writer = inputs.writer()?;
 
-    let mut async_thread = poll::Thread::<'_, IoThread>::new();
+    let mut async_thread = poll::Thread::<IoThread>::new();
 
     let routine = FutureRoutine::factory(
         |input: input::Receiver<usize>, output: output::Sender<usize>| {
@@ -201,10 +201,7 @@ fn bidi_with_join() -> Result<(), Error> {
         },
     );
 
-    let mut session = async_thread
-        .line(routine)
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+    let mut session = async_thread.line(routine).input().output();
     inputs.pushes(&session)?;
 
     let outputs = Receiver::new();

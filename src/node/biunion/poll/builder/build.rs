@@ -1,6 +1,6 @@
 //! GraphBuilder and AsyncParent impls for all biunion edge combinations.
 
-use super::node::{Allocated, Node};
+use super::node::Node;
 use crate::edge::single::Single;
 use crate::error::Error;
 use crate::node::biunion::Inputs;
@@ -64,19 +64,7 @@ where
 /// Sync, Sync → Sync output
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Allocated,
-        Sync,
-        Sync,
-        Sync,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    for Node<'params, Sync, Sync, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
@@ -149,19 +137,7 @@ where
 /// Sync, Sync → Deferred output (sink)
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Allocated,
-        Sync,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    for Node<'params, Sync, Sync, Deferred, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
@@ -238,19 +214,7 @@ where
 /// Async, Sync → Sync output
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Allocated,
-        Async,
-        Sync,
-        Sync,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    for Node<'params, Async, Sync, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: 'static,
     Right: Send + std::marker::Sync + 'static,
@@ -264,11 +228,11 @@ where
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let left_slot = allocator.next();
+        let left_id = self.alloc.left;
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
             self.options.bound.left,
-            left_slot.value.wake.local.clone(),
+            allocator.local_waker(left_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -276,7 +240,7 @@ where
         let right_id = self.input.right.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let left_waker = allocator.local_waker(left_slot.id);
+        let left_waker = allocator.local_waker(left_id);
         let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
@@ -307,7 +271,7 @@ where
             self.options.budget,
         );
         nodes.push(GraphNode {
-            id: left_slot.id,
+            id: left_id,
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
@@ -331,7 +295,6 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
     for Node<
         'params,
-        Allocated,
         Async,
         Sync,
         Deferred,
@@ -355,11 +318,11 @@ where
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let left_slot = allocator.next();
+        let left_id = self.alloc.left;
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
             self.options.bound.left,
-            left_slot.value.wake.local.clone(),
+            allocator.local_waker(left_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -367,7 +330,7 @@ where
         let right_id = self.input.right.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let left_waker = allocator.local_waker(left_slot.id);
+        let left_waker = allocator.local_waker(left_id);
         let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
@@ -398,7 +361,7 @@ where
             self.options.budget,
         );
         nodes.push(GraphNode {
-            id: left_slot.id,
+            id: left_id,
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
@@ -421,7 +384,6 @@ where
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
     for Node<
         'params,
-        Allocated,
         Async,
         Sync,
         Deferred,
@@ -450,11 +412,11 @@ where
         edge: edge::Sender<Out, SignalType>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let left_slot = allocator.next();
+        let left_id = self.alloc.left;
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
             self.options.bound.left,
-            left_slot.value.wake.local.clone(),
+            allocator.local_waker(left_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -462,7 +424,7 @@ where
         let right_id = self.input.right.slot.id;
         let work = allocator.next();
         let output = allocator.next();
-        let left_waker = allocator.local_waker(left_slot.id);
+        let left_waker = allocator.local_waker(left_id);
         let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
@@ -493,7 +455,7 @@ where
             self.options.budget,
         );
         nodes.push(GraphNode {
-            id: left_slot.id,
+            id: left_id,
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
@@ -519,19 +481,7 @@ where
 /// Sync, Async → Sync output
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Allocated,
-        Sync,
-        Async,
-        Sync,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    for Node<'params, Sync, Async, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: 'static,
@@ -545,11 +495,11 @@ where
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let right_slot = allocator.next();
+        let right_id = self.alloc.right;
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
             self.options.bound.right,
-            right_slot.value.wake.local.clone(),
+            allocator.local_waker(right_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -558,7 +508,7 @@ where
         let work = allocator.next();
         let output = allocator.next();
         let left_waker = allocator.local_waker(left_id);
-        let right_waker = allocator.local_waker(right_slot.id);
+        let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
                 left: left_waker.clone(),
@@ -592,7 +542,7 @@ where
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
-            id: right_slot.id,
+            id: right_id,
             pollable: Box::new(phases.inputs.right),
         });
         nodes.push(GraphNode {
@@ -612,7 +562,6 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
     for Node<
         'params,
-        Allocated,
         Sync,
         Async,
         Deferred,
@@ -636,11 +585,11 @@ where
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let right_slot = allocator.next();
+        let right_id = self.alloc.right;
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
             self.options.bound.right,
-            right_slot.value.wake.local.clone(),
+            allocator.local_waker(right_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -649,7 +598,7 @@ where
         let work = allocator.next();
         let output = allocator.next();
         let left_waker = allocator.local_waker(left_id);
-        let right_waker = allocator.local_waker(right_slot.id);
+        let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
                 left: left_waker.clone(),
@@ -683,7 +632,7 @@ where
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
-            id: right_slot.id,
+            id: right_id,
             pollable: Box::new(phases.inputs.right),
         });
         nodes.push(GraphNode {
@@ -702,7 +651,6 @@ where
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
     for Node<
         'params,
-        Allocated,
         Sync,
         Async,
         Deferred,
@@ -731,11 +679,11 @@ where
         edge: edge::Sender<Out, SignalType>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let right_slot = allocator.next();
+        let right_id = self.alloc.right;
         let (right_edges, mut nodes, returned_allocator) = build_parents(
             self.input.right.parents,
             self.options.bound.right,
-            right_slot.value.wake.local.clone(),
+            allocator.local_waker(right_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -744,7 +692,7 @@ where
         let work = allocator.next();
         let output = allocator.next();
         let left_waker = allocator.local_waker(left_id);
-        let right_waker = allocator.local_waker(right_slot.id);
+        let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
                 left: left_waker.clone(),
@@ -778,7 +726,7 @@ where
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
-            id: right_slot.id,
+            id: right_id,
             pollable: Box::new(phases.inputs.right),
         });
         nodes.push(GraphNode {
@@ -800,19 +748,7 @@ where
 /// Async, Async → Sync output
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Allocated,
-        Async,
-        Async,
-        Sync,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    for Node<'params, Async, Async, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: 'static,
     Right: 'static,
@@ -826,20 +762,20 @@ where
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let left_slot = allocator.next();
+        let left_id = self.alloc.left;
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
             self.options.bound.left,
-            left_slot.value.wake.local.clone(),
+            allocator.local_waker(left_id),
             allocator,
         )?;
         allocator = returned_allocator;
 
-        let right_slot = allocator.next();
+        let right_id = self.alloc.right;
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
             self.options.bound.right,
-            right_slot.value.wake.local.clone(),
+            allocator.local_waker(right_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -847,8 +783,8 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let left_waker = allocator.local_waker(left_slot.id);
-        let right_waker = allocator.local_waker(right_slot.id);
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
                 left: left_waker.clone(),
@@ -878,11 +814,11 @@ where
             self.options.budget,
         );
         nodes.push(GraphNode {
-            id: left_slot.id,
+            id: left_id,
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
-            id: right_slot.id,
+            id: right_id,
             pollable: Box::new(phases.inputs.right),
         });
         nodes.push(GraphNode {
@@ -902,7 +838,6 @@ impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     GraphBuilder<'params, ThreadIdType>
     for Node<
         'params,
-        Allocated,
         Async,
         Async,
         Deferred,
@@ -926,20 +861,20 @@ where
         self: Box<Self>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let left_slot = allocator.next();
+        let left_id = self.alloc.left;
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
             self.options.bound.left,
-            left_slot.value.wake.local.clone(),
+            allocator.local_waker(left_id),
             allocator,
         )?;
         allocator = returned_allocator;
 
-        let right_slot = allocator.next();
+        let right_id = self.alloc.right;
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
             self.options.bound.right,
-            right_slot.value.wake.local.clone(),
+            allocator.local_waker(right_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -947,8 +882,8 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let left_waker = allocator.local_waker(left_slot.id);
-        let right_waker = allocator.local_waker(right_slot.id);
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
                 left: left_waker.clone(),
@@ -978,11 +913,11 @@ where
             self.options.budget,
         );
         nodes.push(GraphNode {
-            id: left_slot.id,
+            id: left_id,
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
-            id: right_slot.id,
+            id: right_id,
             pollable: Box::new(phases.inputs.right),
         });
         nodes.push(GraphNode {
@@ -1003,19 +938,7 @@ where
 
 /// Sync, Sync → Deferred output (consumed as parent)
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
-    for Node<
-        'params,
-        Allocated,
-        Sync,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    for Node<'params, Sync, Sync, Deferred, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
 where
     Left: Send + std::marker::Sync + 'static,
     Right: Send + std::marker::Sync + 'static,
@@ -1094,7 +1017,6 @@ where
 impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
     for Node<
         'params,
-        Allocated,
         Async,
         Async,
         Deferred,
@@ -1123,20 +1045,20 @@ where
         edge: edge::Sender<Out, SignalType>,
         mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        let left_slot = allocator.next();
+        let left_id = self.alloc.left;
         let (left_edges, mut nodes, returned_allocator) = build_parents(
             self.input.left.parents,
             self.options.bound.left,
-            left_slot.value.wake.local.clone(),
+            allocator.local_waker(left_id),
             allocator,
         )?;
         allocator = returned_allocator;
 
-        let right_slot = allocator.next();
+        let right_id = self.alloc.right;
         let (right_edges, right_nodes, returned_allocator) = build_parents(
             self.input.right.parents,
             self.options.bound.right,
-            right_slot.value.wake.local.clone(),
+            allocator.local_waker(right_id),
             allocator,
         )?;
         allocator = returned_allocator;
@@ -1144,8 +1066,8 @@ where
 
         let work = allocator.next();
         let output = allocator.next();
-        let left_waker = allocator.local_waker(left_slot.id);
-        let right_waker = allocator.local_waker(right_slot.id);
+        let left_waker = allocator.local_waker(left_id);
+        let right_waker = allocator.local_waker(right_id);
         let routine = self.factory.create(BiunionWakers {
             input: Inputs {
                 left: left_waker.clone(),
@@ -1175,11 +1097,11 @@ where
             self.options.budget,
         );
         nodes.push(GraphNode {
-            id: left_slot.id,
+            id: left_id,
             pollable: Box::new(phases.inputs.left),
         });
         nodes.push(GraphNode {
-            id: right_slot.id,
+            id: right_id,
             pollable: Box::new(phases.inputs.right),
         });
         nodes.push(GraphNode {

@@ -162,7 +162,7 @@ pub struct DataMismatch;
 /// # use areamy::work::Line;
 /// # use areamy::{DefaultThread, Via, Writes};
 /// # fn main() -> Result<(), areamy::error::Error> {
-/// let mut thread = poll::Thread::<'_, DefaultThread>::new();
+/// let mut thread = poll::Thread::<DefaultThread>::new();
 /// let head = Line::of(pass());
 /// let _input = head.writer()?;
 /// let _node = head.via(thread.line(FutureRoutine::factory(forward)))?;
@@ -179,8 +179,8 @@ pub struct WorkIntoPoll;
 /// # use areamy::work::Line;
 /// # use areamy::{DefaultThread, Reads, Via, Writes};
 /// # fn main() -> Result<(), areamy::error::Error> {
-/// let mut thread = poll::Thread::<'_, DefaultThread>::new();
-/// let head = thread.line(FutureRoutine::factory(forward)).input::<poll::Sync>();
+/// let mut thread = poll::Thread::<DefaultThread>::new();
+/// let head = thread.line(FutureRoutine::factory(forward)).input();
 /// let _input = head.writer()?;
 /// let _out = head.via(Line::of(pass()))?.reader()?;
 /// # Ok(())

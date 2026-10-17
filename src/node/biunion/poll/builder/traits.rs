@@ -3,17 +3,18 @@
 //! [`ResolveParent`] dispatches `up.via(node.at::<Side>())` to resolve
 //! left or right input to Async based on the side marker.
 //!
-//! [`ResolveInput`] dispatches `.input::<Side, Edge>()` to resolve
+//! [`ResolveInput`] dispatches `.input::<Side>()` to resolve
 //! left or right input to Sync based on the side marker.
 //!
-//! [`ResolveOutput`] dispatches `.output::<Edge>()` to resolve
+//! [`ResolveOutput`] dispatches `.output()` to resolve
 //! the output edge.
 
-use super::node::{Allocated, Allocating, BuilderInput, Node};
+use super::node::{BuilderInput, Node};
 use crate::node::biunion;
+use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
-use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
+use crate::poll::edge::{Deferred, Edge, Sync};
 use crate::poll::input::sync::{Input, Receiver};
 use crate::poll::traits::AsyncParent;
 use crate::signal::Origin;
@@ -37,32 +38,31 @@ pub trait ResolveParent<'params, Node, SignalType: Origin, ThreadIdType: ThreadI
     ) -> Self::Resolved;
 }
 
-/// Resolve one input to Sync via `.input::<Side, Edge>()`.
+/// Resolve one input to Sync via `.input::<Side>()`.
 pub trait ResolveInput<Edge, Node> {
     type Resolved;
     fn resolve(node: Node) -> Self::Resolved;
 }
 
-/// Resolve output edge via `.output::<Edge>()`.
+/// Resolve output edge via `.output()`.
 pub trait ResolveOutput<Node> {
     type Resolved;
     fn resolve(node: Node) -> Self::Resolved;
 }
 
 // ============================================================
-// ResolveInput — Left + Sync
+// ResolveInput — Sync, on the side still Deferred
 // ============================================================
 
-/// Left Deferred → Sync, right still Deferred → stays Allocating.
-impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+/// Left Deferred → Sync, woken by its reserved slot.
+impl<'params, RightEdge, OutEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveInput<
         Sync,
         Node<
             'params,
-            Allocating<'alloc>,
             Deferred,
-            Deferred,
-            Deferred,
+            RightEdge,
+            OutEdge,
             Left,
             Right,
             Out,
@@ -72,6 +72,8 @@ impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
         >,
     > for biunion::Left
 where
+    RightEdge: Edge,
+    OutEdge: Edge,
     Left: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
@@ -80,10 +82,9 @@ where
 {
     type Resolved = Node<
         'params,
-        Allocating<'alloc>,
         Sync,
-        Deferred,
-        Deferred,
+        RightEdge,
+        OutEdge,
         Left,
         Right,
         Out,
@@ -94,10 +95,9 @@ where
     fn resolve(
         node: Node<
             'params,
-            Allocating<'alloc>,
             Deferred,
-            Deferred,
-            Deferred,
+            RightEdge,
+            OutEdge,
             Left,
             Right,
             Out,
@@ -106,10 +106,13 @@ where
             FactoryType,
         >,
     ) -> Self::Resolved {
-        let slot = node.alloc.0.next();
+        let slot = node.alloc.left;
         let waker = slot.value.clone();
         Node {
-            alloc: node.alloc,
+            alloc: Inputs {
+                left: (),
+                right: node.alloc.right,
+            },
             factory: node.factory,
             options: node.options,
             input: BuilderInput {
@@ -119,170 +122,21 @@ where
                 },
                 right: node.input.right,
             },
-            output: Null::new(),
+            output: node.output,
             _phantom: PhantomData,
         }
     }
 }
 
-/// Left Deferred → Sync, right already Sync → Allocated.
-impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+/// Right Deferred → Sync, woken by its reserved slot.
+impl<'params, LeftEdge, OutEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveInput<
         Sync,
         Node<
             'params,
-            Allocating<'alloc>,
+            LeftEdge,
             Deferred,
-            Sync,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    > for biunion::Left
-where
-    Left: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    type Resolved = Node<
-        'params,
-        Allocated,
-        Sync,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn resolve(
-        node: Node<
-            'params,
-            Allocating<'alloc>,
-            Deferred,
-            Sync,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    ) -> Self::Resolved {
-        let slot = node.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: Allocated,
-            factory: node.factory,
-            options: node.options,
-            input: BuilderInput {
-                left: Input {
-                    edge: Receiver::new(waker, node.options.bound.left),
-                    slot,
-                },
-                right: node.input.right,
-            },
-            output: Null::new(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-/// Left Deferred → Sync, right already Async → Allocated.
-impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    ResolveInput<
-        Sync,
-        Node<
-            'params,
-            Allocating<'alloc>,
-            Deferred,
-            Async,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    > for biunion::Left
-where
-    Left: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    type Resolved = Node<
-        'params,
-        Allocated,
-        Sync,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn resolve(
-        node: Node<
-            'params,
-            Allocating<'alloc>,
-            Deferred,
-            Async,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    ) -> Self::Resolved {
-        let slot = node.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: Allocated,
-            factory: node.factory,
-            options: node.options,
-            input: BuilderInput {
-                left: Input {
-                    edge: Receiver::new(waker, node.options.bound.left),
-                    slot,
-                },
-                right: node.input.right,
-            },
-            output: Null::new(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-// ============================================================
-// ResolveInput — Right + Sync
-// ============================================================
-
-/// Right Deferred → Sync, left still Deferred → stays Allocating.
-impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    ResolveInput<
-        Sync,
-        Node<
-            'params,
-            Allocating<'alloc>,
-            Deferred,
-            Deferred,
-            Deferred,
+            OutEdge,
             Left,
             Right,
             Out,
@@ -292,6 +146,8 @@ impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
         >,
     > for biunion::Right
 where
+    LeftEdge: Edge,
+    OutEdge: Edge,
     Right: Send + std::marker::Sync + 'static,
     SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
     ThreadIdType: ThreadId,
@@ -300,10 +156,9 @@ where
 {
     type Resolved = Node<
         'params,
-        Allocating<'alloc>,
-        Deferred,
+        LeftEdge,
         Sync,
-        Deferred,
+        OutEdge,
         Left,
         Right,
         Out,
@@ -314,10 +169,9 @@ where
     fn resolve(
         node: Node<
             'params,
-            Allocating<'alloc>,
+            LeftEdge,
             Deferred,
-            Deferred,
-            Deferred,
+            OutEdge,
             Left,
             Right,
             Out,
@@ -326,10 +180,13 @@ where
             FactoryType,
         >,
     ) -> Self::Resolved {
-        let slot = node.alloc.0.next();
+        let slot = node.alloc.right;
         let waker = slot.value.clone();
         Node {
-            alloc: node.alloc,
+            alloc: Inputs {
+                left: node.alloc.left,
+                right: (),
+            },
             factory: node.factory,
             options: node.options,
             input: BuilderInput {
@@ -339,151 +196,7 @@ where
                     slot,
                 },
             },
-            output: Null::new(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-/// Right Deferred → Sync, left already Sync → Allocated.
-impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    ResolveInput<
-        Sync,
-        Node<
-            'params,
-            Allocating<'alloc>,
-            Sync,
-            Deferred,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    > for biunion::Right
-where
-    Right: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    type Resolved = Node<
-        'params,
-        Allocated,
-        Sync,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn resolve(
-        node: Node<
-            'params,
-            Allocating<'alloc>,
-            Sync,
-            Deferred,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    ) -> Self::Resolved {
-        let slot = node.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: Allocated,
-            factory: node.factory,
-            options: node.options,
-            input: BuilderInput {
-                left: node.input.left,
-                right: Input {
-                    edge: Receiver::new(waker, node.options.bound.right),
-                    slot,
-                },
-            },
-            output: Null::new(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-/// Right Deferred → Sync, left already Async → Allocated.
-impl<'alloc, 'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    ResolveInput<
-        Sync,
-        Node<
-            'params,
-            Allocating<'alloc>,
-            Async,
-            Deferred,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    > for biunion::Right
-where
-    Right: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    type Resolved = Node<
-        'params,
-        Allocated,
-        Async,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >;
-    fn resolve(
-        node: Node<
-            'params,
-            Allocating<'alloc>,
-            Async,
-            Deferred,
-            Deferred,
-            Left,
-            Right,
-            Out,
-            SignalType,
-            ThreadIdType,
-            FactoryType,
-        >,
-    ) -> Self::Resolved {
-        let slot = node.alloc.0.next();
-        let waker = slot.value.clone();
-        Node {
-            alloc: Allocated,
-            factory: node.factory,
-            options: node.options,
-            input: BuilderInput {
-                left: node.input.left,
-                right: Input {
-                    edge: Receiver::new(waker, node.options.bound.right),
-                    slot,
-                },
-            },
-            output: Null::new(),
+            output: node.output,
             _phantom: PhantomData,
         }
     }
@@ -493,12 +206,11 @@ where
 // ResolveOutput — Sync
 // ============================================================
 
-/// Resolve output to Sync on any Allocated node with Deferred output.
+/// Resolve output to Sync on any node with Deferred output.
 impl<'params, LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
     ResolveOutput<
         Node<
             'params,
-            Allocated,
             LeftEdge,
             RightEdge,
             Deferred,
@@ -521,7 +233,6 @@ where
 {
     type Resolved = Node<
         'params,
-        Allocated,
         LeftEdge,
         RightEdge,
         Sync,
@@ -535,7 +246,6 @@ where
     fn resolve(
         node: Node<
             'params,
-            Allocated,
             LeftEdge,
             RightEdge,
             Deferred,
@@ -548,7 +258,7 @@ where
         >,
     ) -> Self::Resolved {
         Node {
-            alloc: Allocated,
+            alloc: node.alloc,
             factory: node.factory,
             options: node.options,
             input: node.input,

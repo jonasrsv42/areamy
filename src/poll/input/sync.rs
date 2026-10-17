@@ -7,7 +7,7 @@ use crate::signal::Origin;
 use std::task::Waker;
 
 /// Sync input edge paired with its pre-allocated waker slot.
-/// Created during `.input::<Sync>()` on the main thread.
+/// Created during `.input()` on the main thread.
 pub struct Input<DataType, SignalType: Origin> {
     pub edge: Receiver<DataType, SignalType>,
     pub slot: Slot<Waker>,

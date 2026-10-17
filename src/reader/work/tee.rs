@@ -1,11 +1,10 @@
-use crate::edge::sync::Receiver;
+use crate::edge::sync::{Receiver, Sender};
 use crate::error::Error;
-use crate::graph::Add;
 use crate::graph::marker::{Connection, Unary};
+use crate::graph::{Add, BoxAs, Outlet, Outputs};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
 use crate::thread::DefaultThread;
-use crate::work::Sink;
 
 /// A tee [`Reader`] buffers what a node it doesn't own pushes. See [Tees].
 pub struct Reader<DataType, SignalType = Trackable<&'static str>>
@@ -24,17 +23,17 @@ where
 /// optional annotation: `node.tee::<Frame>()?`. To own and drive the node, use
 /// [crate::Reads::reader].
 ///
-/// The tee gets every message the node pushes, signals included.
+/// The tee gets every message the node pushes, signals included. A poll node tees once it has
+/// `.output()`.
 pub trait Tees<'params, SignalType> {
     /// Adds a buffered output to this node and returns its reader.
     fn tee<DataType>(&mut self) -> Result<Reader<DataType, SignalType>, Error>
     where
         DataType: Send + Sync + 'static,
         SignalType: Origin + Send + Sync + 'static,
-        Self: Add<
-                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
-                Unary,
-            >;
+        Self: Outputs<Unary>,
+        <Self as Outputs<Unary>>::Sink: Outlet<DataType = DataType, SignalType = SignalType>,
+        Sender<DataType, SignalType>: BoxAs<<Self as Outputs<Unary>>::Sink>;
 }
 
 impl<'params, NodeType: Connection, SignalType> Tees<'params, SignalType> for NodeType {
@@ -42,13 +41,12 @@ impl<'params, NodeType: Connection, SignalType> Tees<'params, SignalType> for No
     where
         DataType: Send + Sync + 'static,
         SignalType: Origin + Send + Sync + 'static,
-        Self: Add<
-                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
-                Unary,
-            >,
+        Self: Outputs<Unary>,
+        <Self as Outputs<Unary>>::Sink: Outlet<DataType = DataType, SignalType = SignalType>,
+        Sender<DataType, SignalType>: BoxAs<<Self as Outputs<Unary>>::Sink>,
     {
         let buffer = Receiver::new();
-        Add::add(self, Box::new(buffer.sender()))?;
+        Add::add(self, buffer.sender().box_as())?;
         Ok(Reader { buffer })
     }
 }
@@ -87,6 +85,7 @@ where
 mod tests {
     use super::*;
     use crate::Workable;
+    use crate::work::Sink;
 
     struct MockNode {
         output: Message<usize, Trackable<&'static str>>,
@@ -119,6 +118,10 @@ mod tests {
             self.pushable.push(pushable);
             Ok(())
         }
+    }
+
+    impl Outputs for MockNode {
+        type Sink = dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync;
     }
 
     #[test]

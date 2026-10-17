@@ -211,7 +211,6 @@ mod tests {
     use crate::edge::sync::Receiver;
     use crate::graph::Get;
     use crate::node::line::poll::routine::tests::MockLine;
-    use crate::poll;
     use crate::work::Sink;
     use crate::{Closeable, Message, Pushes, Via};
 
@@ -222,12 +221,9 @@ mod tests {
 
     #[test]
     fn async_thread_starts_and_stops() {
-        let mut thread = Thread::<'_, IoThread>::new();
+        let mut thread = Thread::<IoThread>::new();
 
-        let node = thread
-            .line(MockLine::new)
-            .input::<poll::Sync>()
-            .output::<poll::Sync>();
+        let node = thread.line(MockLine::new).input().output();
 
         let mut input: InputHandle = Get::get(&node).unwrap();
 
@@ -241,12 +237,9 @@ mod tests {
 
     #[test]
     fn async_thread_processes_data() {
-        let mut thread = Thread::<'_, IoThread>::new();
+        let mut thread = Thread::<IoThread>::new();
 
-        let mut node = thread
-            .line(MockLine::new)
-            .input::<poll::Sync>()
-            .output::<poll::Sync>();
+        let mut node = thread.line(MockLine::new).input().output();
 
         let mut input: InputHandle = Get::get(&node).unwrap();
 
@@ -288,11 +281,8 @@ mod tests {
 
     #[test]
     fn on_done_fires_close_on_clean_exit() {
-        let mut thread = Thread::<'_, IoThread>::new();
-        let node = thread
-            .line(MockLine::new)
-            .input::<poll::Sync>()
-            .output::<poll::Sync>();
+        let mut thread = Thread::<IoThread>::new();
+        let node = thread.line(MockLine::new).input().output();
 
         let mut input: InputHandle = Get::get(&node).unwrap();
         thread.add(node);
@@ -311,11 +301,8 @@ mod tests {
 
     #[test]
     fn on_done_multiple_callbacks_fire_in_registration_order() {
-        let mut thread = Thread::<'_, IoThread>::new();
-        let node = thread
-            .line(MockLine::new)
-            .input::<poll::Sync>()
-            .output::<poll::Sync>();
+        let mut thread = Thread::<IoThread>::new();
+        let node = thread.line(MockLine::new).input().output();
 
         let mut input: InputHandle = Get::get(&node).unwrap();
         thread.add(node);
@@ -341,16 +328,13 @@ mod tests {
     /// and close the output edge.
     #[test]
     fn close_propagates_through_chain() {
-        let mut thread = Thread::<'_, IoThread>::new();
+        let mut thread = Thread::<IoThread>::new();
 
-        let parent = thread.line(MockLine::new).input::<poll::Sync>();
+        let parent = thread.line(MockLine::new).input();
 
         let mut input: InputHandle = Get::get(&parent).unwrap();
 
-        let mut child = parent
-            .via(thread.line(MockLine::new))
-            .unwrap()
-            .output::<poll::Sync>();
+        let mut child = parent.via(thread.line(MockLine::new)).unwrap().output();
 
         let output = Receiver::new();
         child.pushes(&output).unwrap();

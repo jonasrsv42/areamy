@@ -10,19 +10,19 @@ use super::null::Null;
 use crate::edge::fanout::Fanout;
 use crate::graph::marker::Connection;
 use crate::poll::input;
-use crate::poll::wakers::WakerAllocator;
-use crate::poll::{self, Sink};
+use crate::poll::wakers::Slot;
+use crate::poll::{self, NodeId, Sink};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
+use std::task::Waker;
 
 /// Trait for edge markers. Uses GATs to resolve storage types.
 pub trait Edge: Connection {
     type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId>;
     type Output<'params, OutType, SignalType: Origin>;
-    /// Allocator state for this edge kind.
-    /// `Deferred` holds `&'alloc mut WakerAllocator`, resolved edges hold
-    /// their allocated result or `()`.
-    type Alloc<'alloc>;
+    /// The input's wake slot, reserved at mint: `Deferred` holds it, `Async` its id; `Sync`
+    /// keeps it in its input.
+    type Alloc;
 }
 
 /// Sync edge — cross-thread, uses [`input::sync::Receiver`]
@@ -53,21 +53,21 @@ impl Edge for Sync {
         input::sync::Input<InType, SignalType>;
     type Output<'params, OutType, SignalType: Origin> =
         Fanout<poll::DynSink<'params, OutType, SignalType>>;
-    type Alloc<'alloc> = ();
+    type Alloc = ();
 }
 
 impl Edge for Async {
     type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
         input::r#async::Input<'params, InType, SignalType, ThreadIdType>;
     type Output<'params, OutType, SignalType: Origin> = Linktime;
-    type Alloc<'alloc> = ();
+    type Alloc = NodeId;
 }
 
 impl Edge for Deferred {
     type Input<'params, InType, SignalType: Origin, ThreadIdType: ThreadId> =
         Null<InType, SignalType>;
     type Output<'params, OutType, SignalType: Origin> = Null<OutType, SignalType>;
-    type Alloc<'alloc> = &'alloc mut WakerAllocator;
+    type Alloc = Slot<Waker>;
 }
 
 impl Edge for Direct {
@@ -75,5 +75,5 @@ impl Edge for Direct {
         Null<InType, SignalType>;
     type Output<'params, OutType, SignalType: Origin> =
         Box<dyn Sink<DataType = OutType, SignalType = SignalType> + Send + 'params>;
-    type Alloc<'alloc> = ();
+    type Alloc = ();
 }

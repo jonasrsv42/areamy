@@ -18,7 +18,7 @@ pub(crate) struct Options {
 }
 
 /// Options for a poll line, from `thread.builder().line()`; [LineBuilder::build] makes the node.
-/// Set before the node exists: its input mints every producer's sender (`.input::<Sync>()` at
+/// Set before the node exists: its input mints every producer's sender (`.input()` at
 /// once), so a bound on the input covers them all.
 #[must_use = "build the line with `.build(factory)`"]
 pub struct LineBuilder<'thread, 'params, ThreadIdType: ThreadId> {
@@ -37,7 +37,7 @@ impl<'thread, 'params, ThreadIdType: ThreadId> Builder<'thread, 'params, ThreadI
 
 impl<'thread, 'params, ThreadIdType: ThreadId> LineBuilder<'thread, 'params, ThreadIdType> {
     /// Hold at most `bound` messages per input edge, signals included: the sync bridge from
-    /// `.input::<Sync>()`, or each parent's edge from `p.via(..)`, each bounded on its own. Its
+    /// `.input()`, or each parent's edge from `p.via(..)`, each bounded on its own. Its
     /// producers wait while it is full: until Input drains it, or, once the routine refuses, until
     /// the routine makes room. `None` is unbounded, the default.
     ///
@@ -58,17 +58,7 @@ impl<'thread, 'params, ThreadIdType: ThreadId> LineBuilder<'thread, 'params, Thr
     pub fn build<InType, OutType, SignalType, FactoryType>(
         self,
         factory: FactoryType,
-    ) -> Node<
-        'thread,
-        'params,
-        Deferred,
-        Deferred,
-        InType,
-        OutType,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+    ) -> Node<'params, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
     where
         SignalType: Origin,
         FactoryType: LineRoutineFactory<'params>,
@@ -87,7 +77,7 @@ mod tests {
 
     #[test]
     fn options_default_to_unbounded_with_the_default_budget() {
-        let mut thread = Thread::<'_, TestThread>::new();
+        let mut thread = Thread::<TestThread>::new();
         let options = thread.builder().line().options;
         assert_eq!(options.bound, None);
         assert_eq!(options.budget.input.get(), BUDGET);
@@ -96,7 +86,7 @@ mod tests {
 
     #[test]
     fn bounded_and_budget_set_the_options() {
-        let mut thread = Thread::<'_, TestThread>::new();
+        let mut thread = Thread::<TestThread>::new();
         let budget = Budget::default().input(NonZeroUsize::MIN);
         let options = thread
             .builder()

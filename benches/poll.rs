@@ -28,7 +28,7 @@ fn sync_poll_sync(c: &mut Criterion) {
     let mut writer_node = Line::of(Pass::<usize>::new());
     let mut writer = writer_node.writer().unwrap();
 
-    let mut io_thread = poll::Thread::<'_, IoThread>::new();
+    let mut io_thread = poll::Thread::<IoThread>::new();
     let routine = FutureRoutine::factory(
         |input: input::Receiver<usize>, output: output::Sender<usize>| {
             Box::pin(async move {
@@ -39,10 +39,7 @@ fn sync_poll_sync(c: &mut Criterion) {
             })
         },
     );
-    let mut node = io_thread
-        .line(routine)
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+    let mut node = io_thread.line(routine).input().output();
     writer_node.pushes(&node).unwrap();
     let output = Receiver::<usize, Signal>::new();
     node.pushes(&output).unwrap();

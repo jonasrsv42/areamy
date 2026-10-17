@@ -22,34 +22,32 @@
 //! use areamy::poll::future::{line::FutureRoutine, Input};
 //! use areamy::poll::try_join;
 //!
-//! let routine = FutureRoutine::factory(|input, output| {
-//!     Box::pin(async move {
-//!         let socket = connect("server").await;
+//! let routine = FutureRoutine::factory(|input, output| async move {
+//!     let socket = connect("server").await;
 //!
-//!         let writer = async {
-//!             loop {
-//!                 match input.recv().await? {
-//!                     Input::Data(val) => socket.write(val).await,
-//!                     Input::Flush => { socket.half_close().await; break; }
-//!                 }
+//!     let writer = async {
+//!         loop {
+//!             match input.recv().await? {
+//!                 Input::Data(val) => socket.write(val).await,
+//!                 Input::Flush => { socket.half_close().await; break; }
 //!             }
-//!             Ok(())
-//!         };
-//!
-//!         let reader = async {
-//!             while let Some(val) = socket.read().await {
-//!                 output.send(val).await?;
-//!             }
-//!             Ok(())
-//!         };
-//!
-//!         try_join(writer, reader).await?;
+//!         }
 //!         Ok(())
-//!     })
+//!     };
+//!
+//!     let reader = async {
+//!         while let Some(val) = socket.read().await {
+//!             output.send(val).await?;
+//!         }
+//!         Ok(())
+//!     };
+//!
+//!     try_join(writer, reader).await?;
+//!     Ok(())
 //! })
 //! .bounded(NonZeroUsize::new(8));
 //!
-//! let node = thread.line(routine).input::<Sync>().output::<Sync>();
+//! let node = thread.line(routine).input().output();
 //! ```
 
 use crate::error::Error;
@@ -65,38 +63,27 @@ use std::pin::Pin;
 
 pub mod once;
 
-/// Boxed future returned by a [`FutureRoutine`] factory closure. The
-/// `'params` lifetime bounds non-`'static` captures (e.g. `&Model`) the
-/// async body holds — see [`FutureRoutine`] for the cascade rationale.
-pub type BoxFut<'params> = Pin<Box<dyn Future<Output = Result<(), Error>> + 'params>>;
-
-/// Async routine wrapping a user-provided future factory.
-///
-/// Generic over `'params` (the borrow lifetime of anything the future
-/// captures from the surrounding scope, e.g. `&Model`), `InType`,
-/// `OutType`, and the factory `F`.
-pub struct FutureRoutine<'params, InType, OutType, F>
-where
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
-{
+/// Async routine wrapping a user-provided future factory `F`, which builds one `Fut` per segment.
+pub struct FutureRoutine<InType, OutType, F, Fut> {
+    /// Its receiver goes to the future only, so a clean segment end reuses the queue.
     input: input::Sender<InType>,
-    /// The segment's input, handed to its future.
-    receiver: input::Receiver<InType>,
     output: output::Receiver<OutType>,
     sender: output::Sender<OutType>,
     factory: F,
-    future: Option<BoxFut<'params>>,
+    /// Boxed per segment: polled through `&mut self`, so it can't be pinned in place.
+    future: Option<Pin<Box<Fut>>>,
 }
 
-impl<'params, InType, OutType, F> FutureRoutine<'params, InType, OutType, F>
+impl<InType, OutType, F, Fut> FutureRoutine<InType, OutType, F, Fut>
 where
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> Fut,
+    Fut: Future<Output = Result<(), Error>>,
 {
     /// `bound` caps the input and the output queue each; `None` is unbounded.
     pub fn new(wakers: LineWakers, bound: Option<NonZeroUsize>, factory: F) -> Self {
         // `work` is the waker the routine is polled with: the queues' home. The timer re-polls
         // the routine at a `*_with_timeout` deadline.
-        let (input, receiver) = input::channel(
+        let (input, _) = input::channel(
             wakers.input,
             wakers.work.clone(),
             wakers.timer.clone(),
@@ -105,7 +92,6 @@ where
         let (sender, output) = output::channel(wakers.output, wakers.work, wakers.timer, bound);
         Self {
             input,
-            receiver,
             output,
             sender,
             factory,
@@ -113,14 +99,23 @@ where
         }
     }
 
-    /// Create a [LineRoutineFactory] from an async closure, unbounded until
-    /// [Factory::bounded]. The closure receives the input/output queues —
-    /// wakers are wired automatically.
+    /// Create a [LineRoutineFactory] from an `async fn` or a closure returning a future,
+    /// unbounded until [Factory::bounded]. It receives the input/output queues — wakers are
+    /// wired automatically. The future may borrow from the enclosing scope (`'params`).
     ///
     /// ```ignore
-    /// let node = thread.line(FutureRoutine::factory(|input, output| {
-    ///     Box::pin(async move { /* ... */ })
-    /// })).input::<Sync>().output::<Sync>();
+    /// async fn triple(input: Receiver<usize>, output: Sender<usize>) -> Result<(), Error> {
+    ///     while let Input::Data(v) = input.recv().await? {
+    ///         output.send(v * 3).await?;
+    ///     }
+    ///     Ok(())
+    /// }
+    /// let node = thread.line(FutureRoutine::factory(triple));
+    ///
+    /// let node = thread.line(FutureRoutine::factory(|input, output| async move {
+    ///     /* ... */
+    ///     Ok(())
+    /// }));
     /// ```
     pub fn factory(factory: F) -> Factory<InType, OutType, F> {
         Factory {
@@ -149,56 +144,47 @@ impl<InType, OutType, F> Factory<InType, OutType, F> {
     }
 }
 
-impl<'params, InType, OutType, F> LineRoutineFactory<'params> for Factory<InType, OutType, F>
+impl<'params, InType, OutType, F, Fut> LineRoutineFactory<'params> for Factory<InType, OutType, F>
 where
     InType: 'params,
     OutType: 'params,
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + Send + 'params,
+    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> Fut + Send + 'params,
+    Fut: Future<Output = Result<(), Error>> + 'params,
 {
-    type Routine = FutureRoutine<'params, InType, OutType, F>;
+    type Routine = FutureRoutine<InType, OutType, F, Fut>;
 
     fn create(self, wakers: LineWakers) -> Self::Routine {
         FutureRoutine::new(wakers, self.bound, self.factory)
     }
 }
 
-impl<'params, InType, OutType, F> routine::TrySend<InType>
-    for FutureRoutine<'params, InType, OutType, F>
-where
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
-{
+impl<InType, OutType, F, Fut> routine::TrySend<InType> for FutureRoutine<InType, OutType, F, Fut> {
     fn try_send(&mut self, message: InType) -> Result<routine::Accept<InType>, Error> {
         self.input.try_send(message)
     }
 }
 
-impl<'params, InType, OutType, F> routine::Next<OutType>
-    for FutureRoutine<'params, InType, OutType, F>
-where
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
-{
+impl<InType, OutType, F, Fut> routine::Next<OutType> for FutureRoutine<InType, OutType, F, Fut> {
     fn next(&mut self) -> Result<Option<OutType>, Error> {
         self.output.pop()
     }
 }
 
-impl<'params, InType, OutType, F> routine::Flush for FutureRoutine<'params, InType, OutType, F>
-where
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
-{
+impl<InType, OutType, F, Fut> routine::Flush for FutureRoutine<InType, OutType, F, Fut> {
     fn flush(&mut self) -> Result<(), Error> {
         self.input.flush()
     }
 }
 
-impl<'params, InType, OutType, F> routine::Poll for FutureRoutine<'params, InType, OutType, F>
+impl<InType, OutType, F, Fut> routine::Poll for FutureRoutine<InType, OutType, F, Fut>
 where
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> Fut,
+    Fut: Future<Output = Result<(), Error>>,
 {
     fn poll(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
-        let future = self
-            .future
-            .get_or_insert_with(|| (self.factory)(self.receiver.clone(), self.sender.clone()));
+        let future = self.future.get_or_insert_with(|| {
+            Box::pin((self.factory)(self.input.receiver(), self.sender.clone()))
+        });
 
         let mut std_cx = core::task::Context::from_waker(&cx.wake.sync);
         match future.as_mut().poll(&mut std_cx) {
@@ -206,7 +192,7 @@ where
                 result?;
                 self.future = None;
                 // Before Input next sends: it resumes as soon as the node is back to Running.
-                self.receiver = self.input.renew()?;
+                self.input.renew()?;
                 Ok(core::task::Poll::Ready(()))
             }
             core::task::Poll::Pending => Ok(core::task::Poll::Pending),
@@ -214,19 +200,18 @@ where
     }
 }
 
-impl<'params, InType, OutType, F> LineRoutine<InType, OutType>
-    for FutureRoutine<'params, InType, OutType, F>
+impl<InType, OutType, F, Fut> LineRoutine<InType, OutType>
+    for FutureRoutine<InType, OutType, F, Fut>
 where
-    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> BoxFut<'params> + 'params,
+    F: FnMut(input::Receiver<InType>, output::Sender<OutType>) -> Fut,
+    Fut: Future<Output = Result<(), Error>>,
 {
 }
 
 #[cfg(test)]
 mod tests {
     //! End-to-end lifetime check: a `FutureRoutine` whose async body
-    //! borrows from the surrounding scope. Without `'params` on
-    //! [`BoxFut`] the closure would be locked to `'static` and the
-    //! `&multiplier` capture wouldn't compile.
+    //! borrows from the surrounding scope (`'params` on the factory).
 
     use super::*;
     use crate::edge::sync::Receiver;
@@ -243,7 +228,7 @@ mod tests {
         let multiplier: usize = 7;
         let mult_ref: &usize = &multiplier;
 
-        let mut thread = poll::Thread::<'_, LineFutureThread>::new();
+        let mut thread = poll::Thread::<LineFutureThread>::new();
         let mut node = thread
             .line(FutureRoutine::factory(
                 move |input: input::Receiver<usize>, output: output::Sender<usize>| {
@@ -255,8 +240,8 @@ mod tests {
                     })
                 },
             ))
-            .input::<poll::Sync>()
-            .output::<poll::Sync>();
+            .input()
+            .output();
 
         // Driver work-line on a sibling thread (FutureRoutine wants its
         // own poll thread; we feed it from a sync line so the test

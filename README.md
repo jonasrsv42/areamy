@@ -97,26 +97,42 @@ std::thread::scope(|s| -> Result<(), areamy::error::Error> {
 CPU-bound? Sync work threads. I/O-bound? Poll thread, futures, wakers.
 Mix them in the same `ThreadBundle` — same edges, same teardown.
 
-```rust
-let routine = FutureRoutine::factory(|input: input::Receiver<usize>, output: output::Sender<usize>| {
-    Box::pin(async move {
-        let socket = FakeSocket::connect("…").await;
-        let writer = async {
-            while let Input::Data(v) = input.recv().await? { socket.write(v * 3).await; }
-            socket.half_close().await; // flush → EOF for the reader
-            Ok::<_, Error>(())
-        };
-        let reader = async { while let Some(v) = socket.read().await { output.send(v + 1).await?; } Ok(()) };
-        areamy::poll::try_join(writer, reader).await?;
-        Ok(())
-    })
-})
-.bounded(NonZeroUsize::new(64)); // optional: `send` waits while 64 are queued
+A routine is a plain `async fn`; a Flush ends its `while let`, and the next segment starts it
+again:
 
-let node = io_thread.line(routine).input::<areamy::poll::Sync>().output::<areamy::poll::Sync>();
+```rust
+use areamy::poll::future::{Input, Receiver, Sender};
+
+async fn double(input: Receiver<usize>, output: Sender<usize>) -> Result<(), Error> {
+    while let Input::Data(value) = input.recv().await? {
+        output.send(value * 2).await?;
+    }
+    Ok(())
+}
 ```
 
-Full networking-shaped example: [tests/async_bidi_test.rs](tests/async_bidi_test.rs).
+Wire it like the work graph; `.input()` / `.output()` are where it meets the rest of the
+program:
+
+```rust
+use areamy::poll::future::line::FutureRoutine;
+use areamy::{Tees, Via, Writes, poll};
+
+let mut io = poll::Thread::<IoThread>::new();
+
+let inputs = io.line(FutureRoutine::factory(double)).input();
+let writer = inputs.writer()?;
+
+let mut outputs = inputs
+    .via(io.line(FutureRoutine::factory(double)))?
+    .via(io.line(FutureRoutine::factory(double)))?
+    .output();
+let reader = outputs.tee()?;
+io.add(outputs);
+```
+
+See [tests/example.rs](tests/example.rs); a networking-shaped one (socket, `try_join`) is
+[tests/async_bidi_test.rs](tests/async_bidi_test.rs).
 
 #### Deadlines
 

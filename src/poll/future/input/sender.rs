@@ -56,18 +56,29 @@ impl<T> Sender<T> {
         Ok(())
     }
 
+    /// A receiver of the current segment's queue.
+    pub fn receiver(&self) -> Receiver<T> {
+        Receiver(self.0.clone())
+    }
+
     /// Ends a segment ([Self::ended]), then swaps in a fresh queue and returns its receiver, for
-    /// the next future. Fresh, not reopened: a receiver kept from the old segment stays closed
-    /// and never sees the next one's data.
+    /// the next future. A receiver kept from the old segment stays closed and never sees the next
+    /// one's data; with none kept, the old queue is reset and reused instead.
     pub fn renew(&mut self) -> Result<Receiver<T>, Error> {
         self.ended()?;
-        let shared = &self.0;
-        self.0 = Rc::new(Shared::new(
-            shared.input.clone(),
-            shared.home.clone(),
-            shared.timer.clone(),
-            shared.bound,
-        ));
+        // No old receiver left to see the reset: reuse the block and its buffer.
+        match Rc::get_mut(&mut self.0) {
+            Some(shared) => shared.reset(),
+            None => {
+                let shared = &self.0;
+                self.0 = Rc::new(Shared::new(
+                    shared.input.clone(),
+                    shared.home.clone(),
+                    shared.timer.clone(),
+                    shared.bound,
+                ));
+            }
+        }
         Ok(Receiver(self.0.clone()))
     }
 }

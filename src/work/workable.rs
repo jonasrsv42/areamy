@@ -12,7 +12,7 @@ mod default;
 /// threads contending on nodes.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a work node",
-    note = "a poll node can't be owned by a work node: bridge with a Sync output (`.output::<Sync>()` + `pushes`)"
+    note = "a poll node can't be owned by a work node: bridge with a Sync output (`.output()` + `pushes`)"
 )]
 pub trait Workable: Send + Connection {
     // Thread associated with this `Workable`.

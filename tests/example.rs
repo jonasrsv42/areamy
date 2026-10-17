@@ -1,5 +1,11 @@
+use areamy::error::Error;
+use areamy::poll::future::line::FutureRoutine;
+use areamy::poll::future::{Input, Receiver, Sender};
+use areamy::thread::Join;
 use areamy::work::Line;
-use areamy::{Pullable, Pushes, Reads, Streams, Via, Writes};
+use areamy::{
+    Closeable, Message, Pullable, Pushable, Pushes, Reads, Streams, Tees, Via, Writes, poll,
+};
 use std::collections::VecDeque;
 
 pub struct AddOne {
@@ -129,4 +135,39 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
     assert_eq!(io.read().unwrap(), areamy::Message::Data(5));
 
     Ok(())
+}
+
+areamy::thread_id!(IoThread);
+
+async fn double(input: Receiver<usize>, output: Sender<usize>) -> Result<(), Error> {
+    while let Input::Data(value) = input.recv().await? {
+        output.send(value * 2).await?;
+    }
+    Ok(())
+}
+
+#[test]
+fn poll_chain() -> Result<(), Error> {
+    let mut io = poll::Thread::<IoThread>::new();
+
+    let inputs = io.line(FutureRoutine::factory(double)).input();
+    let mut writer = inputs.writer()?;
+
+    let mut outputs = inputs
+        .via(io.line(FutureRoutine::factory(double)))?
+        .via(io.line(FutureRoutine::factory(double)))?
+        .output();
+    let mut reader = outputs.tee()?;
+    io.add(outputs);
+
+    std::thread::scope(|s| -> Result<(), Error> {
+        let handle = io.start(s);
+
+        writer.push(Message::Data(1))?;
+        assert_eq!(reader.read()?, Message::Data(8));
+
+        writer.close()?;
+        assert!(matches!(handle.join(), Join::Ok));
+        Ok(())
+    })
 }

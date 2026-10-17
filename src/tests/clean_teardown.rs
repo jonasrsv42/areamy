@@ -5,7 +5,6 @@
 
 use crate::error::{Error, ErrorKind};
 use crate::node::line::poll::routine::tests::MockLine;
-use crate::poll;
 use crate::poll::thread::Thread;
 use crate::sync::Receiver;
 use crate::thread::Join;
@@ -140,11 +139,8 @@ fn middle_thread_error_does_not_deadlock_drain() {
 /// forever.
 #[test]
 fn poll_thread_does_not_deadlock_when_sync_input_drops() {
-    let mut thread = Thread::<'_, PollThread>::new();
-    let node = thread
-        .line(MockLine::new)
-        .input::<poll::Sync>()
-        .output::<poll::Sync>();
+    let mut thread = Thread::<PollThread>::new();
+    let node = thread.line(MockLine::new).input().output();
 
     let input = node.writer().unwrap();
 

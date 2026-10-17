@@ -12,6 +12,8 @@ use crate::poll::context::mock::noop_context;
 use crate::poll::{Context, Pollable};
 use crate::pull::Pullable;
 use crate::signal::Trackable;
+#[cfg(test)]
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::DefaultThread;
 use crate::work::{OwnedWork, Sink, Upstream, Workable};
 use crate::{Pushes, Via, Writes};
@@ -298,6 +300,7 @@ fn boxed_node_pushes() {
 /// works across threads — see the multi-threaded graph example above.
 #[test]
 fn via_chain_pushes_into_sink() {
+    let _deadline = deadline(DEADLINE);
     let node_1 = Node::new();
     let node_2 = Node::new();
     let node_3 = Node::new();

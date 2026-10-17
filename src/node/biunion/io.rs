@@ -119,11 +119,13 @@ where
 mod tests {
     use super::*;
     use crate::node::biunion::routine::tests::MockBiunion;
+    use crate::tests::support::{DEADLINE, deadline};
     use crate::work;
     use crate::{At, Reads, Writes, biunion};
 
     #[test]
     fn readers_biunion_read() {
+        let _deadline = deadline(DEADLINE);
         let biun = work::Biunion::of(MockBiunion::new());
 
         let left_writer = biun.at_ref::<biunion::Left>().writer().unwrap();

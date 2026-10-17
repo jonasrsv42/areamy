@@ -1,6 +1,7 @@
 mod biunion;
 mod build;
 mod chain;
+mod errors;
 mod fan;
 mod flush;
 mod mock;

@@ -226,30 +226,33 @@ fn next_message<T: Types>(
         if let Some(output) = routine.next()? {
             return Ok(Incoming::Message(Message::Data(output)));
         }
+
         if let Some(signal) = pending.take() {
             return Ok(Incoming::Message(signal));
         }
+
         // A closed side just stops feeding: the node ends with its last input.
-        let mut open = false;
-        match input.left.poll() {
+        let left_closed = match input.left.poll() {
             Ok(Some(message)) => {
                 accept(routine, pending, message, biunion::Left)?;
                 continue;
             }
-            Ok(None) => open = true,
-            Err(error) if error.is_closed() => {}
+            Ok(None) => false,
+            Err(error) if error.is_closed() => true,
             Err(error) => return Err(error),
-        }
-        match input.right.poll() {
+        };
+
+        let right_closed = match input.right.poll() {
             Ok(Some(message)) => {
                 accept(routine, pending, message, biunion::Right)?;
                 continue;
             }
-            Ok(None) => open = true,
-            Err(error) if error.is_closed() => {}
+            Ok(None) => false,
+            Err(error) if error.is_closed() => true,
             Err(error) => return Err(error),
-        }
-        if !open {
+        };
+
+        if left_closed && right_closed {
             return Ok(Incoming::Closed);
         }
         // No parents left: block until either edge has data. Closed once neither can.

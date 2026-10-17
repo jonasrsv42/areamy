@@ -275,6 +275,14 @@ mod tests {
         assert_eq!(heap.peek(), Some(future));
     }
 
+    #[test]
+    fn a_deadline_of_exactly_now_fires() {
+        let mut heap = DeadlineHeap::new();
+        let now = Instant::now();
+        heap.register(0, now);
+        assert_eq!(heap.pop(now), Some(0));
+    }
+
     // ---- many timers per node ----
 
     #[test]

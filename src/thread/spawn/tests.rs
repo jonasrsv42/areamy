@@ -1,12 +1,13 @@
-use crate::closed;
 use crate::error::Error;
 use crate::graph::Add;
 use crate::graph::marker::Connection;
 use crate::poll;
 use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::wakers::ThreadLocalWakerAllocator;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::{Done, Join, NeverStarted, ThreadBundle, ThreadId};
 use crate::work::{ThreadStream, Workable};
+use crate::{closed, fatal};
 use alloc::sync::Arc;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -41,6 +42,19 @@ impl<ThreadIdType: ThreadId> Workable for RecordName<ThreadIdType> {
     }
 }
 
+/// A poll thread builds on its own thread: record the name there.
+impl<ThreadIdType: ThreadId> GraphBuilder<'static, ThreadIdType> for RecordName<ThreadIdType> {
+    fn build(
+        self: Box<Self>,
+        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
+    ) -> Result<Graph<'static, ThreadIdType>, Error> {
+        if let Ok(mut name) = self.0.lock() {
+            *name = std::thread::current().name().map(Into::into);
+        }
+        Ok(Graph::empty(allocator))
+    }
+}
+
 /// The name of the OS thread a `ThreadIdType` stream runs on.
 fn os_name<ThreadIdType: ThreadId>() -> Result<Option<String>, Error> {
     let seen = Arc::new(Mutex::new(None));
@@ -60,6 +74,69 @@ fn the_os_thread_is_named_for_its_type() -> Result<(), Error> {
 fn a_thread_id_can_pick_its_own_name() -> Result<(), Error> {
     assert_eq!(os_name::<Renamed>()?.as_deref(), Some("enc"));
     Ok(())
+}
+
+/// A bundle names each OS thread for its type: a stream, a configured one, and a poll thread.
+#[test]
+fn a_bundle_names_each_os_thread_for_its_type() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
+    let seen: [Arc<Mutex<Option<String>>>; 3] = Default::default();
+    let mut plain = ThreadStream::<NamedThread>::new();
+    Add::add(
+        &mut plain,
+        Box::new(RecordName(seen[0].clone(), PhantomData)),
+    )?;
+    let mut configured = ThreadStream::<OtherThread>::new();
+    Add::add(
+        &mut configured,
+        Box::new(RecordName(seen[1].clone(), PhantomData)),
+    )?;
+    let mut polled = poll::Thread::<Renamed>::new();
+    polled.add(RecordName(seen[2].clone(), PhantomData));
+
+    let mut bundle = ThreadBundle::new();
+    bundle.add(plain).add(configured.with()).add(polled);
+    std::thread::scope(|s| assert!(bundle.start(s).join().errors().is_empty()));
+
+    let names: Vec<_> = seen
+        .iter()
+        .map(|name| name.lock().unwrap().clone())
+        .collect();
+    assert_eq!(
+        names,
+        [Some("NamedThread"), Some("OtherThread"), Some("enc")].map(|name| name.map(String::from))
+    );
+    Ok(())
+}
+
+/// Fails to build, so the poll thread exits with an error.
+struct FailingBuild;
+
+impl GraphBuilder<'static, NamedThread> for FailingBuild {
+    fn build(
+        self: Box<Self>,
+        _: ThreadLocalWakerAllocator<NamedThread>,
+    ) -> Result<Graph<'static, NamedThread>, Error> {
+        Err(fatal!("build failed"))
+    }
+}
+
+/// A bundle hears of a poll thread's error through `on_first_error`.
+#[test]
+fn on_first_error_fires_for_a_bundled_poll_thread() {
+    let _deadline = deadline(DEADLINE);
+    let errors = Arc::new(Mutex::new(0));
+    let count = errors.clone();
+    let mut thread = poll::Thread::<NamedThread>::new();
+    thread.add(FailingBuild);
+    let mut bundle = ThreadBundle::new();
+    bundle.add(thread).on_first_error(move |_| {
+        if let Ok(mut count) = count.lock() {
+            *count += 1;
+        }
+    });
+    std::thread::scope(|s| drop(bundle.start(s).join()));
+    assert_eq!(*errors.lock().unwrap(), 1);
 }
 
 /// The options reach the OS: a stack it can't map fails the spawn, reported by `join`.
@@ -229,4 +306,29 @@ fn builders_drop_before_on_done_when_the_spawn_is_refused() {
         seen.load(Ordering::SeqCst),
         "on_done ran with the builders alive"
     );
+}
+
+/// The message names the thread and the OS's reason, which is also the error's source.
+#[test]
+fn never_started_explains_itself() {
+    let refused = NeverStarted {
+        thread: "NamedThread",
+        reason: Some(std::io::Error::other("no memory")),
+    };
+    assert_eq!(
+        refused.to_string(),
+        "thread NamedThread never started: no memory"
+    );
+    let source = core::error::Error::source(&refused).map(ToString::to_string);
+    assert_eq!(source.as_deref(), Some("no memory"));
+
+    let unexplained = NeverStarted {
+        thread: "NamedThread",
+        reason: None,
+    };
+    assert_eq!(
+        unexplained.to_string(),
+        "thread NamedThread never started: the OS refused to spawn it"
+    );
+    assert!(core::error::Error::source(&unexplained).is_none());
 }

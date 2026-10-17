@@ -85,6 +85,7 @@ mod tests {
 
     #[test]
     fn wait_any_closed_without_producers() {
+        let _deadline = deadline(DEADLINE);
         let (parker, left, right) = pair();
         let result = wait_any(&parker, &[&left, &right]);
         assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));

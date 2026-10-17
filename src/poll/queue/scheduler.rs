@@ -327,6 +327,7 @@ mod tests {
 
     #[test]
     fn same_node_earliest_of_two_deadlines_fires() {
+        let _deadline = deadline(DEADLINE);
         // Regression: per-node supersede semantics let a later
         // registration silently cancel an earlier one — the earlier
         // deadline fired late (or never). Timers are now independent.

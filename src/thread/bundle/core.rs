@@ -103,6 +103,7 @@ impl<'threads> ThreadBundleHandle<'threads> {
 #[cfg(test)]
 mod tests {
     use super::ThreadBundle;
+    use crate::tests::support::{DEADLINE, deadline};
     use crate::thread::Join;
     use crate::thread::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use crate::work::{Streams, ThreadStream};
@@ -118,6 +119,7 @@ mod tests {
 
     #[test]
     fn heterogeneous_threads() {
+        let _deadline = deadline(DEADLINE);
         let mut bundle = ThreadBundle::new();
         bundle
             .add(ThreadStream::<'_, ThreadA>::new())

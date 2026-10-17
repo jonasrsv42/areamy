@@ -125,6 +125,7 @@ mod tests {
     use crate::Trackable;
     use crate::edge::sync::Receiver;
     use crate::graph::tests::Bounded;
+    use crate::tests::support::{DEADLINE, deadline};
     use core::num::NonZeroUsize;
 
     type TestSignal = Trackable<&'static str>;
@@ -186,6 +187,7 @@ mod tests {
 
     #[test]
     fn a_signal_passes_only_right_behind_data() {
+        let _deadline = deadline(DEADLINE);
         let edge = Receiver::<f64, TestSignal>::new();
         let mut follow = FollowData::new(edge.sender());
 

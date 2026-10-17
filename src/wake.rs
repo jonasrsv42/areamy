@@ -142,3 +142,15 @@ pub mod mock {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::mock::noop_local_waker;
+
+    #[test]
+    fn will_wake_holds_for_a_clone_only() {
+        let waker = noop_local_waker();
+        assert!(waker.will_wake(&waker.clone()));
+        assert!(!waker.will_wake(&noop_local_waker()));
+    }
+}

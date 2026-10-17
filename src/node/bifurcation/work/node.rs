@@ -373,6 +373,7 @@ pub mod tests {
     use crate::error::ErrorKind;
     use crate::graph::Closeable;
     use crate::node::bifurcation::routine::tests::{HoldBifurcation, MockBifurcation};
+    use crate::tests::support::{DEADLINE, deadline};
     use crate::work::Writer;
     use crate::{At, DefaultThread, Tees, Trackable, Writes};
     use alloc::sync::Arc;
@@ -655,6 +656,7 @@ pub mod tests {
 
     #[test]
     fn close_propagates_through_work_chain() {
+        let _deadline = deadline(DEADLINE);
         // Create a mock workable that returns Closed error
         struct ClosingWorkable;
         impl Connection for ClosingWorkable {}

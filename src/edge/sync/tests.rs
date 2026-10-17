@@ -141,6 +141,7 @@ fn poll_counts_as_progress() {
 
 #[test]
 fn read_all_counts_as_progress() {
+    let _deadline = deadline(DEADLINE);
     pop_between_refusals_gives_full(|rx| {
         rx.read_all().unwrap();
     });
@@ -325,6 +326,7 @@ fn release_accounting_holds_under_races() {
 /// Pushes through a closed handle fail, and its clones are done too: they can't reopen it.
 #[test]
 fn a_closed_sender_and_its_clones_are_done() {
+    let _deadline = deadline(DEADLINE);
     let rx = Receiver::<usize, TestSignal>::new();
     let mut tx = rx.sender();
     let other = rx.sender();

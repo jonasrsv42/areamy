@@ -291,6 +291,7 @@ mod tests {
     use crate::graph::tests::{Counted, FailingClose};
     use crate::poll;
     use crate::poll::sink::mock::ScheduleOnly;
+    use crate::tests::support::{DEADLINE, deadline};
     use crate::wake::mock::{noop_local_waker, noop_waker};
     use crate::work::DynSink;
     use alloc::sync::Arc;
@@ -526,6 +527,7 @@ mod tests {
 
     #[test]
     fn close_while_blocked_errors_without_suspending() {
+        let _deadline = deadline(DEADLINE);
         let (mut fanout, mut receivers) = fan::<usize>(&[Some(1), None]);
         let filler = receivers[0].sender();
         filler.push_back(Message::Data(0)).unwrap();

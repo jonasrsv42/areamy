@@ -11,6 +11,7 @@
 
 use crate::error::Error;
 use crate::node::{bifurcation, biunion};
+use crate::tests::support::{DEADLINE, deadline};
 use crate::work;
 use crate::{At, BifurcationRoutine, BiunionRoutine, LineIo, Message, Pushes, Reads, Via, Writes};
 use alloc::collections::VecDeque;
@@ -186,6 +187,7 @@ impl crate::node::line::LineRoutine<usize, usize> for IncrementLine {}
 
 #[test]
 fn test_cycle_with_line_node() {
+    let _deadline = deadline(DEADLINE);
     let line = work::Line::of(IncrementLine::new());
     let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 

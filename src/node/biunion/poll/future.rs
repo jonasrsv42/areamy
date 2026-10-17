@@ -217,8 +217,7 @@ mod tests {
     use crate::poll::future::Input;
     use crate::poll::{Either, race, try_join};
     use crate::thread::ThreadBundle;
-    use crate::work::Writer;
-    use crate::{At, Closeable, Message, Push, Pushable, Trackable, biunion as biu};
+    use crate::{At, Closeable, Message, Pushable, Pushes, Trackable, Writes, biunion as biu};
 
     crate::thread_id!(BiunionFutureThread);
 
@@ -257,10 +256,10 @@ mod tests {
             .input::<biu::Right, poll::Sync>()
             .output::<poll::Sync>();
 
-        let mut left_input = Writer::new(&node.at::<biu::Left>()).unwrap();
-        let mut right_input = Writer::new(&node.at::<biu::Right>()).unwrap();
+        let mut left_input = node.at_ref::<biu::Left>().writer().unwrap();
+        let mut right_input = node.at_ref::<biu::Right>().writer().unwrap();
         let output = Receiver::new();
-        Push::connect(&mut node, &output).unwrap();
+        node.pushes(&output).unwrap();
 
         thread.add(node);
 
@@ -326,10 +325,10 @@ mod tests {
             .input::<biu::Right, poll::Sync>()
             .output::<poll::Sync>();
 
-        let mut left_input = Writer::new(&node.at::<biu::Left>()).unwrap();
-        let mut right_input = Writer::new(&node.at::<biu::Right>()).unwrap();
+        let mut left_input = node.at_ref::<biu::Left>().writer().unwrap();
+        let mut right_input = node.at_ref::<biu::Right>().writer().unwrap();
         let output = Receiver::new();
-        Push::connect(&mut node, &output).unwrap();
+        node.pushes(&output).unwrap();
         thread.add(node);
         let mut bundle = ThreadBundle::new();
         bundle.add(thread);

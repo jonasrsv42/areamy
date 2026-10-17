@@ -14,8 +14,9 @@ use std::any::type_name;
 ///
 /// ```ignore
 /// let frontend = root.then(Framer::new()).then(Mel::new());
-/// work::Bidi::connect(work::Pulled::of(frontend), &mut model)?;
+/// let model = work::Pulled::of(frontend).via(model)?;
 /// ```
+#[must_use = "a node does nothing until owned (`via` / `schedules`) or added to a thread"]
 pub struct Pulled<'params, PullableType: Pullable> {
     pullable: PullableType,
     /// A refused message waits here, and nothing new is pulled until it is delivered.
@@ -100,8 +101,8 @@ mod tests {
     use crate::node::line::routine::tests::{MockLine, MockWaitLine};
     use crate::pull::WriterBuffer;
     use crate::work::Sink;
-    use crate::work::{self, Line, Reader, Workable, Writer};
-    use crate::{DefaultThread, Message, Pullable, Push, Trackable};
+    use crate::work::{self, Line, Workable};
+    use crate::{DefaultThread, Message, Pullable, Pushes, Reads, Trackable, Via, Writes};
     use std::num::NonZeroUsize;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -160,13 +161,13 @@ mod tests {
     fn two_pulled_parents_share_a_bounded_owner() {
         let (a, a_pulls) = counter();
         let (b, b_pulls) = counter();
-        let mut line = Line::builder()
+        let line = Line::builder()
             .bounded(NonZeroUsize::MIN)
             .build(MockWaitLine::new(1));
         // `a` yields evens, `b` odds. Whoever pushes second is refused (`Full`) every round.
-        work::Bidi::connect(work::Pulled::of(Tag(a, 0)), &mut line).unwrap();
-        work::Bidi::connect(work::Pulled::of(Tag(b, 1)), &mut line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let line = work::Pulled::of(Tag(a, 0)).via(line).unwrap();
+        let line = work::Pulled::of(Tag(b, 1)).via(line).unwrap();
+        let mut reader = line.reader().unwrap();
 
         // A parent blocking on the owner's input, filled by its sibling, would deadlock here.
         let reading = thread::spawn(move || {
@@ -217,17 +218,16 @@ mod tests {
     #[test]
     fn pulled_chain_fans_out_to_bidi_and_push_children() {
         let buffer = WriterBuffer::new();
-        let mut writer = Writer::new(&buffer).unwrap();
+        let mut writer = buffer.writer().unwrap();
 
         let mut pulled = work::Pulled::of(buffer.then(MockLine::new()));
         let other = Line::of(MockLine::new());
-        Push::connect(&mut pulled, &other).unwrap();
+        pulled.pushes(&other).unwrap();
 
-        let mut line = Line::of(MockLine::new());
-        work::Bidi::connect(pulled, &mut line).unwrap();
+        let line = pulled.via(Line::of(MockLine::new())).unwrap();
 
-        let mut reader = Reader::new(line).unwrap();
-        let mut other_reader = Reader::new(other).unwrap();
+        let mut reader = line.reader().unwrap();
+        let mut other_reader = other.reader().unwrap();
 
         writer.push(Message::Data(1)).unwrap();
 
@@ -239,11 +239,12 @@ mod tests {
     #[test]
     fn pulled_close_closes_children() {
         let buffer = WriterBuffer::new();
-        let writer = Writer::new(&buffer).unwrap();
+        let writer = buffer.writer().unwrap();
 
-        let mut line = Line::of(MockLine::new());
-        work::Bidi::connect(work::Pulled::of(buffer), &mut line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let line = work::Pulled::of(buffer)
+            .via(Line::of(MockLine::new()))
+            .unwrap();
+        let mut reader = line.reader().unwrap();
 
         drop(writer);
 

@@ -10,7 +10,7 @@ use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::{Input, input, output};
 use areamy::poll::try_join;
 use areamy::sync::Receiver;
-use areamy::{Closeable, Message, Push, Pushable, ThreadBundle, ThreadStream};
+use areamy::{Closeable, Message, Pushable, Pushes, Streams, ThreadBundle, Writes};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -158,8 +158,8 @@ impl areamy::LineRoutine<usize, usize> for Double {}
 /// Multi-segment: flush resets the future, reconnects.
 #[test]
 fn bidi_with_join() -> Result<(), Error> {
-    let mut writer_node = areamy::work::Line::of(Double::new());
-    let mut writer = areamy::work::Writer::<usize>::of(&writer_node)?;
+    let mut inputs = areamy::work::Line::of(Double::new());
+    let mut writer = inputs.writer()?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
 
@@ -200,18 +200,18 @@ fn bidi_with_join() -> Result<(), Error> {
         },
     );
 
-    let mut node = async_thread
+    let mut session = async_thread
         .line(routine)
         .input::<areamy::poll::Sync>()
         .output::<areamy::poll::Sync>();
-    Push::connect(&mut writer_node, &node)?;
+    inputs.pushes(&session)?;
 
-    let output = Receiver::new();
-    Push::connect(&mut node, &output)?;
+    let outputs = Receiver::new();
+    session.pushes(&outputs)?;
 
-    async_thread.add(node);
+    async_thread.add(session);
 
-    let sync_thread = ThreadStream::<areamy::DefaultThread>::of(writer_node);
+    let sync_thread = inputs.stream::<areamy::DefaultThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);
@@ -224,16 +224,16 @@ fn bidi_with_join() -> Result<(), Error> {
         writer.push(Message::Data(2))?;
         writer.push(Message::Flush("s1".into()))?;
 
-        assert_eq!(output.read_front()?, Message::Data(31));
-        assert_eq!(output.read_front()?, Message::Data(13)); // 2→4→12→13
-        assert_eq!(output.read_front()?, Message::Flush("s1".into()));
+        assert_eq!(outputs.read_front()?, Message::Data(31));
+        assert_eq!(outputs.read_front()?, Message::Data(13)); // 2→4→12→13
+        assert_eq!(outputs.read_front()?, Message::Flush("s1".into()));
 
         // Second segment — future recreated, new socket
         writer.push(Message::Data(1))?;
         writer.push(Message::Flush("s2".into()))?;
 
-        assert_eq!(output.read_front()?, Message::Data(7)); // 1→2→6→7
-        assert_eq!(output.read_front()?, Message::Flush("s2".into()));
+        assert_eq!(outputs.read_front()?, Message::Data(7)); // 1→2→6→7
+        assert_eq!(outputs.read_front()?, Message::Flush("s2".into()));
 
         writer.close()?;
         let errors = handle.join().errors();

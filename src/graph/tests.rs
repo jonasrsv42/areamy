@@ -1,6 +1,5 @@
 //! Example nodes wiring the connection traits together.
 
-use crate::Push;
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::fatal;
@@ -14,9 +13,10 @@ use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
 use crate::work::Sink;
-use crate::work::{self, Workable};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::work::Workable;
+use crate::{Pushes, Schedules};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Payload that counts its clones in a shared counter.
 #[derive(Debug)]
@@ -269,7 +269,7 @@ fn boxed_node_connects_as_push_parent() {
     let sink = Receiver::new();
 
     let mut boxed = Box::new(Node::new());
-    Push::connect(&mut boxed, &sink).unwrap();
+    boxed.pushes(&sink).unwrap();
     assert_eq!(boxed.outputs.len(), 1);
 }
 
@@ -278,7 +278,7 @@ fn boxed_node_connects_as_push_parent() {
 /// works across threads — see the multi-threaded graph example above.
 #[test]
 fn connect_push_work_bidi_chain() {
-    let node_1 = Node::new();
+    let mut node_1 = Node::new();
     let mut node_2 = Node::new();
     let mut node_3 = Node::new();
 
@@ -287,12 +287,15 @@ fn connect_push_work_bidi_chain() {
     >::get(&node_1)
     .unwrap();
 
-    work::Bidi::connect(node_1, &mut node_2).unwrap();
-    work::Bidi::connect(node_2, &mut node_3).unwrap();
+    // A custom node has no `via`: push data down, then hand the schedule over.
+    node_1.pushes(&node_2).unwrap();
+    node_2.schedules(node_1).unwrap();
+    node_2.pushes(&node_3).unwrap();
+    node_3.schedules(node_2).unwrap();
 
     let sink = Receiver::new();
 
-    Push::connect(&mut node_3, &sink).unwrap();
+    node_3.pushes(&sink).unwrap();
 
     input.push(Message::Data(0)).unwrap();
     input.push(Message::Data(1)).unwrap();

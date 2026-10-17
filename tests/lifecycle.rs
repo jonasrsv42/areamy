@@ -49,10 +49,10 @@ use areamy::edge::sync::Receiver;
 use areamy::error::Error;
 use areamy::pull::WriterBuffer;
 use areamy::thread::{ThreadBundle, ThreadBundleHandle};
-use areamy::work::{self, ThreadStream, Writer};
+use areamy::work::{self, Writer};
 use areamy::{
-    Accept, Closeable, Flush, LineRoutine, Message, Next, Pullable, Push, Pushable,
-    Send as RoutineSend, TrySend, fatal, poll,
+    Accept, Closeable, Flush, LineRoutine, Message, Next, Pullable, Pushable, Pushes,
+    Send as RoutineSend, Streams, TrySend, Via, Writes, fatal, poll,
 };
 use std::collections::VecDeque;
 use std::sync::mpsc;
@@ -210,13 +210,14 @@ fn build_graph<'params>(
 ) -> GenerationHandles<'params> {
     // Pull segment on the main thread.
     let buffer = WriterBuffer::new();
-    let writer = Writer::new(&buffer).unwrap();
+    let writer = buffer.writer().unwrap();
     let pull_line = buffer.then(PullIdentity::new());
 
     // Work segment: a work-line fed by the pull tail that accepts
     // one message and then errors. Lives on its own OS thread.
-    let mut bridged = work::Line::of(FailAfter::new(1));
-    work::Bidi::connect(work::Pulled::of(pull_line), &mut bridged).unwrap();
+    let mut bridged = work::Pulled::of(pull_line)
+        .via(work::Line::of(FailAfter::new(1)))
+        .unwrap();
 
     // Poll segment: a poll line on a dedicated async thread with a
     // sync→poll bridge on input and a sync edge on output.
@@ -230,12 +231,12 @@ fn build_graph<'params>(
     // thread so the orchestrator can verify real data flowed in
     // each generation.
     let sink_recv = Receiver::new();
-    Push::connect(&mut bridged, &poll_node).unwrap();
-    Push::connect(&mut poll_node, &sink_recv).unwrap();
+    bridged.pushes(&poll_node).unwrap();
+    poll_node.pushes(&sink_recv).unwrap();
 
     poll_thread.add(poll_node);
 
-    let work_thread = ThreadStream::<WorkThread>::of(bridged);
+    let work_thread = bridged.stream::<WorkThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle

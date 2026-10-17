@@ -55,15 +55,18 @@ mod closeable;
 mod get;
 mod inlet;
 pub mod marker;
+#[cfg(doctest)]
+mod misuse;
 mod outlet;
 mod outputs;
 mod schedule;
 mod sink;
 #[cfg(any(test, doc))]
 pub mod tests;
+mod via;
 
 pub use add::Add;
-pub use at::{At, Select};
+pub use at::{At, Select, SelectMut, SelectRef};
 pub use box_as::BoxAs;
 pub use closeable::Closeable;
 pub use get::Get;
@@ -72,3 +75,4 @@ pub use outlet::{Outlet, Pushable, TryPush, TryPushable};
 pub use outputs::Outputs;
 pub use schedule::Schedule;
 pub use sink::Sink;
+pub use via::{Downstream, Via};

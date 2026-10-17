@@ -3,8 +3,10 @@
 mod support;
 
 use areamy::sync::Receiver;
-use areamy::work::{self, Biunion, Line, Reader, Writer};
-use areamy::{At, Closeable, Message, Push, Pushable, ThreadStream, Trackable, biunion};
+use areamy::work::{Biunion, Line, Reader, Writer};
+use areamy::{
+    At, Closeable, Message, Pushable, Pushes, Reads, Streams, Trackable, Via, Writes, biunion,
+};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::thread;
@@ -18,12 +20,13 @@ type Signal = Trackable<&'static str>;
 /// Three pass-through lines chained with bidi on one thread.
 fn three_lines<T: Clone + Send + Sync + 'static>() -> (Writer<'static, T>, Reader<'static, T>) {
     let first = Line::of(Pass::<T>::new());
-    let mut second = Line::of(Pass::new());
-    let mut third = Line::of(Pass::new());
-    let writer = Writer::new(&first).unwrap();
-    work::Bidi::connect(first, &mut second).unwrap();
-    work::Bidi::connect(second, &mut third).unwrap();
-    (writer, Reader::new(third).unwrap())
+    let writer = first.writer().unwrap();
+    let third = first
+        .via(Line::of(Pass::new()))
+        .unwrap()
+        .via(Line::of(Pass::new()))
+        .unwrap();
+    (writer, third.reader().unwrap())
 }
 
 fn pipeline(c: &mut Criterion) {
@@ -59,15 +62,14 @@ fn fan_out(c: &mut Criterion) {
 
     for outputs in [1usize, 3] {
         let mut source = Line::of(Pass::<Vec<f32>>::new());
-        let mut writer = Writer::new(&source).unwrap();
+        let mut writer = source.writer().unwrap();
         let extras: Vec<Receiver<Vec<f32>, Signal>> =
             (1..outputs).map(|_| Receiver::new()).collect();
         for extra in &extras {
-            Push::connect(&mut source, extra).unwrap();
+            source.pushes(extra).unwrap();
         }
-        let mut owner = Line::of(Pass::new());
-        work::Bidi::connect(source, &mut owner).unwrap();
-        let mut reader = Reader::new(owner).unwrap();
+        let owner = source.via(Line::of(Pass::new())).unwrap();
+        let mut reader = owner.reader().unwrap();
 
         group.bench_function(format!("{outputs}_outputs"), |b| {
             b.iter_batched(
@@ -91,10 +93,10 @@ fn biunion(c: &mut Criterion) {
     let mut group = c.benchmark_group("work/biunion");
     group.throughput(Throughput::Elements(2));
 
-    let mut node = Biunion::of(Merge::<usize>::new());
-    let mut left = Writer::new(&node.at::<biunion::Left>()).unwrap();
-    let mut right = Writer::new(&node.at::<biunion::Right>()).unwrap();
-    let mut reader = Reader::new(node).unwrap();
+    let node = Biunion::of(Merge::<usize>::new());
+    let mut left = node.at_ref::<biunion::Left>().writer().unwrap();
+    let mut right = node.at_ref::<biunion::Right>().writer().unwrap();
+    let mut reader = node.reader().unwrap();
 
     group.bench_function("both_sides", |b| {
         b.iter(|| {
@@ -113,13 +115,12 @@ fn helper_thread(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
 
     let first = Line::of(Pass::<usize>::new());
-    let mut second = Line::of(Pass::new());
     let last = Line::of(Pass::new());
-    let mut writer = Writer::new(&first).unwrap();
-    work::Bidi::connect(first, &mut second).unwrap();
-    Push::connect(&mut second, &last).unwrap();
-    let helper = ThreadStream::<Helper>::of(second);
-    let mut reader = Reader::new(last).unwrap();
+    let mut writer = first.writer().unwrap();
+    let mut second = first.via(Line::of(Pass::new())).unwrap();
+    second.pushes(&last).unwrap();
+    let helper = second.stream::<Helper>();
+    let mut reader = last.reader().unwrap();
 
     thread::scope(|s| {
         let handle = helper.start(s);

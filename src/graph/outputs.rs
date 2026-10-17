@@ -9,7 +9,8 @@ use crate::graph::marker::{Connection, Multiplicity, Unary};
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no single push output here",
     label = "no `Outputs<{MultiplicityType}>`",
-    note = "a node with several outputs needs a side: `node.at::<Left>()`"
+    note = "a node with several outputs needs a borrowed side: `node.at_mut::<Left>().pushes(..)`",
+    note = "`at` moves the node and only feeds `via`; `pushes` takes `at_mut`"
 )]
 pub trait Outputs<MultiplicityType: Multiplicity = Unary>:
     Add<Self::Sink, MultiplicityType>

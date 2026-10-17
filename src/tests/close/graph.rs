@@ -6,15 +6,15 @@ use crate::poll;
 use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
-use crate::work::{self, Writer};
-use crate::{Closeable, DefaultThread, Message, Push, Pushable, ThreadBundle, ThreadStream};
+use crate::work;
+use crate::{Closeable, DefaultThread, Message, Pushable, Pushes, Streams, ThreadBundle, Writes};
 
 /// Marks output that only exists because the future saw Flush.
 const FLUSHED: usize = 999;
 
 fn run_once() -> Result<(), Error> {
     let mut sync_node = work::Line::of(Hold::new());
-    let mut writer = Writer::new(&sync_node)?;
+    let mut writer = sync_node.writer()?;
 
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let routine = FutureRoutine::factory(
@@ -36,13 +36,13 @@ fn run_once() -> Result<(), Error> {
         .line(routine)
         .input::<poll::Sync>()
         .output::<poll::Sync>();
-    Push::connect(&mut sync_node, &async_node)?;
+    sync_node.pushes(&async_node)?;
 
     let output = Receiver::new();
-    Push::connect(&mut async_node, &output)?;
+    async_node.pushes(&output)?;
     async_thread.add(async_node);
 
-    let sync_thread = ThreadStream::<DefaultThread>::of(sync_node);
+    let sync_thread = sync_node.stream::<DefaultThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(sync_thread).add(async_thread);

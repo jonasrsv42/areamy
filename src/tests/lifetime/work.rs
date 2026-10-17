@@ -3,8 +3,8 @@
 use super::mock::{BorrowingBifurcation, BorrowingBiunion, BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
 use crate::thread::ThreadBundle;
-use crate::work::{self, ThreadStream, Writer};
-use crate::{At, Closeable, Message, Push, Pushable, bifurcation, biunion};
+use crate::work;
+use crate::{At, Closeable, Message, Pushable, Pushes, Streams, Writes, bifurcation, biunion};
 use std::collections::VecDeque;
 
 #[test]
@@ -12,11 +12,11 @@ fn line_work_borrowed() {
     let multiplier: usize = 3;
     let mut line = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let mut input = Writer::new(&line).unwrap();
+    let mut input = line.writer().unwrap();
     let output = Receiver::new();
-    Push::connect(&mut line, &output).unwrap();
+    line.pushes(&output).unwrap();
 
-    let thread = ThreadStream::<LifetimeThread>::of(line);
+    let thread = line.stream::<LifetimeThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);
@@ -39,7 +39,7 @@ fn line_work_borrowed() {
 
 /// Canonical motivating case: two work lines on separate threads in the
 /// same bundle, both borrowing `&multiplier` (think encoder + decoder
-/// both holding `&Model`). Cross-thread connection via `Push::connect`.
+/// both holding `&Model`). Cross-thread connection via `pushes`.
 #[test]
 fn multi_thread_shared_borrow() {
     let multiplier: usize = 3;
@@ -47,13 +47,13 @@ fn multi_thread_shared_borrow() {
     let mut line_a = work::Line::of(BorrowingLine::new(&multiplier));
     let mut line_b = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let mut input = Writer::new(&line_a).unwrap();
-    Push::connect(&mut line_a, &line_b).unwrap();
+    let mut input = line_a.writer().unwrap();
+    line_a.pushes(&line_b).unwrap();
     let output = Receiver::new();
-    Push::connect(&mut line_b, &output).unwrap();
+    line_b.pushes(&output).unwrap();
 
-    let thread_a = ThreadStream::<LifetimeThread>::of(line_a);
-    let thread_b = ThreadStream::<LifetimeThread>::of(line_b);
+    let thread_a = line_a.stream::<LifetimeThread>();
+    let thread_b = line_b.stream::<LifetimeThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread_a);
@@ -84,12 +84,12 @@ fn biunion_work_borrowed() {
         out: VecDeque::new(),
     });
 
-    let mut left = Writer::new(&biun.at::<biunion::Left>()).unwrap();
-    let mut right = Writer::new(&biun.at::<biunion::Right>()).unwrap();
+    let mut left = biun.at_ref::<biunion::Left>().writer().unwrap();
+    let mut right = biun.at_ref::<biunion::Right>().writer().unwrap();
     let output = Receiver::new();
-    Push::connect(&mut biun, &output).unwrap();
+    biun.pushes(&output).unwrap();
 
-    let thread = ThreadStream::<LifetimeThread>::of(biun);
+    let thread = biun.stream::<LifetimeThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);
@@ -120,13 +120,13 @@ fn bifurcation_work_borrowed() {
         right: VecDeque::new(),
     });
 
-    let mut writer = Writer::new(&bif).unwrap();
+    let mut writer = bif.writer().unwrap();
     let low = Receiver::new();
     let high = Receiver::new();
-    Push::connect(&mut bif.at::<bifurcation::Left>(), &low).unwrap();
-    Push::connect(&mut bif.at::<bifurcation::Right>(), &high).unwrap();
+    bif.at_mut::<bifurcation::Left>().pushes(&low).unwrap();
+    bif.at_mut::<bifurcation::Right>().pushes(&high).unwrap();
 
-    let thread = ThreadStream::<LifetimeThread>::of(bif);
+    let thread = bif.stream::<LifetimeThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);

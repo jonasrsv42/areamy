@@ -6,9 +6,10 @@ use areamy::error::Error;
 use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::{Input, input, output};
 use areamy::sync::Receiver;
-use areamy::work::{Line, Writer};
+use areamy::work::Line;
 use areamy::{
-    Closeable, DefaultThread, Message, Push, Pushable, ThreadBundle, ThreadStream, Trackable, poll,
+    Closeable, DefaultThread, Message, Pushable, Pushes, Streams, ThreadBundle, Trackable, Writes,
+    poll,
 };
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -25,7 +26,7 @@ fn sync_poll_sync(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
 
     let mut writer_node = Line::of(Pass::<usize>::new());
-    let mut writer = Writer::new(&writer_node).unwrap();
+    let mut writer = writer_node.writer().unwrap();
 
     let mut io_thread = poll::Thread::<'_, IoThread>::new();
     let routine = FutureRoutine::factory(
@@ -42,14 +43,14 @@ fn sync_poll_sync(c: &mut Criterion) {
         .line(routine)
         .input::<poll::Sync>()
         .output::<poll::Sync>();
-    Push::connect(&mut writer_node, &node).unwrap();
+    writer_node.pushes(&node).unwrap();
     let output = Receiver::<usize, Signal>::new();
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
     io_thread.add(node);
 
     let mut bundle = ThreadBundle::new();
     bundle
-        .add(ThreadStream::<DefaultThread>::of(writer_node))
+        .add(writer_node.stream::<DefaultThread>())
         .add(io_thread);
 
     thread::scope(|s| {

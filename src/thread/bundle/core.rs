@@ -125,7 +125,7 @@ mod tests {
     use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use super::ThreadBundle;
     use crate::thread::Join;
-    use crate::work::ThreadStream;
+    use crate::work::{Streams, ThreadStream};
 
     #[test]
     fn start_and_join_empty() {
@@ -163,9 +163,9 @@ mod tests {
 
     #[test]
     fn work_error_appears_in_results() {
-        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
+        let thread_a = WorkError::<ThreadA>::new().stream();
 
-        let thread_b = ThreadStream::of(ImmediateClose::<ThreadB>::new());
+        let thread_b = ImmediateClose::<ThreadB>::new().stream();
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn panic_appears_as_panic_variant() {
-        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
+        let thread_a = Panicker::<ThreadA>::new().stream();
 
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
@@ -195,9 +195,9 @@ mod tests {
 
     #[test]
     fn multiple_panics_each_recorded() {
-        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
+        let thread_a = Panicker::<ThreadA>::new().stream();
 
-        let thread_b = ThreadStream::of(Panicker::<ThreadB>::new());
+        let thread_b = Panicker::<ThreadB>::new().stream();
 
         let mut bundle = ThreadBundle::new();
         bundle.add(thread_a).add(thread_b);

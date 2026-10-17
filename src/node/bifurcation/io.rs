@@ -181,18 +181,18 @@ where
 mod tests {
     use super::*;
     use crate::node::bifurcation::routine::tests::MockBifurcation;
-    use crate::work::{self, Writer, tee};
-    use crate::{At, bifurcation};
+    use crate::work;
+    use crate::{At, Tees, Writes, bifurcation};
 
     #[test]
     fn readers_bifurcation_read() {
         // Same as in sync node.
         let mut bifur = work::Bifurcation::of(MockBifurcation::new());
 
-        let writer = Writer::new(&bifur).unwrap();
+        let writer = bifur.writer().unwrap();
 
-        let left_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Left>()).unwrap();
-        let right_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Right>()).unwrap();
+        let left_reader = bifur.at_mut::<bifurcation::Left>().tee().unwrap();
+        let right_reader = bifur.at_mut::<bifurcation::Right>().tee().unwrap();
 
         let mut reader = BifurcationIo::new(writer, left_reader, right_reader, bifur);
 

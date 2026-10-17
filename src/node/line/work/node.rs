@@ -93,6 +93,7 @@ where
 ///
 /// If the implementation is not suitable for a usecase then any node with
 /// the [LineTrait] capabilities can be used as a drop-in replacement for [Line].
+#[must_use = "a node does nothing until owned (`via` / `schedules`) or added to a thread"]
 pub struct Line<'params, T: Types> {
     /// Worker or `Coroutine` associated with the current node.
     pub worker: T::Routine,
@@ -162,8 +163,8 @@ where
     ThreadIdType: ThreadId,
     RoutineType: LineRoutine<In, Out>,
 {
-    /// Create a [Line] with routine [LineRoutine]. Wire it with [crate::Push],
-    /// [crate::work::Bidi] and [crate::work::Schedule]; its thread is inferred from them.
+    /// Create a [Line] with routine [LineRoutine]. Wire it with [crate::Pushes],
+    /// [crate::Via] and [crate::Schedules]; its thread is inferred from them.
     ///
     /// * `worker` - A [LineRoutine] that will transform data in this node.
     pub fn of(worker: RoutineType) -> Self {
@@ -266,16 +267,15 @@ impl<'params, T: Types> Outputs for Line<'params, T> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::DefaultThread;
     use crate::edge::sync::tests::{join_within, wait_until};
     use crate::graph::marker::Multiplicity;
     use crate::graph::{Closeable, Pushable};
     use crate::node::line::routine::tests::{AccMockLine, ClosesAfterOne, MockLine, MockWaitLine};
     use crate::signal::Trackable;
-    use crate::work::{self, Reader, Writer, tee};
+    use crate::{DefaultThread, Reads, Tees, Via, Writes};
     use std::num::NonZeroUsize;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
     use std::time::Instant;
 
@@ -328,15 +328,14 @@ pub mod tests {
     fn parked_parent_delivers_one_message_per_work() {
         // Holds 5 inputs until the Flush, then releases them into a bound-1 owner edge.
         let parent = Line::of(MockWaitLine::new(10));
-        let mut writer = Writer::new(&parent).unwrap();
+        let mut writer = parent.writer().unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
         let counting = Counting {
             inner: parent,
             calls: calls.clone(),
         };
-        let mut child = bound_one_line();
-        work::Bidi::connect(counting, &mut child).unwrap();
-        let mut reader = Reader::new(child).unwrap();
+        let child = counting.via(bound_one_line()).unwrap();
+        let mut reader = child.reader().unwrap();
 
         for value in 1..=5 {
             writer.push(Message::Data(value)).unwrap();
@@ -357,10 +356,9 @@ pub mod tests {
     #[test]
     fn close_while_parked_comes_after_the_parked_messages() {
         let parent = Line::of(MockWaitLine::new(10));
-        let mut writer = Writer::new(&parent).unwrap();
-        let mut child = bound_one_line();
-        work::Bidi::connect(parent, &mut child).unwrap();
-        let mut reader = Reader::new(child).unwrap();
+        let mut writer = parent.writer().unwrap();
+        let child = parent.via(bound_one_line()).unwrap();
+        let mut reader = child.reader().unwrap();
 
         for value in 1..=5 {
             writer.push(Message::Data(value)).unwrap();
@@ -389,11 +387,11 @@ pub mod tests {
         const N: usize = 200;
         const DIRECT: usize = 10_000;
         let parent = Line::of(MockWaitLine::new(1));
-        let mut to_parent = Writer::new(&parent).unwrap();
-        let mut child = bound_one_line();
-        let mut direct = Writer::new(&child).unwrap();
-        work::Bidi::connect(parent, &mut child).unwrap();
-        let mut reader = Reader::new(child).unwrap();
+        let mut to_parent = parent.writer().unwrap();
+        let child = bound_one_line();
+        let mut direct = child.writer().unwrap();
+        let child = parent.via(child).unwrap();
+        let mut reader = child.reader().unwrap();
 
         // More than will be read: a parent that runs dry blocks in `wait_front` (a paradigm
         // limit), which would stall the read for reasons unrelated to this test.
@@ -429,16 +427,16 @@ pub mod tests {
         // A parentless parent with an open, silent writer: working it would block in
         // `wait_front`.
         let parent = Line::of(MockWaitLine::new(1));
-        let _silent = Writer::new(&parent).unwrap();
+        let _silent = parent.writer().unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
         let counting = Counting {
             inner: parent,
             calls: calls.clone(),
         };
-        let mut child: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
-        let mut direct = Writer::new(&child).unwrap();
-        work::Bidi::connect(counting, &mut child).unwrap();
-        let mut reader = Reader::new(child).unwrap();
+        let child: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
+        let mut direct = child.writer().unwrap();
+        let child = counting.via(child).unwrap();
+        let mut reader = child.reader().unwrap();
 
         for value in 0..3 {
             direct.push(Message::Data(value)).unwrap();
@@ -456,16 +454,16 @@ pub mod tests {
     fn routine_closed_in_one_parent_keeps_the_siblings_data() {
         let closing = Line::of(ClosesAfterOne::new());
         let open = Line::of(MockWaitLine::new(1));
-        let mut to_closing = Writer::new(&closing).unwrap();
-        let mut to_open = Writer::new(&open).unwrap();
+        let mut to_closing = closing.writer().unwrap();
+        let mut to_open = open.writer().unwrap();
         to_closing.push(Message::Data(1000)).unwrap();
         for value in 0..5 {
             to_open.push(Message::Data(value)).unwrap();
         }
-        let mut child: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
-        work::Bidi::connect(closing, &mut child).unwrap();
-        work::Bidi::connect(open, &mut child).unwrap();
-        let mut reader = Reader::new(child).unwrap();
+        let child: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
+        let child = closing.via(child).unwrap();
+        let child = open.via(child).unwrap();
+        let mut reader = child.reader().unwrap();
 
         // The closing routine ends its own line only: the shared input stays open for `open`.
         let reading = thread::spawn(move || {
@@ -481,7 +479,7 @@ pub mod tests {
     #[test]
     fn signals_with_no_outputs_are_consumed() {
         let mut line: TestLine<MockWaitLine> = Line::of(MockWaitLine::new(1));
-        let mut writer = Writer::new(&line).unwrap();
+        let mut writer = line.writer().unwrap();
         writer.push(Message::Marker("m".into())).unwrap();
         writer.push(Message::Flush("f".into())).unwrap();
         writer.push(Message::Data(1)).unwrap();
@@ -499,7 +497,7 @@ pub mod tests {
         let edge: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
             Box::new(side.sender());
         Add::add(&mut line, edge).unwrap();
-        let mut writer = Writer::new(&line).unwrap();
+        let mut writer = line.writer().unwrap();
         for value in 0..3 {
             writer.push(Message::Data(value)).unwrap();
         }
@@ -523,16 +521,15 @@ pub mod tests {
         const N: usize = 20;
         let first = Line::of(MockWaitLine::new(1));
         let second = Line::of(MockWaitLine::new(1));
-        let mut to_first = Writer::new(&first).unwrap();
-        let mut to_second = Writer::new(&second).unwrap();
+        let mut to_first = first.writer().unwrap();
+        let mut to_second = second.writer().unwrap();
         for value in 0..N {
             to_first.push(Message::Data(value)).unwrap();
             to_second.push(Message::Data(N + value)).unwrap();
         }
-        let mut child = bound_one_line();
-        work::Bidi::connect(first, &mut child).unwrap();
-        work::Bidi::connect(second, &mut child).unwrap();
-        let mut reader = Reader::new(child).unwrap();
+        let child = first.via(bound_one_line()).unwrap();
+        let child = second.via(child).unwrap();
+        let mut reader = child.reader().unwrap();
 
         // Reads N of the 2N: neither parent runs dry, since a dry parent blocks in `wait_front`
         // (a paradigm limit) and would stall its sibling.
@@ -551,8 +548,8 @@ pub mod tests {
     #[test]
     fn line_accumulating_node_works() {
         let line = Line::of(AccMockLine::new());
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         writer.push(Message::Data(1)).unwrap();
         writer.push(Message::Data(2)).unwrap();
@@ -563,8 +560,8 @@ pub mod tests {
     #[test]
     fn line_wait_node_mark_waits() {
         let line = Line::of(MockWaitLine::new(4));
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         writer.push(Message::Data(1)).unwrap();
         writer.push(Message::Data(2)).unwrap();
@@ -593,8 +590,8 @@ pub mod tests {
     #[test]
     fn line_wait_node_flush_waits() {
         let line = Line::of(MockWaitLine::new(4));
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         writer.push(Message::Data(1)).unwrap();
         writer.push(Message::Data(2)).unwrap();
@@ -614,8 +611,8 @@ pub mod tests {
     #[test]
     fn line_basic_run() {
         let line = Line::of(MockLine::new());
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         // Add one flush
         writer.push(Message::Data(1)).unwrap();
@@ -636,8 +633,8 @@ pub mod tests {
     #[test]
     fn line_can_mark() {
         let line = Line::of(MockLine::new());
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         // One data
         writer.push(Message::Data(1)).unwrap();
@@ -650,8 +647,8 @@ pub mod tests {
     #[test]
     fn line_can_flush() {
         let line = Line::of(MockLine::new());
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         // One data
         writer.push(Message::Data(1)).unwrap();
@@ -664,12 +661,12 @@ pub mod tests {
     #[test]
     fn line_can_be_stacked() {
         let line_1 = Line::of(MockLine::new());
-        let mut line_2 = Line::of(MockLine::new());
+        let line_2 = Line::of(MockLine::new());
 
-        let mut writer = Writer::new(&line_1).unwrap();
-        work::Bidi::connect(line_1, &mut line_2).unwrap();
+        let mut writer = line_1.writer().unwrap();
+        let line_2 = line_1.via(line_2).unwrap();
 
-        let mut reader = Reader::new(line_2).unwrap();
+        let mut reader = line_2.reader().unwrap();
 
         // Add one flush
         writer.push(Message::Data(1)).unwrap();
@@ -690,16 +687,16 @@ pub mod tests {
     #[test]
     fn line_can_be_stacked_with_type_hints() {
         let line_1 = Line::of(MockLine::new());
-        let mut line_2 = Line::of(MockLine::new());
+        let line_2 = Line::of(MockLine::new());
 
-        let mut writer = Writer::new(&line_1).unwrap();
+        let mut writer = line_1.writer().unwrap();
 
         // This typehint is not needed as exemplified by other tests
         // but it helps readability to be explicit when building
         // the graph.
-        work::Bidi::<usize>::connect(line_1, &mut line_2).unwrap();
+        let line_2 = line_1.via::<usize>(line_2).unwrap();
 
-        let mut reader = Reader::<usize>::new(line_2).unwrap();
+        let mut reader = line_2.reader::<usize>().unwrap();
 
         // Add one flush
         writer.push(Message::Data(1)).unwrap();
@@ -721,9 +718,9 @@ pub mod tests {
     fn line_can_tee() {
         let mut line = Line::of(MockLine::new());
 
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader_1 = tee::Reader::new(&mut line).unwrap();
-        let mut reader_2 = tee::Reader::new(&mut line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader_1 = line.tee().unwrap();
+        let mut reader_2 = line.tee().unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(line);
 
@@ -757,9 +754,9 @@ pub mod tests {
     fn line_can_merge() {
         let line = Line::of(MockLine::new());
 
-        let mut writer_1 = Writer::new(&line).unwrap();
-        let mut writer_2 = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer_1 = line.writer().unwrap();
+        let mut writer_2 = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         // Add one flush
         writer_1.push(Message::Data(1)).unwrap();
@@ -789,31 +786,31 @@ pub mod tests {
     fn line_basic_many_stack_benchmark() {
         let line_0 = Line::of(MockLine::new());
 
-        let mut writer = Writer::new(&line_0).unwrap();
+        let mut writer = line_0.writer().unwrap();
 
-        let mut line_1 = Line::of(MockLine::new());
-        let mut line_2 = Line::of(MockLine::new());
-        let mut line_3 = Line::of(MockLine::new());
-        let mut line_4 = Line::of(MockLine::new());
-        let mut line_5 = Line::of(MockLine::new());
-        let mut line_6 = Line::of(MockLine::new());
-        let mut line_7 = Line::of(MockLine::new());
-        let mut line_8 = Line::of(MockLine::new());
-        let mut line_9 = Line::of(MockLine::new());
-        let mut line_10 = Line::of(MockLine::new());
+        let line_1 = Line::of(MockLine::new());
+        let line_2 = Line::of(MockLine::new());
+        let line_3 = Line::of(MockLine::new());
+        let line_4 = Line::of(MockLine::new());
+        let line_5 = Line::of(MockLine::new());
+        let line_6 = Line::of(MockLine::new());
+        let line_7 = Line::of(MockLine::new());
+        let line_8 = Line::of(MockLine::new());
+        let line_9 = Line::of(MockLine::new());
+        let line_10 = Line::of(MockLine::new());
 
-        work::Bidi::connect(line_0, &mut line_1).unwrap();
-        work::Bidi::connect(line_1, &mut line_2).unwrap();
-        work::Bidi::connect(line_2, &mut line_3).unwrap();
-        work::Bidi::connect(line_3, &mut line_4).unwrap();
-        work::Bidi::connect(line_4, &mut line_5).unwrap();
-        work::Bidi::connect(line_5, &mut line_6).unwrap();
-        work::Bidi::connect(line_6, &mut line_7).unwrap();
-        work::Bidi::connect(line_7, &mut line_8).unwrap();
-        work::Bidi::connect(line_8, &mut line_9).unwrap();
-        work::Bidi::connect(line_9, &mut line_10).unwrap();
+        let line_1 = line_0.via(line_1).unwrap();
+        let line_2 = line_1.via(line_2).unwrap();
+        let line_3 = line_2.via(line_3).unwrap();
+        let line_4 = line_3.via(line_4).unwrap();
+        let line_5 = line_4.via(line_5).unwrap();
+        let line_6 = line_5.via(line_6).unwrap();
+        let line_7 = line_6.via(line_7).unwrap();
+        let line_8 = line_7.via(line_8).unwrap();
+        let line_9 = line_8.via(line_9).unwrap();
+        let line_10 = line_9.via(line_10).unwrap();
 
-        let mut reader = Reader::<usize>::new(line_10).unwrap();
+        let mut reader = line_10.reader::<usize>().unwrap();
 
         let before = Instant::now();
         for _ in 0..10000 {
@@ -829,8 +826,8 @@ pub mod tests {
     #[test]
     fn close_propagates_through_push_when_input_closed() {
         let line = Line::of(MockLine::new());
-        let mut writer = Writer::new(&line).unwrap();
-        let mut reader = Reader::new(line).unwrap();
+        let mut writer = line.writer().unwrap();
+        let mut reader = line.reader().unwrap();
 
         // Push some data
         writer.push(Message::Data(1)).unwrap();
@@ -850,11 +847,11 @@ pub mod tests {
     #[test]
     fn close_propagates_through_work_chain() {
         let line_1 = Line::of(MockLine::new());
-        let mut line_2 = Line::of(MockLine::new());
+        let line_2 = Line::of(MockLine::new());
 
-        let mut writer = Writer::new(&line_1).unwrap();
-        work::Bidi::connect(line_1, &mut line_2).unwrap();
-        let mut reader = Reader::<usize>::new(line_2).unwrap();
+        let mut writer = line_1.writer().unwrap();
+        let line_2 = line_1.via(line_2).unwrap();
+        let mut reader = line_2.reader::<usize>().unwrap();
 
         // Push some data through the chain
         writer.push(Message::Data(1)).unwrap();

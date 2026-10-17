@@ -62,14 +62,14 @@ mod tests {
     use super::super::ThreadBundle;
     use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use crate::thread::Failure;
-    use crate::work::ThreadStream;
+    use crate::work::{Streams, ThreadStream};
     use std::sync::Arc;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn fires_on_thread_error() {
-        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
+        let thread_a = WorkError::<ThreadA>::new().stream();
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
         let count = Arc::new(AtomicUsize::new(0));
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn fires_on_panic() {
-        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
+        let thread_a = Panicker::<ThreadA>::new().stream();
         let thread_b = ThreadStream::<'_, ThreadB>::new();
 
         let count = Arc::new(AtomicUsize::new(0));
@@ -105,8 +105,8 @@ mod tests {
 
     #[test]
     fn does_not_fire_on_clean_exit() {
-        let thread_a = ThreadStream::of(ImmediateClose::<ThreadA>::new());
-        let thread_b = ThreadStream::of(ImmediateClose::<ThreadB>::new());
+        let thread_a = ImmediateClose::<ThreadA>::new().stream();
+        let thread_b = ImmediateClose::<ThreadB>::new().stream();
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_cb = count.clone();
@@ -123,8 +123,8 @@ mod tests {
 
     #[test]
     fn fires_at_most_once_even_with_many_errors() {
-        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
-        let thread_b = ThreadStream::of(Panicker::<ThreadB>::new());
+        let thread_a = WorkError::<ThreadA>::new().stream();
+        let thread_b = Panicker::<ThreadB>::new().stream();
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_cb = count.clone();
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn multiple_registrations_all_fire_in_order() {
-        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
+        let thread_a = WorkError::<ThreadA>::new().stream();
 
         let order = Arc::new(Mutex::new(Vec::<u32>::new()));
         let o1 = order.clone();
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn callback_receives_error_reference() {
-        let thread_a = ThreadStream::of(WorkError::<ThreadA>::new());
+        let thread_a = WorkError::<ThreadA>::new().stream();
 
         let captured = Arc::new(Mutex::new(None::<String>));
         let cap = captured.clone();
@@ -189,7 +189,7 @@ mod tests {
     /// not prevent its siblings from running.
     #[test]
     fn panicking_callback_does_not_block_siblings() {
-        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
+        let thread_a = Panicker::<ThreadA>::new().stream();
 
         let seen = Arc::new(Mutex::new(Vec::<u32>::new()));
         let s1 = seen.clone();
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn callback_receives_panic_marker() {
-        let thread_a = ThreadStream::of(Panicker::<ThreadA>::new());
+        let thread_a = Panicker::<ThreadA>::new().stream();
 
         let captured = Arc::new(Mutex::new(None::<&'static str>));
         let cap = captured.clone();

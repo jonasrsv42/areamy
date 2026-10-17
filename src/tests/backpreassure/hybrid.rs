@@ -4,7 +4,6 @@
 
 use super::future::echo;
 use super::{Msg, Signal, TIMEOUT, data, one, push, read_n};
-use crate::Push;
 use crate::edge::sync::Receiver;
 use crate::graph::Closeable;
 use crate::message::Message;
@@ -13,7 +12,8 @@ use crate::poll::future::line::FutureRoutine;
 use crate::poll::{self, Sync};
 use crate::pull::{Pullable, WriterBuffer};
 use crate::thread::ThreadBundle;
-use crate::work::{self, Line, ThreadStream, Writer};
+use crate::work::{self, Line, Writer};
+use crate::{Pushes, Streams, Via, Writes};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
@@ -47,10 +47,11 @@ fn a_stalled_sink_stops_pull_work_and_poll_stages_back_to_the_writer() {
 
     // Pull stage, run by the first work thread: writer → bounded buffer → pull line.
     let buffer = WriterBuffer::<usize, Signal, PullStage>::bounded(one());
-    let mut writer: Writer<'static, usize, Signal> = Writer::new(&buffer).unwrap();
+    let mut writer: Writer<'static, usize, Signal> = buffer.writer().unwrap();
     let pulled = work::Pulled::of(buffer.then(MockWaitLine::new(1)));
-    let mut first = Line::builder().bounded(one()).build(MockWaitLine::new(1));
-    work::Bidi::connect(pulled, &mut first).unwrap();
+    let mut first = pulled
+        .via(Line::builder().bounded(one()).build(MockWaitLine::new(1)))
+        .unwrap();
 
     // Poll stage: bounded input edge, routine queues and output.
     let mut poll_thread = poll::Thread::<'_, PollStage>::new();
@@ -61,20 +62,20 @@ fn a_stalled_sink_stops_pull_work_and_poll_stages_back_to_the_writer() {
         .build(FutureRoutine::factory(echo).bounded(one()))
         .input::<Sync>()
         .output::<Sync>();
-    Push::connect(&mut first, &middle).unwrap();
+    first.pushes(&middle).unwrap();
 
     // Second work stage into a bounded sink that isn't read until the chain has stalled.
     let mut last = Line::builder().bounded(one()).build(MockWaitLine::new(1));
-    Push::connect(&mut middle, &last).unwrap();
+    middle.pushes(&last).unwrap();
     let sink = Receiver::bounded(one());
-    Push::connect(&mut last, &sink).unwrap();
+    last.pushes(&sink).unwrap();
     poll_thread.add(middle);
 
     let mut bundle = ThreadBundle::new();
     bundle
-        .add(ThreadStream::<PullStage>::of(first))
+        .add(first.stream::<PullStage>())
         .add(poll_thread)
-        .add(ThreadStream::<WorkStage>::of(last));
+        .add(last.stream::<WorkStage>());
     let pushed = Arc::new(AtomicUsize::new(0));
     let counter = pushed.clone();
 

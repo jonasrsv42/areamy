@@ -8,8 +8,7 @@ use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::{Input, input, output};
 use crate::poll::try_join;
 use crate::sync::Receiver;
-use crate::work::Writer;
-use crate::{Closeable, Message, Push, Pushable, ThreadBundle};
+use crate::{Closeable, Message, Pushable, Pushes, ThreadBundle, Writes};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
@@ -42,9 +41,9 @@ fn sleep_in_routine_delays_output() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut writer = Writer::new(&node).unwrap();
+    let mut writer = node.writer().unwrap();
     let output = Receiver::new();
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
     thread.add(node);
 
     let mut bundle = ThreadBundle::new();
@@ -92,9 +91,9 @@ fn concurrent_sleeps_wake_independently() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut writer = Writer::new(&node).unwrap();
+    let mut writer = node.writer().unwrap();
     let output = Receiver::new();
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
     thread.add(node);
 
     let mut bundle = ThreadBundle::new();

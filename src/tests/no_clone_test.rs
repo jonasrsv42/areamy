@@ -10,7 +10,7 @@ use crate::graph::Pushable;
 use crate::node::line::LineRoutine;
 use crate::pull::{Reader, WriterBuffer};
 use crate::work::Writer;
-use crate::{Message, Next, Pullable, Send};
+use crate::{Message, Next, Pullable, Send, Writes};
 use std::collections::VecDeque;
 
 struct BoxIncrementer {
@@ -62,7 +62,7 @@ impl From<Box<usize>> for BoxedOrigin {
 #[test]
 fn test_non_cloneable_pull_pipeline() {
     let buffer = WriterBuffer::new();
-    let mut writer = Writer::new(&buffer).unwrap();
+    let mut writer = buffer.writer().unwrap();
 
     // Box<1> → +1 → +1 → +1 → Box<4>
     let line1 = buffer.then(BoxIncrementer::new());

@@ -6,9 +6,9 @@
 
 use super::mock::BorrowingLine;
 use crate::pull;
-use crate::work::{self, Writer, tee};
+use crate::work;
 use crate::writer::pull::WriterBuffer;
-use crate::{LineIo, Message, Pullable, Pushable};
+use crate::{LineIo, Message, Pullable, Pushable, Reads, Tees, Writes};
 
 /// [`work::Reader`] owning a borrowed work-line. Drives the line on
 /// the main thread (no `ThreadBundle` — `Reader::read` is synchronous).
@@ -17,8 +17,8 @@ fn work_reader_owns_borrowed_line() {
     let multiplier: usize = 3;
     let line = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let writer = Writer::<usize>::of(&line).unwrap();
-    let reader = work::Reader::new(line).unwrap();
+    let writer = line.writer::<usize>().unwrap();
+    let reader = line.reader().unwrap();
     let mut io = LineIo::new(writer, reader);
 
     io.push(Message::Data(4)).unwrap();
@@ -27,16 +27,16 @@ fn work_reader_owns_borrowed_line() {
     let _ = multiplier;
 }
 
-/// [`tee::Reader`] attached to a borrowed work-line as an output Receiver.
+/// [`work::tee::Reader`] attached to a borrowed work-line as an output Receiver.
 #[test]
 fn tee_reader_attached_to_borrowed_line() {
     let multiplier: usize = 5;
     let mut line = work::Line::of(BorrowingLine::new(&multiplier));
 
-    let mut tee_reader = tee::Reader::new(&mut line).unwrap();
-    let writer = Writer::new(&line).unwrap();
+    let mut tee_reader = line.tee().unwrap();
+    let writer = line.writer().unwrap();
 
-    let mut reader = LineIo::new(writer, work::Reader::new(line).unwrap());
+    let mut reader = LineIo::new(writer, line.reader().unwrap());
     reader.push(Message::Data(2)).unwrap();
 
     // Reader drives line.work(); both the work::Reader buffer and the tee
@@ -52,7 +52,7 @@ fn tee_reader_attached_to_borrowed_line() {
 fn pull_reader_wraps_borrowed_pull_line() {
     let multiplier: usize = 4;
     let buffer = WriterBuffer::new();
-    let mut writer = Writer::new(&buffer).unwrap();
+    let mut writer = buffer.writer().unwrap();
 
     let pull_line = buffer.then(BorrowingLine::new(&multiplier));
     let mut reader = pull::Reader::new(pull_line);

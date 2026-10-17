@@ -5,9 +5,9 @@
 //!
 //! - `.input::<Sync>()` — resolves input to Sync
 //! - `.output::<Sync>()` — resolves output to Sync
-//! - `.parent(node)` — resolves input to Async (adds parent)
+//! - `up.via(node)` — resolves input to Async (adds parent `up`)
 //! - `thread.add(node)` — requires resolved input, Sync or Deferred output
-//! - consumed by `.parent()` — requires resolved input, Deferred output
+//! - consumed by `node.via(down)` — requires resolved input, Deferred output
 //!
 //! Builder type states:
 //! - `Node<Deferred, Deferred>` — fully unresolved, returned by `thread.line()`
@@ -17,7 +17,7 @@
 //! - `Node<Sync, Sync>` — sync in, sync out (terminal)
 //! - `Node<Async, Sync>` — async in, sync out (owns parents)
 //!
-//! `Deferred` output is wired at build time when consumed by `.parent()`.
+//! `Deferred` output is wired at build time when consumed by `node.via(down)`.
 //!
 //! Stores a [LineRoutineFactory] instead of the routine. The factory is [Send]
 //! (crosses threads during spawn). The routine is created on the async
@@ -29,7 +29,7 @@ use crate::edge::rotate::Rotate;
 use crate::edge::single::Single;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Get, Outputs};
+use crate::graph::{Add, Downstream, Get, Outputs};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node;
 use crate::node::line::poll::routine::LineRoutine;
@@ -39,7 +39,7 @@ use crate::poll::edge::{self, Async, Deferred, Direct, Edge, Null, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::input;
 use crate::poll::thread::Thread;
-use crate::poll::traits::AsyncParent;
+use crate::poll::traits::{AsyncParent, Owned};
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
@@ -110,8 +110,8 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     /// Resolve input and output via wiring methods:
     /// - `.input::<Sync>()` → resolve input to Sync
     /// - `.output::<Sync>()` → resolve output to Sync
-    /// - `.parent(node)` → Async input (adds parent)
-    /// - consumed by `.parent()` → Deferred output (AsyncParent)
+    /// - `up.via(node)` → Async input (adds parent `up`)
+    /// - consumed by `node.via(down)` → Deferred output (AsyncParent)
     pub fn line<InType, OutType, SignalType, FactoryType>(
         &mut self,
         factory: FactoryType,
@@ -257,7 +257,7 @@ where
     }
 
     /// Resolve output to a caller-provided [`Sink`] — the value-resolving
-    /// mirror of [`parent`](Self::parent) on the output side. Single
+    /// mirror of [`via`](crate::Via::via) on the output side. Single
     /// consumer: pushes move into the sink, never cloned.
     pub fn sink(
         self,
@@ -300,7 +300,7 @@ where
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
-    pub fn parent(
+    fn parent(
         self,
         parent: impl AsyncParent<
             'params,
@@ -357,7 +357,7 @@ where
     }
 
     /// Resolve output to a caller-provided [`Sink`] — the value-resolving
-    /// mirror of [`parent`](Self::parent) on the output side. Single
+    /// mirror of [`via`](crate::Via::via) on the output side. Single
     /// consumer: pushes move into the sink, never cloned.
     pub fn sink(
         self,
@@ -396,7 +396,7 @@ where
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType>,
 {
-    pub fn parent(
+    fn parent(
         mut self,
         parent: impl AsyncParent<
             'params,
@@ -407,6 +407,87 @@ where
     ) -> Self {
         self.input.parents.push(Box::new(parent));
         self
+    }
+}
+
+/// `up.via(line)`: first parent, input Deferred → Async.
+impl<
+    'alloc,
+    'params,
+    OutEdgeType,
+    InType,
+    OutType,
+    SignalType,
+    ThreadIdType,
+    FactoryType,
+    UpstreamType,
+> Downstream<UpstreamType, InType, Owned>
+    for Node<
+        'alloc,
+        'params,
+        Deferred,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
+where
+    OutEdgeType: Edge,
+    InType: 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
+    UpstreamType: AsyncParent<'params, OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
+        + 'params,
+{
+    type Out = Node<
+        'static,
+        'params,
+        Async,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >;
+
+    fn take(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
+        Ok(self.parent(upstream))
+    }
+}
+
+/// `up.via(line)`: further parent (fan-in), input stays Async.
+impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType, UpstreamType>
+    Downstream<UpstreamType, InType, Owned>
+    for Node<
+        'static,
+        'params,
+        Async,
+        OutEdgeType,
+        InType,
+        OutType,
+        SignalType,
+        ThreadIdType,
+        FactoryType,
+    >
+where
+    OutEdgeType: Edge,
+    InType: 'static,
+    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    ThreadIdType: ThreadId,
+    FactoryType: LineRoutineFactory<'params>,
+    FactoryType::Routine: LineRoutine<InType, OutType>,
+    UpstreamType: AsyncParent<'params, OutType = InType, SignalType = SignalType, ThreadIdType = ThreadIdType>
+        + 'params,
+{
+    type Out = Self;
+
+    fn take(self, upstream: UpstreamType) -> Result<Self, Error> {
+        Ok(self.parent(upstream))
     }
 }
 

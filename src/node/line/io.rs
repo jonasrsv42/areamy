@@ -135,13 +135,14 @@ where
 mod tests {
     use super::*;
     use crate::node::line::routine::tests::MockLine;
-    use crate::work::{self, Reader, Writer};
+    use crate::work;
+    use crate::{Reads, Writes};
 
     #[test]
     fn readers_line_objects() {
         let line = work::Line::of(MockLine::new());
-        let writer = Writer::new(&line).unwrap();
-        let reader = Reader::new(line).unwrap();
+        let writer = line.writer().unwrap();
+        let reader = line.reader().unwrap();
 
         let mut io = LineIo::new(writer, reader);
 
@@ -163,8 +164,8 @@ mod tests {
     #[test]
     fn readers_line_mread() {
         let line = work::Line::of(MockLine::new());
-        let writer = Writer::new(&line).unwrap();
-        let reader = Reader::new(line).unwrap();
+        let writer = line.writer().unwrap();
+        let reader = line.reader().unwrap();
 
         let mut io = LineIo::new(writer, reader);
 

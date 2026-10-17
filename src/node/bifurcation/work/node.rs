@@ -118,9 +118,10 @@ pub(super) type Pending<T> = Sides<
 /// separately, since a bifurcation has two outputs to choose from:
 ///
 /// ```ignore
-/// Push::connect(&mut bifurcation.at::<Left>(), &child)?;
-/// work::Schedule::connect(bifurcation, &mut child)?;
+/// bifurcation.at_mut::<Left>().pushes(&child)?;
+/// child.schedules(bifurcation)?;
 /// ```
+#[must_use = "a node does nothing until owned (`via` / `schedules`) or added to a thread"]
 pub struct Bifurcation<'params, T: Types> {
     /// The coroutine of this node.
     pub routine: T::Routine,
@@ -371,11 +372,11 @@ pub mod tests {
     use crate::edge::sync::tests::{join_within, wait_until};
     use crate::graph::Closeable;
     use crate::node::bifurcation::routine::tests::{HoldBifurcation, MockBifurcation};
-    use crate::work::{Writer, tee};
-    use crate::{At, DefaultThread, Trackable};
+    use crate::work::Writer;
+    use crate::{At, DefaultThread, Tees, Trackable, Writes};
     use std::num::NonZeroUsize;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
     type TestSignal = Trackable<&'static str>;
@@ -416,9 +417,9 @@ pub mod tests {
         let (left, right) = (receiver(left), receiver(right));
         let left_edge: Edge = Box::new(left.sender());
         let right_edge: Edge = Box::new(right.sender());
-        Add::add(&mut bifurcation.at::<bifurcation::Left>(), left_edge).unwrap();
-        Add::add(&mut bifurcation.at::<bifurcation::Right>(), right_edge).unwrap();
-        let writer = Writer::new(&bifurcation).unwrap();
+        Add::add(&mut bifurcation.at_mut::<bifurcation::Left>(), left_edge).unwrap();
+        Add::add(&mut bifurcation.at_mut::<bifurcation::Right>(), right_edge).unwrap();
+        let writer = bifurcation.writer().unwrap();
         (bifurcation, writer, left, right)
     }
 
@@ -583,10 +584,10 @@ pub mod tests {
     fn run_bifurcation() {
         let mut bifur = Bifurcation::of(MockBifurcation::new());
 
-        let mut writer = Writer::new(&bifur).unwrap();
+        let mut writer = bifur.writer().unwrap();
 
-        let mut left_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Left>()).unwrap();
-        let mut right_reader = tee::Reader::new(&mut bifur.at::<bifurcation::Right>()).unwrap();
+        let mut left_reader = bifur.at_mut::<bifurcation::Left>().tee().unwrap();
+        let mut right_reader = bifur.at_mut::<bifurcation::Right>().tee().unwrap();
 
         let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(bifur);
 

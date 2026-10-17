@@ -213,7 +213,7 @@ mod tests {
     use crate::node::line::poll::routine::tests::MockLine;
     use crate::poll;
     use crate::work::Sink;
-    use crate::{Closeable, Message, Push};
+    use crate::{Closeable, Message, Pushes, Via};
 
     crate::thread_id!(IoThread);
 
@@ -251,7 +251,7 @@ mod tests {
         let mut input: InputHandle = Get::get(&node).unwrap();
 
         let output = Receiver::new();
-        Push::connect(&mut node, &output).unwrap();
+        node.pushes(&output).unwrap();
 
         thread.add(node);
         std::thread::scope(|s| {
@@ -347,13 +347,13 @@ mod tests {
 
         let mut input: InputHandle = Get::get(&parent).unwrap();
 
-        let mut child = thread
-            .line(MockLine::new)
-            .parent(parent)
+        let mut child = parent
+            .via(thread.line(MockLine::new))
+            .unwrap()
             .output::<poll::Sync>();
 
         let output = Receiver::new();
-        Push::connect(&mut child, &output).unwrap();
+        child.pushes(&output).unwrap();
 
         thread.add(child);
         std::thread::scope(|s| {

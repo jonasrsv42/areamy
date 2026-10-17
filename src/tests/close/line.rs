@@ -8,8 +8,8 @@ use crate::error::Error;
 use crate::poll::{self, LineWakers};
 use crate::pull;
 use crate::sync::Receiver;
-use crate::work::{self, Reader, Writer};
-use crate::{Closeable, Message, Pullable, Push, Pushable};
+use crate::work;
+use crate::{Closeable, Message, Pullable, Pushable, Pushes, Reads, Via, Writes};
 use std::thread;
 
 fn flushed(messages: Vec<Msg>) {
@@ -26,8 +26,8 @@ fn flushed(messages: Vec<Msg>) {
 #[test]
 fn work_line_flush_then_close() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
-    let mut writer = Writer::new(&line)?;
-    let mut reader = Reader::new(line)?;
+    let mut writer = line.writer()?;
+    let mut reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Data(2))?;
@@ -41,10 +41,10 @@ fn work_line_flush_then_close() -> Result<(), Error> {
 #[test]
 fn work_line_stacked_flush_then_close() -> Result<(), Error> {
     let first = work::Line::of(Hold::new());
-    let mut second = work::Line::of(Hold::new());
-    let mut writer = Writer::new(&first)?;
-    work::Bidi::connect(first, &mut second)?;
-    let mut reader = Reader::new(second)?;
+    let second = work::Line::of(Hold::new());
+    let mut writer = first.writer()?;
+    let second = first.via(second)?;
+    let mut reader = second.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Data(2))?;
@@ -58,8 +58,8 @@ fn work_line_stacked_flush_then_close() -> Result<(), Error> {
 #[test]
 fn work_line_marker_then_close() -> Result<(), Error> {
     let line = work::Line::of(Hold::echo());
-    let mut writer = Writer::new(&line)?;
-    let mut reader = Reader::new(line)?;
+    let mut writer = line.writer()?;
+    let mut reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Marker("m".into()))?;
@@ -75,8 +75,8 @@ fn work_line_marker_then_close() -> Result<(), Error> {
 #[test]
 fn work_line_data_after_flush_then_close() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
-    let mut writer = Writer::new(&line)?;
-    let mut reader = Reader::new(line)?;
+    let mut writer = line.writer()?;
+    let mut reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Flush("f".into()))?;
@@ -93,8 +93,8 @@ fn work_line_data_after_flush_then_close() -> Result<(), Error> {
 #[test]
 fn work_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
-    let mut writer = Writer::new(&line)?;
-    let mut reader = Reader::new(line)?;
+    let mut writer = line.writer()?;
+    let mut reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.close()?;
@@ -107,9 +107,9 @@ fn work_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
 #[test]
 fn work_line_fan_in_close_by_one_writer() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
-    let mut a = Writer::new(&line)?;
-    let mut b = Writer::new(&line)?;
-    let mut reader = Reader::new(line)?;
+    let mut a = line.writer()?;
+    let mut b = line.writer()?;
+    let mut reader = line.reader()?;
 
     a.push(Message::Data(1))?;
     b.push(Message::Data(2))?;
@@ -138,9 +138,8 @@ fn pull_line_flush_then_close() -> Result<(), Error> {
 
 #[test]
 fn bridged_line_flush_then_close() -> Result<(), Error> {
-    let mut line = work::Line::of(Hold::new());
-    work::Bidi::connect(work::Pulled::of(script()), &mut line)?;
-    let mut reader = Reader::new(line)?;
+    let line = work::Pulled::of(script()).via(work::Line::of(Hold::new()))?;
+    let mut reader = line.reader()?;
     flushed(drain(&mut reader)?);
     Ok(())
 }
@@ -149,10 +148,9 @@ fn bridged_line_flush_then_close() -> Result<(), Error> {
 /// for the other one until every producer is gone.
 #[test]
 fn bridged_line_fan_in_first_close_keeps_edge_open() -> Result<(), Error> {
-    let mut line = work::Line::of(Hold::new());
-    work::Bidi::connect(work::Pulled::of(Script::new(vec![])), &mut line)?;
-    work::Bidi::connect(work::Pulled::of(script()), &mut line)?;
-    let mut reader = Reader::new(line)?;
+    let line = work::Pulled::of(Script::new(vec![])).via(work::Line::of(Hold::new()))?;
+    let line = work::Pulled::of(script()).via(line)?;
+    let mut reader = line.reader()?;
 
     flushed(drain(&mut reader)?);
     Ok(())
@@ -168,9 +166,9 @@ where
         .line(routine)
         .input::<poll::Sync>()
         .output::<poll::Sync>();
-    let mut writer = Writer::new(&node)?;
+    let mut writer = node.writer()?;
     let output = Receiver::new();
-    Push::connect(&mut node, &output)?;
+    node.pushes(&output)?;
     async_thread.add(node);
 
     for message in messages {
@@ -225,7 +223,7 @@ fn poll_line_multi_segment_then_close() -> Result<(), Error> {
     Ok(())
 }
 
-/// Data first: the Push edge only forwards a signal that follows data.
+/// Data first: a `pushes` edge only forwards a signal that follows data.
 #[test]
 fn poll_line_marker_then_close() -> Result<(), Error> {
     let out = poll_line(echo, vec![Message::Data(1), Message::Marker("m".into())])?;
@@ -259,15 +257,12 @@ fn poll_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
 fn poll_line_chain_child_closes_first() -> Result<(), Error> {
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let parent = async_thread.line(hold).input::<poll::Sync>();
-    let mut writer = Writer::new(&parent)?;
-    let mut child = async_thread
-        .line(hold)
-        .parent(parent)
-        .output::<poll::Sync>();
+    let mut writer = parent.writer()?;
+    let mut child = parent.via(async_thread.line(hold))?.output::<poll::Sync>();
     {
         // Dropped at once: the child's first push finds its output closed.
         let output = Receiver::new();
-        Push::connect(&mut child, &output)?;
+        child.pushes(&output)?;
     }
     async_thread.add(child);
 
@@ -296,13 +291,12 @@ fn poll_line_chain_child_closes_first() -> Result<(), Error> {
 fn poll_line_chain_flush_then_close() -> Result<(), Error> {
     let mut async_thread = poll::Thread::<'_, IoThread>::new();
     let parent = async_thread.line(slow_hold).input::<poll::Sync>();
-    let mut writer = Writer::new(&parent)?;
-    let mut child = async_thread
-        .line(slow_hold)
-        .parent(parent)
+    let mut writer = parent.writer()?;
+    let mut child = parent
+        .via(async_thread.line(slow_hold))?
         .output::<poll::Sync>();
     let output = Receiver::new();
-    Push::connect(&mut child, &output)?;
+    child.pushes(&output)?;
     async_thread.add(child);
 
     for message in flush_script() {

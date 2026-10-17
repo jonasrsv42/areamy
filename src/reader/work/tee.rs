@@ -1,7 +1,7 @@
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::graph::Add;
-use crate::graph::marker::Multiplicity;
+use crate::graph::marker::{Connection, Unary};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
 use crate::thread::DefaultThread;
@@ -16,24 +16,44 @@ where
     buffer: Receiver<DataType, SignalType>,
 }
 
+/// [`Tees`] reads a node's output without owning it: `let mut out = node.tee()?`. The node
+/// keeps running where it is; its pushes land in the reader's buffer.
+///
+/// Name a side with [crate::At::at_mut]: `node.at_mut::<Left>().tee()?`. The data type is an
+/// optional annotation: `node.tee::<Frame>()?`. To own and drive the node, use
+/// [crate::Reads::reader].
+pub trait Tees<'params, SignalType> {
+    fn tee<DataType>(&mut self) -> Result<Reader<DataType, SignalType>, Error>
+    where
+        DataType: Send + Sync + 'static,
+        SignalType: Origin + Send + Sync + 'static,
+        Self: Add<
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                Unary,
+            >;
+}
+
+impl<'params, NodeType: Connection, SignalType> Tees<'params, SignalType> for NodeType {
+    fn tee<DataType>(&mut self) -> Result<Reader<DataType, SignalType>, Error>
+    where
+        DataType: Send + Sync + 'static,
+        SignalType: Origin + Send + Sync + 'static,
+        Self: Add<
+                dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
+                Unary,
+            >,
+    {
+        let buffer = Receiver::new();
+        Add::add(self, Box::new(buffer.sender()))?;
+        Ok(Reader { buffer })
+    }
+}
+
 impl<DataType, SignalType> Reader<DataType, SignalType>
 where
     DataType: Send + Sync + 'static,
     SignalType: Origin + Send + Sync + 'static,
 {
-    /// Read `workable`'s output without owning it. The side is inferred from the data type,
-    /// or named with [crate::graph::At::at]: `tee::Reader::new(&mut node.at::<Left>())`.
-    pub fn new<'params, MultiplicityType: Multiplicity>(
-        workable: &mut impl Add<
-            dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
-            MultiplicityType,
-        >,
-    ) -> Result<Self, Error> {
-        let buffer = Receiver::new();
-        Add::add(workable, Box::new(buffer.sender()))?;
-        Ok(Self { buffer })
-    }
-
     pub fn read(&mut self) -> Result<Message<DataType, SignalType>, Error> {
         let output = self.buffer.read_front()?;
         Ok(output)
@@ -103,7 +123,7 @@ mod tests {
             output: Message::Data(5),
             pushable: Vec::new(),
         };
-        let mut reader = Reader::new(&mut mock_node).unwrap();
+        let mut reader = mock_node.tee().unwrap();
 
         mock_node.work().unwrap();
         assert_eq!(reader.read().unwrap(), Message::Data(5));
@@ -131,7 +151,7 @@ mod tests {
             output: Message::Flush("hi".into()),
             pushable: Vec::new(),
         };
-        let mut reader = Reader::new(&mut mock_node).unwrap();
+        let mut reader = mock_node.tee().unwrap();
 
         mock_node.work().unwrap();
         assert_eq!(reader.read().unwrap(), Message::Flush("hi".into()));
@@ -152,7 +172,7 @@ mod tests {
             output: Message::Marker("hi".into()),
             pushable: Vec::new(),
         };
-        let mut reader = Reader::new(&mut mock_node).unwrap();
+        let mut reader = mock_node.tee().unwrap();
 
         mock_node.work().unwrap();
         assert_eq!(reader.read().unwrap(), Message::Marker("hi".into()));

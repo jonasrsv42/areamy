@@ -4,7 +4,7 @@
 //! are resolved via typestate transitions:
 //!
 //! - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
-//! - `.parent::<Left>(node)` / `.parent::<Right>(node)` → Async input
+//! - `up.via(node.at::<Left>())` / `up.via(node.at::<Right>())` → Async input
 //! - `.output::<Sync>()` → resolve output to Sync
 //!
 //! Allocator lifecycle:
@@ -126,7 +126,7 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     ///
     /// Resolve inputs and output via wiring methods:
     /// - `.input::<Left, Sync>()` / `.input::<Right, Sync>()` → Sync input
-    /// - `.parent::<Left>(node)` / `.parent::<Right>(node)` → Async input
+    /// - `up.via(node.at::<Left>())` / `up.via(node.at::<Right>())` → Async input
     /// - `.output::<Sync>()` → Sync output
     pub fn biunion<Left, Right, Out, SignalType, FactoryType>(
         &mut self,

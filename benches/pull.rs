@@ -3,8 +3,7 @@
 mod support;
 
 use areamy::pull::WriterBuffer;
-use areamy::work::Writer;
-use areamy::{DefaultThread, Message, Pullable, Pushable, Trackable};
+use areamy::{DefaultThread, Message, Pullable, Pushable, Trackable, Writes};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 use support::{Pass, frame};
@@ -16,7 +15,7 @@ fn three_lines(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
 
     let source = WriterBuffer::<usize, Signal, DefaultThread>::new();
-    let mut writer = Writer::new(&source).unwrap();
+    let mut writer = source.writer().unwrap();
     let mut chain = source.then(Pass::new()).then(Pass::new()).then(Pass::new());
     group.bench_function("usize", |b| {
         b.iter(|| {
@@ -26,7 +25,7 @@ fn three_lines(c: &mut Criterion) {
     });
 
     let source = WriterBuffer::<Vec<f32>, Signal, DefaultThread>::new();
-    let mut writer = Writer::new(&source).unwrap();
+    let mut writer = source.writer().unwrap();
     let mut chain = source.then(Pass::new()).then(Pass::new()).then(Pass::new());
     group.bench_function("frame", |b| {
         b.iter_batched(

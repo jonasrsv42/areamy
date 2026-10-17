@@ -9,8 +9,8 @@ use crate::graph::{Add, Get};
 use crate::poll;
 use crate::tests::mock::WakingOutput;
 use crate::thread::ThreadBundle;
-use crate::work::{self, ThreadStream, Writer};
-use crate::{At, Closeable, Message, Push, Pushable, biunion};
+use crate::work;
+use crate::{At, Closeable, Message, Pushable, Pushes, Streams, Via, Writes, biunion};
 
 #[test]
 fn line_poll_borrowed() {
@@ -26,9 +26,9 @@ fn line_poll_borrowed() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input = Writer::new(&node).unwrap();
+    let mut input = node.writer().unwrap();
     let output = Receiver::new();
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
 
     thread.add(node);
 
@@ -66,10 +66,10 @@ fn biunion_poll_borrowed() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut left = Writer::new(&node.at::<biunion::Left>()).unwrap();
-    let mut right = Writer::new(&node.at::<biunion::Right>()).unwrap();
+    let mut left = node.at_ref::<biunion::Left>().writer().unwrap();
+    let mut right = node.at_ref::<biunion::Right>().writer().unwrap();
     let output = Receiver::new();
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
 
     thread.add(node);
 
@@ -93,7 +93,7 @@ fn biunion_poll_borrowed() {
     let _ = bias;
 }
 
-/// Two poll line nodes wired with `.parent()` — node `b` consumes `a` as
+/// Two poll line nodes wired with `via` — node `b` consumes `a` as
 /// an `AsyncParent<'params>` (in-thread, no Mutex). Both routines borrow
 /// `&multiplier`.
 #[test]
@@ -110,18 +110,18 @@ fn poll_async_parent_chain_borrowed() {
         })
         .input::<poll::Sync>();
 
-    let mut input = Writer::new(&a).unwrap();
+    let mut input = a.writer().unwrap();
 
-    let mut b = thread
-        .line(move |w: poll::LineWakers| PollBorrowingLine {
+    let mut b = a
+        .via(thread.line(move |w: poll::LineWakers| PollBorrowingLine {
             multiplier: multiplier_ref,
             output: WakingOutput::new(w.output),
-        })
-        .parent(a)
+        }))
+        .unwrap()
         .output::<poll::Sync>();
 
     let output = Receiver::new();
-    Push::connect(&mut b, &output).unwrap();
+    b.pushes(&output).unwrap();
 
     thread.add(b);
 
@@ -163,7 +163,7 @@ fn poll_borrowed_output_sink() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input = Writer::new(&node).unwrap();
+    let mut input = node.writer().unwrap();
     let output = Receiver::new();
     let forward = Get::get(&output).unwrap();
     let sink = BorrowingSink {
@@ -190,7 +190,7 @@ fn poll_borrowed_output_sink() {
     let _ = (multiplier, config);
 }
 
-/// `Push::connect(borrowed_parent_node, &poll_node)` — exercises the poll
+/// `borrowed_parent_node.pushes(&poll_node)` — exercises the poll
 /// node's `Get<dyn Sink + 'params>` impl from the *child* side. If
 /// the impl is `'static`-defaulted, `'params` collapses and the borrowed
 /// parent fails to compile.
@@ -209,14 +209,14 @@ fn poll_node_input_from_borrowed_parent() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut input = Writer::new(&work_line).unwrap();
-    Push::connect(&mut work_line, &poll_node).unwrap();
+    let mut input = work_line.writer().unwrap();
+    work_line.pushes(&poll_node).unwrap();
 
     let output = Receiver::new();
-    Push::connect(&mut poll_node, &output).unwrap();
+    poll_node.pushes(&output).unwrap();
 
     poll_thread.add(poll_node);
-    let work_thread = ThreadStream::<LifetimePollThread>::of(work_line);
+    let work_thread = work_line.stream::<LifetimePollThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(work_thread);

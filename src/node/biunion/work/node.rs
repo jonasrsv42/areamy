@@ -130,6 +130,7 @@ impl<T: Types> Input<T> {
     }
 }
 
+#[must_use = "a node does nothing until owned (`via` / `schedules`) or added to a thread"]
 pub struct Biunion<'params, T: Types> {
     /// The coroutine of this node.
     pub routine: T::Routine,
@@ -362,8 +363,8 @@ pub mod tests {
     use crate::graph::TryPush;
     use crate::node::biunion::routine::tests::{HoldBiunion, MockBiunion};
     use crate::node::line::routine::tests::MockWaitLine;
-    use crate::work::{self, Line, Reader, Writer};
-    use crate::{At, Push, Pushable};
+    use crate::work::Line;
+    use crate::{At, Push, Pushable, Reads, Via, Writes};
     use crate::{DefaultThread, Trackable};
     use std::thread;
 
@@ -382,10 +383,10 @@ pub mod tests {
 
     #[test]
     fn marker_passes_through() {
-        let mut biunion: Hold = Biunion::of(HoldBiunion::new(1));
-        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
-        let mut right = Writer::new(&biunion.at::<biunion::Right>()).unwrap();
-        let mut reader = Reader::new(biunion).unwrap();
+        let biunion: Hold = Biunion::of(HoldBiunion::new(1));
+        let mut left = biunion.at_ref::<biunion::Left>().writer().unwrap();
+        let mut right = biunion.at_ref::<biunion::Right>().writer().unwrap();
+        let mut reader = biunion.reader().unwrap();
 
         left.push(Message::Marker("l".into())).unwrap();
         right.push(Message::Marker("r".into())).unwrap();
@@ -404,7 +405,7 @@ pub mod tests {
         let edge: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
             Box::new(output.sender());
         Add::add(&mut biunion, edge).unwrap();
-        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
+        let mut left = biunion.at_ref::<biunion::Left>().writer().unwrap();
         left.push(Message::Data(1)).unwrap();
 
         // A push error ends the round like any other.
@@ -417,9 +418,9 @@ pub mod tests {
 
     #[test]
     fn flush_goes_out_after_everything_it_released() {
-        let mut biunion: Hold = Biunion::of(HoldBiunion::new(10));
-        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
-        let mut reader = Reader::new(biunion).unwrap();
+        let biunion: Hold = Biunion::of(HoldBiunion::new(10));
+        let mut left = biunion.at_ref::<biunion::Left>().writer().unwrap();
+        let mut reader = biunion.reader().unwrap();
 
         left.push(Message::Data(1)).unwrap();
         left.push(Message::Data(2)).unwrap();
@@ -442,20 +443,20 @@ pub mod tests {
 
     #[test]
     fn each_side_takes_its_own_bound() {
-        let mut biunion: Hold = Biunion::builder()
+        let biunion: Hold = Biunion::builder()
             .bounded::<biunion::Left>(NonZeroUsize::new(1).unwrap())
             .bounded::<biunion::Right>(NonZeroUsize::new(2).unwrap())
             .build(HoldBiunion::new(1));
-        let mut left = Get::get(&biunion.at::<biunion::Left>()).unwrap();
-        let mut right = Get::get(&biunion.at::<biunion::Right>()).unwrap();
+        let mut left = Get::get(&biunion.at_ref::<biunion::Left>()).unwrap();
+        let mut right = Get::get(&biunion.at_ref::<biunion::Right>()).unwrap();
         assert_eq!(capacity(&mut left), 1);
         assert_eq!(capacity(&mut right), 2);
 
         // A side left out stays unbounded.
-        let mut biunion: Hold = Biunion::builder()
+        let biunion: Hold = Biunion::builder()
             .bounded::<biunion::Left>(NonZeroUsize::MIN)
             .build(HoldBiunion::new(1));
-        let mut right = Get::get(&biunion.at::<biunion::Right>()).unwrap();
+        let mut right = Get::get(&biunion.at_ref::<biunion::Right>()).unwrap();
         assert_eq!(capacity(&mut right), 10);
     }
 
@@ -466,7 +467,7 @@ pub mod tests {
         let edge: Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync> =
             Box::new(side.sender());
         Add::add(&mut biunion, edge).unwrap();
-        let mut left = Writer::new(&biunion.at::<biunion::Left>()).unwrap();
+        let mut left = biunion.at_ref::<biunion::Left>().writer().unwrap();
         for value in 0..3 {
             left.push(Message::Data(value)).unwrap();
         }
@@ -490,19 +491,19 @@ pub mod tests {
         const N: usize = 20;
         let first = Line::of(MockWaitLine::new(1));
         let second = Line::of(MockWaitLine::new(1));
-        let mut to_first = Writer::new(&first).unwrap();
-        let mut to_second = Writer::new(&second).unwrap();
+        let mut to_first = first.writer().unwrap();
+        let mut to_second = second.writer().unwrap();
         for value in 0..N {
             to_first.push(Message::Data(value)).unwrap();
             to_second.push(Message::Data(N + value)).unwrap();
         }
-        let mut biunion: Hold = Biunion::builder()
+        let biunion: Hold = Biunion::builder()
             .bounded::<biunion::Left>(NonZeroUsize::MIN)
             .build(HoldBiunion::new(1));
         // Whoever pushes second into the bound-1 left side is refused (`Full`) and parks.
-        work::Bidi::connect(first, &mut biunion.at::<biunion::Left>()).unwrap();
-        work::Bidi::connect(second, &mut biunion.at::<biunion::Left>()).unwrap();
-        let mut reader = Reader::new(biunion).unwrap();
+        let biunion = first.via(biunion.at::<biunion::Left>()).unwrap();
+        let biunion = second.via(biunion.at::<biunion::Left>()).unwrap();
+        let mut reader = biunion.reader().unwrap();
 
         // Reads N of the 2N: a parent that runs dry blocks in `wait_front` (a paradigm limit).
         let reading = thread::spawn(move || {
@@ -522,12 +523,12 @@ pub mod tests {
 
     #[test]
     fn run_biunion() {
-        let mut biun = Biunion::of(MockBiunion::new());
+        let biun = Biunion::of(MockBiunion::new());
 
-        let mut left_writer = Writer::new(&biun.at::<biunion::Left>()).unwrap();
-        let mut right_writer = Writer::new(&biun.at::<biunion::Right>()).unwrap();
+        let mut left_writer = biun.at_ref::<biunion::Left>().writer().unwrap();
+        let mut right_writer = biun.at_ref::<biunion::Right>().writer().unwrap();
 
-        let mut reader = Reader::new(biun).unwrap();
+        let mut reader = biun.reader().unwrap();
 
         left_writer.push(Message::Data(1)).unwrap();
         right_writer.push(Message::Data(2)).unwrap();
@@ -551,10 +552,10 @@ pub mod tests {
     /// An input that never had a producer stays open; only a dropped producer closes it.
     #[test]
     fn typed_unfed_left_input_stays_open() {
-        let mut biun = Biunion::of(MockBiunion::new());
-        Push::<usize>::open(&biun.at::<biunion::Left>());
-        let mut right_writer = Writer::new(&biun.at::<biunion::Right>()).unwrap();
-        let mut reader = Reader::new(biun).unwrap();
+        let biun = Biunion::of(MockBiunion::new());
+        Push::<usize>::open(&biun.at_ref::<biunion::Left>());
+        let mut right_writer = biun.at_ref::<biunion::Right>().writer().unwrap();
+        let mut reader = biun.reader().unwrap();
 
         right_writer.push(Message::Data(2)).unwrap();
 

@@ -11,6 +11,9 @@ use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 
+/// [crate::graph::Downstream] parameters for a poll builder taking an [AsyncParent].
+pub struct Owned;
+
 /// A parent node in an async graph.
 ///
 /// Each implementor produces one fixed `(OutType, SignalType,
@@ -25,6 +28,10 @@ use crate::thread::ThreadId;
 /// Receives an output edge and the allocator, produces a [Graph],
 /// and returns the allocator inside it. The child creates the edge and calls
 /// [AsyncParent::build] during its own [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a poll node",
+    note = "a work node can't be owned by a poll node: bridge with a Sync input (`.input::<Sync>()` + `pushes`)"
+)]
 pub trait AsyncParent<'params>: Send + 'params {
     type OutType;
     type SignalType: Origin;

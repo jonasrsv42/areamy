@@ -233,8 +233,8 @@ mod tests {
     use crate::poll;
     use crate::poll::future::Input;
     use crate::thread::ThreadBundle;
-    use crate::work::{self, ThreadStream, Writer};
-    use crate::{Closeable, Message, Push, Pushable};
+    use crate::work;
+    use crate::{Closeable, Message, Pushable, Pushes, Streams, Writes};
 
     crate::thread_id!(LineFutureThread);
 
@@ -262,14 +262,14 @@ mod tests {
         // own poll thread; we feed it from a sync line so the test
         // doesn't need to manage two source/sink wakers).
         let mut driver = work::Line::of(PassThrough::new());
-        let mut input = Writer::new(&driver).unwrap();
-        Push::connect(&mut driver, &node).unwrap();
+        let mut input = driver.writer().unwrap();
+        driver.pushes(&node).unwrap();
 
         let output = Receiver::new();
-        Push::connect(&mut node, &output).unwrap();
+        node.pushes(&output).unwrap();
 
         thread.add(node);
-        let work_thread = ThreadStream::<LineFutureThread>::of(driver);
+        let work_thread = driver.stream::<LineFutureThread>();
 
         let mut bundle = ThreadBundle::new();
         bundle.add(work_thread);

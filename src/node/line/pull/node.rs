@@ -142,17 +142,17 @@ where
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::Pushable;
     use crate::node::line::routine::tests::{AccMockLine, MockLine, MockWaitLine};
     use crate::pull::Reader;
     use crate::work::Writer;
     use crate::writer::pull::WriterBuffer;
+    use crate::{Pushable, Writes};
     use std::time::Instant;
 
     #[test]
     fn line_accumulating_node_works() {
         let buffer = WriterBuffer::new();
-        let mut writer = Writer::new(&buffer).unwrap();
+        let mut writer = buffer.writer().unwrap();
         let line = buffer.then(AccMockLine::new());
         let mut reader = Reader::new(line);
 
@@ -166,7 +166,7 @@ pub mod tests {
     #[test]
     fn line_nosync_basic_run() {
         let buffer = WriterBuffer::new();
-        let mut writer = Writer::new(&buffer).unwrap();
+        let mut writer = buffer.writer().unwrap();
 
         let line = buffer.then(MockLine::new());
         let mut reader = Reader::new(line);
@@ -190,7 +190,7 @@ pub mod tests {
     #[test]
     fn line_wait_node_mark_waits() {
         let buffer = WriterBuffer::new();
-        let mut writer = Writer::new(&buffer).unwrap();
+        let mut writer = buffer.writer().unwrap();
 
         let line = buffer.then(MockWaitLine::new(4));
         let mut reader = Reader::new(line);
@@ -222,7 +222,7 @@ pub mod tests {
     #[test]
     fn line_wait_node_flush_waits() {
         let buffer = WriterBuffer::new();
-        let mut writer = Writer::new(&buffer).unwrap();
+        let mut writer = buffer.writer().unwrap();
 
         let line = buffer.then(MockWaitLine::new(4));
         let mut reader = Reader::new(line);
@@ -245,7 +245,7 @@ pub mod tests {
     #[test]
     fn line_nosync_basic_stacked() {
         let buffer = WriterBuffer::new();
-        let mut writer = Writer::new(&buffer).unwrap();
+        let mut writer = buffer.writer().unwrap();
 
         let line1 = buffer.then(MockLine::new());
         let line2 = line1.then(MockLine::new());
@@ -281,7 +281,7 @@ pub mod tests {
     #[test]
     fn line_nosync_basic_many_stack_benchmark() {
         let buffer = WriterBuffer::new();
-        let mut writer = Writer::new(&buffer).unwrap();
+        let mut writer = buffer.writer().unwrap();
 
         let p1 = buffer.then(MockLine::new());
         let p2 = p1.then(MockLine::new());

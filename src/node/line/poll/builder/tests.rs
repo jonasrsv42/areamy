@@ -15,7 +15,7 @@ use crate::poll::queue::PollQueue;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
-use crate::{Push, Pushable, Trackable, work};
+use crate::{Pushable, Pushes, Trackable, Via, work};
 use std::num::NonZeroUsize;
 
 crate::thread_id!(TestThread);
@@ -102,7 +102,9 @@ fn output_sync_input_sync() {
 #[test]
 fn output_sync_then_parent() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).output::<Sync>().parent(MockParent);
+    let node = MockParent
+        .via(deferred!(&mut alloc).output::<Sync>())
+        .unwrap();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -115,7 +117,10 @@ fn output_sync_then_parent() {
 #[test]
 fn parent_output_sync() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).parent(MockParent).output::<Sync>();
+    let node = MockParent
+        .via(deferred!(&mut alloc))
+        .unwrap()
+        .output::<Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -124,7 +129,7 @@ fn parent_output_sync() {
 #[test]
 fn parent_deferred_sink() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).parent(MockParent);
+    let node = MockParent.via(deferred!(&mut alloc)).unwrap();
     let local = to_local(alloc);
     let graph = GraphBuilder::build(Box::new(node), local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -133,10 +138,8 @@ fn parent_deferred_sink() {
 #[test]
 fn multiple_parents_output_sync() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc)
-        .parent(MockParent)
-        .parent(MockParent)
-        .output::<Sync>();
+    let node = MockParent.via(deferred!(&mut alloc)).unwrap();
+    let node = MockParent.via(node).unwrap().output::<Sync>();
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -159,7 +162,7 @@ fn sync_deferred_as_parent() {
 #[test]
 fn async_deferred_as_parent() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).parent(MockParent);
+    let node = MockParent.via(deferred!(&mut alloc)).unwrap();
     let local = to_local(alloc);
     let (sender, _receiver) = edge::channel(noop_local_waker(), None);
     let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
@@ -182,7 +185,10 @@ fn input_sync_direct_sink() {
 #[test]
 fn parent_direct_sink() {
     let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).parent(MockParent).sink(Null::new());
+    let node = MockParent
+        .via(deferred!(&mut alloc))
+        .unwrap()
+        .sink(Null::new());
     let local = to_local(alloc);
     let graph = Box::new(node).build(local).unwrap();
     assert_eq!(graph.nodes.len(), 3);
@@ -212,7 +218,7 @@ fn delivered_in_one_round(budget: Budget) -> usize {
         .input::<Sync>()
         .output::<Sync>();
     let downstream = Receiver::new();
-    Push::connect(&mut node, &downstream).unwrap();
+    node.pushes(&downstream).unwrap();
     let mut upstream: Box<WorkSink> = Get::get(&node).unwrap();
     for value in 0..3 {
         upstream.push(Message::Data(value)).unwrap();
@@ -255,16 +261,20 @@ fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
         bound: None,
         budget,
     };
-    let mut node =
-        Node::<_, _, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
-            mock_factory(),
-            &mut alloc,
-            options,
-        )
-        .parent(PushingParent)
+    let mut node = PushingParent
+        .via(Node::<
+            _,
+            _,
+            usize,
+            usize,
+            Trackable<&'static str>,
+            TestThread,
+            _,
+        >::with_options(mock_factory(), &mut alloc, options))
+        .unwrap()
         .output::<Sync>();
     let downstream = Receiver::new();
-    Push::connect(&mut node, &downstream).unwrap();
+    node.pushes(&downstream).unwrap();
     let mut graph = Box::new(node).build(to_local(alloc)).unwrap();
     let mut cx = noop_context();
     // The parent's edge closed as it was built: draining it all ends in Closed.
@@ -328,7 +338,7 @@ fn options_survive_output_first_and_a_sink() {
         .output::<Sync>()
         .input::<Sync>();
     let downstream = Receiver::new();
-    Push::connect(&mut node, &downstream).unwrap();
+    node.pushes(&downstream).unwrap();
     let upstream = Get::get(&node).unwrap();
     one_round(node, upstream, to_local(alloc));
     assert_eq!(downstream.len().unwrap(), 1);

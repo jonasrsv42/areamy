@@ -179,7 +179,7 @@ where
     OutputType: Rotate<DataType = Out, SignalType = SignalType>,
 {
     /// Create all four phase pollables sharing state. Binds every output edge to `output_wake`
-    /// before anything is pushed, so no refusal goes unwoken. Here, not at `Push::connect`: the
+    /// before anything is pushed, so no refusal goes unwoken. Here, not at `pushes`: the
     /// node's wakers don't exist yet then.
     pub fn phases(
         input: Inputs<Phase<LeftInletType>, Phase<RightInletType>>,

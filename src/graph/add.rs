@@ -16,7 +16,8 @@ mod default;
 /// otherwise stated to avoid specifying [Multiplicity] where not necessary.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot take this connection",
-    label = "does not accept `{ConnectionType}`"
+    label = "does not accept `{ConnectionType}`",
+    note = "a node with several sides needs one named: `.at::<Side>()` (owning) or `.at_mut::<Side>()` (pushing from / scheduling)"
 )]
 pub trait Add<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity = Unary> {
     fn add(&mut self, connection: Box<ConnectionType>) -> Result<(), Error>;

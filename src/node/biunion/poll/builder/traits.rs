@@ -1,6 +1,6 @@
 //! Dispatch traits for biunion builder methods.
 //!
-//! [`ResolveParent`] dispatches `.parent::<Side>(node)` to resolve
+//! [`ResolveParent`] dispatches `up.via(node.at::<Side>())` to resolve
 //! left or right input to Async based on the side marker.
 //!
 //! [`ResolveInput`] dispatches `.input::<Side, Edge>()` to resolve

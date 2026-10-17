@@ -1,41 +1,33 @@
 use crate::error::Error;
 use crate::graph::Add;
-use crate::graph::marker::Multiplicity;
+use crate::graph::marker::{Connection, Unary};
 use crate::work::Workable;
 
-/// [`Schedule`] is a scheduling-only connection. See [Schedule::connect].
+/// [`Schedules`] is the schedule-only edge: `down.schedules(up)?` moves `up` into `down`, which
+/// then decides when `up` works. No data flows; pair it with [crate::Pushes] for an owning edge
+/// whose signals follow data.
 ///
-/// ```ignore
-/// work::Schedule::connect(parent, &mut child)?;
-/// work::Schedule::connect(parent, &mut biunion.at::<Right>())?;
-/// ```
-pub enum Schedule {}
+/// `down` is single-sided; name a side with [crate::At::at_mut]. The thread is an optional
+/// annotation: `down.schedules::<EncoderThread>(up)?`.
+///
+/// Scheduling can't cycle: `up` is moved.
+pub trait Schedules<'params> {
+    fn schedules<ThreadIdType>(
+        &mut self,
+        up: impl Workable<ThreadId = ThreadIdType> + 'params,
+    ) -> Result<(), Error>
+    where
+        Self: Add<dyn Workable<ThreadId = ThreadIdType> + 'params, Unary>;
+}
 
-impl Schedule {
-    /// [`Schedule::connect`] creates a `work` connection between two nodes.
-    ///
-    /// A `work` connection in a scheduling connection. In this case the child can make the parent
-    /// work.
-    ///
-    /// * `parent` - A [Workable]. The parent will be [Add]ed to the child so the
-    ///   child can schedule the work.
-    ///
-    /// * `child` - A type that we can [Add] the parent [Workable] to for scheduling.
-    ///
-    /// The function takes the parent by value as its ownership will be transferred to the child.
-    /// The child is taken by mutable reference as we will be adding the parent to it.
-    ///
-    /// After this call, the `child` will own the parent. The child can keep being connected into
-    /// things in the graph, but the `parent` is done.
-    ///
-    /// <div class="info">
-    /// By transferring ownership upon scheduling connection we make it hard to introduce bugs such as
-    /// scheduling circles, which would be deadlocks.
-    /// </div>
-    pub fn connect<'params, MultiplicityType: Multiplicity, ThreadIdType>(
-        parent: impl Workable<ThreadId = ThreadIdType> + 'params,
-        child: &mut impl Add<dyn Workable<ThreadId = ThreadIdType> + 'params, MultiplicityType>,
-    ) -> Result<(), Error> {
-        Add::add(child, Box::new(parent))
+impl<'params, NodeType: Connection> Schedules<'params> for NodeType {
+    fn schedules<ThreadIdType>(
+        &mut self,
+        up: impl Workable<ThreadId = ThreadIdType> + 'params,
+    ) -> Result<(), Error>
+    where
+        Self: Add<dyn Workable<ThreadId = ThreadIdType> + 'params, Unary>,
+    {
+        Add::add(self, Box::new(up))
     }
 }

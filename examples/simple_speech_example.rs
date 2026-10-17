@@ -30,8 +30,10 @@
 
 use areamy::error::Error;
 use areamy::thread::Join;
-use areamy::work::{Line, Reader, Writer};
-use areamy::{Closeable, Flush, LineRoutine, Message, Next, Push, Pushable, ThreadStream};
+use areamy::work::Line;
+use areamy::{
+    Closeable, Flush, LineRoutine, Message, Next, Pushable, Pushes, Reads, Streams, Writes,
+};
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -96,21 +98,21 @@ fn main() -> Result<(), Error> {
     let mut decoder = Line::builder().bounded(QUEUE).build(Stage::costing(3));
     let app = Line::builder().bounded(QUEUE).build(Stage::costing(0));
 
-    let mut recording = Writer::new(&frontend)?;
+    let mut recording = frontend.writer()?;
     // Across threads: each stage pushes into the next one's input.
-    Push::connect(&mut frontend, &encoder)?;
-    Push::connect(&mut encoder, &decoder)?;
-    Push::connect(&mut decoder, &app)?;
-    let mut transcripts = Reader::new(app)?;
+    frontend.pushes(&encoder)?;
+    encoder.pushes(&decoder)?;
+    decoder.pushes(&app)?;
+    let mut transcripts = app.reader()?;
 
     let read_from_file = Arc::new(AtomicUsize::new(0));
     let mut most_in_flight = 0;
 
     thread::scope(|scope| -> Result<(), Error> {
         let stages = [
-            ThreadStream::<FrontendThread>::of(frontend).start(scope),
-            ThreadStream::<EncoderThread>::of(encoder).start(scope),
-            ThreadStream::<DecoderThread>::of(decoder).start(scope),
+            frontend.stream::<FrontendThread>().start(scope),
+            encoder.stream::<EncoderThread>().start(scope),
+            decoder.stream::<DecoderThread>().start(scope),
         ];
 
         // The recording is read as fast as the disk allows; a full frontend input makes it wait.

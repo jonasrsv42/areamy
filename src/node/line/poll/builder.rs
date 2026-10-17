@@ -6,9 +6,9 @@
 //!
 //! - `.input::<Sync>()` → resolve input to Sync
 //! - `.output::<Sync>()` → resolve output to Sync
-//! - `.parent(node)` → Async input (adds parent)
+//! - `up.via(node)` → Async input (adds parent `up`)
 //! - `thread.add(node)` → Sync output (Spawnable)
-//! - consumed by `.parent()` → Async output (AsyncParent)
+//! - consumed by `node.via(down)` → Async output (AsyncParent)
 
 pub mod node;
 pub mod options;

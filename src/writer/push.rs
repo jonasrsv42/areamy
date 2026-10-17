@@ -1,6 +1,6 @@
 use crate::edge::deadlock::deadlock;
 use crate::error::Error;
-use crate::graph::marker::{Connection, Multiplicity};
+use crate::graph::marker::{Connection, Unary};
 use crate::graph::{Closeable, Get, Outlet, Pushable, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::{Origin, Trackable};
@@ -22,40 +22,55 @@ where
 {
 }
 
-impl<'params, DataType> Writer<'params, DataType, Trackable<&'static str>>
-where
-    DataType: Send + Sync + 'static,
-{
-    /// Write into `input`. The side is inferred from the data type, or named with
-    /// [crate::graph::At::at]: `Writer::new(&node.at::<Left>())`.
-    pub fn new<MultiplicityType: Multiplicity>(
-        input: &impl Get<
-            dyn Sink<DataType = DataType, SignalType = Trackable<&'static str>>
-                + Send
-                + Sync
-                + 'params,
-            MultiplicityType,
-        >,
-    ) -> Result<Self, Error> {
-        let inner = input.get()?;
-        Ok(Self { inner })
-    }
-}
-
 impl<'params, DataType, SignalType> Writer<'params, DataType, SignalType>
 where
     DataType: Send + Sync,
     SignalType: Send + Sync + Origin,
 {
-    /// [Writer::new] with a generic signal type.
-    pub fn of<MultiplicityType: Multiplicity>(
+    /// Write into `node` with a signal type other than [Trackable]; otherwise use
+    /// [Writes::writer]. Name a side with [crate::At::at_ref].
+    pub fn of(
         node: &impl Get<
             dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params,
-            MultiplicityType,
+            Unary,
         >,
     ) -> Result<Self, Error> {
         let inner = node.get()?;
         Ok(Self { inner })
+    }
+}
+
+/// [`Writes`] opens a [Writer] into a node's input: `let mut input = node.writer()?`.
+///
+/// The signal is [Trackable]; for another, use [Writer::of]. Name a side with
+/// [crate::At::at_ref]: `node.at_ref::<Left>().writer()?`. The data type is an optional
+/// annotation: `node.writer::<Frame>()?`.
+pub trait Writes<'params> {
+    fn writer<DataType>(&self) -> Result<Writer<'params, DataType>, Error>
+    where
+        DataType: Send + Sync + 'static,
+        Self: Get<
+                dyn Sink<DataType = DataType, SignalType = Trackable<&'static str>>
+                    + Send
+                    + Sync
+                    + 'params,
+                Unary,
+            >;
+}
+
+impl<'params, NodeType: Connection> Writes<'params> for NodeType {
+    fn writer<DataType>(&self) -> Result<Writer<'params, DataType>, Error>
+    where
+        DataType: Send + Sync + 'static,
+        Self: Get<
+                dyn Sink<DataType = DataType, SignalType = Trackable<&'static str>>
+                    + Send
+                    + Sync
+                    + 'params,
+                Unary,
+            >,
+    {
+        Writer::of(self)
     }
 }
 
@@ -121,6 +136,8 @@ mod tests {
         input: Receiver<usize, Trackable<&'static str>>,
     }
 
+    impl Connection for MockNode {}
+
     impl Get<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>
         for MockNode
     {
@@ -140,7 +157,7 @@ mod tests {
             input: Receiver::new(),
         };
 
-        let mut writer = Writer::new(&mock_node).unwrap();
+        let mut writer = mock_node.writer().unwrap();
 
         writer.push(Message::Data(5)).unwrap();
         writer.push(Message::Data(5)).unwrap();
@@ -157,7 +174,7 @@ mod tests {
             input: Receiver::new(),
         };
 
-        let mut writer = Writer::new(&mock_node).unwrap();
+        let mut writer = mock_node.writer().unwrap();
 
         writer.push(Message::Flush("hi".into())).unwrap();
 
@@ -173,7 +190,7 @@ mod tests {
             input: Receiver::new(),
         };
 
-        let mut writer = Writer::new(&mock_node).unwrap();
+        let mut writer = mock_node.writer().unwrap();
 
         writer.push(Message::Marker("hi".into())).unwrap();
 
@@ -188,7 +205,7 @@ mod tests {
         let mock_node = MockNode {
             input: Receiver::bounded(NonZeroUsize::MIN),
         };
-        let mut writer = Writer::new(&mock_node).unwrap();
+        let mut writer = mock_node.writer().unwrap();
         writer.push(Message::Data(1)).unwrap();
 
         // Full: the second push waits for a pop instead of failing or dropping the message.

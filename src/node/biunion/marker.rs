@@ -5,7 +5,7 @@ pub struct Right;
 impl Multiplicity for Left {}
 impl Multiplicity for Right {}
 
-/// Marker trait for biunion sides. Used to dispatch `.parent::<Side>(node)`.
+/// Marker trait for biunion sides. Used to dispatch `up.via(node.at::<Side>())`.
 pub trait Side: Multiplicity {
     /// This side's one of a left/right pair.
     fn pick<'a, T>(left: &'a mut T, right: &'a mut T) -> &'a mut T;

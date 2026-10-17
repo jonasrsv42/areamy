@@ -9,10 +9,10 @@ use crate::poll;
 use crate::poll::thread::Thread;
 use crate::sync::Receiver;
 use crate::thread::Join;
-use crate::work::{self, Reader, Writer};
+use crate::work;
 use crate::{
-    At, BifurcationRoutine, Flush, LineIo, LineRoutine, Next, Push, ThreadBundle, ThreadStream,
-    Trackable, bifurcation, fatal,
+    At, BifurcationRoutine, Flush, LineIo, LineRoutine, Next, Pushes, Reads, Streams, ThreadBundle,
+    Trackable, Writes, bifurcation, fatal,
 };
 use crate::{Closeable, Message, Pushable};
 use std::collections::VecDeque;
@@ -82,15 +82,15 @@ fn middle_thread_error_does_not_deadlock_drain() {
     let mut middle = work::Line::of(FailingMiddle);
     let sink_node = work::Line::of(PassThrough::new());
 
-    let writer: Writer<usize> = Writer::new(&middle).unwrap();
-    Push::<usize>::connect(&mut middle, &sink_node).unwrap();
+    let writer = middle.writer::<usize>().unwrap();
+    middle.pushes::<usize>(&sink_node).unwrap();
 
-    let middle_thread = ThreadStream::<MiddleThread>::of(middle);
+    let middle_thread = middle.stream::<MiddleThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(middle_thread);
 
-    let reader: Reader<usize> = Reader::new(sink_node).unwrap();
+    let reader = sink_node.reader::<usize>().unwrap();
     let mut io = LineIo::new(writer, reader);
 
     std::thread::scope(|s| {
@@ -146,7 +146,7 @@ fn poll_thread_does_not_deadlock_when_sync_input_drops() {
         .input::<poll::Sync>()
         .output::<poll::Sync>();
 
-    let input = Writer::new(&node).unwrap();
+    let input = node.writer().unwrap();
 
     thread.add(node);
     std::thread::scope(|s| {
@@ -215,19 +215,23 @@ fn fan_out_bifurcation_into_two_consumer_threads() {
     let mut consumer_a = work::Line::of(PassThrough::new());
     let mut consumer_b = work::Line::of(PassThrough::new());
 
-    let mut writer: Writer<usize> = Writer::new(&tee).unwrap();
+    let mut writer = tee.writer::<usize>().unwrap();
 
-    Push::<usize>::connect(&mut tee.at::<bifurcation::Left>(), &consumer_a).unwrap();
-    Push::<usize>::connect(&mut tee.at::<bifurcation::Right>(), &consumer_b).unwrap();
+    tee.at_mut::<bifurcation::Left>()
+        .pushes::<usize>(&consumer_a)
+        .unwrap();
+    tee.at_mut::<bifurcation::Right>()
+        .pushes::<usize>(&consumer_b)
+        .unwrap();
 
     let output_a: Receiver<usize, Trackable<&'static str>> = Receiver::new();
     let output_b: Receiver<usize, Trackable<&'static str>> = Receiver::new();
-    Push::<usize>::connect(&mut consumer_a, &output_a).unwrap();
-    Push::<usize>::connect(&mut consumer_b, &output_b).unwrap();
+    consumer_a.pushes::<usize>(&output_a).unwrap();
+    consumer_b.pushes::<usize>(&output_b).unwrap();
 
-    let producer_thread = ThreadStream::<ProducerThread>::of(tee);
-    let consumer_a_thread = ThreadStream::<Consumer1>::of(consumer_a);
-    let consumer_b_thread = ThreadStream::<Consumer2>::of(consumer_b);
+    let producer_thread = tee.stream::<ProducerThread>();
+    let consumer_a_thread = consumer_a.stream::<Consumer1>();
+    let consumer_b_thread = consumer_b.stream::<Consumer2>();
 
     let mut bundle = ThreadBundle::new();
     bundle

@@ -1,64 +1,42 @@
-use crate::error::Error;
-use crate::graph::marker::{Connection, Multiplicity, Unary};
-use crate::graph::{Add, Get, Outputs};
-use std::marker::PhantomData;
+use crate::graph::marker::{Connection, Multiplicity};
+
+mod select;
+mod select_mut;
+mod select_ref;
+
+pub use select::Select;
+pub use select_mut::SelectMut;
+pub use select_ref::SelectRef;
 
 /// [`At`] names one [Multiplicity] of a node, so connections reach a specific side.
 ///
-/// Direction comes from the connection: a parent side is an output ([Add] of a sink),
-/// a child side is an input ([Get] of a sink, [Add] of a parent). Single-sided nodes
-/// never need it.
+/// - [At::at] moves the node: only an owning edge ([crate::Via::via]) takes it.
+/// - [At::at_mut] borrows it to add to: the upstream of [crate::Pushes::pushes], the downstream
+///   of [crate::Schedules::schedules], [crate::Tees::tee].
+/// - [At::at_ref] borrows it to get from: the downstream of [crate::Pushes::pushes],
+///   [crate::Writes::writer].
+///
+/// Single-sided nodes never need any of them.
 ///
 /// ```ignore
-/// Push::connect(&mut left, &biunion.at::<Left>())?;
-/// work::Bidi::connect(right, &mut biunion.at::<Right>())?;
-/// Push::connect(&mut bifurcation.at::<Left>(), &child)?;
+/// router.at_mut::<Right>().pushes(&noise)?;
+/// up.pushes(&merge.at_ref::<Left>())?;
+/// let speech = router.at::<Left>().via(encoder)?;
+/// let merge = text.via(merge.at::<Right>())?;
 /// ```
 pub trait At: Sized {
-    fn at<MultiplicityType: Multiplicity>(&mut self) -> Select<'_, Self, MultiplicityType> {
-        Select {
-            node: self,
-            multiplicity: PhantomData,
-        }
+    fn at<MultiplicityType>(self) -> Select<Self, MultiplicityType> {
+        Select::new(self)
+    }
+
+    fn at_mut<MultiplicityType: Multiplicity>(&mut self) -> SelectMut<'_, Self, MultiplicityType> {
+        SelectMut::new(self)
+    }
+
+    fn at_ref<MultiplicityType: Multiplicity>(&self) -> SelectRef<'_, Self, MultiplicityType> {
+        SelectRef::new(self)
     }
 }
 
-impl<NodeType> At for NodeType {}
-
-/// [`Select`] is a node borrowed at one [Multiplicity], exposed as [Unary]. See [At].
-pub struct Select<'node, NodeType, MultiplicityType> {
-    node: &'node mut NodeType,
-    multiplicity: PhantomData<MultiplicityType>,
-}
-
-impl<ConnectionType, NodeType, MultiplicityType> Get<ConnectionType, Unary>
-    for Select<'_, NodeType, MultiplicityType>
-where
-    ConnectionType: Connection + ?Sized,
-    NodeType: Get<ConnectionType, MultiplicityType>,
-    MultiplicityType: Multiplicity,
-{
-    fn get(&self) -> Result<Box<ConnectionType>, Error> {
-        self.node.get()
-    }
-}
-
-impl<ConnectionType, NodeType, MultiplicityType> Add<ConnectionType, Unary>
-    for Select<'_, NodeType, MultiplicityType>
-where
-    ConnectionType: Connection + ?Sized,
-    NodeType: Add<ConnectionType, MultiplicityType>,
-    MultiplicityType: Multiplicity,
-{
-    fn add(&mut self, connection: Box<ConnectionType>) -> Result<(), Error> {
-        self.node.add(connection)
-    }
-}
-
-impl<NodeType, MultiplicityType> Outputs<Unary> for Select<'_, NodeType, MultiplicityType>
-where
-    NodeType: Outputs<MultiplicityType>,
-    MultiplicityType: Multiplicity,
-{
-    type Sink = NodeType::Sink;
-}
+// Bounded on the impl, so `&mut` bindings and guards autoderef to the node.
+impl<NodeType: Connection> At for NodeType {}

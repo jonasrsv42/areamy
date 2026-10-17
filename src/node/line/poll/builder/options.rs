@@ -37,7 +37,7 @@ impl<'thread, 'params, ThreadIdType: ThreadId> Builder<'thread, 'params, ThreadI
 
 impl<'thread, 'params, ThreadIdType: ThreadId> LineBuilder<'thread, 'params, ThreadIdType> {
     /// Hold at most `bound` messages per input edge, signals included: the sync bridge from
-    /// `.input::<Sync>()`, or each parent's edge from `.parent(p)`, each bounded on its own. Its
+    /// `.input::<Sync>()`, or each parent's edge from `p.via(..)`, each bounded on its own. Its
     /// producers wait while it is full: until Input drains it, or, once the routine refuses, until
     /// the routine makes room. `None` is unbounded, the default.
     ///

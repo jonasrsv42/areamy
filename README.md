@@ -15,16 +15,16 @@ See [tests/example.rs](tests/example.rs)
 
 
 ```rust
-let in_node = areamy::work::Line::of(AddOne::new());
-let mut middle_node = areamy::work::Line::of(AddOne::new());
-let mut out_node = areamy::work::Line::of(AddOne::new());
+use areamy::work::Line;
+use areamy::{Reads, Via, Writes};
 
-let writer = areamy::work::Writer::<usize>::of(&in_node)?;
+let inputs = Line::of(AddOne::new());
+let middle = Line::of(AddOne::new());
+let outputs = Line::of(AddOne::new());
 
-areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
-areamy::work::Bidi::<usize>::connect(middle_node, &mut out_node)?;
-
-let reader = areamy::work::Reader::new(out_node)?;
+let writer = inputs.writer()?;
+let outputs = inputs.via(middle)?.via(outputs)?;
+let reader = outputs.reader()?;
 
 let mut io = areamy::LineIo::new(writer, reader);
 
@@ -44,33 +44,36 @@ there are two threads working on the graph. The main thread and a `HelperThread`
 ```
  main thread
      ↑
-    node
+  outputs
      ↑
-    node   (helper_thread)
+  middle   (helper_thread)
      ↑
-    node   (helper_thread)
+  inputs   (helper_thread)
 
 ```
 
 the graph computation is split across two threads.
 
 ```rust
+use areamy::work::Line;
+use areamy::{Pushes, Reads, Streams, Via, Writes};
+
 areamy::thread_id!(HelperThread);
 
-let in_node = areamy::work::Line::of(AddOne::new());
-let mut middle_node = areamy::work::Line::of(AddOne::new());
-let out_node = areamy::work::Line::of(AddOne::new());
+let inputs = Line::of(AddOne::new());
+let middle = Line::of(AddOne::new());
+let outputs = Line::of(AddOne::new());
 
-let writer = areamy::work::Writer::<usize>::of(&in_node)?;
-areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
+let writer = inputs.writer()?;
+let mut middle = inputs.via(middle)?;
 
-// Wire the middle node to push into the out node on the main thread.
-areamy::Push::<usize>::connect(&mut middle_node, &out_node)?;
+// Middle, on the helper thread, pushes into outputs on the main thread.
+middle.pushes(&outputs)?;
 
-// Move the middle node onto the helper thread.
-let helper_thread = areamy::ThreadStream::<HelperThread>::of(middle_node);
+// Move inputs → middle onto the helper thread.
+let helper_thread = middle.stream::<HelperThread>();
 
-let reader = areamy::work::Reader::new(out_node)?;
+let reader = outputs.reader()?;
 let mut io = areamy::LineIo::new(writer, reader);
 
 std::thread::scope(|s| -> Result<(), areamy::error::Error> {

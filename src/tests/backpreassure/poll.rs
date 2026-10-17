@@ -12,6 +12,7 @@ use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::poll::{self, AsyncParent, Sync};
 use crate::signal::Trackable;
 use crate::work;
+use crate::{At, Via};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -101,8 +102,10 @@ fn a_biunion_bounds_mixed_inputs_in_either_order() {
         .builder()
         .biunion()
         .bounded::<Right>(NonZeroUsize::MIN)
-        .build(MockBiunion::new)
-        .parent::<Left>(parent)
+        .build(MockBiunion::new);
+    let node = parent
+        .via(node.at::<Left>())
+        .unwrap()
         .input::<Right, Sync>()
         .output::<Sync>();
     {
@@ -120,9 +123,8 @@ fn a_biunion_bounds_mixed_inputs_in_either_order() {
         .biunion()
         .bounded::<Left>(NonZeroUsize::MIN)
         .build(MockBiunion::new)
-        .input::<Right, Sync>()
-        .parent::<Left>(parent)
-        .output::<Sync>();
+        .input::<Right, Sync>();
+    let node = parent.via(node.at::<Left>()).unwrap().output::<Sync>();
     {
         let mut right: Box<WorkSink> = Get::<WorkSink, Right>::get(&node).unwrap();
         assert_eq!(accepted(&mut right, 2), [true, true]);
@@ -177,10 +179,9 @@ fn a_bounded_line_bounds_each_parent_edge() {
         .builder()
         .line()
         .bounded(NonZeroUsize::MIN)
-        .build(MockLine::new)
-        .parent(first)
-        .parent(second)
-        .output::<Sync>();
+        .build(MockLine::new);
+    let node = first.via(node).unwrap();
+    let node = second.via(node).unwrap().output::<Sync>();
     thread.add(node);
     run(thread);
     assert_eq!(*first_seen.lock().unwrap(), [true, false]);
@@ -196,10 +197,9 @@ fn a_biunion_bounds_each_sides_parent_edges() {
         .builder()
         .biunion()
         .bounded::<Left>(NonZeroUsize::MIN)
-        .build(MockBiunion::new)
-        .parent::<Left>(left)
-        .parent::<Right>(right)
-        .output::<Sync>();
+        .build(MockBiunion::new);
+    let node = left.via(node.at::<Left>()).unwrap();
+    let node = right.via(node.at::<Right>()).unwrap().output::<Sync>();
     thread.add(node);
     run(thread);
     assert_eq!(*left_seen.lock().unwrap(), [true, false]);

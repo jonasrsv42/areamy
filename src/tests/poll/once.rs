@@ -11,7 +11,7 @@ use crate::poll::future::line::once;
 use crate::poll::future::{Input, input, output};
 use crate::signal::Trackable;
 use crate::work::Writer;
-use crate::{Closeable, Push, Pushable, ThreadBundle, poll};
+use crate::{Closeable, Pushable, Pushes, ThreadBundle, Writes, poll};
 use std::future::Future;
 use std::pin::Pin;
 use std::thread;
@@ -56,9 +56,9 @@ fn once_line<'params>(
         ))
         .input::<poll::Sync>()
         .output::<poll::Sync>();
-    let writer = Writer::new(&node).unwrap();
+    let writer = node.writer().unwrap();
     let output = Receiver::new();
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
     thread.add(node);
     (thread, writer, output)
 }

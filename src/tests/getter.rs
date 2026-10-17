@@ -14,7 +14,7 @@ use crate::node::line::work::node::{LineTrait, Node as LineNode};
 use crate::node::routine::{Flush, Next, Send as RoutineSend};
 use crate::work::{self, Bifurcation, Biunion, Line, Workable};
 use crate::writer::pull::WriterBuffer;
-use crate::{At, DefaultThread, Push, Trackable, closed, poll};
+use crate::{At, DefaultThread, Pushes, Trackable, closed, poll};
 use std::collections::VecDeque;
 
 type Signal = Trackable<&'static str>;
@@ -61,7 +61,7 @@ impl<'params, D: Send + Sync + 'static> Outputs for WorkParent<'params, D> {
     type Sink = WorkSink<'params, D>;
 }
 
-/// Left and right differ, so a side can be inferred from the parent's data type.
+/// Left and right differ in data type.
 struct Mixed(VecDeque<usize>);
 
 impl RoutineSend<usize, biunion::Left> for Mixed {
@@ -102,30 +102,31 @@ fn poll_parent_into_work_children() {
         outputs: Vec::new(),
     };
     let receiver = Receiver::<usize, Signal>::new();
-    Push::connect(&mut parent, &receiver).unwrap();
-    Push::connect(&mut parent, &receiver.sender()).unwrap();
+    parent.pushes(&receiver).unwrap();
+    parent.pushes(&receiver.sender()).unwrap();
 
     let line: Line<LineNode<usize, usize, Signal, DefaultThread, MockWaitLine>> =
         Line::of(MockWaitLine::new(1));
-    Push::connect(&mut parent, &line).unwrap();
+    parent.pushes(&line).unwrap();
 
     let buffer = WriterBuffer::<usize, Signal, DefaultThread>::new();
-    Push::connect(&mut parent, &buffer).unwrap();
+    parent.pushes(&buffer).unwrap();
 
     let bifurcation: Bifurcation<
         BifurcationNode<usize, usize, usize, Signal, DefaultThread, MockBifurcation>,
     > = Bifurcation::of(MockBifurcation::new());
-    Push::connect(&mut parent, &bifurcation).unwrap();
+    parent.pushes(&bifurcation).unwrap();
 
-    let mut biunion: MixedBiunion = Biunion::of(Mixed(VecDeque::new()));
-    Push::connect(&mut parent, &biunion.at::<biunion::Left>()).unwrap();
-    // Side inferred from the data type.
-    Push::connect(&mut parent, &biunion).unwrap();
+    let biunion: MixedBiunion = Biunion::of(Mixed(VecDeque::new()));
+    parent.pushes(&biunion.at_ref::<biunion::Left>()).unwrap();
+    parent.pushes(&biunion.at_ref::<biunion::Left>()).unwrap();
     let mut f64_parent = PollParent::<f64> {
         _tag: &tag,
         outputs: Vec::new(),
     };
-    Push::connect(&mut f64_parent, &biunion).unwrap();
+    f64_parent
+        .pushes(&biunion.at_ref::<biunion::Right>())
+        .unwrap();
 
     assert_eq!(parent.outputs.len(), 7);
     assert_eq!(f64_parent.outputs.len(), 1);
@@ -144,23 +145,23 @@ fn poll_parent_connects_line<'params>(
     parent: &mut PollParent<'params, usize>,
     line: &impl LineTrait<'params, usize, usize, Signal>,
 ) {
-    Push::connect(parent, line).unwrap();
+    parent.pushes(line).unwrap();
 }
 
 fn poll_parent_connects_biunion<'params>(
     left: &mut PollParent<'params, usize>,
     right: &mut PollParent<'params, f64>,
-    biunion: &mut impl BiunionTrait<'params, usize, f64, usize, Signal>,
+    biunion: &impl BiunionTrait<'params, usize, f64, usize, Signal>,
 ) {
-    Push::connect(left, &biunion.at::<biunion::Left>()).unwrap();
-    Push::connect(right, &biunion.at::<biunion::Right>()).unwrap();
+    left.pushes(&biunion.at_ref::<biunion::Left>()).unwrap();
+    right.pushes(&biunion.at_ref::<biunion::Right>()).unwrap();
 }
 
 fn poll_parent_connects_bifurcation<'params>(
     parent: &mut PollParent<'params, usize>,
     bifurcation: &impl BifurcationTrait<'params, usize, usize, usize, Signal>,
 ) {
-    Push::connect(parent, bifurcation).unwrap();
+    parent.pushes(bifurcation).unwrap();
 }
 
 /// The node traits themselves promise a poll sink, not just the concrete nodes.
@@ -198,11 +199,11 @@ fn work_parent_still_served() {
     };
     let line: Line<LineNode<usize, usize, Signal, DefaultThread, MockWaitLine>> =
         Line::of(MockWaitLine::new(1));
-    Push::connect(&mut parent, &line).unwrap();
+    parent.pushes(&line).unwrap();
     let receiver = Receiver::<usize, Signal>::new();
-    Push::connect(&mut parent, &receiver).unwrap();
+    parent.pushes(&receiver).unwrap();
     let boxed: Box<dyn Get<WorkSink<'_, usize>>> = Box::new(Receiver::<usize, Signal>::new());
-    Push::connect(&mut parent, &boxed).unwrap();
+    parent.pushes(&boxed).unwrap();
     assert_eq!(parent.outputs.len(), 3);
 }
 

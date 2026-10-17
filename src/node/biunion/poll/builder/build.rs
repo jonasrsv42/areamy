@@ -998,7 +998,7 @@ where
 }
 
 // ============================================================
-// AsyncParent — biunion consumed by downstream .parent()
+// AsyncParent — biunion consumed by `biunion.via(down)`
 // ============================================================
 
 /// Sync, Sync → Deferred output (consumed as parent)

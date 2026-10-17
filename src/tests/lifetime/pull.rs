@@ -4,9 +4,9 @@
 use super::mock::{BorrowingLine, LifetimeThread};
 use crate::edge::sync::Receiver;
 use crate::thread::ThreadBundle;
-use crate::work::{self, ThreadStream, Writer};
+use crate::work;
 use crate::writer::pull::WriterBuffer;
-use crate::{Closeable, Message, Pullable, Push, Pushable};
+use crate::{Closeable, Message, Pullable, Pushable, Pushes, Streams, Via, Writes};
 
 #[test]
 fn line_pull_borrowed() {
@@ -14,16 +14,17 @@ fn line_pull_borrowed() {
 
     // Pull chain: WriterBuffer -> BorrowingLine (pull) -> bridged into work-line
     let buffer = WriterBuffer::new();
-    let mut writer = Writer::new(&buffer).unwrap();
+    let mut writer = buffer.writer().unwrap();
     let pull_line = buffer.then(BorrowingLine::new(&multiplier));
 
     // Bridge pull-segment into work-graph (so we can run it on a ThreadStream).
-    let mut bridged = work::Line::of(BorrowingLine::new(&multiplier));
-    work::Bidi::connect(work::Pulled::of(pull_line), &mut bridged).unwrap();
+    let mut bridged = work::Pulled::of(pull_line)
+        .via(work::Line::of(BorrowingLine::new(&multiplier)))
+        .unwrap();
     let output = Receiver::new();
-    Push::connect(&mut bridged, &output).unwrap();
+    bridged.pushes(&output).unwrap();
 
-    let thread = ThreadStream::<LifetimeThread>::of(bridged);
+    let thread = bridged.stream::<LifetimeThread>();
 
     let mut bundle = ThreadBundle::new();
     bundle.add(thread);

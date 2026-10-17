@@ -5,14 +5,14 @@
 //! bifurcation routes values > 5 to its right output (final sink) and
 //! values ≤ 5 back through the cycle.
 //!
-//! - Forward edge (biunion → bifurcation) uses `work::Bidi` (Forward policy).
-//! - Back-edge (bifurcation → biunion) uses `Push` (FollowData policy)
+//! - Forward edge (biunion → bifurcation) uses `via` (Forward policy).
+//! - Back-edge (bifurcation → biunion) uses `pushes` (FollowData policy)
 //!   so signals don't propagate around the loop forever.
 
 use crate::error::Error;
 use crate::node::{bifurcation, biunion};
-use crate::work::{self, Reader, Writer};
-use crate::{At, BifurcationRoutine, BiunionRoutine, LineIo, Message, Push};
+use crate::work;
+use crate::{At, BifurcationRoutine, BiunionRoutine, LineIo, Message, Pushes, Reads, Via, Writes};
 use std::collections::VecDeque;
 
 struct IncrementBiunion {
@@ -104,22 +104,21 @@ impl BifurcationRoutine<usize, usize, usize> for DeciderBifurcation {}
 
 #[test]
 fn test_cycle_with_signal_policies() {
-    let mut biunion = work::Biunion::of(IncrementBiunion::new());
+    let biunion = work::Biunion::of(IncrementBiunion::new());
     let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
-    let writer = Writer::new(&biunion.at::<biunion::Right>()).unwrap();
+    let writer = biunion.at_ref::<biunion::Right>().writer().unwrap();
 
     // bifurcation.left → biunion.left (back-edge, FollowData)
-    Push::<usize>::connect(
-        &mut bifurcation.at::<bifurcation::Left>(),
-        &biunion.at::<biunion::Left>(),
-    )
-    .unwrap();
+    bifurcation
+        .at_mut::<bifurcation::Left>()
+        .pushes::<usize>(&biunion.at_ref::<biunion::Left>())
+        .unwrap();
 
-    // biunion → bifurcation (forward, Forward policy via Bidi)
-    work::Bidi::connect(biunion, &mut bifurcation).unwrap();
+    // biunion → bifurcation (forward, Forward policy via `via`)
+    let bifurcation = biunion.via(bifurcation).unwrap();
 
-    let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
+    let reader = bifurcation.at::<bifurcation::Right>().reader().unwrap();
     let mut io = LineIo::new(writer, reader);
 
     io.push(Message::Data(1)).unwrap();
@@ -128,20 +127,19 @@ fn test_cycle_with_signal_policies() {
 
 #[test]
 fn test_cycle_with_multiple_values() {
-    let mut biunion = work::Biunion::of(IncrementBiunion::new());
+    let biunion = work::Biunion::of(IncrementBiunion::new());
     let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
-    let writer = Writer::new(&biunion.at::<biunion::Right>()).unwrap();
+    let writer = biunion.at_ref::<biunion::Right>().writer().unwrap();
 
-    Push::<usize>::connect(
-        &mut bifurcation.at::<bifurcation::Left>(),
-        &biunion.at::<biunion::Left>(),
-    )
-    .unwrap();
+    bifurcation
+        .at_mut::<bifurcation::Left>()
+        .pushes::<usize>(&biunion.at_ref::<biunion::Left>())
+        .unwrap();
 
-    work::Bidi::connect(biunion, &mut bifurcation).unwrap();
+    let bifurcation = biunion.via(bifurcation).unwrap();
 
-    let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
+    let reader = bifurcation.at::<bifurcation::Right>().reader().unwrap();
     let mut io = LineIo::new(writer, reader);
 
     for i in 1..=6 {
@@ -191,16 +189,19 @@ fn test_cycle_with_line_node() {
     let line = work::Line::of(IncrementLine::new());
     let mut bifurcation = work::Bifurcation::of(DeciderBifurcation::new());
 
-    let writer = Writer::new(&line).unwrap();
+    let writer = line.writer().unwrap();
 
     // Connect bifurcation's left output back to line's input (backward connection)
     // This creates a cycle where values <= 5 go back to the line
-    Push::<usize>::connect(&mut bifurcation.at::<bifurcation::Left>(), &line).unwrap();
+    bifurcation
+        .at_mut::<bifurcation::Left>()
+        .pushes::<usize>(&line)
+        .unwrap();
 
     // Connect line's output to bifurcation's input (forward connection)
-    work::Bidi::connect(line, &mut bifurcation).unwrap();
+    let bifurcation = line.via(bifurcation).unwrap();
 
-    let reader = Reader::new::<bifurcation::Right>(bifurcation).unwrap();
+    let reader = bifurcation.at::<bifurcation::Right>().reader().unwrap();
     let mut io = LineIo::new(writer, reader);
 
     for i in 1..=6 {

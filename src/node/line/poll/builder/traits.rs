@@ -43,13 +43,13 @@ where
     }
 }
 
-/// Resolve output edge. Implemented for [`Sync`], which pushes into every edge `Push::connect`
-/// adds, so its data must be `Clone`. Data that isn't leaves a node by one edge: `.sink(..)`, or
-/// `.parent(..)` from its consumer.
+/// Resolve output edge. Implemented for [`Sync`], which pushes into every edge `pushes` adds, so
+/// its data must be `Clone`. Data that isn't leaves a node by one edge: `.sink(..)`, or
+/// `node.via(consumer)`.
 ///
 /// ```compile_fail,E0277
 /// use areamy::poll::future::{Input, input, line::FutureRoutine, output};
-/// use areamy::{DefaultThread, Push, Trackable, poll, sync::Receiver};
+/// use areamy::{DefaultThread, Pushes, Trackable, poll, sync::Receiver};
 ///
 /// struct NotClone;
 ///
@@ -68,7 +68,7 @@ where
 ///     .input::<poll::Sync>()
 ///     .output::<poll::Sync>();
 /// let downstream = Receiver::<NotClone, Trackable<&'static str>>::new();
-/// Push::connect(&mut node, &downstream).unwrap();
+/// node.pushes(&downstream).unwrap();
 /// ```
 pub trait ResolveOutput<'params, OutType, SignalType: Origin>: Edge {
     fn resolve() -> Self::Output<'params, OutType, SignalType>;

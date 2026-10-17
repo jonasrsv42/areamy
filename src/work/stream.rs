@@ -14,6 +14,7 @@
 use crate::error::Error;
 use crate::fatal;
 use crate::graph::Add;
+use crate::graph::marker::Connection;
 use crate::thread::ThreadId;
 use crate::thread::callback::{self, OnDone, PanicGuard};
 use crate::thread::done::Done;
@@ -59,7 +60,7 @@ fn run<'params, ThreadIdType: ThreadId>(
 
 /// An idle thread that can have workables added and be started.
 ///
-/// Use [`of`](Self::of) for a single root or [`Add`] to add workables, then call
+/// Use [`Streams::stream`] for a single root or [`Add`] to add workables, then call
 /// [`start`](Self::start) to spawn the OS thread and get a [`ThreadStreamHandle`].
 ///
 /// # Example
@@ -67,18 +68,42 @@ fn run<'params, ThreadIdType: ThreadId>(
 /// ```ignore
 /// thread_id!(MyThread);
 ///
-/// let thread = ThreadStream::<MyThread>::of(some_vertex);
+/// let thread = some_vertex.stream::<MyThread>();
 /// std::thread::scope(|s| {
 ///     let handle = thread.start(s);  // consumes ThreadStream, returns handle
 ///     // ...
 /// });
 /// ```
+#[must_use = "start the thread or add it to a bundle; dropping it drops the subgraph"]
 pub struct ThreadStream<'params, ThreadIdType>
 where
     ThreadIdType: ThreadId,
 {
     pub(crate) workables: Workables<'params, ThreadIdType>,
     pub(crate) on_done: Vec<OnDone>,
+}
+
+/// [`Streams`] puts a root on its own thread: `threads.add(root.stream::<EncoderThread>())`.
+///
+/// The thread is an optional annotation when the root's type already fixes it.
+pub trait Streams<'params>: Sized {
+    fn stream<ThreadIdType>(self) -> ThreadStream<'params, ThreadIdType>
+    where
+        ThreadIdType: ThreadId,
+        Self: Workable<ThreadId = ThreadIdType> + 'params;
+}
+
+impl<'params, NodeType: Connection> Streams<'params> for NodeType {
+    fn stream<ThreadIdType>(self) -> ThreadStream<'params, ThreadIdType>
+    where
+        ThreadIdType: ThreadId,
+        Self: Workable<ThreadId = ThreadIdType> + 'params,
+    {
+        ThreadStream {
+            workables: vec![Box::new(self)],
+            on_done: Vec::new(),
+        }
+    }
 }
 
 /// A handle to a running thread, returned by [`ThreadStream::start`].
@@ -110,15 +135,6 @@ where
     /// Create a new idle thread stream with no workables.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Create an idle thread stream driving `root`. `ThreadStream::<T>::of(root)` assigns
-    /// `T` to a thread-generic root; the turbofish can be dropped when the root's type fixes it.
-    pub fn of(root: impl Workable<ThreadId = ThreadIdType> + 'params) -> Self {
-        Self {
-            workables: vec![Box::new(root)],
-            on_done: Vec::new(),
-        }
     }
 
     /// Register a callback to fire when the thread exits.
@@ -276,8 +292,8 @@ mod tests {
     }
 
     #[test]
-    fn of_infers_thread_from_root() {
-        let thread = ThreadStream::of(ImmediateClose);
+    fn stream_infers_thread_from_root() {
+        let thread = ImmediateClose.stream();
         std::thread::scope(|s| {
             let handle = thread.start(s);
             assert!(matches!(handle.join(), Join::Ok));

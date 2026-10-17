@@ -1,4 +1,5 @@
-use areamy::Pullable;
+use areamy::work::Line;
+use areamy::{Pullable, Pushes, Reads, Streams, Via, Writes};
 use std::collections::VecDeque;
 
 pub struct AddOne {
@@ -42,16 +43,13 @@ impl areamy::LineRoutine<usize, usize> for AddOne {}
 
 #[test]
 fn simple_sync() -> Result<(), areamy::error::Error> {
-    let in_node = areamy::work::Line::of(AddOne::new());
-    let mut middle_node = areamy::work::Line::of(AddOne::new());
-    let mut out_node = areamy::work::Line::of(AddOne::new());
+    let inputs = Line::of(AddOne::new());
+    let middle = Line::of(AddOne::new());
+    let outputs = Line::of(AddOne::new());
 
-    let writer = areamy::work::Writer::<usize>::of(&in_node)?;
-
-    areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
-    areamy::work::Bidi::<usize>::connect(middle_node, &mut out_node)?;
-
-    let reader = areamy::work::Reader::new(out_node)?;
+    let writer = inputs.writer()?;
+    let outputs = inputs.via(middle)?.via(outputs)?;
+    let reader = outputs.reader()?;
 
     let mut io = areamy::LineIo::new(writer, reader);
 
@@ -70,20 +68,20 @@ areamy::thread_id!(HelperThread);
 fn sync_multithread() -> Result<(), areamy::error::Error> {
     // Example of multithreaded graph.
 
-    let in_node = areamy::work::Line::of(AddOne::new());
-    let mut middle_node = areamy::work::Line::of(AddOne::new());
-    let out_node = areamy::work::Line::of(AddOne::new());
+    let inputs = Line::of(AddOne::new());
+    let middle = Line::of(AddOne::new());
+    let outputs = Line::of(AddOne::new());
 
-    let writer = areamy::work::Writer::<usize>::of(&in_node)?;
-    areamy::work::Bidi::<usize>::connect(in_node, &mut middle_node)?;
+    let writer = inputs.writer()?;
+    let mut middle = inputs.via(middle)?;
 
-    // Ensure that middle node, using the `HelperThread` pushes data into out node.
-    areamy::Push::<usize>::connect(&mut middle_node, &out_node)?;
+    // Middle, on the `HelperThread`, pushes into outputs on the main thread.
+    middle.pushes(&outputs)?;
 
-    // Now helper thread will work on the middle_node subgraph.
-    let helper_thread = areamy::ThreadStream::<HelperThread>::of(middle_node);
+    // The helper thread works on the inputs → middle subgraph.
+    let helper_thread = middle.stream::<HelperThread>();
 
-    let reader = areamy::work::Reader::new(out_node)?;
+    let reader = outputs.reader()?;
     let mut io = areamy::LineIo::new(writer, reader);
 
     std::thread::scope(|s| {
@@ -112,15 +110,15 @@ fn simple_nosync() -> Result<(), areamy::error::Error> {
     // Nosync is useful to avoid unnecessary mutexes.
     // each connection is lockfree, at the cost of not being `Sync`.
 
-    let root = areamy::pull::WriterBuffer::new();
-    let writer = areamy::work::Writer::<usize>::of(&root)?;
+    let inputs = areamy::pull::WriterBuffer::new();
+    let writer = inputs.writer()?;
 
-    let out_node = root
+    let outputs = inputs
         .then(AddOne::new())
         .then(AddOne::new())
         .then(AddOne::new());
 
-    let reader = areamy::pull::Reader::new(out_node);
+    let reader = areamy::pull::Reader::new(outputs);
 
     let mut io = areamy::LineIo::new(writer, reader);
 

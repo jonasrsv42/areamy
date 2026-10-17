@@ -14,7 +14,7 @@ use crate::poll::future::{Input, biunion, input, line, output};
 use crate::poll::{self, Sync, try_join};
 use crate::thread::ThreadBundle;
 use crate::work::Writer;
-use crate::{At, Push};
+use crate::{At, Pushes, Writes};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -67,9 +67,9 @@ where
         .build(line::FutureRoutine::factory(routine).bounded(one()))
         .input::<Sync>()
         .output::<Sync>();
-    let writer = Writer::new(&node).unwrap();
+    let writer = node.writer().unwrap();
     let output = Receiver::bounded(one());
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
     thread.add(node);
     (thread, writer, output)
 }
@@ -243,10 +243,10 @@ fn bounded_biunion() -> (
         .input::<Left, Sync>()
         .input::<Right, Sync>()
         .output::<Sync>();
-    let left_writer = Writer::new(&node.at::<Left>()).unwrap();
-    let right_writer = Writer::new(&node.at::<Right>()).unwrap();
+    let left_writer = node.at_ref::<Left>().writer().unwrap();
+    let right_writer = node.at_ref::<Right>().writer().unwrap();
     let output = Receiver::bounded(one());
-    Push::connect(&mut node, &output).unwrap();
+    node.pushes(&output).unwrap();
     thread.add(node);
     (thread, left_writer, right_writer, output)
 }

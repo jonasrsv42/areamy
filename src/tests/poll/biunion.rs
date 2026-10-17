@@ -10,8 +10,7 @@ use crate::poll;
 use crate::poll::future;
 use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
-use crate::writer::push::Writer;
-use crate::{Closeable, Message, Push, Pushable};
+use crate::{At, Closeable, Message, Pushable, Pushes, Via, Writes};
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
@@ -69,11 +68,11 @@ fn biunion_audio_with_config() {
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut audio_writer = Writer::<usize>::of(&node).unwrap();
-    let mut config_writer = Writer::<Config>::of(&node).unwrap();
+    let mut audio_writer = node.at_ref::<biunion::Left>().writer::<usize>().unwrap();
+    let mut config_writer = node.at_ref::<biunion::Right>().writer::<Config>().unwrap();
 
     let output_edge = Receiver::new();
-    Push::connect(&mut node, &output_edge).unwrap();
+    node.pushes(&output_edge).unwrap();
 
     async_thread.add(node);
     std::thread::scope(|s| {
@@ -128,7 +127,7 @@ fn biunion_with_async_parent() {
         .input::<poll::Sync>();
 
     // Writer pushes into parent
-    let mut audio_writer = Writer::<usize>::of(&parent).unwrap();
+    let mut audio_writer = parent.writer::<usize>().unwrap();
 
     // Biunion: left from async parent, right from sync config
     let biunion_routine = future::biunion::FutureRoutine::factory(
@@ -163,16 +162,16 @@ fn biunion_with_async_parent() {
         },
     );
 
-    let mut node = async_thread
-        .biunion(biunion_routine)
-        .parent::<biunion::Left>(parent)
+    let mut node = parent
+        .via(async_thread.biunion(biunion_routine).at::<biunion::Left>())
+        .unwrap()
         .input::<biunion::Right, poll::Sync>()
         .output::<poll::Sync>();
 
-    let mut config_writer = Writer::<Config>::of(&node).unwrap();
+    let mut config_writer = node.at_ref::<biunion::Right>().writer::<Config>().unwrap();
 
     let output_edge = Receiver::new();
-    Push::connect(&mut node, &output_edge).unwrap();
+    node.pushes(&output_edge).unwrap();
 
     async_thread.add(node);
     std::thread::scope(|s| {

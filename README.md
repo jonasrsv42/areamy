@@ -1,18 +1,11 @@
 
 # Areamy
 
-Areamy is a strongly typed runtime for multithreaded streaming graphs. 
-See [src/graph](src/graph.rs) for a brief overview.
+Streaming graphs for Rust where a wrong graph doesn't compile.
 
-It serves a purpose similar to https://github.com/google-ai-edge/mediapipe
-
-The areamy repository itself only has the basic building blocks of the runtime.  
-
-## Example
-
-
-See [tests/example.rs](tests/example.rs)
-
+Areamy runs low-latency pipelines (audio in, model inference, audio out) across threads, with
+blocking and async stages side by side. It fills a role like
+[MediaPipe](https://github.com/google-ai-edge/mediapipe), with no dependencies, and runs on an ESP32.
 
 ```rust
 use areamy::work::Line;
@@ -27,32 +20,41 @@ let outputs = inputs.via(middle)?.via(outputs)?;
 let reader = outputs.reader()?;
 
 let mut io = areamy::LineIo::new(writer, reader);
-
 io.push(areamy::Message::Data(1))?;
-io.push(areamy::Message::Data(2))?;
-
 assert_eq!(io.read()?, areamy::Message::Data(4));
-assert_eq!(io.read()?, areamy::Message::Data(5));
 ```
 
+`via` moves the upstream into its owner, so wiring reads in data direction and ownership *is*
+the scheduling graph.
 
-### Multithreading
+## What you get
 
-The purpose of areamy is to support multithreaded graphs such as the example below. Where 
-there are two threads working on the graph. The main thread and a `HelperThread`. In the example below
+- **Wiring the compiler checks.** Owning a node twice, a scheduling cycle, a type mismatch, an
+  unnamed side, or a work node owning an async one: all compile errors.
+  [`src/graph/misuse.rs`](src/graph/misuse.rs) pins each one.
+- **Three runtimes, one graph.** Blocking `work` threads for CPU-bound stages, an async `poll`
+  runtime for I/O (its own executor, routines are plain `async fn`), and `pull`
+  segments with no locks or dynamic dispatch for hot paths. One
+  [`ThreadBundle`](src/thread/bundle/core.rs) starts them all.
+  [`tests/lifecycle.rs`](tests/lifecycle.rs) mixes all three.
+- **Threads are types.** `thread_id!(Encoder)` names a thread; `node.stream::<Encoder>()`
+  moves a subgraph onto it.
+- **Segments travel in-band.** `Flush` and `Marker` signals flow with the data, so "this
+  utterance ended" reaches every stage in order. See [`src/message.rs`](src/message.rs).
+- **More than lines.** Two-input `Biunion`, two-output `Bifurcation`, fan-in with `via`, fan-out
+  with `tee` / `pushes`, and side paths that carry data without scheduling.
+- **Backpressure when you want it.** Queues are unbounded by default; `.bounded(n)` on a node
+  caps its input and blocks or suspends the producer.
+- **Clean teardown.** Closing an input drains and closes everything downstream. An error or
+  panic ends its thread and closes its edges, so the rest winds down; `on_first_error` tells you
+  once, so you can rebuild and restart.
+- **Timeouts in async stages.** `recv_with_timeout`, `send_with_timeout` and `poll::sleep`.
 
-```
- main thread
-     ↑
-  outputs
-     ↑
-  middle   (helper_thread)
-     ↑
-  inputs   (helper_thread)
+[PRINCIPLES.md](PRINCIPLES.md) explains the design choices behind these.
 
-```
+## Multiple threads
 
-the graph computation is split across two threads.
+`inputs` and `middle` run on a helper thread; `outputs` is read on the main thread.
 
 ```rust
 use areamy::work::Line;
@@ -66,39 +68,22 @@ let outputs = Line::of(AddOne::new());
 
 let writer = inputs.writer()?;
 let mut middle = inputs.via(middle)?;
-
-// Middle, on the helper thread, pushes into outputs on the main thread.
-middle.pushes(&outputs)?;
-
-// Move inputs → middle onto the helper thread.
+middle.pushes(&outputs)?; // crosses threads: data only, no scheduling
 let helper_thread = middle.stream::<HelperThread>();
 
-let reader = outputs.reader()?;
-let mut io = areamy::LineIo::new(writer, reader);
+let mut io = areamy::LineIo::new(writer, outputs.reader()?);
 
 std::thread::scope(|s| -> Result<(), areamy::error::Error> {
-    // Start the helper thread.
     let _handle = helper_thread.start(s);
-
-    // Helper thread runs the first two nodes; main thread reads the output.
     io.push(areamy::Message::Data(1))?;
-    io.push(areamy::Message::Data(2))?;
-
     assert_eq!(io.read()?, areamy::Message::Data(4));
-    assert_eq!(io.read()?, areamy::Message::Data(5));
-
-    // Close so the helper thread exits before the scope joins it.
-    io.close()
+    io.close() // lets the helper thread exit before the scope joins it
 })?;
 ```
 
-### Async poll runtime — drop in where it fits
+## Async stages
 
-CPU-bound? Sync work threads. I/O-bound? Poll thread, futures, wakers.
-Mix them in the same `ThreadBundle` — same edges, same teardown.
-
-A routine is a plain `async fn`; a Flush ends its `while let`, and the next segment starts it
-again:
+A routine is a plain `async fn`. A `Flush` ends its loop, and the next segment starts it again:
 
 ```rust
 use areamy::poll::future::{Input, Receiver, Sender};
@@ -111,8 +96,8 @@ async fn double(input: Receiver<usize>, output: Sender<usize>) -> Result<(), Err
 }
 ```
 
-Wire it like the work graph; `.input()` / `.output()` are where it meets the rest of the
-program:
+Nodes are minted by their thread and wired with the same verbs. `.input()` and `.output()` are
+where the async part meets the rest of the program:
 
 ```rust
 use areamy::poll::future::line::FutureRoutine;
@@ -125,49 +110,20 @@ let writer = inputs.writer()?;
 
 let mut outputs = inputs
     .via(io.line(FutureRoutine::factory(double)))?
-    .via(io.line(FutureRoutine::factory(double)))?
     .output();
 let reader = outputs.tee()?;
 io.add(outputs);
 ```
 
-See [tests/example.rs](tests/example.rs); a networking-shaped one (socket, `try_join`) is
-[tests/async_bidi_test.rs](tests/async_bidi_test.rs).
+More: [`tests/example.rs`](tests/example.rs), and a networking-shaped one (socket,
+`try_join`, reconnect per segment) in [`tests/async_bidi_test.rs`](tests/async_bidi_test.rs).
 
-#### Deadlines
+## Embedded
 
-Race input against a wall-clock timeout via `recv_with_timeout`:
-
-```rust
-match input.recv_with_timeout(MAX_HOLD).await? {
-    Some(Input::Data(v)) => buffer.push(v),
-    Some(Input::Flush)   => return,
-    None                 => flush(&mut buffer),  // timed out
-}
-```
-
-For lower-level use, the `timer` in `LineWakers` / `BiunionWakers` (a
-`poll::Timer`) exposes `schedule_at(deadline)` — the node gets re-polled at
-that `Instant`.
-
-## Embedded targets
-
-Areamy has no external dependencies and only relies on `std` primitives
-(`thread`, `sync`, `backtrace`, …) that are available on Espressif's
-ESP-IDF Rust target. To verify the library cross-compiles for ESP32-S3,
-install the toolchain once:
+Areamy only uses `std` (`thread`, `sync`, …), which ESP-IDF provides. To check that it
+cross-compiles for ESP32-S3:
 
 ```bash
-cargo install espup
-espup install
-source ~/export-esp.sh
-```
-
-Then run:
-
-```bash
+cargo install espup && espup install && source ~/export-esp.sh
 ./scripts/cross-check.sh
 ```
-
-That builds the library against `xtensa-esp32s3-espidf` (with `-Z build-std`,
-since Xtensa std isn't pre-built). Add more targets to the script as needed.

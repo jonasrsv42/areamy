@@ -1,19 +1,6 @@
 use crate::error::Error;
-use crate::fatal;
 use crate::graph::Get;
 use crate::graph::marker::{Connection, Multiplicity};
-use std::sync::{Arc, Mutex};
-
-impl<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity, GetType>
-    Get<ConnectionType, MultiplicityType> for Arc<Mutex<GetType>>
-where
-    GetType: Get<ConnectionType, MultiplicityType>,
-{
-    fn get(&self) -> Result<Box<ConnectionType>, Error> {
-        let owned = self.lock().map_err(|e| fatal!(e))?;
-        Get::get(&*owned)
-    }
-}
 
 impl<ConnectionType: Connection + ?Sized, MultiplicityType: Multiplicity, GetType>
     Get<ConnectionType, MultiplicityType> for Box<GetType>

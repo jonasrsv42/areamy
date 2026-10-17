@@ -1,6 +1,5 @@
 use crate::graph::Add;
 use crate::graph::marker::{Connection, Multiplicity, Unary};
-use std::sync::{Arc, Mutex};
 
 /// [`Outputs`] names the sink a node's push output takes, so a connection asks the child for
 /// exactly that. [Outputs::Sink] is a dyn [crate::graph::Outlet] composite, such as
@@ -16,15 +15,6 @@ pub trait Outputs<MultiplicityType: Multiplicity = Unary>:
     Add<Self::Sink, MultiplicityType>
 {
     type Sink: Connection + ?Sized;
-}
-
-/// Shared nodes stay push parents, as their [Add] does.
-impl<MultiplicityType: Multiplicity, OutputsType> Outputs<MultiplicityType>
-    for Arc<Mutex<OutputsType>>
-where
-    OutputsType: Outputs<MultiplicityType>,
-{
-    type Sink = OutputsType::Sink;
 }
 
 impl<MultiplicityType: Multiplicity, OutputsType> Outputs<MultiplicityType> for Box<OutputsType>

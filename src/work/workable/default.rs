@@ -1,22 +1,5 @@
 use crate::error::Error;
-use crate::fatal;
-use crate::thread::ThreadId;
 use crate::work::Workable;
-use std::sync::{Arc, Mutex};
-
-/// A [Workable] that is [std::marker::Send] + [std::marker::Sync] is also a [Workable]
-impl<WorkableType, ThreadIdType> Workable for Arc<Mutex<WorkableType>>
-where
-    ThreadIdType: ThreadId,
-    WorkableType: Workable<ThreadId = ThreadIdType> + ?Sized,
-{
-    fn work(&mut self) -> Result<(), Error> {
-        let mut owned = self.lock().map_err(|e| fatal!(e))?;
-        owned.work()
-    }
-
-    type ThreadId = ThreadIdType;
-}
 
 /// A boxed [Workable] (including `dyn Workable`) is a [Workable].
 impl<WorkableType: Workable + ?Sized> Workable for Box<WorkableType> {
@@ -86,31 +69,5 @@ mod tests {
             output.read_all().unwrap(),
             vec![Message::Data(1), Message::Data(6)]
         );
-    }
-
-    #[test]
-    fn workable_arc_can_work() {
-        let mut node = Arc::new(Mutex::new(Node::new()));
-
-        let input = node.lock().unwrap().input.sender();
-        let output = Receiver::<usize, Trackable<&'static str>>::new();
-
-        node.lock().unwrap().outputs.push(Box::new(output.sender()));
-
-        input.push_back(Message::Data(0)).unwrap();
-        input.push_back(Message::Data(2)).unwrap();
-        input.push_back(Message::Data(3)).unwrap();
-
-        node.work().unwrap();
-        node.work().unwrap();
-
-        assert_eq!(
-            output.read_all().unwrap(),
-            vec![Message::Data(1), Message::Data(6)]
-        );
-
-        node.work().unwrap();
-
-        assert_eq!(output.read_all().unwrap(), vec![Message::Data(9)]);
     }
 }

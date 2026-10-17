@@ -16,7 +16,7 @@ use crate::thread::DefaultThread;
 use crate::work::Sink;
 use crate::work::{self, Workable};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Payload that counts its clones in a shared counter.
 #[derive(Debug)]
@@ -263,14 +263,10 @@ impl Add<dyn Workable<ThreadId = DefaultThread>> for Node {
     }
 }
 
-/// A shared or boxed node stays a push parent.
+/// A boxed node stays a push parent.
 #[test]
-fn shared_and_boxed_nodes_connect_as_push_parents() {
+fn boxed_node_connects_as_push_parent() {
     let sink = Receiver::new();
-
-    let mut shared = Arc::new(Mutex::new(Node::new()));
-    Push::connect(&mut shared, &sink).unwrap();
-    assert_eq!(shared.lock().unwrap().outputs.len(), 1);
 
     let mut boxed = Box::new(Node::new());
     Push::connect(&mut boxed, &sink).unwrap();

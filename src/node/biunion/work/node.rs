@@ -365,7 +365,6 @@ pub mod tests {
     use crate::work::{self, Line, Reader, Writer};
     use crate::{At, Push, Pushable};
     use crate::{DefaultThread, Trackable};
-    use std::sync::{Arc, Mutex};
     use std::thread;
 
     type TestSignal = Trackable<&'static str>;
@@ -373,13 +372,12 @@ pub mod tests {
         Biunion<'params, Node<usize, usize, usize, TestSignal, DefaultThread, R>>;
     type Hold<'params> = TestBiunion<'params, HoldBiunion>;
 
-    /// [Biunion], and a shared `Arc<Mutex<Biunion>>`, meet the [BiunionTrait] contract.
+    /// [Biunion] meets the [BiunionTrait] contract.
     #[test]
     fn biunion_meets_biunion_trait() {
         fn contract<'params, B: BiunionTrait<'params, usize, usize, usize, TestSignal>>(_: &B) {}
         let biunion: TestBiunion<MockBiunion> = Biunion::of(MockBiunion::new());
         contract(&biunion);
-        contract(&Arc::new(Mutex::new(biunion)));
     }
 
     #[test]

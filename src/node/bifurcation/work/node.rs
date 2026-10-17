@@ -375,7 +375,7 @@ pub mod tests {
     use crate::{At, DefaultThread, Trackable};
     use std::num::NonZeroUsize;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::thread;
 
     type TestSignal = Trackable<&'static str>;
@@ -383,15 +383,13 @@ pub mod tests {
         Bifurcation<'params, Node<usize, usize, usize, TestSignal, DefaultThread, R>>;
     type Hold = TestBifurcation<'static, HoldBifurcation>;
 
-    /// [Bifurcation], and a shared `Arc<Mutex<Bifurcation>>`, meet the [BifurcationTrait]
-    /// contract.
+    /// [Bifurcation] meets the [BifurcationTrait] contract.
     #[test]
     fn bifurcation_meets_bifurcation_trait() {
         fn contract<'params, B: BifurcationTrait<'params, usize, usize, usize, TestSignal>>(_: &B) {
         }
         let bifurcation: TestBifurcation<MockBifurcation> = Bifurcation::of(MockBifurcation::new());
         contract(&bifurcation);
-        contract(&Arc::new(Mutex::new(bifurcation)));
     }
     type Edge = Box<dyn Sink<DataType = usize, SignalType = TestSignal> + Send + Sync>;
 

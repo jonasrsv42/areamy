@@ -275,7 +275,7 @@ pub mod tests {
     use crate::work::{self, Reader, Writer, tee};
     use std::num::NonZeroUsize;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::thread;
     use std::time::Instant;
 
@@ -316,13 +316,12 @@ pub mod tests {
             .build(MockWaitLine::new(1))
     }
 
-    /// [Line], and a shared `Arc<Mutex<Line>>`, meet the [LineTrait] contract.
+    /// [Line] meets the [LineTrait] contract.
     #[test]
     fn line_meets_line_trait() {
         fn contract<'params, L: LineTrait<'params, usize, usize, TestSignal>>(_: &L) {}
         let line: TestLine<MockLine> = Line::of(MockLine::new());
         contract(&line);
-        contract(&Arc::new(Mutex::new(line)));
     }
 
     #[test]

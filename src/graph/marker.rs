@@ -1,10 +1,9 @@
 //! Type markers.
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// [`Connection`] is the base marker indicating that something can form an edge in our graph.
 pub trait Connection {}
 
-impl<ConnectionType: Connection + ?Sized> Connection for Arc<Mutex<ConnectionType>> {}
 impl<ConnectionType: Connection + ?Sized> Connection for Arc<ConnectionType> {}
 impl<ConnectionType: Connection + ?Sized> Connection for Box<ConnectionType> {}
 impl<ConnectionType: Connection> Connection for Vec<ConnectionType> {}

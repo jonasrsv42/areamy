@@ -13,6 +13,7 @@ use crate::message::Message;
 use crate::signal::Trackable;
 use crate::work::Writer;
 use core::num::NonZeroUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use std::thread;
 use std::time::Instant;
@@ -62,6 +63,17 @@ fn read_n(output: &Receiver<usize, Signal>, count: usize) -> Vec<Msg> {
     (0..count)
         .map(|_| read(output).expect("closed before all arrived"))
         .collect()
+}
+
+/// `count` once it reaches `target` (or the deadline passes) and 50ms more: past the target means
+/// the pipeline didn't stall there. Never panics, so the caller can tear down first.
+fn settled(count: &AtomicUsize, target: usize) -> usize {
+    let deadline = Instant::now() + TIMEOUT;
+    while count.load(Ordering::SeqCst) < target && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
+    }
+    thread::sleep(Duration::from_millis(50));
+    count.load(Ordering::SeqCst)
 }
 
 fn data(values: impl IntoIterator<Item = usize>) -> Vec<Msg> {

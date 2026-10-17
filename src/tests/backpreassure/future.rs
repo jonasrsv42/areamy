@@ -4,7 +4,7 @@
 //!
 //! Every read and write polls with a deadline, so a lost wake fails instead of hanging.
 
-use super::{Msg, Signal, data, one, push, read_all, read_n};
+use super::{Msg, Signal, data, one, push, read_all, read_n, settled};
 use crate::biunion::{Left, Right};
 use crate::edge::sync::Receiver;
 use crate::error::Error;
@@ -103,18 +103,14 @@ fn a_stalled_bounded_line_holds_its_bounds_and_loses_nothing() {
         });
 
         // Nothing read: the pipeline fills to its bounds and stops.
-        thread::sleep(Duration::from_millis(100));
-        let filled = pushed.load(Ordering::SeqCst);
+        let filled = settled(&pushed, IN_FLIGHT);
 
         let received = read_n(&output, COUNT);
         // Close only once all is out: close is fast and drops what's in flight.
         writing.join().unwrap().close().unwrap();
         assert!(handle.join().errors().is_empty());
         // Asserted after teardown, so a failure doesn't leave the poll thread running.
-        assert!(
-            filled <= IN_FLIGHT,
-            "{filled} pushed past {IN_FLIGHT} slots"
-        );
+        assert_eq!(filled, IN_FLIGHT, "pushed before stalling");
         assert_eq!(received, data(0..COUNT));
     });
 }
@@ -289,18 +285,14 @@ fn a_stalled_bounded_biunion_holds_each_side_to_its_bounds() {
             });
 
             // Nothing read: the side fills to its bounds and stops.
-            thread::sleep(Duration::from_millis(100));
-            let filled = pushed.load(Ordering::SeqCst);
+            let filled = settled(&pushed, IN_FLIGHT);
 
             let received = read_n(&output, COUNT);
             writing.join().unwrap().close().unwrap();
             idle.close().unwrap();
             assert!(handle.join().errors().is_empty());
             // Asserted after teardown, so a failure doesn't leave the poll thread running.
-            assert!(
-                filled <= IN_FLIGHT,
-                "{filled} pushed past {IN_FLIGHT} slots"
-            );
+            assert_eq!(filled, IN_FLIGHT, "pushed before stalling");
             assert_eq!(received, data(offset..offset + COUNT));
         });
     }

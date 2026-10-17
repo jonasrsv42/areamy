@@ -3,7 +3,7 @@
 //! the writer, and nothing is lost.
 
 use super::future::echo;
-use super::{Msg, Signal, TIMEOUT, data, one, push, read_n};
+use super::{Msg, Signal, data, one, push, read_n, settled};
 use crate::edge::sync::Receiver;
 use crate::graph::Closeable;
 use crate::message::Message;
@@ -17,22 +17,9 @@ use crate::work::{self, Line, Writer};
 use crate::{Pushes, Streams, Via, Writes};
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::time::Duration;
 use std::thread;
-use std::time::Instant;
 
 crate::thread_id!(PullStage, PollStage, WorkStage);
-
-/// `count` once it reaches `target` (or the deadline passes) and 50ms more: past the target means
-/// the pipeline didn't stall there. Never panics, so the caller can tear down first.
-fn settled(count: &AtomicUsize, target: usize) -> usize {
-    let deadline = Instant::now() + TIMEOUT;
-    while count.load(Ordering::SeqCst) < target && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(1));
-    }
-    thread::sleep(Duration::from_millis(50));
-    count.load(Ordering::SeqCst)
-}
 
 #[test]
 fn a_stalled_sink_stops_pull_work_and_poll_stages_back_to_the_writer() {

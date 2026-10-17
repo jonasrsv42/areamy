@@ -7,7 +7,4 @@
 mod core;
 mod first_error;
 
-#[cfg(test)]
-mod fixtures;
-
 pub use core::{ThreadBundle, ThreadBundleHandle};

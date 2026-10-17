@@ -2,12 +2,10 @@
 //! bundle API.
 
 use super::first_error::{self, OnFirstError};
-use crate::error::Error;
-use crate::fatal;
 use crate::thread::done::Failure;
-use crate::thread::join::{BundleJoin, Join};
+use crate::thread::join::{BundleJoin, Spawned};
 use crate::thread::type_erase::TypeErasedInternalThreadStream;
-use std::thread::{Scope, ScopedJoinHandle};
+use std::thread::Scope;
 
 /// A bundle of idle threads that can be started together.
 #[derive(Default)]
@@ -16,15 +14,9 @@ pub struct ThreadBundle<'params> {
     on_first_error: Vec<OnFirstError>,
 }
 
-/// A scoped join handle paired with its thread name (for panic diagnostics).
-struct BundleEntry<'threads> {
-    handle: ScopedJoinHandle<'threads, Result<(), Error>>,
-    thread_name: &'static str,
-}
-
 /// A handle to running threads, returned by [`ThreadBundle::start`].
 pub struct ThreadBundleHandle<'threads> {
-    entries: Vec<BundleEntry<'threads>>,
+    entries: Vec<Spawned<'threads>>,
 }
 
 impl<'params> ThreadBundle<'params> {
@@ -32,6 +24,8 @@ impl<'params> ThreadBundle<'params> {
         Self::default()
     }
 
+    /// Add a [ThreadStream](crate::work::ThreadStream) or [poll::Thread](crate::poll::Thread), or
+    /// one configured with `with()` (a [Spawn](crate::thread::Spawn)).
     pub fn add(&mut self, thread: impl TypeErasedInternalThreadStream<'params>) -> &mut Self {
         self.threads.push(Box::new(thread));
         self
@@ -44,7 +38,10 @@ impl<'params> ThreadBundle<'params> {
     /// Each registered callback fires **at most once per bundle
     /// lifetime**, all of them in registration order, on whichever
     /// thread wins the race. None fire if every thread exits via
-    /// [`Done::Close`](crate::thread::Done::Close).
+    /// [`Done::Close`](crate::thread::Done::Close). A thread the OS
+    /// refused to spawn counts as an error, a
+    /// [`NeverStarted`](crate::thread::NeverStarted) fired from `start`;
+    /// its OS reason comes from `join`.
     ///
     /// **Race resolution:** if multiple threads error nearly
     /// simultaneously, exactly one wins the mutex/take and drains
@@ -85,12 +82,8 @@ impl<'params> ThreadBundle<'params> {
             .threads
             .into_iter()
             .map(|t| {
-                let thread_name = t.thread_name();
-                let handle = scope.spawn(move || t.run());
-                BundleEntry {
-                    handle,
-                    thread_name,
-                }
+                let (thread_name, options) = (t.thread_name(), t.spawn_options());
+                options.spawn(scope, thread_name, t.into_task())
             })
             .collect();
 
@@ -103,28 +96,15 @@ impl<'threads> ThreadBundleHandle<'threads> {
     /// per registered thread, in registration order, wrapped in
     /// [`BundleJoin`].
     pub fn join(self) -> BundleJoin {
-        let joins: Vec<Join> = self
-            .entries
-            .into_iter()
-            .map(|entry| match entry.handle.join() {
-                Ok(Ok(())) => Join::Ok,
-                Ok(Err(e)) => Join::Error(e),
-                Err(panic_err) => Join::Panic(fatal!(
-                    "Thread {} panicked: {:?}",
-                    entry.thread_name,
-                    panic_err
-                )),
-            })
-            .collect();
-        BundleJoin::new(joins)
+        BundleJoin::new(self.entries.into_iter().map(Spawned::join).collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use super::ThreadBundle;
     use crate::thread::Join;
+    use crate::thread::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use crate::work::{Streams, ThreadStream};
 
     #[test]

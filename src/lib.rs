@@ -46,7 +46,7 @@ pub use poll::Pollable;
 pub use pull::{PullWriter, Pullable};
 pub use reader::Reader;
 pub use signal::{Origin, Trackable};
-pub use thread::{DefaultThread, ThreadBundle, ThreadBundleHandle, ThreadId};
+pub use thread::{DefaultThread, Spawn, ThreadBundle, ThreadBundleHandle, ThreadId};
 pub use work::{Expects, Reads, Schedules, Streams, Tees, Writes};
 pub use work::{ThreadStream, ThreadStreamHandle, Workable};
 

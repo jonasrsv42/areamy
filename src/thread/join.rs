@@ -10,6 +10,9 @@
 //! "did anything go wrong" case.
 
 use crate::error::Error;
+use crate::fatal;
+use core::any::Any;
+use std::thread::ScopedJoinHandle;
 
 /// Outcome of joining a single thread.
 #[derive(Debug)]
@@ -70,5 +73,66 @@ impl core::ops::Deref for BundleJoin {
 
     fn deref(&self) -> &[Join] {
         &self.results
+    }
+}
+
+/// One OS thread as a handle holds it: the thread, or why it couldn't be spawned, and its name
+/// for a panic label. Every handle's `join` is this one.
+pub(crate) struct Spawned<'threads> {
+    thread: Result<ScopedJoinHandle<'threads, Result<(), Error>>, Error>,
+    /// [ThreadId::name](crate::ThreadId::name).
+    name: &'static str,
+}
+
+impl<'threads> Spawned<'threads> {
+    pub(crate) fn new(
+        thread: Result<ScopedJoinHandle<'threads, Result<(), Error>>, Error>,
+        name: &'static str,
+    ) -> Self {
+        Self { thread, name }
+    }
+
+    /// Wait for the thread. A spawn the OS refused is `Join::Error`, without waiting.
+    pub(crate) fn join(self) -> Join {
+        match self.thread.map(ScopedJoinHandle::join) {
+            Err(never_started) => Join::Error(never_started),
+            Ok(Ok(Ok(()))) => Join::Ok,
+            Ok(Ok(Err(e))) => Join::Error(e),
+            Ok(Err(panic)) => Join::Panic(fatal!(
+                "Thread {} panicked: {}",
+                self.name,
+                // The payload, not its box: `Box<dyn Any>` is `Any` itself, so `&panic` would
+                // downcast the box and never find the message.
+                panic_message(&*panic)
+            )),
+        }
+    }
+}
+
+/// The text of a panic payload: what `panic!` was given, as `&str` or `String`.
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Join;
+    use crate::thread::fixtures::{Panicker, ThreadA};
+    use crate::work::Streams;
+
+    /// A panic's label names the thread and keeps what `panic!` said.
+    #[test]
+    fn a_panic_label_names_the_thread_and_keeps_the_message() {
+        let stream = Panicker::<ThreadA>::new().stream();
+        let label = std::thread::scope(|s| match stream.start(s).join() {
+            Join::Panic(e) => format!("{e}"),
+            other => panic!("expected Join::Panic, got {other:?}"),
+        });
+        assert!(label.contains("Thread ThreadA panicked"), "{label}");
+        assert!(label.contains("intentional panic"), "{label}");
     }
 }

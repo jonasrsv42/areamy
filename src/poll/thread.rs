@@ -9,11 +9,12 @@ use crate::poll::graph::GraphBuilder;
 use crate::poll::queue::{Consumer, PollQueue};
 use crate::poll::runtime::Node as RuntimeNode;
 use crate::poll::wakers::WakerAllocator;
-use crate::thread::callback::{self, OnDone, PanicGuard};
+use crate::thread::callback::{self, InitGuard, OnDone};
 use crate::thread::done::Done;
-use crate::thread::{Join, ThreadId};
+use crate::thread::join::Spawned;
+use crate::thread::{Join, Spawn, ThreadId};
 use runtime::ClosableRuntime;
-use std::thread::{Scope, ScopedJoinHandle};
+use std::thread::Scope;
 
 /// An idle async thread. Add builders via [Thread::add], then
 /// call [Thread::start] to spawn the OS thread.
@@ -26,7 +27,7 @@ pub struct Thread<'params, ThreadIdType: ThreadId> {
 
 /// Handle to a running async thread.
 pub struct ThreadHandle<'threads> {
-    thread: ScopedJoinHandle<'threads, Result<(), Error>>,
+    spawned: Spawned<'threads>,
 }
 
 impl<'params, ThreadIdType: ThreadId> Default for Thread<'params, ThreadIdType> {
@@ -76,36 +77,61 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
         self.builders.push(Box::new(builder));
     }
 
-    /// Run the poll loop synchronously on the current thread, with
-    /// PanicGuard + on_done callbacks, until every node closes.
-    /// [`start`](Self::start) spawns this into a scope; a host that already
+    /// Run the poll loop synchronously on the current thread until every node closes, firing the
+    /// `on_done` callbacks on exit. [`start`](Self::start) spawns it instead; a host that already
     /// owns a thread dedicated to this graph calls it directly.
     pub fn run(self) -> Result<(), Error> {
+        self.into_task()()
+    }
+
+    /// The poll loop as a task for any thread. Its exit guard exists from here on, so `on_done`
+    /// fires even if the task is dropped unrun because its spawn was refused.
+    pub(crate) fn into_task(self) -> impl FnOnce() -> Result<(), Error> + Send + 'params {
+        /// One capture, so drop order is the fields': a task dropped unrun drops its builders
+        /// (they own the edges, closing them) before the guard fires `on_done`, as on every other
+        /// exit.
+        struct Unrun<'params, ThreadIdType: ThreadId> {
+            builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
+            waker_allocator: WakerAllocator,
+            queue: PollQueue,
+            guard: InitGuard,
+        }
         let Self {
             builders,
             waker_allocator,
             queue,
             on_done,
         } = self;
-
-        let mut guard = PanicGuard::new(on_done);
-
-        let result = match prepare(builders, waker_allocator, queue) {
-            Ok((mut runtime, mut consumer)) => poll_loop(&mut runtime, &mut consumer),
-            Err(e) => {
-                #[cfg(not(feature = "silent"))]
-                eprintln!("Thread prepare: {}", e);
-                Err(e)
-            }
+        let unrun = Unrun {
+            builders,
+            waker_allocator,
+            queue,
+            guard: InitGuard::new(ThreadIdType::name(), on_done),
         };
-
-        let callbacks = guard.drain();
-        let done = match &result {
-            Ok(()) => Done::Close,
-            Err(e) => Done::Error(e),
-        };
-        callback::fire(callbacks, &done);
-        result
+        move || {
+            let Unrun {
+                builders,
+                waker_allocator,
+                queue,
+                guard,
+            } = unrun;
+            let guard = guard.start();
+            let result = match prepare(builders, waker_allocator, queue) {
+                Ok((mut runtime, mut consumer)) => poll_loop(&mut runtime, &mut consumer),
+                Err(e) => {
+                    #[cfg(not(feature = "silent"))]
+                    eprintln!("Thread prepare: {}", e);
+                    Err(e)
+                }
+            };
+            let callbacks = guard.drain();
+            let done = match &result {
+                Ok(()) => Done::Close,
+                Err(e) => Done::Error(e),
+            };
+            callback::fire(callbacks, &done);
+            result
+        }
     }
 
     /// Start the async thread inside the provided `scope`. Consumes self,
@@ -117,8 +143,29 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     where
         'params: 'threads,
     {
-        let thread = scope.spawn(move || self.run());
-        ThreadHandle { thread }
+        self.with().start(scope)
+    }
+
+    /// Options for its own OS thread, such as [Spawn::stack_size]. The [Spawn] can only be started
+    /// or added to a bundle, never run here, so the options always take effect.
+    pub fn with(self) -> Spawn<Self> {
+        Spawn::new(self)
+    }
+}
+
+impl<'params, ThreadIdType: ThreadId> Spawn<Thread<'params, ThreadIdType>> {
+    /// Start on its own OS thread, spawned into `scope` with these options.
+    pub fn start<'threads>(
+        self,
+        scope: &'threads Scope<'threads, 'params>,
+    ) -> ThreadHandle<'threads>
+    where
+        'params: 'threads,
+    {
+        let Spawn { thread, options } = self;
+        ThreadHandle {
+            spawned: options.spawn(scope, ThreadIdType::name(), thread.into_task()),
+        }
     }
 }
 
@@ -145,11 +192,7 @@ fn prepare<'params, ThreadIdType: ThreadId>(
 impl<'threads> ThreadHandle<'threads> {
     /// Join the async thread.
     pub fn join(self) -> Join {
-        match self.thread.join() {
-            Ok(Ok(())) => Join::Ok,
-            Ok(Err(e)) => Join::Error(e),
-            Err(panic_err) => Join::Panic(fatal!("Thread panicked: {:?}", panic_err)),
-        }
+        self.spawned.join()
     }
 }
 

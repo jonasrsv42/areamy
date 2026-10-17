@@ -1,4 +1,4 @@
-//! Shared test fixtures for the bundle module.
+//! Shared test fixtures for threads: workables that close, fail or panic, on any thread.
 
 use crate::Workable;
 use crate::error::Error;

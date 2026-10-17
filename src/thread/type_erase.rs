@@ -11,25 +11,53 @@
 //! [`ThreadBundle`]: crate::thread::ThreadBundle
 //! [`ThreadStream`]: crate::work::ThreadStream
 
-use super::ThreadId;
 use super::callback::OnDone;
+use super::{Spawn, SpawnOptions, ThreadId};
 use crate::error::Error;
 use crate::poll::thread as poll;
 use crate::work::ThreadStream;
 
-/// Trait for type-erased idle threads. Bundle owns these and calls
-/// [`run`](Self::run) inside `scope.spawn(...)` at start time.
+/// The bundle's task, run on its own OS thread.
+pub type Task<'params> = Box<dyn FnOnce() -> Result<(), Error> + Send + 'params>;
+
+/// Trait for type-erased idle threads. Bundle owns these and spawns each one's
+/// [`into_task`](Self::into_task) at start time.
 pub trait TypeErasedInternalThreadStream<'params>: Send + 'params {
     /// Register a callback to fire when this thread exits. See
     /// [`ThreadStream::on_done`] for the contract.
     fn on_done(&mut self, callback: OnDone);
 
-    /// Run the thread's work loop. Called inside `scope.spawn(...)`.
-    /// Returns `Ok(())` on clean exit, `Err` on failure.
-    fn run(self: Box<Self>) -> Result<(), Error>;
+    /// The thread's work loop as a task: `Ok(())` on clean exit, `Err` on failure. Its exit
+    /// guard already holds the `on_done` callbacks, so a task dropped unrun still fires them.
+    fn into_task(self: Box<Self>) -> Task<'params>;
 
-    /// `type_name::<ThreadIdType>()` for panic diagnostics.
+    /// [ThreadId::name], carried past the erasure: names the OS thread and labels a panic.
     fn thread_name(&self) -> &'static str;
+
+    /// How the bundle spawns its OS thread: set through a [Spawn], the defaults otherwise.
+    fn spawn_options(&self) -> SpawnOptions;
+}
+
+/// A configured thread: the bundle runs the thread inside with its options.
+impl<'params, ThreadType> TypeErasedInternalThreadStream<'params> for Spawn<ThreadType>
+where
+    ThreadType: TypeErasedInternalThreadStream<'params>,
+{
+    fn on_done(&mut self, callback: OnDone) {
+        self.thread.on_done(callback);
+    }
+
+    fn into_task(self: Box<Self>) -> Task<'params> {
+        Box::new(self.thread).into_task()
+    }
+
+    fn thread_name(&self) -> &'static str {
+        self.thread.thread_name()
+    }
+
+    fn spawn_options(&self) -> SpawnOptions {
+        self.options
+    }
 }
 
 impl<'params, ThreadIdType: ThreadId> TypeErasedInternalThreadStream<'params>
@@ -39,12 +67,16 @@ impl<'params, ThreadIdType: ThreadId> TypeErasedInternalThreadStream<'params>
         ThreadStream::on_done(self, move |done| callback(done));
     }
 
-    fn run(self: Box<Self>) -> Result<(), Error> {
-        (*self).run()
+    fn into_task(self: Box<Self>) -> Task<'params> {
+        Box::new((*self).into_task())
     }
 
     fn thread_name(&self) -> &'static str {
-        core::any::type_name::<ThreadIdType>()
+        ThreadIdType::name()
+    }
+
+    fn spawn_options(&self) -> SpawnOptions {
+        SpawnOptions::default()
     }
 }
 
@@ -55,11 +87,15 @@ impl<'params, ThreadIdType: ThreadId> TypeErasedInternalThreadStream<'params>
         poll::Thread::on_done(self, move |done| callback(done));
     }
 
-    fn run(self: Box<Self>) -> Result<(), Error> {
-        (*self).run()
+    fn into_task(self: Box<Self>) -> Task<'params> {
+        Box::new((*self).into_task())
     }
 
     fn thread_name(&self) -> &'static str {
-        core::any::type_name::<ThreadIdType>()
+        ThreadIdType::name()
+    }
+
+    fn spawn_options(&self) -> SpawnOptions {
+        SpawnOptions::default()
     }
 }

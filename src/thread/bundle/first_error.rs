@@ -62,8 +62,8 @@ pub(super) fn inject<'params>(
 #[cfg(test)]
 mod tests {
     use super::super::ThreadBundle;
-    use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use crate::thread::Failure;
+    use crate::thread::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use crate::work::{Streams, ThreadStream};
     use alloc::sync::Arc;
     use core::sync::atomic::{AtomicUsize, Ordering};

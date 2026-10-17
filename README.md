@@ -110,8 +110,9 @@ More: [`tests/example.rs`](tests/example.rs), and a networking-shaped one (socke
 
 ## Embedded
 
-Areamy only uses `std` (`thread`, `sync`, …), which ESP-IDF provides. To check that it
-cross-compiles for ESP32-S3:
+Areamy only uses `std` (`thread`, `sync`, …), which ESP-IDF provides. Its default thread stack
+is a few KB, so size deep threads when spawning: `thread.with().stack_size(32 * 1024)`. To
+check that it cross-compiles for ESP32-S3:
 
 ```bash
 cargo install espup && espup install && source ~/export-esp.sh

@@ -28,11 +28,16 @@
 mod bundle;
 pub(crate) mod callback;
 pub(crate) mod done;
+#[cfg(test)]
+pub(crate) mod fixtures;
 pub(crate) mod join;
+mod spawn;
 mod thread_id;
 mod type_erase;
 
 pub use bundle::{ThreadBundle, ThreadBundleHandle};
 pub use done::{Done, Failure};
 pub use join::{BundleJoin, Join};
+pub(crate) use spawn::Options as SpawnOptions;
+pub use spawn::{NeverStarted, Spawn};
 pub use thread_id::{DefaultThread, ThreadId};

@@ -17,7 +17,7 @@ use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
 use crate::{Pushable, Pushes, Trackable, Via, work};
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 crate::thread_id!(TestThread);
 
@@ -196,7 +196,7 @@ fn parent_direct_sink() {
 
 type WorkSink = dyn work::Sink<DataType = usize, SignalType = Trackable<&'static str>>
     + Send
-    + std::marker::Sync;
+    + core::marker::Sync;
 
 /// After 3 pushes, one Input poll and one Output poll: what reached downstream.
 fn delivered_in_one_round(budget: Budget) -> usize {

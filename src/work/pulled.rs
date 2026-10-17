@@ -5,7 +5,7 @@ use crate::graph::{Add, Outputs};
 use crate::pull::Pullable;
 use crate::work::Workable;
 use crate::work::{DynSink, Sink};
-use std::any::type_name;
+use core::any::type_name;
 
 /// [`Pulled`] runs a [Pullable] chain as a work node: each [Workable::work] pulls one message
 /// and pushes it into every downstream edge.
@@ -103,9 +103,9 @@ mod tests {
     use crate::work::Sink;
     use crate::work::{self, Line, Workable};
     use crate::{DefaultThread, Message, Pullable, Pushes, Reads, Trackable, Via, Writes};
-    use std::num::NonZeroUsize;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use alloc::sync::Arc;
+    use core::num::NonZeroUsize;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
     type TestSignal = Trackable<&'static str>;

@@ -90,9 +90,9 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Sync, Sync, T>
 where
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
-    T::Right: Send + std::marker::Sync,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
+    T::Right: Send + core::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -116,8 +116,8 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Sync, Deferred, T>
 where
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
-    T::Right: Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
+    T::Right: Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -142,8 +142,8 @@ where
 impl<'params, T> AsyncParent<'params> for Node<'params, Sync, Sync, Deferred, T>
 where
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
-    T::Right: Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
+    T::Right: Send + core::marker::Sync,
 {
     type OutType = T::Out;
     type SignalType = T::Signal;
@@ -177,8 +177,8 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Async, Sync, Sync, T>
 where
     T: Types<'params>,
-    T::Right: Send + std::marker::Sync,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Right: Send + core::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -205,7 +205,7 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Async, Sync, Deferred, T>
 where
     T: Types<'params>,
-    T::Right: Send + std::marker::Sync,
+    T::Right: Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -233,7 +233,7 @@ where
 impl<'params, T> AsyncParent<'params> for Node<'params, Async, Sync, Deferred, T>
 where
     T: Types<'params>,
-    T::Right: Send + std::marker::Sync,
+    T::Right: Send + core::marker::Sync,
 {
     type OutType = T::Out;
     type SignalType = T::Signal;
@@ -270,8 +270,8 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Async, Sync, T>
 where
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -298,7 +298,7 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Async, Deferred, T>
 where
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -326,7 +326,7 @@ where
 impl<'params, T> AsyncParent<'params> for Node<'params, Sync, Async, Deferred, T>
 where
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
 {
     type OutType = T::Out;
     type SignalType = T::Signal;
@@ -363,7 +363,7 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Async, Async, Sync, T>
 where
     T: Types<'params>,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,

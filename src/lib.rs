@@ -6,6 +6,12 @@
 
 // Graph types are deep by nature.
 #![allow(clippy::type_complexity)]
+// `use std::` means "needs an OS": everything else comes from `core` or `alloc`.
+#![deny(
+    clippy::std_instead_of_core,
+    clippy::std_instead_of_alloc,
+    clippy::alloc_instead_of_core
+)]
 
 extern crate alloc;
 

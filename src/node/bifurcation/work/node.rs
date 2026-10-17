@@ -16,8 +16,8 @@ use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::{DynSink, Sink};
 use crate::work::{Workable, work_each};
-use std::any::type_name;
-use std::marker::PhantomData;
+use core::any::type_name;
+use core::marker::PhantomData;
 
 // The contract of a `Sync` node forming a bifurcation.
 // it has two outputs.
@@ -375,9 +375,9 @@ pub mod tests {
     use crate::node::bifurcation::routine::tests::{HoldBifurcation, MockBifurcation};
     use crate::work::Writer;
     use crate::{At, DefaultThread, Tees, Trackable, Writes};
-    use std::num::NonZeroUsize;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use alloc::sync::Arc;
+    use core::num::NonZeroUsize;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
     type TestSignal = Trackable<&'static str>;
@@ -425,7 +425,7 @@ pub mod tests {
     }
 
     fn drain(receiver: &Receiver<usize, TestSignal>) -> Vec<Message<usize, TestSignal>> {
-        std::iter::from_fn(|| receiver.poll().unwrap()).collect()
+        core::iter::from_fn(|| receiver.poll().unwrap()).collect()
     }
 
     #[test]

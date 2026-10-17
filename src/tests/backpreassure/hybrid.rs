@@ -14,10 +14,11 @@ use crate::pull::{Pullable, WriterBuffer};
 use crate::thread::ThreadBundle;
 use crate::work::{self, Line, Writer};
 use crate::{Pushes, Streams, Via, Writes};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use alloc::sync::Arc;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::time::Duration;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 crate::thread_id!(PullStage, PollStage, WorkStage);
 

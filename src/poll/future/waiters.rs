@@ -14,8 +14,8 @@
 //! to fixed wakers and live beside this, in the queue.
 
 use crate::wake;
+use core::mem;
 use core::task::Waker;
-use std::mem;
 
 /// Who waits on a queue. Lives under the queue's borrow: [Waiters::take] there, then
 /// [Awaking::wake] after releasing it.
@@ -73,7 +73,7 @@ impl Awaking {
 mod tests {
     use super::*;
     use crate::wake::mock::{counting_local_waker, counting_waker};
-    use std::sync::atomic::Ordering;
+    use core::sync::atomic::Ordering;
 
     #[test]
     fn home_wakes_through_its_local_half_only() {

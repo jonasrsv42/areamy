@@ -185,7 +185,7 @@ impl Drop for VyukovQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use alloc::sync::Arc;
     use std::thread;
 
     fn assert_id(item: Option<Item>, expected: NodeId) {

@@ -13,11 +13,11 @@ use crate::node::line::poll::routine::LineRoutine;
 use crate::node::routine;
 use crate::poll::Context;
 use crate::poll::future::{input, output};
-use std::fmt;
-use std::future::Future;
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
-use std::pin::Pin;
+use alloc::fmt;
+use core::future::Future;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
+use core::pin::Pin;
 
 /// A spent once routine was handed data or a Flush.
 #[derive(Debug)]
@@ -32,7 +32,7 @@ impl fmt::Display for Exhausted {
     }
 }
 
-impl std::error::Error for Exhausted {}
+impl core::error::Error for Exhausted {}
 
 fn exhausted() -> Error {
     any_err!(Box::new(Exhausted) as Box<dyn AnyErr>)
@@ -185,8 +185,8 @@ mod tests {
     use crate::node::routine::{Accept, Flush, Next, Poll, TrySend};
     use crate::poll::context::mock::noop_context;
     use crate::poll::future::Input;
-    use std::cell::Cell;
-    use std::rc::Rc;
+    use alloc::rc::Rc;
+    use core::cell::Cell;
 
     /// Echoes every value; returns at Flush.
     fn echo(bound: Option<NonZeroUsize>) -> impl LineRoutine<usize, usize> {

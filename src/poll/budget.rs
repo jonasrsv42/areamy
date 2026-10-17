@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 /// Messages one poll may take from an edge before it yields, re-waking itself so nothing is
 /// stranded.

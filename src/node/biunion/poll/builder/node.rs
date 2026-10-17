@@ -24,7 +24,7 @@ use crate::poll::input;
 use crate::poll::thread::Thread;
 use crate::poll::wakers::WakerAllocator;
 use crate::thread::ThreadId;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// Builder input edges grouped together.
 pub struct BuilderInput<'params, LeftEdge: Edge, RightEdge: Edge, T: Types<'params>> {
@@ -156,7 +156,7 @@ where
     RightEdge: Edge,
     OutEdge: Edge,
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
     input::sync::Receiver<T::Left, T::Signal>: Get<ConnectionType>,
 {
     fn get(&self) -> Result<Box<ConnectionType>, Error> {
@@ -171,7 +171,7 @@ where
     LeftEdge: Edge,
     OutEdge: Edge,
     T: Types<'params>,
-    T::Right: Send + std::marker::Sync,
+    T::Right: Send + core::marker::Sync,
     input::sync::Receiver<T::Right, T::Signal>: Get<ConnectionType>,
 {
     fn get(&self) -> Result<Box<ConnectionType>, Error> {
@@ -184,20 +184,20 @@ where
 // ============================================================
 
 impl<'params, LeftEdge, RightEdge, T>
-    Add<dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + std::marker::Sync + 'params>
+    Add<dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + core::marker::Sync + 'params>
     for Node<'params, LeftEdge, RightEdge, Sync, T>
 where
     LeftEdge: Edge,
     RightEdge: Edge,
     T: Types<'params>,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn add(
         &mut self,
         connection: Box<
             dyn Sink<DataType = T::Out, SignalType = T::Signal>
                 + Send
-                + std::marker::Sync
+                + core::marker::Sync
                 + 'params,
         >,
     ) -> Result<(), Error> {
@@ -211,8 +211,8 @@ where
     LeftEdge: Edge,
     RightEdge: Edge,
     T: Types<'params>,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     type Sink =
-        dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + std::marker::Sync + 'params;
+        dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + core::marker::Sync + 'params;
 }

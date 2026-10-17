@@ -12,10 +12,11 @@ use crate::poll::future::{Input, input, output};
 use crate::signal::Trackable;
 use crate::work::Writer;
 use crate::{Closeable, Pushable, Pushes, ThreadBundle, Writes, poll};
-use std::future::Future;
-use std::pin::Pin;
+use core::future::Future;
+use core::pin::Pin;
+use core::time::Duration;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 crate::thread_id!(OnceThread);
 

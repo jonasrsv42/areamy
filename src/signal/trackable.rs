@@ -1,9 +1,9 @@
 //! [EXPPERIMENTAL] Track signals in graph using [Trackable].
 use crate::signal::Origin;
-use std::fmt::Debug;
-use std::ops::Deref;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use alloc::sync::Arc;
+use core::fmt::Debug;
+use core::ops::Deref;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// [`Trackable`] is a signal type that encapsulates the usual
 /// user provided [`Origin`] signal.

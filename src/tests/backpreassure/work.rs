@@ -9,9 +9,9 @@ use crate::node::line::routine::tests::MockWaitLine;
 use crate::thread::Join;
 use crate::work::{Bifurcation, Biunion, Line};
 use crate::{At, Pushes, Reads, Streams, Writes, bifurcation, biunion};
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
+use core::time::Duration;
 use std::thread;
-use std::time::Duration;
 
 crate::thread_id!(Producer);
 crate::thread_id!(LeftProducer);

@@ -56,10 +56,10 @@ use crate::node::line::poll::routine::LineRoutine;
 use crate::node::routine;
 use crate::poll::Context;
 use crate::poll::future::{input, output};
-use std::future::Future;
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
-use std::pin::Pin;
+use core::future::Future;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
+use core::pin::Pin;
 
 pub mod once;
 
@@ -279,13 +279,13 @@ mod tests {
     /// Identity passthrough — drives values into the [`FutureRoutine`]
     /// node from a sibling sync thread.
     pub(super) struct PassThrough {
-        out: std::collections::VecDeque<usize>,
+        out: alloc::collections::VecDeque<usize>,
     }
 
     impl PassThrough {
         pub(super) fn new() -> Self {
             Self {
-                out: std::collections::VecDeque::new(),
+                out: alloc::collections::VecDeque::new(),
             }
         }
     }

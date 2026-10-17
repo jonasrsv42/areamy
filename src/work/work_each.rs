@@ -33,8 +33,9 @@ mod tests {
     use super::*;
     use crate::closed;
     use crate::graph::marker::Connection;
-    use std::mem;
-    use std::sync::{Arc, Mutex};
+    use alloc::sync::Arc;
+    use core::mem;
+    use std::sync::Mutex;
 
     crate::thread_id!(TestThread);
 

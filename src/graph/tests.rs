@@ -15,8 +15,8 @@ use crate::signal::Trackable;
 use crate::thread::DefaultThread;
 use crate::work::{OwnedWork, Sink, Upstream, Workable};
 use crate::{Pushes, Via, Writes};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use alloc::sync::Arc;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Payload that counts its clones in a shared counter.
 #[derive(Debug)]

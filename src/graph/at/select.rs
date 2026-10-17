@@ -1,5 +1,5 @@
 use crate::graph::marker::Connection;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// [`Select`] is a node moved at one side. See [crate::At::at].
 #[must_use = "a moved side only feeds `via` / `reader`; borrow with `at_mut` / `at_ref` for the rest"]

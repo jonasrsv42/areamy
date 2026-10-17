@@ -14,7 +14,7 @@ use crate::{
     Trackable, Writes, bifurcation, fatal,
 };
 use crate::{Closeable, Message, Pushable};
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 crate::thread_id!(MiddleThread, PollThread);
 crate::thread_id!(ProducerThread, Consumer1, Consumer2);

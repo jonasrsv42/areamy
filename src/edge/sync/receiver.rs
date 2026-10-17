@@ -8,14 +8,15 @@ use crate::graph::{BoxAs, Get, Inlet};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
+use alloc::collections::VecDeque;
+use alloc::sync::Arc;
+use core::cell::Cell;
+use core::marker::PhantomData;
+use core::mem;
+use core::num::NonZeroUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::Waker;
-use std::cell::Cell;
-use std::collections::VecDeque;
-use std::marker::PhantomData;
-use std::mem;
-use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 /// Single-consumer handle. `Send + !Sync + !Clone`. Dropping the
 /// receiver closes the edge so that further [`Sender::push_back`]

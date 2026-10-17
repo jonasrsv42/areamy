@@ -4,8 +4,8 @@ use alloc::sync::Arc;
 use alloc::task::Wake;
 use core::cell::Cell;
 use core::marker::PhantomData;
+use core::mem;
 use core::task::Waker;
-use std::mem;
 use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
@@ -153,8 +153,8 @@ impl Wake for Inner {
 mod tests {
     use super::*;
     use crate::edge::sync::tests::wait_until;
+    use core::time::Duration;
     use std::thread;
-    use std::time::Duration;
 
     #[test]
     fn wake_by_ref_wakes() {

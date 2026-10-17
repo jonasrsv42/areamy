@@ -18,9 +18,9 @@ use crate::wake::Parker;
 use crate::work::multiedge;
 use crate::work::{DynSink, Sink};
 use crate::work::{Workable, work_each};
-use std::any::type_name;
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
+use core::any::type_name;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
 
 // The contract of a `Sync` node forming a biunion.
 // it has two workable sources and inputs.

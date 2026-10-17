@@ -1,6 +1,6 @@
-use std::any::Any;
+use core::any::Any;
+use core::convert::Infallible;
 use std::backtrace::Backtrace;
-use std::convert::Infallible;
 
 /// [`Location`] in the code of an error.
 #[derive(Debug)]
@@ -9,8 +9,8 @@ pub struct Location {
     pub line: u32,
 }
 
-impl std::fmt::Display for Location {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Location {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}:{}", self.file, self.line)
     }
 }
@@ -22,9 +22,9 @@ impl std::fmt::Display for Location {
 /// custom errors through Areamy we support this via the [AnyErr] using reflection.
 ///
 /// Every `'static` [std::error::Error] that is [Send] is an [AnyErr].
-pub trait AnyErr: Any + std::error::Error + Send {}
+pub trait AnyErr: Any + core::error::Error + Send {}
 
-impl<ErrorType: Any + std::error::Error + Send> AnyErr for ErrorType {}
+impl<ErrorType: Any + core::error::Error + Send> AnyErr for ErrorType {}
 
 /// [`ErrorKind`] describes the types of errors that can occur in Areamy.
 #[derive(Debug)]
@@ -155,8 +155,8 @@ impl Error {
     }
 }
 
-impl std::fmt::Display for ErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             ErrorKind::Fatal(message) => {
                 write!(f, "Fatal")?;
@@ -251,14 +251,14 @@ pub struct Error {
     pub backtrace: Backtrace,
 }
 
-impl std::fmt::Debug for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self)
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.kind)?;
         write!(f, "\n\nAt: {}", self.location)?;
         write!(f, "\n\nTrace: ")?;
@@ -266,8 +266,8 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl core::error::Error for Error {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match &self.kind {
             ErrorKind::Any(any_err) => Some(any_err.as_ref()),
             ErrorKind::Fatal(_) => None,
@@ -276,7 +276,7 @@ impl std::error::Error for Error {
     }
 }
 
-impl<T> From<Error> for Result<T, Box<dyn std::error::Error>> {
+impl<T> From<Error> for Result<T, Box<dyn core::error::Error>> {
     fn from(value: Error) -> Self {
         Err(Box::new(value))
     }
@@ -297,7 +297,7 @@ impl From<Infallible> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fmt;
+    use alloc::fmt;
 
     // Define some test error types for our tests
     #[derive(Debug)]
@@ -311,7 +311,7 @@ mod tests {
         }
     }
 
-    impl std::error::Error for TestErrorA {}
+    impl core::error::Error for TestErrorA {}
 
     #[derive(Debug)]
     struct TestErrorB {
@@ -324,10 +324,10 @@ mod tests {
         }
     }
 
-    impl std::error::Error for TestErrorB {}
+    impl core::error::Error for TestErrorB {}
 
     fn inside_a_fn() {
-        let error: Result<(), Box<dyn std::error::Error>> = fatal!("Invalid").into();
+        let error: Result<(), Box<dyn core::error::Error>> = fatal!("Invalid").into();
         error.unwrap()
     }
 
@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn test_error_source() {
-        use std::error::Error as StdError;
+        use core::error::Error as StdError;
 
         // Test Fatal error has no source
         let fatal_error = fatal!("A fatal error");

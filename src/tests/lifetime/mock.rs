@@ -18,7 +18,7 @@ use crate::{
     BifurcationRoutine, BiunionRoutine, Closeable, LineRoutine, Message, Outlet, Trackable,
     TryPushable, bifurcation, biunion,
 };
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 // ---- Thread markers -------------------------------------------------------
 

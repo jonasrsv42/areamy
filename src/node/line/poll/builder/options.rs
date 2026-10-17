@@ -5,7 +5,7 @@ use super::types::{PollLine, Types};
 use crate::poll::edge::Deferred;
 use crate::poll::{Budget, Builder, Thread};
 use crate::thread::ThreadId;
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 /// A poll line's options, carried by its builder until its edges exist.
 #[derive(Debug, Clone, Copy, Default)]

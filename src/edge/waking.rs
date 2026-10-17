@@ -9,8 +9,8 @@ use crate::graph::{
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake;
+use core::num::NonZeroUsize;
 use core::task::Waker;
-use std::num::NonZeroUsize;
 
 /// Wakes the consumer when dropped; declared after the inner sender so the edge closes first.
 struct WakeOnDrop(Waker);

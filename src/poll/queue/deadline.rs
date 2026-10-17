@@ -25,10 +25,10 @@
 use crate::poll::marker::NodeId;
 use crate::poll::timer::{Generation, SlotId, TimerKey};
 
+use alloc::collections::BinaryHeap;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::cmp::Reverse;
-use std::collections::BinaryHeap;
 use std::time::Instant;
 
 /// One scheduled wake. Stored inside the heap as `Reverse<DeadlineEntry>`
@@ -210,7 +210,7 @@ impl DeadlineHeap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use core::time::Duration;
 
     fn at(offset_ms: u64) -> Instant {
         Instant::now() + Duration::from_millis(offset_ms)

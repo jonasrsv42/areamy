@@ -19,9 +19,9 @@ pub use sender::Sender;
 
 use crate::poll::timer::Timer;
 use crate::wake::{self, LocalWaker};
+use alloc::rc::Rc;
+use core::num::NonZeroUsize;
 use shared::Shared;
-use std::num::NonZeroUsize;
-use std::rc::Rc;
 
 /// Item received by the future via [Receiver::recv].
 pub enum Input<T> {

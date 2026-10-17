@@ -18,10 +18,10 @@ use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::node::{biunion, routine};
 use crate::poll::Context;
 use crate::poll::future::{input, output};
-use std::future::Future;
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
-use std::pin::Pin;
+use core::future::Future;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
+use core::pin::Pin;
 
 /// Biunion async routine wrapping a user-provided future factory `F`, which builds one `Fut` per
 /// segment.

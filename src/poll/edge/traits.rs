@@ -14,7 +14,7 @@ use crate::poll::wakers::Slot;
 use crate::poll::{self, NodeId, Sink};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use std::task::Waker;
+use core::task::Waker;
 
 /// Trait for edge markers. Uses GATs to resolve storage types.
 pub trait Edge: Connection {

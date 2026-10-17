@@ -7,8 +7,8 @@ use crate::poll::input::sync::{Input, Receiver};
 use crate::poll::wakers::Slot;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use std::num::NonZeroUsize;
-use std::task::Waker;
+use core::num::NonZeroUsize;
+use core::task::Waker;
 
 /// Resolve input edge. Implemented for [`Sync`] — wakes the reserved `slot`. `bound` caps the edge.
 pub trait ResolveInput<'params, InType, SignalType: Origin, ThreadIdType: ThreadId>: Edge {
@@ -24,8 +24,8 @@ pub trait ResolveInput<'params, InType, SignalType: Origin, ThreadIdType: Thread
 impl<'params, InType, SignalType, ThreadIdType>
     ResolveInput<'params, InType, SignalType, ThreadIdType> for Sync
 where
-    InType: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    InType: Send + core::marker::Sync + 'static,
+    SignalType: Origin + Clone + Send + core::marker::Sync + 'static,
     ThreadIdType: ThreadId,
 {
     fn resolve(slot: Slot<Waker>, bound: Option<NonZeroUsize>) -> (Input<InType, SignalType>, ()) {
@@ -73,8 +73,8 @@ pub trait ResolveOutput<'params, OutType, SignalType: Origin>: Edge {
 
 impl<'params, OutType, SignalType> ResolveOutput<'params, OutType, SignalType> for Sync
 where
-    OutType: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    OutType: Clone + Send + core::marker::Sync + 'static,
+    SignalType: Origin + Clone + Send + core::marker::Sync + 'static,
 {
     fn resolve() -> Fanout<DynSink<'params, OutType, SignalType>> {
         Fanout::new()

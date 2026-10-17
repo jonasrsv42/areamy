@@ -13,14 +13,15 @@ use crate::poll::{self, AsyncParent};
 use crate::signal::Trackable;
 use crate::work;
 use crate::{At, Via};
-use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
+use alloc::sync::Arc;
+use core::num::NonZeroUsize;
+use std::sync::Mutex;
 use std::thread;
 
 crate::thread_id!(IoThread);
 
 type Signal = Trackable<&'static str>;
-type WorkSink = dyn work::Sink<DataType = usize, SignalType = Signal> + Send + std::marker::Sync;
+type WorkSink = dyn work::Sink<DataType = usize, SignalType = Signal> + Send + core::marker::Sync;
 
 /// Whether each of `count` try_pushes went in.
 fn accepted(sink: &mut Box<WorkSink>, count: usize) -> Vec<bool> {

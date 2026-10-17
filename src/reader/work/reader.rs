@@ -111,7 +111,8 @@ mod tests {
     use crate::node::line::routine::tests::MockLine;
     use crate::work::{Bifurcation, Line, Sink};
     use crate::{At, Tees, Via, Writes, bifurcation};
-    use std::sync::{Arc, Mutex};
+    use alloc::sync::Arc;
+    use std::sync::Mutex;
 
     type Output = Arc<Mutex<Message<usize, Trackable<&'static str>>>>;
 

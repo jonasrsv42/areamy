@@ -23,7 +23,7 @@
 
 use crate::poll::timer::Timer;
 
-use std::cell::Cell;
+use core::cell::Cell;
 
 thread_local! {
     static CURRENT: Cell<Option<Timer>> = const { Cell::new(None) };

@@ -18,7 +18,7 @@ use crate::poll::input::sync::{Input, Receiver};
 use crate::poll::traits::AsyncParent;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// Resolve one input to Async via a parent node.
 pub trait ResolveParent<'params, Node, SignalType: Origin, ThreadIdType: ThreadId> {
@@ -60,7 +60,7 @@ where
     RightEdge: Edge,
     OutEdge: Edge,
     T: Types<'params>,
-    T::Left: Send + std::marker::Sync,
+    T::Left: Send + core::marker::Sync,
 {
     type Resolved = Node<'params, Sync, RightEdge, OutEdge, T>;
     fn resolve(node: Node<'params, Deferred, RightEdge, OutEdge, T>) -> Self::Resolved {
@@ -93,7 +93,7 @@ where
     LeftEdge: Edge,
     OutEdge: Edge,
     T: Types<'params>,
-    T::Right: Send + std::marker::Sync,
+    T::Right: Send + core::marker::Sync,
 {
     type Resolved = Node<'params, LeftEdge, Sync, OutEdge, T>;
     fn resolve(node: Node<'params, LeftEdge, Deferred, OutEdge, T>) -> Self::Resolved {
@@ -130,7 +130,7 @@ where
     LeftEdge: Edge,
     RightEdge: Edge,
     T: Types<'params>,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     type Resolved = Node<'params, LeftEdge, RightEdge, Sync, T>;
     fn resolve(node: Node<'params, LeftEdge, RightEdge, Deferred, T>) -> Self::Resolved {

@@ -15,8 +15,8 @@ use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::work::{DynSink, Sink};
 use crate::work::{Workable, work_each};
-use std::any::type_name;
-use std::marker::PhantomData;
+use core::any::type_name;
+use core::marker::PhantomData;
 
 // The contract of a `Sync` node forming a line.
 /// [`LineTrait`] describes the contract of a line node.
@@ -274,9 +274,9 @@ pub mod tests {
     use crate::node::line::routine::tests::{AccMockLine, ClosesAfterOne, MockLine, MockWaitLine};
     use crate::signal::Trackable;
     use crate::{DefaultThread, Reads, Tees, Via, Writes};
-    use std::num::NonZeroUsize;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use alloc::sync::Arc;
+    use core::num::NonZeroUsize;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
     use std::time::Instant;
 

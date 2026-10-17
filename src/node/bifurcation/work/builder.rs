@@ -2,8 +2,8 @@
 use crate::edge::sync::Receiver;
 use crate::node::bifurcation::Sides;
 use crate::node::bifurcation::work::node::{Bifurcation, Types};
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
 
 /// Options for a work [Bifurcation], from [Bifurcation::builder]. They are set before the node
 /// exists because its input mints the senders every producer holds.
@@ -55,7 +55,7 @@ mod tests {
     use crate::thread::DefaultThread;
     use crate::work::Bifurcation;
     use crate::work::Sink;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     type TestSignal = Trackable<&'static str>;
     type Hold =

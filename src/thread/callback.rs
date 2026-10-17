@@ -19,7 +19,8 @@
 //! [`Thread`]: crate::poll::Thread
 
 use super::done::Done;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use core::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 
 pub type OnDone = Box<dyn FnOnce(&Done) + Send + 'static>;
 
@@ -38,7 +39,7 @@ impl PanicGuard {
     /// the actual `Done` value. After this, the guard's `Drop` is a
     /// no-op (the vec is empty).
     pub fn drain(&mut self) -> Vec<OnDone> {
-        std::mem::take(&mut self.callbacks)
+        core::mem::take(&mut self.callbacks)
     }
 }
 

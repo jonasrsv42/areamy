@@ -44,7 +44,7 @@ impl<'params, ThreadIdType: ThreadId> TypeErasedInternalThreadStream<'params>
     }
 
     fn thread_name(&self) -> &'static str {
-        std::any::type_name::<ThreadIdType>()
+        core::any::type_name::<ThreadIdType>()
     }
 }
 
@@ -60,6 +60,6 @@ impl<'params, ThreadIdType: ThreadId> TypeErasedInternalThreadStream<'params>
     }
 
     fn thread_name(&self) -> &'static str {
-        std::any::type_name::<ThreadIdType>()
+        core::any::type_name::<ThreadIdType>()
     }
 }

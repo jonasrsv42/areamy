@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::graph::Get;
 use crate::graph::marker::{Connection, Multiplicity, Unary};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// [`SelectRef`] is a node borrowed at one [Multiplicity] to [Get] from, exposed as [Unary].
 /// See [crate::At::at_ref].

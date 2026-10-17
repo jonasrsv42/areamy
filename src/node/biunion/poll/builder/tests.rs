@@ -19,13 +19,13 @@ use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
 use crate::{At, Pushable, Pushes, Trackable, Via, work};
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 crate::thread_id!(TestThread);
 
 type WorkSink = dyn work::Sink<DataType = usize, SignalType = Trackable<&'static str>>
     + Send
-    + std::marker::Sync;
+    + core::marker::Sync;
 
 fn mock_factory() -> impl FnOnce(crate::poll::BiunionWakers) -> MockBiunion + Send {
     |wakers| MockBiunion::new(wakers)
@@ -426,7 +426,7 @@ fn the_built_parented_biunion_uses_its_budget() {
 fn woken(consumer: &mut Consumer, remote: &Producer) -> Vec<NodeId> {
     const SENTINEL: NodeId = NodeId::MAX;
     remote.push(SENTINEL);
-    std::iter::from_fn(|| Some(consumer.next()))
+    core::iter::from_fn(|| Some(consumer.next()))
         .take_while(|&id| id != SENTINEL)
         .collect()
 }

@@ -8,12 +8,14 @@ use crate::poll::Sink as PollSink;
 use crate::wake::mock::{counting_waker, noop_local_waker};
 use crate::wake::{self, Parker};
 use crate::work::Sink;
-use std::num::NonZeroUsize;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::task::{Wake, Waker as SyncWaker};
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::num::NonZeroUsize;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::task::Waker as SyncWaker;
+use core::time::Duration;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 type TestSignal = Trackable<&'static str>;
 

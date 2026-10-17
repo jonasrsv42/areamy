@@ -15,12 +15,12 @@ use crate::poll::{BUDGET, BiunionInputs, Budget, Context, Phase, Pollable};
 use crate::wake::Waker;
 use crate::wake::mock::{counting_waker, tracking_local_waker};
 use crate::{Accept, DefaultThread};
-use std::cell::Cell;
-use std::collections::VecDeque;
-use std::num::NonZeroUsize;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use alloc::collections::VecDeque;
+use alloc::rc::Rc;
+use alloc::sync::Arc;
+use core::cell::Cell;
+use core::num::NonZeroUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 type Signal = Trackable<&'static str>;
 type Inlet = input::sync::Receiver<usize, Signal>;
@@ -79,8 +79,8 @@ impl<R: Routine> Biunion<R> {
         routine: impl FnOnce(BiunionInputs) -> R,
         downstream: edge::sync::Receiver<usize, Signal>,
     ) -> Self {
-        let left = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
-        let right = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
+        let left = input::sync::Receiver::new(core::task::Waker::noop().clone(), None);
+        let right = input::sync::Receiver::new(core::task::Waker::noop().clone(), None);
         let upstream = Inputs {
             left: left.sender(),
             right: right.sender(),
@@ -236,10 +236,10 @@ impl crate::Next<usize> for Bounded {
         };
         // Room freed: one budget frees room for both sides, a per-side one for its own.
         let shared = matches!(self.room, Room::Shared(_));
-        if (shared || left) && std::mem::take(&mut self.refused.left) {
+        if (shared || left) && core::mem::take(&mut self.refused.left) {
             self.wakers.left.wake();
         }
-        if (shared || !left) && std::mem::take(&mut self.refused.right) {
+        if (shared || !left) && core::mem::take(&mut self.refused.right) {
             self.wakers.right.wake();
         }
         Ok(Some(value))
@@ -255,7 +255,7 @@ impl crate::Flush for Bounded {
 
 impl crate::Poll for Bounded {
     fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
-        Ok(match std::mem::take(&mut self.flushed) {
+        Ok(match core::mem::take(&mut self.flushed) {
             true => core::task::Poll::Ready(()),
             false => core::task::Poll::Pending,
         })

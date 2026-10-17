@@ -21,8 +21,8 @@ use crate::message::Message;
 use crate::pull::Pullable;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
 
 /// A buffer that serves as the entry point to a [`Pullable`] subgraph.
 ///

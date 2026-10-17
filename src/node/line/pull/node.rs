@@ -5,7 +5,7 @@ use crate::node::line::routine::LineRoutine;
 use crate::pull::Pullable;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 /// [`Line`] with a [Pullable] connection that avoids dynamic dispatch.
 /// The line node is well suited to be included in line segments of a graph

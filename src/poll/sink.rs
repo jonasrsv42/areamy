@@ -10,11 +10,11 @@ impl<T: graph::Sink + Schedule> Sink for T {}
 
 /// A boxed poll [`Sink`], as poll nodes hold their outputs.
 pub type DynSink<'params, DataType, SignalType> = Box<
-    dyn Sink<DataType = DataType, SignalType = SignalType> + Send + std::marker::Sync + 'params,
+    dyn Sink<DataType = DataType, SignalType = SignalType> + Send + core::marker::Sync + 'params,
 >;
 
 impl<'params, DataType, SignalType> FollowsData
-    for dyn Sink<DataType = DataType, SignalType = SignalType> + Send + std::marker::Sync + 'params
+    for dyn Sink<DataType = DataType, SignalType = SignalType> + Send + core::marker::Sync + 'params
 where
     DataType: 'params,
     SignalType: Origin + 'params,
@@ -29,18 +29,18 @@ impl<'params, T>
     BoxAs<
         dyn Sink<DataType = T::DataType, SignalType = T::SignalType>
             + Send
-            + std::marker::Sync
+            + core::marker::Sync
             + 'params,
     > for T
 where
-    T: Sink + Send + std::marker::Sync + 'params,
+    T: Sink + Send + core::marker::Sync + 'params,
 {
     fn box_as(
         self,
     ) -> Box<
         dyn Sink<DataType = T::DataType, SignalType = T::SignalType>
             + Send
-            + std::marker::Sync
+            + core::marker::Sync
             + 'params,
     > {
         Box::new(self)
@@ -57,9 +57,9 @@ mod tests {
     use crate::graph::{Closeable, TryPush, TryPushable};
     use crate::message::Message;
     use crate::wake::mock::noop_waker;
-    use std::sync::atomic::Ordering;
+    use core::sync::atomic::Ordering;
 
-    type PollSink = dyn Sink<DataType = usize, SignalType = Signal> + Send + std::marker::Sync;
+    type PollSink = dyn Sink<DataType = usize, SignalType = Signal> + Send + core::marker::Sync;
 
     fn following(sink: &ScheduleOnly) -> Box<PollSink> {
         FollowsData::follow_data(Box::new(sink.clone()))

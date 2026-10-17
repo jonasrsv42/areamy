@@ -3,11 +3,11 @@ use crate::error::Error;
 use crate::fatal;
 use crate::node::routine::Accept;
 use crate::poll::future::deadline::Deadline;
+use alloc::rc::Rc;
+use core::future::{Future, poll_fn};
+use core::mem;
 use core::task::{Context, Poll};
-use std::future::{Future, poll_fn};
-use std::mem;
-use std::rc::Rc;
-use std::time::Duration;
+use core::time::Duration;
 
 /// Sends into the queue. Held by the future. No unbounded `push`: it would defeat the bound;
 /// [Self::try_send] refuses at it instead.

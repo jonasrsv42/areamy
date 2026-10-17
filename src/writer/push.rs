@@ -160,7 +160,7 @@ mod tests {
     use super::*;
     use crate::edge::sync::Receiver;
     use crate::edge::sync::tests::{join_within, wait_until};
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
     use std::thread;
 
     struct MockNode {

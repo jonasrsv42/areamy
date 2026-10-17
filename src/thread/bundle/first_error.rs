@@ -4,8 +4,10 @@
 
 use crate::thread::done::Failure;
 use crate::thread::type_erase::TypeErasedInternalThreadStream;
-use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex};
+use alloc::sync::Arc;
+use core::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
+use std::sync::Mutex;
 
 pub(super) type OnFirstError = Box<dyn FnOnce(&Failure) + Send + 'static>;
 
@@ -40,7 +42,7 @@ pub(super) fn inject<'params>(
             // Grab lock and take all callbacks for the first failure, subsequent failures will
             // have empty vec with no callbacks.
             let callbacks = match slot.lock() {
-                Ok(mut guard) => std::mem::take(&mut *guard),
+                Ok(mut guard) => core::mem::take(&mut *guard),
                 Err(_) => {
                     #[cfg(not(feature = "silent"))]
                     eprintln!("on_first_error: mutex poisoned, skipping callbacks");
@@ -63,9 +65,9 @@ mod tests {
     use super::super::fixtures::{ImmediateClose, Panicker, ThreadA, ThreadB, WorkError};
     use crate::thread::Failure;
     use crate::work::{Streams, ThreadStream};
-    use std::sync::Arc;
+    use alloc::sync::Arc;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn fires_on_thread_error() {

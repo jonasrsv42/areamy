@@ -1,7 +1,7 @@
 //! [Message] is the core struct that traverses the computation graph and gets its [Message::Data] [crate::typing::Composable::compose]ed by nodes.
 
 use crate::signal::Origin;
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 /// A unit of traffic in the computation graph.
 ///

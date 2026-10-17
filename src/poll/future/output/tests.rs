@@ -6,15 +6,15 @@ use crate::wake::mock::{
     counting_local_waker, counting_waker, local_waker, noop_local_waker, noop_waker,
 };
 use crate::wake::{self, LocalWaker};
+use alloc::rc::Rc;
+use core::cell::Cell;
+use core::future::Future;
+use core::num::NonZeroUsize;
+use core::pin::Pin;
+use core::sync::atomic::Ordering;
+use core::task::Waker;
 use core::task::{Context, Poll};
-use std::cell::Cell;
-use std::future::Future;
-use std::num::NonZeroUsize;
-use std::pin::Pin;
-use std::rc::Rc;
-use std::sync::atomic::Ordering;
-use std::task::Waker;
-use std::time::Duration;
+use core::time::Duration;
 
 fn timer() -> Timer {
     // A real Timer bound to a real Scheduler; the consumer never runs here.

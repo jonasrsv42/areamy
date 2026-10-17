@@ -89,8 +89,8 @@ mod tests {
     use crate::edge::sync::{Receiver, Sender};
     use crate::error::ErrorKind;
     use crate::wake::mock::counting_waker;
-    use std::num::NonZeroUsize;
-    use std::sync::atomic::Ordering;
+    use core::num::NonZeroUsize;
+    use core::sync::atomic::Ordering;
 
     type Signal = Trackable<&'static str>;
 

@@ -1,6 +1,7 @@
 //! Wall-clock limits shared by deadline-arming futures.
 
-use std::time::{Duration, Instant};
+use core::time::Duration;
+use std::time::Instant;
 
 /// ~30 years: far beyond any process lifetime, safely addable to any
 /// live `Instant`.

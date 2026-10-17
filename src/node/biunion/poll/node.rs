@@ -37,9 +37,9 @@ use crate::poll::{Budget, Phase};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use crate::wake;
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
+use alloc::rc::Rc;
+use core::cell::RefCell;
+use core::marker::PhantomData;
 
 mod input;
 mod output;

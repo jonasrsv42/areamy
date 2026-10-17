@@ -10,10 +10,11 @@ use crate::poll::limit::deadline_after;
 use crate::poll::thread::tls;
 use crate::poll::timer::TimerGuard;
 
-use std::future::Future;
-use std::pin::Pin;
-use std::task::Poll;
-use std::time::{Duration, Instant};
+use core::future::Future;
+use core::pin::Pin;
+use core::task::Poll;
+use core::time::Duration;
+use std::time::Instant;
 
 /// Sleep for `duration`.
 ///
@@ -104,11 +105,11 @@ mod tests {
     use crate::poll::thread::tls::ThreadLocalGuard;
     use crate::poll::timer::Timer;
     use crate::poll::timer::mock::noop_timer;
-    use std::task::Context;
+    use core::task::Context;
     use std::thread;
 
     fn poll_once(fut: &mut SleepFut) -> Poll<Result<(), Error>> {
-        let waker = std::task::Waker::noop();
+        let waker = core::task::Waker::noop();
         let mut cx = Context::from_waker(waker);
         Pin::new(fut).poll(&mut cx)
     }

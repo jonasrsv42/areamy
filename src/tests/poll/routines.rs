@@ -14,9 +14,9 @@ use crate::poll::future::{Input, Receiver, Sender};
 use crate::poll::{
     BiunionRoutine, BiunionRoutineFactory, Either, LineRoutine, LineRoutineFactory, race, try_join,
 };
-use std::future::Future;
-use std::num::NonZeroUsize;
-use std::pin::Pin;
+use core::future::Future;
+use core::num::NonZeroUsize;
+use core::pin::Pin;
 
 /// Polls per segment before it counts as hung.
 const POLLS: usize = 100;

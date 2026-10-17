@@ -17,13 +17,13 @@ use crate::wake::mock::{
     counting_local_waker, counting_waker, noop_local_waker, tracking_local_waker,
 };
 use crate::wake::{LocalWaker, Waker};
-use std::cell::Cell;
-use std::collections::VecDeque;
-use std::num::NonZeroUsize;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task;
+use alloc::collections::VecDeque;
+use alloc::rc::Rc;
+use alloc::sync::Arc;
+use core::cell::Cell;
+use core::num::NonZeroUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::task;
 
 type Signal = Trackable<&'static str>;
 type Inlet = input::sync::Receiver<usize, Signal>;
@@ -56,7 +56,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
     }
 
     fn with_input_waker(routine: R, input_waker: LocalWaker) -> Self {
-        let edge = input::sync::Receiver::new(std::task::Waker::noop().clone(), None);
+        let edge = input::sync::Receiver::new(core::task::Waker::noop().clone(), None);
         let upstream = edge.sender();
         let downstream = edge::sync::Receiver::new();
         let (output_waker, output_woken) = tracking_local_waker();
@@ -153,7 +153,7 @@ impl crate::TrySend<usize> for Bounded {
 impl crate::Next<usize> for Bounded {
     fn next(&mut self) -> Result<Option<usize>, Error> {
         let message = self.queue.pop_front();
-        if message.is_some() && std::mem::take(&mut self.refused) {
+        if message.is_some() && core::mem::take(&mut self.refused) {
             self.input.wake();
         }
         Ok(message)
@@ -170,7 +170,7 @@ impl crate::Flush for Bounded {
 impl crate::Poll for Bounded {
     fn poll(&mut self, _cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         self.polls.set(self.polls.get() + 1);
-        Ok(match std::mem::take(&mut self.flushed) {
+        Ok(match core::mem::take(&mut self.flushed) {
             true => core::task::Poll::Ready(()),
             false => core::task::Poll::Pending,
         })

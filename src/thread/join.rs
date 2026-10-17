@@ -56,7 +56,7 @@ impl BundleJoin {
 
 impl IntoIterator for BundleJoin {
     type Item = Join;
-    type IntoIter = std::vec::IntoIter<Join>;
+    type IntoIter = alloc::vec::IntoIter<Join>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.results.into_iter()
@@ -65,7 +65,7 @@ impl IntoIterator for BundleJoin {
 
 /// Slice-like access to the per-thread results — `len`, `is_empty`,
 /// `iter`, indexing, `for j in &joins`, etc.
-impl std::ops::Deref for BundleJoin {
+impl core::ops::Deref for BundleJoin {
     type Target = [Join];
 
     fn deref(&self) -> &[Join] {

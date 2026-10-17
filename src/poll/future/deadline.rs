@@ -3,7 +3,8 @@
 use crate::poll::limit::deadline_after;
 use crate::poll::timer::{Timer, TimerGuard};
 use core::task::Poll;
-use std::time::{Duration, Instant};
+use core::time::Duration;
+use std::time::Instant;
 
 /// Ends a wait at a fixed instant, re-polling the routine then through its [Timer].
 pub(crate) struct Deadline {

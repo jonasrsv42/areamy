@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity, Unary};
 use crate::graph::{Add, Get, Outputs};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// [`SelectMut`] is a node borrowed at one [Multiplicity], exposed as [Unary]. See
 /// [crate::At::at_mut].

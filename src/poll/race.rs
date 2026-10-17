@@ -1,8 +1,8 @@
 //! First-to-complete race between two futures.
 
-use std::future::{Future, poll_fn};
-use std::pin::pin;
-use std::task::Poll;
+use core::future::{Future, poll_fn};
+use core::pin::pin;
+use core::task::Poll;
 
 /// One of two heterogeneous values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,20 +37,20 @@ pub async fn race<LeftFut: Future, RightFut: Future>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
-    use std::pin::Pin;
-    use std::rc::Rc;
-    use std::task::Context;
+    use alloc::rc::Rc;
+    use core::cell::Cell;
+    use core::pin::Pin;
+    use core::task::Context;
 
     fn poll_once<F: Future>(fut: &mut Pin<Box<F>>) -> Poll<F::Output> {
-        let waker = std::task::Waker::noop();
+        let waker = core::task::Waker::noop();
         let mut cx = Context::from_waker(waker);
         fut.as_mut().poll(&mut cx)
     }
 
     #[test]
     fn race_resolves_with_first_ready() {
-        let mut fut = Box::pin(race(std::future::pending::<usize>(), async { "b" }));
+        let mut fut = Box::pin(race(core::future::pending::<usize>(), async { "b" }));
         assert!(matches!(
             poll_once(&mut fut),
             Poll::Ready(Either::Right("b"))
@@ -66,8 +66,8 @@ mod tests {
     #[test]
     fn race_pending_until_either_arm() {
         let mut fut = Box::pin(race(
-            std::future::pending::<usize>(),
-            std::future::pending::<&str>(),
+            core::future::pending::<usize>(),
+            core::future::pending::<&str>(),
         ));
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
     }

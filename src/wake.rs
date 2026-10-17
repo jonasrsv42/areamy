@@ -72,11 +72,11 @@ pub struct Waker {
 pub mod mock {
     use super::{LocalWake, LocalWaker, Waker};
 
+    use alloc::rc::Rc;
     use alloc::sync::Arc;
     use alloc::task::Wake;
-    use std::cell::Cell;
-    use std::rc::Rc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use core::cell::Cell;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     /// Test wake running a closure.
     struct MockWake<F>(F);
@@ -137,7 +137,7 @@ pub mod mock {
     /// [Waker] whose halves both do nothing.
     pub fn noop_waker() -> Waker {
         Waker {
-            sync: std::task::Waker::noop().clone(),
+            sync: core::task::Waker::noop().clone(),
             local: noop_local_waker(),
         }
     }

@@ -3,7 +3,7 @@ use crate::message::Message;
 use crate::reader::Reader;
 use crate::signal::{Origin, Trackable};
 use crate::work::Sink;
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 pub struct BiunionIo<LeftWriterType, RightWriterType, ReaderType>
 where

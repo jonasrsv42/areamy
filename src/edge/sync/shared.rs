@@ -2,11 +2,11 @@
 
 use crate::message::Message;
 use crate::signal::Origin;
+use alloc::collections::VecDeque;
+use core::mem;
+use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicUsize;
 use core::task::Waker;
-use std::collections::VecDeque;
-use std::mem;
-use std::num::NonZeroUsize;
-use std::sync::atomic::AtomicUsize;
 use std::sync::{Condvar, Mutex, MutexGuard};
 
 /// How many slots a pop freed, which decides how many blocked producers to wake.

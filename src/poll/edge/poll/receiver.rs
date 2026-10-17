@@ -7,7 +7,7 @@ use crate::graph::{Inlet, Receivable};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::{closed, fatal};
-use std::rc::Rc;
+use alloc::rc::Rc;
 
 /// Consumer handle. `!Send`, `!Clone`: the edge's only consumer. Dropping it closes the edge.
 ///

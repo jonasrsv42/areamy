@@ -4,7 +4,7 @@ use crate::fatal;
 use crate::node::routine;
 use crate::poll::Context;
 use crate::wake::LocalWaker;
-use std::mem;
+use core::mem;
 
 /// Work's borrow of a node's state: polls the routine's async work, completes a flush and wakes
 /// Output on the transitions it must forward. The routine wakes Output itself when it produces

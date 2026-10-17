@@ -19,7 +19,7 @@ where
 pub mod tests {
     use super::*;
     use crate::error::Error;
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     pub struct MockBiunion {
         pub shared_state: usize,

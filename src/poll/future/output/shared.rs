@@ -3,9 +3,9 @@ use crate::fatal;
 use crate::poll::future::waiters::Waiters;
 use crate::poll::timer::Timer;
 use crate::wake::{self, LocalWaker};
-use std::cell::{RefCell, RefMut};
-use std::collections::VecDeque;
-use std::num::NonZeroUsize;
+use alloc::collections::VecDeque;
+use core::cell::{RefCell, RefMut};
+use core::num::NonZeroUsize;
 
 pub(super) struct Inner<T> {
     pub(super) buffer: VecDeque<T>,

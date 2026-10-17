@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::thread::ThreadId;
 use crate::{closed, fatal};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 crate::thread_id!(pub ThreadA, pub ThreadB);
 

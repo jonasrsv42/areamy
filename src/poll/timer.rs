@@ -64,7 +64,7 @@ pub mod mock {
 mod tests {
     use super::*;
     use crate::poll::queue::PollQueue;
-    use std::time::Duration;
+    use core::time::Duration;
 
     #[test]
     fn schedule_at_drives_consumer() {

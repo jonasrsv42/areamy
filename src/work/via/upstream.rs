@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::graph::marker::{Multiplicity, Unary};
 use crate::graph::{Add, Select};
 use crate::work::Workable;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// [`Upstream`] is a work node something can own: a single-sided node ([Whole]) or a node moved
 /// at a side ([Sided], from [crate::At::at]). Owning edges ([crate::Via]) and readers

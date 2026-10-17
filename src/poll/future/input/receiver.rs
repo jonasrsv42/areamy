@@ -3,11 +3,11 @@ use super::shared::Shared;
 use crate::closed;
 use crate::error::Error;
 use crate::poll::future::deadline::Deadline;
+use alloc::rc::Rc;
+use core::future::{Future, poll_fn};
+use core::mem;
 use core::task::{Context, Poll};
-use std::future::{Future, poll_fn};
-use std::mem;
-use std::rc::Rc;
-use std::time::Duration;
+use core::time::Duration;
 
 /// Receives from the queue. Held by the future.
 pub struct Receiver<T>(pub(super) Rc<Shared<T>>);

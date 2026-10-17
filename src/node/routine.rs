@@ -90,7 +90,7 @@ pub trait Poll {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     /// Our simple routine must be able to accept a usize and yield an usize and accept flush.
     trait MockRoutine: Send<usize> + Next<usize> + Flush {}

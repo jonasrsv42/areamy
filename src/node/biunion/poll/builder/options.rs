@@ -7,7 +7,7 @@ use crate::node::biunion::{Inputs, Side};
 use crate::poll::edge::Deferred;
 use crate::poll::{Budget, Builder, Thread};
 use crate::thread::ThreadId;
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 /// A poll biunion's options, carried by its builder until its edges exist.
 #[derive(Default, Clone, Copy)]

@@ -174,8 +174,8 @@ impl Scheduler {
 mod tests {
     use super::*;
     use crate::edge::sync::tests::wait_until;
+    use core::time::Duration;
     use std::thread;
-    use std::time::Duration;
 
     fn sched() -> Scheduler {
         Scheduler::new(Arc::new(VyukovQueue::new()), Parker::new())

@@ -15,9 +15,9 @@ pub use sender::Sender;
 
 use crate::poll::timer::Timer;
 use crate::wake::{self, LocalWaker};
+use alloc::rc::Rc;
+use core::num::NonZeroUsize;
 use shared::Shared;
-use std::num::NonZeroUsize;
-use std::rc::Rc;
 
 /// A queue holding at most `bound` items (`None`: unbounded). `output` is the node's Output
 /// waker, `home` the node's waker the routine is polled with (`LineWakers::work`).

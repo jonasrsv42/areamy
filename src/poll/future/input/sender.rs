@@ -3,7 +3,7 @@ use super::{Input, Receiver};
 use crate::error::Error;
 use crate::fatal;
 use crate::node::routine::Accept;
-use std::rc::Rc;
+use alloc::rc::Rc;
 
 /// Sends into the queue. Held by the node.
 pub struct Sender<T>(pub(super) Rc<Shared<T>>);

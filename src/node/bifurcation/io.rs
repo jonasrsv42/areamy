@@ -6,7 +6,7 @@ use crate::signal::{Origin, Trackable};
 use crate::thread::{DefaultThread, ThreadId};
 use crate::work::Sink;
 use crate::work::Workable;
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 pub struct BifurcationIo<
     'params,

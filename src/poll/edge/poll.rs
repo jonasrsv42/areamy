@@ -12,10 +12,10 @@ pub use sender::Sender;
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake::LocalWaker;
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
-use std::num::NonZeroUsize;
-use std::rc::Rc;
+use alloc::collections::VecDeque;
+use alloc::rc::Rc;
+use core::cell::{Cell, RefCell};
+use core::num::NonZeroUsize;
 
 /// The state both ends share. Only the buffer is a `RefCell`, never borrowed across a wake.
 struct Shared<DataType, SignalType: Origin> {

@@ -2,8 +2,8 @@
 use crate::edge::fanout::Fanout;
 use crate::edge::sync::Receiver;
 use crate::node::line::work::node::{Line, Types};
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
 
 /// Options for a work [Line], from [Line::builder]. They are set before the line exists because
 /// its input mints the senders every producer holds.
@@ -55,7 +55,7 @@ mod tests {
     use crate::thread::DefaultThread;
     use crate::work::Line;
     use crate::work::Sink;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     type TestSignal = Trackable<&'static str>;
 

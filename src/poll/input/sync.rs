@@ -4,7 +4,7 @@
 pub use crate::edge::waking::{Receiver, Sender};
 use crate::poll::wakers::allocator::Slot;
 use crate::signal::Origin;
-use std::task::Waker;
+use core::task::Waker;
 
 /// Sync input edge paired with its pre-allocated waker slot.
 /// Created during `.input()` on the main thread.

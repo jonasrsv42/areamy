@@ -9,7 +9,7 @@ use crate::graph::{Closeable, Outlet, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// No-op sink. Discards all data pushed to it.
 pub struct Null<DataType, SignalType: Origin>(PhantomData<fn() -> (DataType, SignalType)>);

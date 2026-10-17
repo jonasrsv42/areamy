@@ -3,8 +3,8 @@ use crate::edge::fanout::Fanout;
 use crate::node::biunion::Inputs;
 use crate::node::biunion::Side;
 use crate::node::biunion::work::node::{Biunion, Input, Types};
-use std::marker::PhantomData;
-use std::num::NonZeroUsize;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
 
 /// Options for a work [Biunion], from [Biunion::builder]. They are set before the node exists
 /// because its inputs mint the senders every producer holds.

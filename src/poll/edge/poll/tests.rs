@@ -4,9 +4,9 @@ use crate::error::{Error, ErrorKind};
 use crate::graph::{Closeable, Receivable, Schedule, TryPush, TryPushable};
 use crate::wake::mock::{counting_local_waker, counting_waker, noop_local_waker};
 use crate::wake::{LocalWake, Waker};
-use std::cell::Cell;
-use std::sync::atomic::Ordering;
-use std::task;
+use core::cell::Cell;
+use core::sync::atomic::Ordering;
+use core::task;
 
 type Signal = Trackable<&'static str>;
 type Edge = (Sender<usize, Signal>, Receiver<usize, Signal>);

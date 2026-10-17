@@ -15,13 +15,16 @@ use crate::poll::{self, try_join};
 use crate::thread::ThreadBundle;
 use crate::work::Writer;
 use crate::{At, Pushes, Writes};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Wake, Waker};
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::future::Future;
+use core::pin::Pin;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::task::{Context, Poll, Waker};
+use core::time::Duration;
+use std::sync::Mutex;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 crate::thread_id!(FutureThread);
 

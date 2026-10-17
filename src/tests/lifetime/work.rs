@@ -5,7 +5,7 @@ use crate::edge::sync::Receiver;
 use crate::thread::ThreadBundle;
 use crate::work;
 use crate::{At, Closeable, Message, Pushable, Pushes, Streams, Writes, bifurcation, biunion};
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 #[test]
 fn line_work_borrowed() {

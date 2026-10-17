@@ -14,11 +14,12 @@ use crate::{
     Accept, Closeable, DefaultThread, Message, Outlet, Pushable, Pushes, Streams, Tees,
     ThreadBundle, TryPushable, Via, Writes,
 };
-use std::collections::VecDeque;
-use std::num::NonZeroUsize;
-use std::pin::pin;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use alloc::collections::VecDeque;
+use alloc::sync::Arc;
+use core::num::NonZeroUsize;
+use core::pin::pin;
+use core::time::Duration;
+use std::sync::Mutex;
 
 use crate::poll::future::line::FutureRoutine;
 use crate::poll::future::{Input, input, output};

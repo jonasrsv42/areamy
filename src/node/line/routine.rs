@@ -59,7 +59,7 @@ pub mod tests {
     use crate::closed;
     use crate::error::Error;
     use crate::{Next, Send};
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     pub struct MockLine {
         state: usize,

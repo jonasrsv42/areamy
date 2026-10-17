@@ -293,9 +293,9 @@ mod tests {
     use crate::poll::sink::mock::ScheduleOnly;
     use crate::wake::mock::{noop_local_waker, noop_waker};
     use crate::work::DynSink;
-    use std::num::NonZeroUsize;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use alloc::sync::Arc;
+    use core::num::NonZeroUsize;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
     type Signal = Trackable<&'static str>;

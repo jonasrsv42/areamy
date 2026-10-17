@@ -1,5 +1,5 @@
 //! [std::thread::Thread] markers.
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 /// [`ThreadId`] is used to mark a graph node with what group of threads are allowed to schedule it.
 pub trait ThreadId: Send + Sync + 'static {}

@@ -40,7 +40,7 @@ fn work_loop<'params, ThreadIdType: ThreadId>(
             #[cfg(not(feature = "silent"))]
             eprintln!(
                 "In thread {} error: {}",
-                std::any::type_name::<ThreadIdType>(),
+                core::any::type_name::<ThreadIdType>(),
                 error
             );
         })?;
@@ -198,7 +198,7 @@ where
     where
         'params: 'threads,
     {
-        let thread_name = std::any::type_name::<ThreadIdType>();
+        let thread_name = core::any::type_name::<ThreadIdType>();
         let thread = scope.spawn(move || self.run());
         ThreadStreamHandle {
             thread,
@@ -336,9 +336,9 @@ mod tests {
 
     // ---- on_done callback coverage ----
 
-    use std::sync::Arc;
+    use alloc::sync::Arc;
+    use core::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Records what kind of `Done` the callback observed.
     #[derive(Debug, PartialEq)]

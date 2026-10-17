@@ -1,7 +1,7 @@
 //! Mocks shared across the test modules.
 
 use crate::wake::LocalWaker;
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 /// A sync poll routine's output: each push wakes the Output phase (the poll routine contract).
 pub(super) struct WakingOutput {

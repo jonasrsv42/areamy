@@ -12,10 +12,10 @@ use crate::poll::future::{Input, input, output};
 use crate::sync::Receiver;
 use crate::thread::Join;
 use crate::{At, Closeable, Message, Pushable, Pushes, Trackable, Via, Writes};
-use std::cell::Cell;
-use std::future::Future;
-use std::pin::Pin;
-use std::rc::Rc;
+use alloc::rc::Rc;
+use core::cell::Cell;
+use core::future::Future;
+use core::pin::Pin;
 
 crate::thread_id!(IoThread);
 

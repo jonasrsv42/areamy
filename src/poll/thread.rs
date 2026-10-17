@@ -258,7 +258,7 @@ mod tests {
 
     // ---- on_done callback coverage ----
 
-    use std::sync::Arc;
+    use alloc::sync::Arc;
     use std::sync::Mutex;
 
     #[derive(Debug, PartialEq)]

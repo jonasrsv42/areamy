@@ -9,9 +9,10 @@ use crate::poll::future::{Input, input, output};
 use crate::poll::try_join;
 use crate::sync::Receiver;
 use crate::{Closeable, Message, Pushable, Pushes, ThreadBundle, Writes};
-use std::future::Future;
-use std::pin::Pin;
-use std::time::{Duration, Instant};
+use core::future::Future;
+use core::pin::Pin;
+use core::time::Duration;
+use std::time::Instant;
 
 /// One sleep quantum for wall-clock assertions.
 const STEP: Duration = Duration::from_millis(40);

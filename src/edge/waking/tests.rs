@@ -6,9 +6,10 @@ use crate::poll::Sink as PollSink;
 use crate::wake::Parker;
 use crate::wake::mock::counting_waker;
 use crate::work::Sink as WorkSink;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::task::Wake;
+use alloc::sync::Arc;
+use alloc::task::Wake;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::thread;
 
 type Signal = Trackable<&'static str>;

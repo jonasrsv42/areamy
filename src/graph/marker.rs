@@ -1,5 +1,5 @@
 //! Type markers.
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 /// [`Connection`] is the base marker indicating that something can form an edge in our graph.
 pub trait Connection {}

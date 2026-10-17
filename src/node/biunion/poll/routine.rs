@@ -39,7 +39,7 @@ pub mod tests {
     use crate::poll::timer::mock::noop_timer;
     use crate::wake::LocalWaker;
     use crate::wake::mock::{noop_local_waker, noop_waker};
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     /// Mock biunion routine: left input doubled, right input tripled,
     /// both pushed to output. Tracks poll_count.

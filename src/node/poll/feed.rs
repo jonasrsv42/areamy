@@ -7,8 +7,8 @@ use crate::message::Message;
 use crate::node::routine::{Accept, Flush, TrySend};
 use crate::poll::Phase;
 use crate::wake::LocalWaker;
-use std::num::NonZeroUsize;
-use std::ops::ControlFlow::{self, Break, Continue};
+use core::num::NonZeroUsize;
+use core::ops::ControlFlow::{self, Break, Continue};
 
 /// One input's borrow of a node's state, feeding its routine. When the node's last open input
 /// closes it sets CloseReady and wakes Work; the node wakes its other phases.

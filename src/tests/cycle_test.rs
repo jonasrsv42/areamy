@@ -13,7 +13,7 @@ use crate::error::Error;
 use crate::node::{bifurcation, biunion};
 use crate::work;
 use crate::{At, BifurcationRoutine, BiunionRoutine, LineIo, Message, Pushes, Reads, Via, Writes};
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 struct IncrementBiunion {
     output: VecDeque<usize>,

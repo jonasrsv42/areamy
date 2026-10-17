@@ -6,7 +6,7 @@ use crate::node::biunion::work::node::{Biunion, Types as BiunionTypes};
 use crate::node::line::work::node::{Line, Types as LineTypes};
 use crate::signal::Origin;
 use crate::work::{Sink, Workable};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 mod upstream;
 

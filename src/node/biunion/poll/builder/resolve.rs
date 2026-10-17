@@ -12,7 +12,7 @@ use crate::node::biunion::Inputs;
 use crate::poll::edge::{Async, Deferred, Edge};
 use crate::poll::input;
 use crate::poll::traits::{AsyncParent, OwnedPoll};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// `up.via(node.at::<Left>())`: left Deferred → Async, keeping its reserved slot's id.
 impl<'params, RightEdge, OutEdge, T>

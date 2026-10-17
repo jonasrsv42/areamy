@@ -1,6 +1,6 @@
 use super::shared::Shared;
 use crate::error::Error;
-use std::rc::Rc;
+use alloc::rc::Rc;
 
 /// Pops from the queue. Held by the node.
 pub struct Receiver<T>(pub(super) Rc<Shared<T>>);

@@ -8,7 +8,7 @@ use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake;
 use crate::{closed, fatal};
-use std::rc::Rc;
+use alloc::rc::Rc;
 
 /// Producer handle. `!Send`, `!Clone`: the edge's only producer. Dropping it closes the edge.
 /// Don't share one (e.g. through `Rc<RefCell<_>>`) once bounded: the edge has one refusal flag

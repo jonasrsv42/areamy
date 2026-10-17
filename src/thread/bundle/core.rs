@@ -79,7 +79,7 @@ impl<'params> ThreadBundle<'params> {
     where
         'params: 'threads,
     {
-        first_error::inject(&mut self.threads, std::mem::take(&mut self.on_first_error));
+        first_error::inject(&mut self.threads, core::mem::take(&mut self.on_first_error));
 
         let entries = self
             .threads

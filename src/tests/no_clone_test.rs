@@ -11,7 +11,7 @@ use crate::node::line::LineRoutine;
 use crate::pull::{Reader, WriterBuffer};
 use crate::work::Writer;
 use crate::{Message, Next, Pullable, Send, Writes};
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 struct BoxIncrementer {
     output: VecDeque<Box<usize>>,

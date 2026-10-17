@@ -35,7 +35,7 @@ pub mod tests {
     use crate::writer::pull::WriterBuffer;
     use crate::{DefaultThread, Message, Pushable};
     use crate::{Next, Send};
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     pub struct Identity {
         output: VecDeque<usize>,

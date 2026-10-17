@@ -104,7 +104,7 @@ pub mod tests {
     use crate::wake::LocalWaker;
     use crate::wake::mock::{noop_local_waker, noop_waker};
     use crate::{Accept, Next, TrySend};
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     pub struct MockLine {
         state: usize,

@@ -6,8 +6,9 @@ use crate::graph::marker::Connection;
 use crate::graph::{Closeable, Outlet, Schedule, TryPush, TryPushable};
 use crate::message::Message;
 use crate::wake;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use alloc::sync::Arc;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 pub(crate) type Signal = Trackable<&'static str>;
 

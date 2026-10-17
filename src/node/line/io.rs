@@ -5,7 +5,7 @@ use crate::message::Message;
 use crate::reader::Reader;
 use crate::signal::{Origin, Trackable};
 use crate::work::Sink;
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 /// [`LineIo`] provides a type that can accept a [Writer](crate::writer::push::Writer) and [Reader] then
 /// expose functions that makes reading and writing into the graph simpler.

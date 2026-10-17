@@ -10,10 +10,10 @@
 //!
 //! [futures-lite]: https://docs.rs/futures-lite
 
-use std::future::{Future, poll_fn};
-use std::mem;
-use std::pin::pin;
-use std::task::Poll;
+use core::future::{Future, poll_fn};
+use core::mem;
+use core::pin::pin;
+use core::task::Poll;
 
 /// The arm that finished first, held until the other resolves.
 enum Partial<LeftValue, RightValue> {
@@ -72,11 +72,11 @@ pub async fn try_join<LeftValue, RightValue, ErrorType>(
 mod tests {
     use super::*;
     use crate::error::Error;
-    use std::pin::Pin;
-    use std::task::Context;
+    use core::pin::Pin;
+    use core::task::Context;
 
     fn poll_once<F: Future>(fut: &mut Pin<Box<F>>) -> Poll<F::Output> {
-        let waker = std::task::Waker::noop();
+        let waker = core::task::Waker::noop();
         let mut cx = Context::from_waker(waker);
         fut.as_mut().poll(&mut cx)
     }
@@ -119,15 +119,15 @@ mod tests {
     fn first_error_wins() {
         let mut fut = Box::pin(try_join(
             async { Err::<usize, _>(crate::fatal!("boom")) },
-            std::future::pending::<Result<usize, Error>>(),
+            core::future::pending::<Result<usize, Error>>(),
         ));
         assert!(matches!(poll_once(&mut fut), Poll::Ready(Err(_))));
     }
 
     #[test]
     fn error_drops_the_other_arm_eagerly() {
-        use std::cell::Cell;
-        use std::rc::Rc;
+        use alloc::rc::Rc;
+        use core::cell::Cell;
 
         struct DropFlag(Rc<Cell<bool>>);
         impl Drop for DropFlag {

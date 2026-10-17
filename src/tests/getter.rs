@@ -15,7 +15,7 @@ use crate::node::routine::{Flush, Next, Send as RoutineSend};
 use crate::work::{self, Bifurcation, Biunion, Line, Workable};
 use crate::writer::pull::WriterBuffer;
 use crate::{At, DefaultThread, Pushes, Trackable, closed, poll};
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 type Signal = Trackable<&'static str>;
 type PollSink<'params, D> =

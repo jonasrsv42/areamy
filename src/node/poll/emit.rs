@@ -10,9 +10,9 @@ use crate::node::routine::Next;
 use crate::poll::Context;
 use crate::poll::Phase;
 use crate::wake::LocalWaker;
-use std::any::type_name;
-use std::mem;
-use std::num::NonZeroUsize;
+use core::any::type_name;
+use core::mem;
+use core::num::NonZeroUsize;
 
 /// One output's borrow of a node's state: drains the routine's output as side `M` downstream,
 /// forwards Flush and Marker and wakes the inputs and Work on the return to Running, and closes

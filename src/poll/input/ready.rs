@@ -8,7 +8,7 @@ use crate::poll::graph::Graph;
 use crate::poll::marker::NodeId;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
 
 /// One input ready to assemble: the slot its Input phase fills, and the edge(s) it reads.
 pub(crate) struct Ready<TargetType> {
@@ -30,7 +30,7 @@ impl<'params, DataType, SignalType, ThreadIdType>
     r#async::Input<'params, DataType, SignalType, ThreadIdType>
 where
     DataType: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
+    SignalType: Origin + Clone + Send + core::marker::Sync + 'static,
     ThreadIdType: ThreadId,
 {
     /// Build each parent into `graph`, feeding a same-thread edge that wakes slot `id`.

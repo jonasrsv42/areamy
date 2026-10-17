@@ -11,9 +11,9 @@ use crate::poll::input;
 use crate::poll::timer::mock::noop_timer;
 use crate::sync::Receiver;
 use crate::wake::mock;
-use std::pin::Pin;
+use core::pin::Pin;
 
-fn assert_closed<T: std::fmt::Debug>(result: Result<T, Error>) {
+fn assert_closed<T: core::fmt::Debug>(result: Result<T, Error>) {
     match result {
         Err(e) if e.is_closed() => {}
         other => panic!("expected Closed, got {:?}", other),
@@ -85,7 +85,7 @@ fn sync_edge_close_by_drop() -> Result<(), Error> {
 
 #[test]
 fn poll_input_edge() -> Result<(), Error> {
-    let rx = input::sync::Receiver::<usize, Signal>::new(std::task::Waker::noop().clone(), None);
+    let rx = input::sync::Receiver::<usize, Signal>::new(core::task::Waker::noop().clone(), None);
     let mut tx = rx.sender();
     tx.push_back(Message::Data(1))?;
     tx.push_back(Message::Flush("f".into()))?;
@@ -121,7 +121,7 @@ fn future_input_queue() -> Result<(), Error> {
         noop_timer(),
         None,
     );
-    let waker = std::task::Waker::noop();
+    let waker = core::task::Waker::noop();
     let mut cx = core::task::Context::from_waker(waker);
     assert_eq!(sender.try_send(1)?, Accept::Accepted);
     sender.flush()?;

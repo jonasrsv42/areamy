@@ -12,9 +12,10 @@ use crate::graph::{TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Trackable;
 use crate::work::Writer;
-use std::num::NonZeroUsize;
+use core::num::NonZeroUsize;
+use core::time::Duration;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 type Signal = Trackable<&'static str>;
 type Msg = Message<usize, Signal>;
@@ -54,7 +55,7 @@ fn read(output: &Receiver<usize, Signal>) -> Option<Msg> {
 }
 
 fn read_all(output: &Receiver<usize, Signal>) -> Vec<Msg> {
-    std::iter::from_fn(|| read(output)).collect()
+    core::iter::from_fn(|| read(output)).collect()
 }
 
 fn read_n(output: &Receiver<usize, Signal>, count: usize) -> Vec<Msg> {

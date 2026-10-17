@@ -1,5 +1,5 @@
 //! Track the [Origin] and path of signals passing through the graph.
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 /// [`Origin`] is a trait of a signal type that is passed in from some
 /// entry node to the graph. The [Origin] is suppose to

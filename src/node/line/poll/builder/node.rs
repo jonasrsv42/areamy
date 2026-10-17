@@ -45,7 +45,7 @@ use crate::poll::traits::{AsyncParent, OwnedPoll};
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::poll::{Budget, Phase};
 use crate::thread::ThreadId;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// Unified async node builder.
 #[must_use = "a node does nothing until owned (`via`) or added to a thread"]
@@ -198,7 +198,7 @@ impl<'params, T: Types<'params>> Node<'params, Deferred, Sync, T> {
 impl<'params, T> Node<'params, Sync, Deferred, T>
 where
     T: Types<'params>,
-    T::In: Send + std::marker::Sync,
+    T::In: Send + core::marker::Sync,
 {
     pub fn output(self) -> Node<'params, Sync, Sync, T>
     where
@@ -322,7 +322,7 @@ where
     ConnectionType: Connection + ?Sized,
     OutEdgeType: Edge,
     T: Types<'params>,
-    T::In: Send + std::marker::Sync,
+    T::In: Send + core::marker::Sync,
     input::sync::Receiver<T::In, T::Signal>: Get<ConnectionType>,
 {
     fn get(&self) -> Result<Box<ConnectionType>, Error> {
@@ -335,19 +335,19 @@ where
 // ============================================================
 
 impl<'params, InEdgeType, T>
-    Add<dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + std::marker::Sync + 'params>
+    Add<dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + core::marker::Sync + 'params>
     for Node<'params, InEdgeType, Sync, T>
 where
     InEdgeType: Edge,
     T: Types<'params>,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn add(
         &mut self,
         connection: Box<
             dyn Sink<DataType = T::Out, SignalType = T::Signal>
                 + Send
-                + std::marker::Sync
+                + core::marker::Sync
                 + 'params,
         >,
     ) -> Result<(), Error> {
@@ -360,10 +360,10 @@ impl<'params, InEdgeType, T> Outputs for Node<'params, InEdgeType, Sync, T>
 where
     InEdgeType: Edge,
     T: Types<'params>,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     type Sink =
-        dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + std::marker::Sync + 'params;
+        dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + core::marker::Sync + 'params;
 }
 
 // ============================================================
@@ -429,8 +429,8 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Sync, T>
 where
     T: Types<'params>,
-    T::In: Send + std::marker::Sync,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::In: Send + core::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -452,7 +452,7 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Async, Sync, T>
 where
     T: Types<'params>,
-    T::Out: Clone + Send + std::marker::Sync,
+    T::Out: Clone + Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -474,7 +474,7 @@ where
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Direct, T>
 where
     T: Types<'params>,
-    T::In: Send + std::marker::Sync,
+    T::In: Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -518,7 +518,7 @@ impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
 impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Deferred, T>
 where
     T: Types<'params>,
-    T::In: Send + std::marker::Sync,
+    T::In: Send + core::marker::Sync,
 {
     fn build(
         self: Box<Self>,
@@ -566,7 +566,7 @@ impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
 impl<'params, T> AsyncParent<'params> for Node<'params, Sync, Deferred, T>
 where
     T: Types<'params>,
-    T::In: Send + std::marker::Sync,
+    T::In: Send + core::marker::Sync,
 {
     type OutType = T::Out;
     type SignalType = T::Signal;

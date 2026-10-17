@@ -9,7 +9,7 @@ use crate::{
     Accept, DefaultThread, Message, Pullable, Trackable, Workable, bifurcation, biunion, closed,
     reader,
 };
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 use std::thread;
 
 pub type Signal = Trackable<&'static str>;

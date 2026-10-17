@@ -125,7 +125,7 @@ mod tests {
     use crate::Trackable;
     use crate::edge::sync::Receiver;
     use crate::graph::tests::Bounded;
-    use std::num::NonZeroUsize;
+    use core::num::NonZeroUsize;
 
     type TestSignal = Trackable<&'static str>;
 

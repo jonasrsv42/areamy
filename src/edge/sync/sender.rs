@@ -8,10 +8,11 @@ use crate::message::Message;
 use crate::signal::Origin;
 use crate::wake;
 use crate::{closed, fatal};
+use alloc::sync::Arc;
+use core::mem;
+use core::sync::atomic::Ordering;
 use core::task::Waker;
-use std::mem;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, MutexGuard};
+use std::sync::MutexGuard;
 
 /// Producer handle. `Send + Sync + Clone`. Each clone is one producer: closing or dropping it
 /// says that producer is done, and the edge closes once every producer is. Closing the

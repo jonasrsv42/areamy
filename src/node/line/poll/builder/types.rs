@@ -7,13 +7,13 @@ use crate::node::line::poll::factory::LineRoutineFactory;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// A poll line's data, signal, thread and routine factory. Bounds every build needs live here.
 pub trait Types<'params>: 'params {
     type In: 'static;
     type Out: 'static;
-    type Signal: Origin + Clone + Send + std::marker::Sync + 'static;
+    type Signal: Origin + Clone + Send + core::marker::Sync + 'static;
     type ThreadId: ThreadId;
     type Factory: LineRoutineFactory<'params, Routine: LineRoutine<Self::In, Self::Out>>;
 }
@@ -28,7 +28,7 @@ impl<'params, In, Out, Signal, ThreadIdType, Factory> Types<'params>
 where
     In: 'static,
     Out: 'static,
-    Signal: Origin + Clone + Send + std::marker::Sync + 'static,
+    Signal: Origin + Clone + Send + core::marker::Sync + 'static,
     ThreadIdType: ThreadId,
     Factory: LineRoutineFactory<'params>,
     Factory::Routine: LineRoutine<In, Out>,

@@ -29,28 +29,18 @@ the scheduling graph.
 
 ## What you get
 
-- **Wiring the compiler checks.** Owning a node twice, a scheduling cycle, a type mismatch, an
-  unnamed side, or a work node owning an async one: all compile errors.
-  [`src/graph/misuse.rs`](src/graph/misuse.rs) pins each one.
-- **Three runtimes, one graph.** Blocking `work` threads for CPU-bound stages, an async `poll`
-  runtime for I/O (its own executor, routines are plain `async fn`), and `pull`
-  segments with no locks or dynamic dispatch for hot paths. One
-  [`ThreadBundle`](src/thread/bundle/core.rs) starts them all.
-  [`tests/lifecycle.rs`](tests/lifecycle.rs) mixes all three.
-- **Threads are types.** `thread_id!(Encoder)` names a thread; `node.stream::<Encoder>()`
-  moves a subgraph onto it.
-- **Segments travel in-band.** `Flush` and `Marker` signals flow with the data, so "this
-  utterance ended" reaches every stage in order. See [`src/message.rs`](src/message.rs).
-- **More than lines.** Two-input `Biunion`, two-output `Bifurcation`, fan-in with `via`, fan-out
-  with `tee` / `pushes`, and side paths that carry data without scheduling.
-- **Backpressure when you want it.** Queues are unbounded by default; `.bounded(n)` on a node
-  caps its input and blocks or suspends the producer.
-- **Clean teardown.** Closing an input drains and closes everything downstream. An error or
-  panic ends its thread and closes its edges, so the rest winds down; `on_first_error` tells you
-  once, so you can rebuild and restart.
-- **Timeouts in async stages.** `recv_with_timeout`, `send_with_timeout` and `poll::sleep`.
+- **Compile-checked wiring**: [misuse cases](src/graph/misuse.rs)
+- **Blocking, async and pull runtimes in one graph**: [tests/lifecycle.rs](tests/lifecycle.rs)
+- **Plain `async fn` routines**: [tests/async_bidi_test.rs](tests/async_bidi_test.rs)
+- **Threads as types**: [Multiple threads](#multiple-threads)
+- **In-band segments** (`Flush`, `Marker`): [src/message.rs](src/message.rs)
+- **Fan-in, fan-out, two-input and two-output nodes**: [`Wiring`](src/graph/misuse.rs)
+- **Opt-in backpressure**: [src/tests/backpreassure.rs](src/tests/backpreassure.rs)
+- **Clean teardown and restart**: [src/thread/bundle/core.rs](src/thread/bundle/core.rs)
+- **Async timeouts and sleep**: [src/poll/sleep.rs](src/poll/sleep.rs)
+- **Zero dependencies, runs on ESP32**: [Embedded](#embedded)
 
-[PRINCIPLES.md](PRINCIPLES.md) explains the design choices behind these.
+Why it's built this way: [PRINCIPLES.md](PRINCIPLES.md).
 
 ## Multiple threads
 

@@ -134,6 +134,27 @@ fn a_biunion_bounds_mixed_inputs_in_either_order() {
     assert_eq!(*parent_seen.lock().unwrap(), [true, false]);
 }
 
+/// Mirrored: Left by bridge, Right by parent. The parent's edge takes Right's bound, not Left's.
+#[test]
+fn a_biunion_bounds_a_right_parent_beside_a_left_bridge() {
+    let mut thread = poll::Thread::<IoThread>::new();
+    let (parent, parent_seen) = Probe::new();
+    let node = thread
+        .builder()
+        .biunion()
+        .bounded::<Right>(NonZeroUsize::MIN)
+        .build(MockBiunion::new)
+        .input::<Left>();
+    let node = parent.via(node.at::<Right>()).unwrap().output();
+    {
+        let mut left: Box<WorkSink> = Get::<WorkSink, Left>::get(&node).unwrap();
+        assert_eq!(accepted(&mut left, 2), [true, true]);
+    }
+    thread.add(node);
+    run(thread);
+    assert_eq!(*parent_seen.lock().unwrap(), [true, false]);
+}
+
 /// A parent that tries two pushes into the edge it is built with, and records which went in.
 struct Probe(Arc<Mutex<Vec<bool>>>);
 

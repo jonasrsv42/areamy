@@ -23,6 +23,6 @@ impl<UpstreamType, DownstreamType, OwnedType> Via<DownstreamType, OwnedType> for
     where
         DownstreamType: Downstream<Self, DataType, OwnedType>,
     {
-        downstream.take(self)
+        downstream.own(self)
     }
 }

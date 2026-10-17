@@ -39,7 +39,7 @@ use crate::poll::edge::{self, Async, Deferred, Direct, Edge, Null, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::input;
 use crate::poll::thread::Thread;
-use crate::poll::traits::{AsyncParent, Owned};
+use crate::poll::traits::{AsyncParent, OwnedPoll};
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
@@ -421,7 +421,7 @@ impl<
     ThreadIdType,
     FactoryType,
     UpstreamType,
-> Downstream<UpstreamType, InType, Owned>
+> Downstream<UpstreamType, InType, OwnedPoll>
     for Node<
         'alloc,
         'params,
@@ -455,14 +455,14 @@ where
         FactoryType,
     >;
 
-    fn take(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
+    fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
         Ok(self.parent(upstream))
     }
 }
 
 /// `up.via(line)`: further parent (fan-in), input stays Async.
 impl<'params, OutEdgeType, InType, OutType, SignalType, ThreadIdType, FactoryType, UpstreamType>
-    Downstream<UpstreamType, InType, Owned>
+    Downstream<UpstreamType, InType, OwnedPoll>
     for Node<
         'static,
         'params,
@@ -486,7 +486,7 @@ where
 {
     type Out = Self;
 
-    fn take(self, upstream: UpstreamType) -> Result<Self, Error> {
+    fn own(self, upstream: UpstreamType) -> Result<Self, Error> {
         Ok(self.parent(upstream))
     }
 }

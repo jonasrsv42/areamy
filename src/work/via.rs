@@ -30,7 +30,7 @@ type ViaSink<'params, DataType, SignalType> =
 ///
 /// Signals are forwarded ([SignalPolicy::Forward]): the upstream is moved into the child, so
 /// owning chains can't cycle and forwarding can't loop.
-fn own<'params, DataType, SignalType, ThreadIdType, ShapeType, ChildMultiplicity>(
+fn adopt<'params, DataType, SignalType, ThreadIdType, ShapeType, ChildMultiplicity>(
     upstream: impl Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType>,
     child: &mut (
              impl Add<dyn Workable<ThreadId = ThreadIdType> + 'params, ChildMultiplicity>
@@ -43,7 +43,7 @@ where
     ChildMultiplicity: Multiplicity,
 {
     let sink = child.get()?;
-    let upstream = upstream.attach(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
+    let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
     Add::add(child, upstream)
 }
 
@@ -59,8 +59,8 @@ where
     SignalType: Origin + Send + Sync + 'static,
 {
     type Out = Self;
-    fn take(mut self, upstream: UpstreamType) -> Result<Self, Error> {
-        own::<_, _, _, _, Unary>(upstream, &mut self)?;
+    fn own(mut self, upstream: UpstreamType) -> Result<Self, Error> {
+        adopt::<_, _, _, _, Unary>(upstream, &mut self)?;
         Ok(self)
     }
 }
@@ -77,8 +77,8 @@ where
     SignalType: Origin + Send + Sync + 'static,
 {
     type Out = Self;
-    fn take(mut self, upstream: UpstreamType) -> Result<Self, Error> {
-        own::<_, _, _, _, Unary>(upstream, &mut self)?;
+    fn own(mut self, upstream: UpstreamType) -> Result<Self, Error> {
+        adopt::<_, _, _, _, Unary>(upstream, &mut self)?;
         Ok(self)
     }
 }
@@ -105,9 +105,9 @@ where
     SignalType: Origin + Send + Sync + 'static,
 {
     type Out = Biunion<'node, T>;
-    fn take(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
+    fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
         let mut node = self.into_node();
-        own::<_, _, _, _, MultiplicityType>(upstream, &mut node)?;
+        adopt::<_, _, _, _, MultiplicityType>(upstream, &mut node)?;
         Ok(node)
     }
 }
@@ -116,10 +116,11 @@ where
 mod tests {
     use crate::biunion::{Left, Right};
     use crate::graph::Pushable;
+    use crate::node::bifurcation::routine::tests::MockBifurcation;
     use crate::node::biunion::routine::tests::MockBiunion;
     use crate::node::line::routine::tests::MockLine;
-    use crate::work::{Biunion, Line};
-    use crate::{At, Message, Reads, Via, Writes};
+    use crate::work::{Bifurcation, Biunion, Line};
+    use crate::{At, Message, Reads, Tees, Via, Writes, bifurcation};
 
     #[test]
     fn via_into_each_biunion_side() {
@@ -143,5 +144,75 @@ mod tests {
         });
         // Left: 2 * 2 + 0, right: 2 * 3 + 1 (MockLine doubles first).
         assert_eq!(outputs, vec![Message::Data(4), Message::Data(7)]);
+    }
+
+    /// Both bifurcation sides carry `usize`: the moved side names the owning edge, the borrowed
+    /// side a tee.
+    #[test]
+    fn via_from_a_moved_side() {
+        let head = Line::of(MockLine::new());
+        let mut writer = head.writer().unwrap();
+        let mut router = head.via(Bifurcation::of(MockBifurcation::new())).unwrap();
+        let mut right = router.at_mut::<bifurcation::Right>().tee().unwrap();
+        let tail = router
+            .at::<bifurcation::Left>()
+            .via(Line::of(MockLine::new()))
+            .unwrap();
+        let mut reader = tail.reader().unwrap();
+
+        writer.push(Message::Data(1)).unwrap();
+
+        // Head 1 → 2; left 2 * 2 → tail 8; right 2 * 3 = 6.
+        assert_eq!(reader.read().unwrap(), Message::Data(8));
+        assert_eq!(right.read().unwrap(), Message::Data(6));
+    }
+
+    /// A moved side owned by a moved side: bifurcation Right into biunion Right.
+    #[test]
+    fn via_from_a_side_into_a_side() {
+        let head = Line::of(MockLine::new());
+        let left = Line::of(MockLine::new());
+        let mut head_writer = head.writer().unwrap();
+        let mut left_writer = left.writer().unwrap();
+
+        let mut router = head.via(Bifurcation::of(MockBifurcation::new())).unwrap();
+        let mut dropped = router.at_mut::<bifurcation::Left>().tee::<usize>().unwrap();
+        let merge = Biunion::of(MockBiunion::new());
+        let merge = left.via(merge.at::<Left>()).unwrap();
+        let merge = router
+            .at::<bifurcation::Right>()
+            .via(merge.at::<Right>())
+            .unwrap();
+        let mut reader = merge.reader().unwrap();
+
+        head_writer.push(Message::Data(1)).unwrap();
+        left_writer.push(Message::Data(1)).unwrap();
+
+        let mut outputs = vec![reader.read().unwrap(), reader.read().unwrap()];
+        outputs.sort_by_key(|m| match m {
+            Message::Data(d) => *d,
+            _ => usize::MAX,
+        });
+        // Left 1 → 2 → 2 * 2; right 1 → 2 → 2 * 3 = 6 → 6 * 3; the biunion adds 0 then 1.
+        assert!(
+            outputs == vec![Message::Data(4), Message::Data(19)]
+                || outputs == vec![Message::Data(5), Message::Data(18)],
+            "{outputs:?}"
+        );
+        assert_eq!(dropped.read().unwrap(), Message::Data(4));
+    }
+
+    /// Boxed nodes work at both ends; a boxed downstream stays boxed.
+    #[test]
+    fn via_through_boxes() {
+        let head = Box::new(Line::of(MockLine::new()));
+        let mut writer = head.writer().unwrap();
+        let tail: Box<Line<'_, _>> = head.via(Box::new(Line::of(MockLine::new()))).unwrap();
+        let mut reader = tail.reader().unwrap();
+
+        writer.push(Message::Data(1)).unwrap();
+
+        // 1 → 2 → 4.
+        assert_eq!(reader.read().unwrap(), Message::Data(4));
     }
 }

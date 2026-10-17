@@ -1,7 +1,26 @@
 use crate::error::Error;
 
-/// [`Downstream`] is how a node takes ownership of its upstream: schedule + data. Work nodes
-/// implement it in [crate::work], poll builders next to their builders.
+/// [`Downstream`] is how a node takes ownership of its upstream: schedule + data. areamy's work
+/// nodes implement it in [crate::work], poll builders next to their builders.
+///
+/// It is the extension point for custom work nodes. Take the upstream through
+/// [crate::work::Upstream] (a whole node, or a side moved with [crate::At::at]), give it a
+/// forwarding edge into this node's input, and own it:
+///
+/// ```ignore
+/// impl<Up, Shape> Downstream<Up, Frame, OwnedWork<Shape, Signal, Thread>> for MyNode
+/// where
+///     Up: Upstream<'static, Frame, Signal, Thread, Shape>, // MyNode: Get<sink> + Add<Workable>
+/// {
+///     type Out = Self;
+///     fn own(mut self, upstream: Up) -> Result<Self, Error> {
+///         let sink = self.get()?;
+///         let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
+///         self.add(upstream)?;
+///         Ok(self)
+///     }
+/// }
+/// ```
 ///
 /// `DataType` is a trait parameter so the caller may state it; `OwnedType` carries each impl's
 /// otherwise unconstrained parameters.
@@ -14,5 +33,18 @@ use crate::error::Error;
 )]
 pub trait Downstream<UpstreamType, DataType, OwnedType> {
     type Out;
-    fn take(self, upstream: UpstreamType) -> Result<Self::Out, Error>;
+    /// Owns `upstream`: `down.own(up)` is `up.via(down)`.
+    fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error>;
+}
+
+/// A boxed downstream takes its upstream like the node inside, and stays boxed.
+impl<UpstreamType, DataType, OwnedType, DownstreamType>
+    Downstream<UpstreamType, DataType, OwnedType> for Box<DownstreamType>
+where
+    DownstreamType: Downstream<UpstreamType, DataType, OwnedType>,
+{
+    type Out = Box<DownstreamType::Out>;
+    fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
+        Ok(Box::new((*self).own(upstream)?))
+    }
 }

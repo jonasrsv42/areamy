@@ -12,7 +12,7 @@ use crate::signal::Origin;
 use crate::thread::ThreadId;
 
 /// [crate::graph::Downstream] parameters for a poll builder taking an [AsyncParent].
-pub struct Owned;
+pub struct OwnedPoll;
 
 /// A parent node in an async graph.
 ///

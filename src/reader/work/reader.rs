@@ -63,7 +63,7 @@ where
         node: impl Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType>,
     ) -> Result<Self, Error> {
         let buffer = Receiver::new();
-        let workable = node.attach(Box::new(buffer.sender()))?;
+        let workable = node.feed(Box::new(buffer.sender()))?;
         Ok(Self { workable, buffer })
     }
 
@@ -103,8 +103,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::Add;
-    use crate::work::Sink;
+    use crate::graph::{Add, Pushable};
+    use crate::node::bifurcation::routine::tests::MockBifurcation;
+    use crate::node::line::routine::tests::MockLine;
+    use crate::work::{Bifurcation, Line, Sink};
+    use crate::{At, Tees, Via, Writes, bifurcation};
     use std::sync::{Arc, Mutex};
 
     type Output = Arc<Mutex<Message<usize, Trackable<&'static str>>>>;
@@ -200,5 +203,74 @@ mod tests {
 
         assert_eq!(reader.read().unwrap(), Message::Marker("bye".into()));
         assert_eq!(reader.read().unwrap(), Message::Marker("bye".into()));
+    }
+
+    /// Pushes two messages per work, so a `read` leaves one buffered.
+    struct Burst {
+        pushable: Vec<
+            Box<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync>,
+        >,
+    }
+
+    impl Connection for Burst {}
+
+    impl Workable for Burst {
+        type ThreadId = DefaultThread;
+        fn work(&mut self) -> Result<(), Error> {
+            for pushable in self.pushable.iter_mut() {
+                pushable.push(Message::Data(1))?;
+                pushable.push(Message::Data(2))?;
+            }
+            Ok(())
+        }
+    }
+
+    impl Add<dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync> for Burst {
+        fn add(
+            &mut self,
+            sink: Box<
+                dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
+            >,
+        ) -> Result<(), Error> {
+            self.pushable.push(sink);
+            Ok(())
+        }
+    }
+
+    /// `poll` returns what a `read` left buffered, without working the node.
+    #[test]
+    fn poll_returns_buffered_output() {
+        let mut reader = Burst {
+            pushable: Vec::new(),
+        }
+        .reader()
+        .unwrap();
+        assert_eq!(crate::reader::Reader::poll(&mut reader).unwrap(), None);
+
+        assert_eq!(reader.read().unwrap(), Message::Data(1));
+        assert_eq!(
+            crate::reader::Reader::poll(&mut reader).unwrap(),
+            Some(Message::Data(2))
+        );
+        assert_eq!(crate::reader::Reader::poll(&mut reader).unwrap(), None);
+    }
+
+    crate::thread_id!(OtherThread);
+
+    /// [Reader::of] owns a side moved with `at`, on a thread other than [DefaultThread].
+    #[test]
+    fn reader_of_a_side_on_another_thread() {
+        let head = Line::of(MockLine::new());
+        let mut writer = head.writer().unwrap();
+        let mut router = head.via(Bifurcation::of(MockBifurcation::new())).unwrap();
+        let mut left = router.at_mut::<bifurcation::Left>().tee::<usize>().unwrap();
+        let mut right: Reader<'_, usize, Trackable<&'static str>, OtherThread> =
+            Reader::of(router.at::<bifurcation::Right>()).unwrap();
+
+        writer.push(Message::Data(1)).unwrap();
+
+        // Head 1 → 2; right 2 * 3 = 6, left 2 * 2 = 4.
+        assert_eq!(right.read().unwrap(), Message::Data(6));
+        assert_eq!(left.read().unwrap(), Message::Data(4));
     }
 }

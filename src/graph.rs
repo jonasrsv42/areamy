@@ -59,6 +59,7 @@ pub mod marker;
 mod misuse;
 mod outlet;
 mod outputs;
+mod pushes;
 mod schedule;
 mod sink;
 #[cfg(any(test, doc))]
@@ -73,6 +74,7 @@ pub use get::Get;
 pub use inlet::{Inlet, Receivable};
 pub use outlet::{Outlet, Pushable, TryPush, TryPushable};
 pub use outputs::Outputs;
+pub use pushes::Pushes;
 pub use schedule::Schedule;
 pub use sink::Sink;
 pub use via::{Downstream, Via};

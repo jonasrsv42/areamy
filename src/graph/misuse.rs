@@ -205,3 +205,35 @@ pub struct PollIntoWork;
 /// # }
 /// ```
 pub struct DroppedDownstream;
+
+/// A reader owns the node it drives; dropping it drops the subgraph.
+///
+/// ```compile_fail
+/// #![deny(unused_must_use)]
+/// # include!("misuse/routines.rs");
+/// # use areamy::work::Line;
+/// # use areamy::{Reads, Writes};
+/// # fn main() -> Result<(), areamy::error::Error> {
+/// # let tail = Line::of(pass());
+/// # let _input = tail.writer()?;
+/// tail.reader()?;
+/// # Ok(())
+/// # }
+/// ```
+pub struct DroppedReader;
+
+/// A thread stream owns its root; dropping it unstarted drops the subgraph.
+///
+/// ```compile_fail
+/// #![deny(unused_must_use)]
+/// # include!("misuse/routines.rs");
+/// # use areamy::work::Line;
+/// # use areamy::{DefaultThread, Streams, Writes};
+/// # fn main() -> Result<(), areamy::error::Error> {
+/// # let root = Line::of(pass());
+/// # let _input = root.writer()?;
+/// root.stream::<DefaultThread>();
+/// # Ok(())
+/// # }
+/// ```
+pub struct DroppedStream;

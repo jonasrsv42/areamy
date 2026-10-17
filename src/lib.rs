@@ -22,10 +22,12 @@ pub mod pull;
 pub use typing::{Combine, Composable, Contains, Decomposable, Generates};
 
 pub use edge::policy::{PolicyEdge, SignalPolicy};
-pub use edge::push::{Push, Pushes};
+pub use edge::push::Push;
 pub use edge::sync;
 pub use graph::marker::{self, Connection};
-pub use graph::{At, Closeable, Inlet, Outlet, Pushable, Receivable, TryPush, TryPushable, Via};
+pub use graph::{
+    At, Closeable, Inlet, Outlet, Pushable, Pushes, Receivable, TryPush, TryPushable, Via,
+};
 pub use message::Message;
 pub use node::{
     Accept, BifurcationIo, BifurcationRoutine, BiunionIo, BiunionRoutine, Flush, LineIo,

@@ -31,3 +31,28 @@ impl<'params, NodeType: Connection> Schedules<'params> for NodeType {
         Add::add(self, Box::new(up))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::graph::Pushable;
+    use crate::node::line::routine::tests::MockLine;
+    use crate::work::Line;
+    use crate::{DefaultThread, Message, Pushes, Reads, Schedules, Writes};
+
+    /// `pushes` + `schedules` is an owning edge whose signals follow data; the thread hint
+    /// pins a thread-generic pair.
+    #[test]
+    fn schedules_with_a_thread_hint() {
+        let mut up = Line::of(MockLine::new());
+        let mut writer = up.writer().unwrap();
+        let mut down = Line::of(MockLine::new());
+        up.pushes(&down).unwrap();
+        down.schedules::<DefaultThread>(up).unwrap();
+        let mut reader = down.reader().unwrap();
+
+        writer.push(Message::Data(1)).unwrap();
+
+        // 1 → 2 → 4.
+        assert_eq!(reader.read().unwrap(), Message::Data(4));
+    }
+}

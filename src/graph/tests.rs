@@ -1,8 +1,10 @@
 //! Example nodes wiring the connection traits together.
 
+use crate::edge::policy::{PolicyEdge, SignalPolicy};
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::fatal;
+use crate::graph::Downstream;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Closeable, Get, Outlet, Outputs, Pushable, TryPush, TryPushable};
 use crate::message::Message;
@@ -12,9 +14,8 @@ use crate::poll::{Context, Pollable};
 use crate::pull::Pullable;
 use crate::signal::Trackable;
 use crate::thread::DefaultThread;
-use crate::work::Sink;
-use crate::work::Workable;
-use crate::{Pushes, Schedules};
+use crate::work::{OwnedWork, Sink, Upstream, Workable};
+use crate::{Pushes, Via};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -263,6 +264,26 @@ impl Add<dyn Workable<ThreadId = DefaultThread>> for Node {
     }
 }
 
+/// A custom node owns its upstream like areamy's nodes do: a forwarding edge into its input,
+/// then the upstream added as a parent. See [crate::graph::Downstream].
+impl<UpstreamType, ShapeType>
+    Downstream<UpstreamType, usize, OwnedWork<ShapeType, Trackable<&'static str>, DefaultThread>>
+    for Node
+where
+    UpstreamType: Upstream<'static, usize, Trackable<&'static str>, DefaultThread, ShapeType>,
+{
+    type Out = Self;
+
+    fn own(mut self, upstream: UpstreamType) -> Result<Self, Error> {
+        let sink = Get::<
+            dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
+        >::get(&self)?;
+        let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
+        Add::add(&mut self, upstream)?;
+        Ok(self)
+    }
+}
+
 /// A boxed node stays a push parent.
 #[test]
 fn boxed_node_connects_as_push_parent() {
@@ -278,20 +299,16 @@ fn boxed_node_connects_as_push_parent() {
 /// works across threads — see the multi-threaded graph example above.
 #[test]
 fn connect_push_work_bidi_chain() {
-    let mut node_1 = Node::new();
-    let mut node_2 = Node::new();
-    let mut node_3 = Node::new();
+    let node_1 = Node::new();
+    let node_2 = Node::new();
+    let node_3 = Node::new();
 
     let mut input = Get::<
         dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
     >::get(&node_1)
     .unwrap();
 
-    // A custom node has no `via`: push data down, then hand the schedule over.
-    node_1.pushes(&node_2).unwrap();
-    node_2.schedules(node_1).unwrap();
-    node_2.pushes(&node_3).unwrap();
-    node_3.schedules(node_2).unwrap();
+    let mut node_3 = node_1.via(node_2).unwrap().via(node_3).unwrap();
 
     let sink = Receiver::new();
 

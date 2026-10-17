@@ -16,8 +16,8 @@ type UpstreamSink<'params, DataType, SignalType> =
     note = "to read without owning, use `tee`"
 )]
 pub trait Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType> {
-    /// Adds `sink` as the node's output (at its side) and hands the node over to be owned.
-    fn attach(
+    /// Feeds `sink` (from the node's side) and hands the node over to be owned.
+    fn feed(
         self,
         sink: Box<UpstreamSink<'params, DataType, SignalType>>,
     ) -> Result<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>, Error>;
@@ -36,7 +36,7 @@ where
         + Add<UpstreamSink<'params, DataType, SignalType>, Unary>
         + 'params,
 {
-    fn attach(
+    fn feed(
         mut self,
         sink: Box<UpstreamSink<'params, DataType, SignalType>>,
     ) -> Result<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>, Error> {
@@ -54,7 +54,7 @@ where
         + 'params,
     MultiplicityType: Multiplicity,
 {
-    fn attach(
+    fn feed(
         self,
         sink: Box<UpstreamSink<'params, DataType, SignalType>>,
     ) -> Result<Box<dyn Workable<ThreadId = ThreadIdType> + 'params>, Error> {

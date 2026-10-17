@@ -11,7 +11,7 @@ use crate::node::biunion::poll::factory::BiunionRoutineFactory;
 use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::edge::{Async, Deferred, Edge, Null, Sync};
 use crate::poll::input;
-use crate::poll::traits::{AsyncParent, Owned};
+use crate::poll::traits::{AsyncParent, OwnedPoll};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::marker::PhantomData;
@@ -518,7 +518,7 @@ impl<
     FactoryType,
     MultiplicityType,
     UpstreamType,
-> Downstream<UpstreamType, MultiplicityType::Data, Owned>
+> Downstream<UpstreamType, MultiplicityType::Data, OwnedPoll>
     for Select<
         Node<
             'params,
@@ -570,7 +570,7 @@ where
 {
     type Out = MultiplicityType::Resolved;
 
-    fn take(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
+    fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
         Ok(MultiplicityType::resolve(
             self.into_node(),
             Box::new(upstream),

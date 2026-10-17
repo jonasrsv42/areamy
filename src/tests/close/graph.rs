@@ -53,7 +53,7 @@ fn run_once() -> Result<(), Error> {
         writer.close()?;
 
         assert_eq!(
-            drain_edge(&output)?,
+            drain_edge(output)?,
             vec![
                 Message::Data(1),
                 Message::Data(2),

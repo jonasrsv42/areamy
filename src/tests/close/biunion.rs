@@ -2,8 +2,8 @@
 //! each side's flushed data survives, whichever closes first.
 
 use super::mock::{
-    HoldBiunion, IoThread, Msg, RIGHT, Signal, drain, drain_edge, hold, hold_biunion,
-    slow_hold_biunion,
+    Hold, HoldBiunion, IoThread, Msg, RIGHT, Signal, drain, drain_edge, hold, hold_biunion,
+    run_poll, slow_hold_biunion,
 };
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
 use crate::error::Error;
@@ -63,10 +63,10 @@ fn work_biunion(left_first: bool) -> Result<Vec<Msg>, Error> {
     let node = work::Biunion::of(HoldBiunion::new());
     let mut left = node.at_ref::<biunion::Left>().writer()?;
     let mut right = node.at_ref::<biunion::Right>().writer()?;
-    let mut reader = node.reader()?;
+    let reader = node.reader()?;
 
     send(left_first, &mut left, &mut right)?;
-    drain(&mut reader)
+    drain(reader)
 }
 
 #[test]
@@ -87,13 +87,60 @@ fn work_biunion_right_closes_first() -> Result<(), Error> {
 fn work_biunion_unconnected_left() -> Result<(), Error> {
     let node = work::Biunion::of(HoldBiunion::new());
     let mut right = node.at_ref::<biunion::Right>().writer()?;
-    let mut reader = node.reader()?;
+    let reader = node.reader()?;
 
     right.push(Message::Data(5))?;
     right.push(Message::Flush("f".into()))?;
     right.close()?;
 
-    right_flushed(drain(&mut reader)?);
+    right_flushed(drain(reader)?);
+    Ok(())
+}
+
+/// A left `via` parent and a right writer: each side's close ends that side only.
+fn work_biunion_via_parent(left_first: bool) -> Result<Vec<Msg>, Error> {
+    let parent = work::Line::of(Hold::new());
+    let mut left = parent.writer()?;
+    let node = parent.via(work::Biunion::of(HoldBiunion::new()).at::<biunion::Left>())?;
+    let mut right = node.at_ref::<biunion::Right>().writer()?;
+    let reader = node.reader()?;
+    send(left_first, &mut left, &mut right)?;
+    drain(reader)
+}
+
+#[test]
+fn work_biunion_via_parent_left_closes_first() -> Result<(), Error> {
+    both_flushed(work_biunion_via_parent(true)?);
+    Ok(())
+}
+
+#[test]
+fn work_biunion_via_parent_right_closes_first() -> Result<(), Error> {
+    both_flushed(work_biunion_via_parent(false)?);
+    Ok(())
+}
+
+/// The poll twin of [work_biunion_unconnected_left]: a side nobody writes to is done from the
+/// start, so the node ends when right does. Run on its own thread so a regression fails
+/// instead of hanging the suite.
+#[test]
+fn poll_biunion_unconnected_left() -> Result<(), Error> {
+    let mut async_thread = poll::Thread::<IoThread>::new();
+    let mut node = async_thread
+        .biunion(hold_biunion)
+        .input::<biunion::Left>()
+        .input::<biunion::Right>()
+        .output();
+    let mut right = node.at_ref::<biunion::Right>().writer()?;
+    let output = Receiver::new();
+    node.pushes(&output)?;
+    async_thread.add(node);
+
+    right.push(Message::Data(5))?;
+    right.push(Message::Flush("f".into()))?;
+    right.close()?;
+    run_poll(async_thread)?;
+    right_flushed(drain_edge(output)?);
     Ok(())
 }
 
@@ -115,8 +162,8 @@ where
     async_thread.add(node);
 
     send(left_first, &mut left, &mut right)?;
-    async_thread.run()?;
-    drain_edge(&output)
+    run_poll(async_thread)?;
+    drain_edge(output)
 }
 
 #[test]
@@ -164,7 +211,7 @@ fn poll_biunion_async_parent_flush_then_close() -> Result<(), Error> {
     async_thread.add(node);
 
     send(true, &mut left, &mut right)?;
-    async_thread.run()?;
-    both_flushed(drain_edge(&output)?);
+    run_poll(async_thread)?;
+    both_flushed(drain_edge(output)?);
     Ok(())
 }

@@ -1,6 +1,6 @@
 //! The producer end of an edge.
 
-use super::shared::{Inner, Shared, close, close_infallible};
+use super::shared::{Inner, Shared, close_infallible};
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{BoxAs, Closeable, Get, Outlet, Pushable, Schedule, TryPush, TryPushable};
@@ -198,9 +198,9 @@ where
     /// This producer is done; the edge closes once every producer is. What it pushed before
     /// stays queued for the receiver. Idempotent.
     pub fn close(&mut self) -> Result<(), Error> {
+        // Infallible like `Drop`: once released, a poisoned lock must still close the edge.
         if self.release() {
-            let inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
-            close(&self.shared, inner);
+            close_infallible(&self.shared);
         }
         Ok(())
     }

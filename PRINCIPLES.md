@@ -34,8 +34,9 @@ This rules out designs that decouple nodes from ownership: arenas, index or hand
 
 - A node owns sender handles, never an edge. Closing a sender ends that producer only; an edge closes once every producer into it is done. Closing a receiver closes the edge for all.
 - A merge ends with its last input: fan-in, writers into one node, and both biunion sides alike. There are no half-closed graphs to support, only no data lost to which source closed first.
-- Flush, then close, delivers what each source flushed. Close is fast: anything unflushed may drop. Pinned in `src/tests/close`.
-- Errors are not closes: the first error tears the graph down.
+- Flush, then close, delivers what each source flushed, along owning paths (a `pushes` side path collapses back-to-back signals). Close is fast: anything unflushed may drop. Pinned in `src/tests/close`.
+- A source that never closes (a long-lived config writer) keeps its merge, and everything downstream, alive: close every source, or stop the bundle.
+- Errors are not closes: the first error tears down its thread, and `ThreadBundle` stops the rest.
 
 ## Layers
 

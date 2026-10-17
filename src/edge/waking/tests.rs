@@ -230,9 +230,11 @@ fn blocked_push_wakes_after_it_lands() {
 #[test]
 fn try_recv_drains_then_reports_closed() {
     let (mut rx, _counter) = counted(None);
-    // Unconnected: open and empty, not closed.
-    assert_eq!(rx.try_recv().unwrap(), None);
+    // Unconnected: nothing can ever arrive, so done from the start.
+    assert!(rx.try_recv().unwrap_err().is_closed());
     let tx = rx.sender();
+    // A live producer keeps it open.
+    assert_eq!(rx.try_recv().unwrap(), None);
     tx.push_back(Message::Data(1)).unwrap();
     tx.push_back(Message::Flush(Trackable::new("f"))).unwrap();
     drop(tx);

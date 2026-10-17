@@ -66,9 +66,11 @@ where
         }
     }
 
-    /// Non-blocking pop: `Ok(None)` when open and empty, `Err(Closed)` when closed and empty.
+    /// Non-blocking pop: `Ok(None)` when empty with a live producer, `Err(Closed)` when empty and
+    /// closed or with no producer left. Senders are minted before the consumer runs, so one
+    /// nobody writes to is done from the start.
     pub fn poll(&self) -> Result<Option<Message<DataType, SignalType>>, Error> {
-        self.inner.poll()
+        self.inner.try_pop()
     }
 
     pub fn close(&self) -> Result<(), Error> {
@@ -188,7 +190,7 @@ where
     SignalType: Origin + Send + Sync,
 {
     fn try_recv(&mut self) -> Result<Option<Message<DataType, SignalType>>, Error> {
-        self.inner.poll()
+        self.poll()
     }
 }
 

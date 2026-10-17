@@ -1,6 +1,8 @@
 //! Line nodes: work, pull, bridged, and poll.
 
-use super::mock::{Hold, IoThread, Msg, Script, drain, drain_edge, echo, hold, slow_hold};
+use super::mock::{
+    Hold, IoThread, Msg, Script, drain, drain_edge, echo, hold, run_poll, slow_hold,
+};
 use crate::edge::sync::tests::join_within;
 use crate::error::Error;
 use crate::poll::{self, LineWakers};
@@ -25,14 +27,14 @@ fn flushed(messages: Vec<Msg>) {
 fn work_line_flush_then_close() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
     let mut writer = line.writer()?;
-    let mut reader = line.reader()?;
+    let reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Data(2))?;
     writer.push(Message::Flush("f".into()))?;
     writer.close()?;
 
-    flushed(drain(&mut reader)?);
+    flushed(drain(reader)?);
     Ok(())
 }
 
@@ -41,14 +43,14 @@ fn work_line_stacked_flush_then_close() -> Result<(), Error> {
     let first = work::Line::of(Hold::new());
     let mut writer = first.writer()?;
     let second = first.via(work::Line::of(Hold::new()))?;
-    let mut reader = second.reader()?;
+    let reader = second.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Data(2))?;
     writer.push(Message::Flush("f".into()))?;
     writer.close()?;
 
-    flushed(drain(&mut reader)?);
+    flushed(drain(reader)?);
     Ok(())
 }
 
@@ -56,14 +58,14 @@ fn work_line_stacked_flush_then_close() -> Result<(), Error> {
 fn work_line_marker_then_close() -> Result<(), Error> {
     let line = work::Line::of(Hold::echo());
     let mut writer = line.writer()?;
-    let mut reader = line.reader()?;
+    let reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Marker("m".into()))?;
     writer.close()?;
 
     assert_eq!(
-        drain(&mut reader)?,
+        drain(reader)?,
         vec![Message::Data(1), Message::Marker("m".into())]
     );
     Ok(())
@@ -73,7 +75,7 @@ fn work_line_marker_then_close() -> Result<(), Error> {
 fn work_line_data_after_flush_then_close() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
     let mut writer = line.writer()?;
-    let mut reader = line.reader()?;
+    let reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Flush("f".into()))?;
@@ -81,7 +83,7 @@ fn work_line_data_after_flush_then_close() -> Result<(), Error> {
     writer.close()?;
 
     assert_eq!(
-        drain(&mut reader)?,
+        drain(reader)?,
         vec![Message::Data(1), Message::Flush("f".into())]
     );
     Ok(())
@@ -91,12 +93,12 @@ fn work_line_data_after_flush_then_close() -> Result<(), Error> {
 fn work_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
     let mut writer = line.writer()?;
-    let mut reader = line.reader()?;
+    let reader = line.reader()?;
 
     writer.push(Message::Data(1))?;
     writer.close()?;
 
-    assert_eq!(drain(&mut reader)?, vec![]);
+    assert_eq!(drain(reader)?, vec![]);
     Ok(())
 }
 
@@ -107,7 +109,7 @@ fn work_line_fan_in_closes_with_the_last_writer() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
     let mut a = line.writer()?;
     let mut b = line.writer()?;
-    let mut reader = line.reader()?;
+    let reader = line.reader()?;
 
     a.push(Message::Data(1))?;
     b.push(Message::Data(2))?;
@@ -118,7 +120,7 @@ fn work_line_fan_in_closes_with_the_last_writer() -> Result<(), Error> {
     b.close()?;
 
     assert_eq!(
-        drain(&mut reader)?,
+        drain(reader)?,
         vec![
             Message::Data(1),
             Message::Data(2),
@@ -140,16 +142,16 @@ fn script() -> Script {
 
 #[test]
 fn pull_line_flush_then_close() -> Result<(), Error> {
-    let mut reader = pull::Reader::new(script().then(Hold::new()));
-    flushed(drain(&mut reader)?);
+    let reader = pull::Reader::new(script().then(Hold::new()));
+    flushed(drain(reader)?);
     Ok(())
 }
 
 #[test]
 fn bridged_line_flush_then_close() -> Result<(), Error> {
     let line = work::Pulled::of(script()).via(work::Line::of(Hold::new()))?;
-    let mut reader = line.reader()?;
-    flushed(drain(&mut reader)?);
+    let reader = line.reader()?;
+    flushed(drain(reader)?);
     Ok(())
 }
 
@@ -159,9 +161,9 @@ fn bridged_line_flush_then_close() -> Result<(), Error> {
 fn bridged_line_fan_in_first_close_keeps_edge_open() -> Result<(), Error> {
     let line = work::Pulled::of(Script::new(vec![])).via(work::Line::of(Hold::new()))?;
     let line = work::Pulled::of(script()).via(line)?;
-    let mut reader = line.reader()?;
+    let reader = line.reader()?;
 
-    flushed(drain(&mut reader)?);
+    flushed(drain(reader)?);
     Ok(())
 }
 
@@ -181,8 +183,8 @@ where
         writer.push(message)?;
     }
     writer.close()?;
-    async_thread.run()?;
-    drain_edge(&output)
+    run_poll(async_thread)?;
+    drain_edge(output)
 }
 
 fn flush_script() -> Vec<Msg> {
@@ -307,7 +309,7 @@ fn poll_line_chain_flush_then_close() -> Result<(), Error> {
         writer.push(message)?;
     }
     writer.close()?;
-    async_thread.run()?;
-    flushed(drain_edge(&output)?);
+    run_poll(async_thread)?;
+    flushed(drain_edge(output)?);
     Ok(())
 }

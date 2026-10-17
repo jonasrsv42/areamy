@@ -185,6 +185,23 @@ where
         }
     }
 
+    /// Non-blocking pop that, like the blocking reads, reports `Closed` once the edge is empty
+    /// with no producer left: nothing can ever arrive. For consumers that only poll, where an
+    /// input nobody writes to must still count as done.
+    pub(crate) fn try_pop(&self) -> Result<Option<Message<DataType, SignalType>>, Error> {
+        let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
+        match inner.buffer.pop_front() {
+            Some(msg) => {
+                self.drained(inner, Freed::One);
+                Ok(Some(msg))
+            }
+            None if inner.closed || self.shared.producer_count.load(Ordering::Acquire) == 0 => {
+                Err(closed!())
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Every pop ends here: bump `progress` and take this epoch's refused wakers in one critical
     /// section, so the list only ever holds this epoch's refusals. Then, after releasing the
     /// lock, notify blocked producers (one freed slot wakes one blocked thread, draining

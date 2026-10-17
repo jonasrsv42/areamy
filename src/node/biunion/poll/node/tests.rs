@@ -1221,6 +1221,91 @@ fn lefts_close_leaves_a_holding_right_running() {
     the_other_sides_close_leaves_a_holding_side_running::<Right>();
 }
 
+/// S holds a refused message with its Flush and close queued behind it; the other side closes.
+/// The node lives on until S, last, delivers both and closes.
+fn the_other_side_closes_while_held<S: TestSide>() {
+    let mut b = bounded::<S>(1);
+    let mut cx = noop_context();
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b)
+        .push_back(Message::Flush("f".into()))
+        .unwrap();
+    S::upstream(&mut b).close().unwrap();
+    // 1 fits, 2 is held.
+    let _ = S::poll(&mut b).unwrap();
+
+    // The other side closes; S still holds, so the node lives on.
+    b.woken.reset();
+    S::Other::upstream(&mut b).close().unwrap();
+    assert!(S::Other::poll(&mut b).unwrap().is_pending());
+    assert!(!b.woken.work.get() && !b.woken.output.get());
+
+    // Room frees, S retries 2, reads the Flush.
+    let _ = b.output.poll(&mut cx).unwrap();
+    assert_eq!(b.received(), data::<S>([1]));
+    assert!(S::woken(&b).replace(false));
+    let mut expected = data::<S>([2]);
+    expected.push(Message::Flush("f".into()));
+    assert_eq!(b.cycle(), expected);
+    // Back in Running, S reads its close: the last side, so the node ends.
+    let _ = S::poll(&mut b);
+    assert!(b.output.poll(&mut cx).unwrap_err().is_closed());
+    assert!(S::poll(&mut b).unwrap_err().is_closed());
+    assert!(S::Other::poll(&mut b).unwrap_err().is_closed());
+}
+
+#[test]
+fn right_closes_while_left_holds() {
+    the_other_side_closes_while_held::<Left>();
+}
+
+#[test]
+fn left_closes_while_right_holds() {
+    the_other_side_closes_while_held::<Right>();
+}
+
+/// The other side closes while S's Flush is in flight: its close is read only back in Running and
+/// ends nothing; re-polling the closed side changes nothing; S's close then ends the node.
+fn the_other_side_closes_during_flushing<S: TestSide>() {
+    let mut b = Biunion::new();
+    let mut cx = noop_context();
+    S::upstream(&mut b)
+        .push_back(Message::Flush("f".into()))
+        .unwrap();
+    let _ = S::poll(&mut b).unwrap();
+    S::Other::upstream(&mut b).close().unwrap();
+    // Flushing: nothing is read.
+    assert!(S::Other::poll(&mut b).unwrap().is_pending());
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
+    assert_eq!(b.received(), vec![Message::Flush("f".into())]);
+    // Running again, both woken; the other's close ends nothing.
+    assert!(S::Other::poll(&mut b).unwrap().is_pending());
+    assert!(S::poll(&mut b).unwrap().is_pending());
+    // Re-polling a closed side has no effect.
+    b.woken.reset();
+    assert!(S::Other::poll(&mut b).unwrap().is_pending());
+    assert!(!b.woken.work.get() && !b.woken.output.get() && !S::woken(&b).get());
+
+    S::upstream(&mut b).push_back(Message::Data(4)).unwrap();
+    S::upstream(&mut b).close().unwrap();
+    let _ = S::poll(&mut b);
+    let _ = b.work.poll(&mut cx);
+    assert!(b.output.poll(&mut cx).unwrap_err().is_closed());
+    assert_eq!(b.received(), data::<S>([4]));
+}
+
+#[test]
+fn right_closes_during_lefts_flush() {
+    the_other_side_closes_during_flushing::<Left>();
+}
+
+#[test]
+fn left_closes_during_rights_flush() {
+    the_other_side_closes_during_flushing::<Right>();
+}
+
 #[test]
 fn a_shared_budget_retries_both_held_sides() {
     let mut b = Biunion::with(|wakers| Bounded::new(Room::Shared(1), wakers));

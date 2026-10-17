@@ -1,13 +1,15 @@
 //! Merges: a node fed by several sources ends with its last, and every source's flushed data
 //! arrives, whatever order they close in.
 
-use super::mock::{Hold, IoThread, Msg, Signal, drain, drain_edge, hold};
+use super::mock::{Hold, IoThread, Msg, Signal, drain, drain_edge, hold, run_poll};
+use crate::edge::sync::tests::join_within;
 use crate::error::Error;
 use crate::message::Message;
 use crate::poll;
 use crate::sync::Receiver;
 use crate::work;
 use crate::{Closeable, Pushable, Pushes, Reads, Via, Writes};
+use std::thread;
 
 /// A source's segment: its values, then a Flush named for it.
 struct Source {
@@ -66,12 +68,12 @@ fn a_work_merge_delivers_every_flushed_source() -> Result<(), Error> {
     let mut into_b = b.writer()?;
     let merge = a.via(work::Line::of(Hold::new()))?;
     let merge = b.via(merge)?;
-    let mut reader = merge.reader()?;
+    let reader = merge.reader()?;
 
     send(&mut into_a, &A)?;
     send(&mut into_b, &B)?;
 
-    delivered_both(&drain(&mut reader)?);
+    delivered_both(&drain(reader)?);
     Ok(())
 }
 
@@ -81,12 +83,31 @@ fn a_work_merge_outlives_its_first_closed_writer() -> Result<(), Error> {
     let node = work::Line::of(Hold::new());
     let mut a = node.writer()?;
     let mut b = node.writer()?;
-    let mut reader = node.reader()?;
+    let reader = node.reader()?;
 
     send(&mut a, &A)?;
     send(&mut b, &B)?;
 
-    delivered_both(&drain(&mut reader)?);
+    delivered_both(&drain(reader)?);
+    Ok(())
+}
+
+/// Both sources push and close from their own threads while the merge runs: whatever the
+/// interleaving, both flushed segments arrive.
+#[test]
+fn a_work_merge_delivers_racing_sources() -> Result<(), Error> {
+    for _ in 0..200 {
+        let node = work::Line::of(Hold::new());
+        let mut a = node.writer()?;
+        let mut b = node.writer()?;
+        let reader = node.reader()?;
+        let a = thread::spawn(move || send(&mut a, &A));
+        let b = thread::spawn(move || send(&mut b, &B));
+        let out = drain(reader)?;
+        join_within(a)?;
+        join_within(b)?;
+        delivered_both(&out);
+    }
     Ok(())
 }
 
@@ -106,8 +127,8 @@ fn a_poll_merge_delivers_every_flushed_source() -> Result<(), Error> {
 
     send(&mut into_a, &A)?;
     send(&mut into_b, &B)?;
-    thread.run()?;
+    run_poll(thread)?;
 
-    delivered_both(&drain_edge(&output)?);
+    delivered_both(&drain_edge(output)?);
     Ok(())
 }

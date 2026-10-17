@@ -9,8 +9,8 @@ use crate::{At, Closeable, DefaultThread, Message, Pushable, Tees, Workable, Wri
 fn work_bifurcation_flush_then_close() -> Result<(), Error> {
     let mut node = work::Bifurcation::of(HoldBifurcation::new());
     let mut writer = node.writer()?;
-    let mut left = node.at_mut::<bifurcation::Left>().tee()?;
-    let mut right = node.at_mut::<bifurcation::Right>().tee()?;
+    let left = node.at_mut::<bifurcation::Left>().tee()?;
+    let right = node.at_mut::<bifurcation::Right>().tee()?;
 
     writer.push(Message::Data(1))?;
     writer.push(Message::Flush("f".into()))?;
@@ -19,11 +19,11 @@ fn work_bifurcation_flush_then_close() -> Result<(), Error> {
     let mut workable: Box<dyn Workable<ThreadId = DefaultThread>> = Box::new(node);
     drive_work(&mut *workable)?;
     assert_eq!(
-        drain(&mut left)?,
+        drain(left)?,
         vec![Message::Data(1), Message::Flush("f".into())]
     );
     assert_eq!(
-        drain(&mut right)?,
+        drain(right)?,
         vec![Message::Data(1 + RIGHT), Message::Flush("f".into())]
     );
     Ok(())

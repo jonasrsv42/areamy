@@ -1,13 +1,16 @@
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
+use crate::edge::sync::tests::join_within;
 use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
-use crate::poll::{BiunionWakers, Context, LineWakers};
+use crate::poll::{self, BiunionWakers, Context, LineWakers};
 use crate::sync::Receiver;
+use crate::thread::ThreadId;
 use crate::{
     Accept, DefaultThread, Message, Pullable, Trackable, Workable, bifurcation, biunion, closed,
     reader,
 };
 use std::collections::VecDeque;
+use std::thread;
 
 pub type Signal = Trackable<&'static str>;
 pub type Msg = Message<usize, Signal>;
@@ -330,14 +333,25 @@ fn collect(mut next: impl FnMut() -> Result<Msg, Error>) -> Result<Vec<Msg>, Err
     }
 }
 
+// Each helper below runs on its own thread under `join_within`: a close or wake regression
+// fails the test within the timeout instead of hanging the suite.
+
 /// Read until Closed, collecting what came out.
-pub fn drain(
-    reader: &mut impl reader::Reader<DataType = usize, SignalType = Signal>,
-) -> Result<Vec<Msg>, Error> {
-    collect(|| reader.read())
+pub fn drain<R>(mut reader: R) -> Result<Vec<Msg>, Error>
+where
+    R: reader::Reader<DataType = usize, SignalType = Signal> + Send + 'static,
+{
+    join_within(thread::spawn(move || collect(|| reader.read())))
 }
 
 /// Read a raw edge until Closed, collecting what came out.
-pub fn drain_edge(receiver: &Receiver<usize, Signal>) -> Result<Vec<Msg>, Error> {
-    collect(|| receiver.read_front())
+pub fn drain_edge(receiver: Receiver<usize, Signal>) -> Result<Vec<Msg>, Error> {
+    join_within(thread::spawn(move || collect(|| receiver.read_front())))
+}
+
+/// Run a poll thread until its graph closes.
+pub fn run_poll<ThreadIdType: ThreadId>(
+    thread: poll::Thread<'static, ThreadIdType>,
+) -> Result<(), Error> {
+    join_within(thread::spawn(move || thread.run()))
 }

@@ -292,6 +292,33 @@ fn sender_close_leaves_other_producers_open() {
     assert!(is_closed(rx.read_front().map(drop)));
 }
 
+/// Close, clone-after-close, close again and drop, across threads: every producer counts once,
+/// and the edge closes exactly when the last is done.
+#[test]
+fn release_accounting_holds_under_races() {
+    for _ in 0..500 {
+        let rx = Receiver::<usize, TestSignal>::new();
+        let mut a = rx.sender();
+        let b = rx.sender();
+        let mut c = a.clone();
+        thread::scope(|s| {
+            s.spawn(move || {
+                a.close().unwrap();
+                let d = a.clone();
+                a.close().unwrap();
+                drop(d);
+            });
+            s.spawn(move || drop(b));
+            s.spawn(move || {
+                c.close().unwrap();
+                drop(c);
+            });
+        });
+        assert!(is_closed(rx.read_front().map(drop)));
+        assert_eq!(rx.state().unwrap(), State::Exhausted);
+    }
+}
+
 /// Pushes through a closed handle fail, and its clones are done too: they can't reopen it.
 #[test]
 fn a_closed_sender_and_its_clones_are_done() {

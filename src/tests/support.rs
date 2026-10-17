@@ -19,6 +19,11 @@ pub(crate) struct Deadline {
 
 /// Arm a watchdog for the calling test. It can't stop a hung test, only end the process, so on
 /// expiry it names the test (libtest names each test's thread after it) and aborts.
+///
+/// Every test that blocks or waits on another thread takes one: `let _deadline =
+/// deadline(DEADLINE);`. Under a mutant that jams every edge, the first such test to start
+/// (libtest starts them in name order) aborting is what turns a mutation-sweep timeout into a
+/// catch.
 pub(crate) fn deadline(limit: Duration) -> Deadline {
     let (disarm, armed) = mpsc::channel::<()>();
     let test = thread::current()

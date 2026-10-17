@@ -2,6 +2,7 @@
 
 use super::node::Node;
 use super::options::Options;
+use super::types::PollBiunion;
 use crate::biunion::{Left, Right};
 use crate::edge::sync::Receiver;
 use crate::error::Error;
@@ -63,7 +64,7 @@ impl AsyncParent<'static> for MockParent {
 /// Macro to create a deferred biunion node with correct type annotation.
 macro_rules! deferred {
     ($alloc:expr) => {
-        Node::<_, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::deferred(
+        Node::<_, _, _, PollBiunion<usize, usize, usize, Trackable<&'static str>, TestThread, _>>::deferred(
             mock_factory(),
             $alloc,
         )
@@ -339,15 +340,15 @@ fn delivered_in_one_round(budget: Budget) -> usize {
         budget,
         ..Options::default()
     };
-    let mut node =
-        Node::<_, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
-            mock_factory(),
-            &mut alloc,
-            options,
-        )
-        .input::<Left>()
-        .input::<Right>()
-        .output();
+    let mut node = Node::<
+        _,
+        _,
+        _,
+        PollBiunion<usize, usize, usize, Trackable<&'static str>, TestThread, _>,
+    >::with_options(mock_factory(), &mut alloc, options)
+    .input::<Left>()
+    .input::<Right>()
+    .output();
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
     let mut left: Box<WorkSink> = Get::<WorkSink, Left>::get(&node).unwrap();
@@ -392,12 +393,12 @@ fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
         budget,
         ..Options::default()
     };
-    let node =
-        Node::<_, _, _, usize, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
-            mock_factory(),
-            &mut alloc,
-            options,
-        );
+    let node = Node::<
+        _,
+        _,
+        _,
+        PollBiunion<usize, usize, usize, Trackable<&'static str>, TestThread, _>,
+    >::with_options(mock_factory(), &mut alloc, options);
     let node = PushingParent.via(node.at::<Left>()).unwrap();
     let mut node = MockParent.via(node.at::<Right>()).unwrap().output();
     let downstream = Receiver::new();

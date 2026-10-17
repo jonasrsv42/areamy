@@ -2,12 +2,10 @@
 //! `thread.builder().biunion()`.
 
 use super::node::Node;
-use crate::node::biunion::poll::factory::BiunionRoutineFactory;
-use crate::node::biunion::poll::routine::BiunionRoutine;
+use super::types::{PollBiunion, Types};
 use crate::node::biunion::{Inputs, Side};
 use crate::poll::edge::Deferred;
 use crate::poll::{Budget, Builder, Thread};
-use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::num::NonZeroUsize;
 
@@ -66,17 +64,11 @@ impl<'thread, 'params, ThreadIdType: ThreadId> BiunionBuilder<'thread, 'params, 
         Deferred,
         Deferred,
         Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
+        PollBiunion<Left, Right, Out, SignalType, ThreadIdType, FactoryType>,
     >
     where
-        SignalType: Origin,
-        FactoryType: BiunionRoutineFactory<'params>,
-        FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+        PollBiunion<Left, Right, Out, SignalType, ThreadIdType, FactoryType>:
+            Types<'params, Factory = FactoryType>,
     {
         Node::with_options(factory, self.thread.waker_allocator(), self.options)
     }

@@ -1,6 +1,7 @@
 //! GraphBuilder and AsyncParent impls for all biunion edge combinations.
 
 use super::node::Node;
+use super::types::Types;
 use crate::edge::rotate::Rotate;
 use crate::edge::single::Single;
 use crate::error::Error;
@@ -8,47 +9,27 @@ use crate::graph::Receivable;
 use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::{BiunionRoutineFactory, BiunionWakers};
 use crate::node::biunion::poll::node;
-use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::edge::{self, Async, Deferred, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
 use crate::poll::input::Ready;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::poll::{Budget, Phase};
-use crate::signal::Origin;
-use crate::thread::ThreadId;
 
 /// Add a biunion's four phases to `graph`, reading `inputs` and draining into `output`. Its work
 /// and output slots are allocated here, after any parents of `inputs` were built.
-fn assemble<
-    'params,
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    FactoryType,
-    LeftTargetType,
-    RightTargetType,
-    OutputType,
->(
-    factory: FactoryType,
+fn assemble<'params, T, LeftTargetType, RightTargetType, OutputType>(
+    factory: T::Factory,
     inputs: Inputs<Ready<LeftTargetType>, Ready<RightTargetType>>,
     output: OutputType,
     budget: Budget,
-    mut graph: Graph<'params, ThreadIdType>,
-) -> Graph<'params, ThreadIdType>
+    mut graph: Graph<'params, T::ThreadId>,
+) -> Graph<'params, T::ThreadId>
 where
-    Left: 'static,
-    Right: 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
-    LeftTargetType: Receivable<DataType = Left, SignalType = SignalType> + 'params,
-    RightTargetType: Receivable<DataType = Right, SignalType = SignalType> + 'params,
-    OutputType: Rotate<DataType = Out, SignalType = SignalType> + 'params,
+    T: Types<'params>,
+    LeftTargetType: Receivable<DataType = T::Left, SignalType = T::Signal> + 'params,
+    RightTargetType: Receivable<DataType = T::Right, SignalType = T::Signal> + 'params,
+    OutputType: Rotate<DataType = T::Out, SignalType = T::Signal> + 'params,
 {
     let work = graph.allocator.next();
     let output_slot = graph.allocator.next();
@@ -106,27 +87,22 @@ where
 // ============================================================
 
 /// Sync, Sync → Sync output
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<'params, Sync, Sync, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Sync, Sync, T>
 where
-    Left: Send + std::marker::Sync + 'static,
-    Right: Send + std::marker::Sync + 'static,
-    Out: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Left: Send + std::marker::Sync,
+    T::Right: Send + std::marker::Sync,
+    T::Out: Clone + Send + std::marker::Sync,
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let left = self.input.left.ready();
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
@@ -137,28 +113,22 @@ where
 }
 
 /// Sync, Sync → Deferred output (sink)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<'params, Sync, Sync, Deferred, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Sync, Deferred, T>
 where
-    Left: Send + std::marker::Sync + 'static,
-    Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Left: Send + std::marker::Sync,
+    T::Right: Send + std::marker::Sync,
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let left = self.input.left.ready();
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,
@@ -169,32 +139,27 @@ where
 }
 
 /// Sync, Sync → Deferred output (consumed as parent)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
-    for Node<'params, Sync, Sync, Deferred, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, T> AsyncParent<'params> for Node<'params, Sync, Sync, Deferred, T>
 where
-    Left: Send + std::marker::Sync + 'static,
-    Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Left: Send + std::marker::Sync,
+    T::Right: Send + std::marker::Sync,
 {
-    type OutType = Out;
-    type SignalType = SignalType;
-    type ThreadIdType = ThreadIdType;
+    type OutType = T::Out;
+    type SignalType = T::Signal;
+    type ThreadIdType = T::ThreadId;
 
     fn build(
         self: Box<Self>,
-        edge: edge::Sender<Out, SignalType>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        edge: edge::Sender<T::Out, T::Signal>,
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let left = self.input.left.ready();
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,
@@ -209,22 +174,16 @@ where
 // ============================================================
 
 /// Async, Sync → Sync output
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<'params, Async, Sync, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Async, Sync, Sync, T>
 where
-    Left: 'static,
-    Right: Send + std::marker::Sync + 'static,
-    Out: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Right: Send + std::marker::Sync,
+    T::Out: Clone + Send + std::marker::Sync,
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let (left, graph) =
             self.input
@@ -232,7 +191,7 @@ where
                 .ready(self.alloc.left, self.options.bound.left, graph)?;
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
@@ -243,33 +202,15 @@ where
 }
 
 /// Async, Sync → Deferred output (sink)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Async,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Async, Sync, Deferred, T>
 where
-    Left: 'static,
-    Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Right: Send + std::marker::Sync,
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let (left, graph) =
             self.input
@@ -278,7 +219,7 @@ where
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,
@@ -289,37 +230,20 @@ where
 }
 
 /// Async, Sync → Deferred output (consumed as parent)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
-    for Node<
-        'params,
-        Async,
-        Sync,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, T> AsyncParent<'params> for Node<'params, Async, Sync, Deferred, T>
 where
-    Left: 'static,
-    Right: Send + std::marker::Sync + 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Right: Send + std::marker::Sync,
 {
-    type OutType = Out;
-    type SignalType = SignalType;
-    type ThreadIdType = ThreadIdType;
+    type OutType = T::Out;
+    type SignalType = T::Signal;
+    type ThreadIdType = T::ThreadId;
 
     fn build(
         self: Box<Self>,
-        edge: edge::Sender<Out, SignalType>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        edge: edge::Sender<T::Out, T::Signal>,
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let (left, graph) =
             self.input
@@ -328,7 +252,7 @@ where
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,
@@ -343,22 +267,16 @@ where
 // ============================================================
 
 /// Sync, Async → Sync output
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<'params, Sync, Async, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Async, Sync, T>
 where
-    Left: Send + std::marker::Sync + 'static,
-    Right: 'static,
-    Out: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Left: Send + std::marker::Sync,
+    T::Out: Clone + Send + std::marker::Sync,
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let left = self.input.left.ready();
         let (right, graph) =
@@ -366,7 +284,7 @@ where
                 .right
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
@@ -377,33 +295,15 @@ where
 }
 
 /// Sync, Async → Deferred output (sink)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Sync,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Sync, Async, Deferred, T>
 where
-    Left: Send + std::marker::Sync + 'static,
-    Right: 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Left: Send + std::marker::Sync,
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let left = self.input.left.ready();
         let (right, graph) =
@@ -412,7 +312,7 @@ where
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,
@@ -423,37 +323,20 @@ where
 }
 
 /// Sync, Async → Deferred output (consumed as parent)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
-    for Node<
-        'params,
-        Sync,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, T> AsyncParent<'params> for Node<'params, Sync, Async, Deferred, T>
 where
-    Left: Send + std::marker::Sync + 'static,
-    Right: 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Left: Send + std::marker::Sync,
 {
-    type OutType = Out;
-    type SignalType = SignalType;
-    type ThreadIdType = ThreadIdType;
+    type OutType = T::Out;
+    type SignalType = T::Signal;
+    type ThreadIdType = T::ThreadId;
 
     fn build(
         self: Box<Self>,
-        edge: edge::Sender<Out, SignalType>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        edge: edge::Sender<T::Out, T::Signal>,
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let left = self.input.left.ready();
         let (right, graph) =
@@ -462,7 +345,7 @@ where
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,
@@ -477,22 +360,15 @@ where
 // ============================================================
 
 /// Async, Async → Sync output
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<'params, Async, Async, Sync, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
+impl<'params, T> GraphBuilder<'params, T::ThreadId> for Node<'params, Async, Async, Sync, T>
 where
-    Left: 'static,
-    Right: 'static,
-    Out: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+    T: Types<'params>,
+    T::Out: Clone + Send + std::marker::Sync,
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let (left, graph) =
             self.input
@@ -503,7 +379,7 @@ where
                 .right
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
@@ -514,33 +390,13 @@ where
 }
 
 /// Async, Async → Deferred output (sink)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    GraphBuilder<'params, ThreadIdType>
-    for Node<
-        'params,
-        Async,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Left: 'static,
-    Right: 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
+impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
+    for Node<'params, Async, Async, Deferred, T>
 {
     fn build(
         self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let (left, graph) =
             self.input
@@ -552,7 +408,7 @@ where
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,
@@ -563,37 +419,16 @@ where
 }
 
 /// Async, Async → Deferred output (consumed as parent)
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType> AsyncParent<'params>
-    for Node<
-        'params,
-        Async,
-        Async,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    Left: 'static,
-    Right: 'static,
-    Out: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out> + 'params,
-{
-    type OutType = Out;
-    type SignalType = SignalType;
-    type ThreadIdType = ThreadIdType;
+impl<'params, T: Types<'params>> AsyncParent<'params> for Node<'params, Async, Async, Deferred, T> {
+    type OutType = T::Out;
+    type SignalType = T::Signal;
+    type ThreadIdType = T::ThreadId;
 
     fn build(
         self: Box<Self>,
-        edge: edge::Sender<Out, SignalType>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
+        edge: edge::Sender<T::Out, T::Signal>,
+        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
+    ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let (left, graph) =
             self.input
@@ -605,7 +440,7 @@ where
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble(
+        Ok(assemble::<T, _, _, _>(
             self.factory,
             inputs,
             output,

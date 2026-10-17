@@ -1,11 +1,9 @@
 //! [LineBuilder] sets a poll line's options before it exists, from `thread.builder().line()`.
 
 use super::node::Node;
-use crate::node::line::poll::factory::LineRoutineFactory;
-use crate::node::line::poll::routine::LineRoutine;
+use super::types::{PollLine, Types};
 use crate::poll::edge::Deferred;
 use crate::poll::{Budget, Builder, Thread};
-use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::num::NonZeroUsize;
 
@@ -58,11 +56,15 @@ impl<'thread, 'params, ThreadIdType: ThreadId> LineBuilder<'thread, 'params, Thr
     pub fn build<InType, OutType, SignalType, FactoryType>(
         self,
         factory: FactoryType,
-    ) -> Node<'params, Deferred, Deferred, InType, OutType, SignalType, ThreadIdType, FactoryType>
+    ) -> Node<
+        'params,
+        Deferred,
+        Deferred,
+        PollLine<InType, OutType, SignalType, ThreadIdType, FactoryType>,
+    >
     where
-        SignalType: Origin,
-        FactoryType: LineRoutineFactory<'params>,
-        FactoryType::Routine: LineRoutine<InType, OutType>,
+        PollLine<InType, OutType, SignalType, ThreadIdType, FactoryType>:
+            Types<'params, Factory = FactoryType>,
     {
         Node::with_options(factory, self.thread.waker_allocator(), self.options)
     }

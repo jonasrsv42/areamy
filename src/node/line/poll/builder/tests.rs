@@ -2,6 +2,7 @@
 
 use super::node::Node;
 use super::options::Options;
+use super::types::PollLine;
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::graph::{Get, TryPushable};
@@ -57,7 +58,7 @@ impl AsyncParent<'static> for MockParent {
 
 macro_rules! deferred {
     ($alloc:expr) => {
-        Node::<_, _, usize, usize, Trackable<&'static str>, TestThread, _>::deferred(
+        Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::deferred(
             mock_factory(),
             $alloc,
         )
@@ -205,7 +206,7 @@ fn delivered_in_one_round(budget: Budget) -> usize {
         budget,
     };
     let mut node =
-        Node::<_, _, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
+        Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::with_options(
             mock_factory(),
             &mut alloc,
             options,
@@ -260,11 +261,7 @@ fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
         .via(Node::<
             _,
             _,
-            usize,
-            usize,
-            Trackable<&'static str>,
-            TestThread,
-            _,
+            PollLine<usize, usize, Trackable<&'static str>, TestThread, _>,
         >::with_options(mock_factory(), &mut alloc, options))
         .unwrap()
         .output();
@@ -325,7 +322,7 @@ fn options_survive_output_first_and_a_sink() {
 
     let (mut alloc, to_local) = make_allocators();
     let mut node =
-        Node::<_, _, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
+        Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::with_options(
             mock_factory(),
             &mut alloc,
             one,
@@ -340,13 +337,14 @@ fn options_survive_output_first_and_a_sink() {
 
     let (mut alloc, to_local) = make_allocators();
     let downstream = Receiver::new();
-    let node = Node::<_, _, usize, usize, Trackable<&'static str>, TestThread, _>::with_options(
-        mock_factory(),
-        &mut alloc,
-        one,
-    )
-    .input()
-    .sink(downstream.sender());
+    let node =
+        Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::with_options(
+            mock_factory(),
+            &mut alloc,
+            one,
+        )
+        .input()
+        .sink(downstream.sender());
     let upstream = Get::get(&node).unwrap();
     one_round(node, upstream, to_local(alloc));
     assert_eq!(downstream.len().unwrap(), 1);

@@ -12,89 +12,50 @@
 
 use super::options::Options;
 use super::traits::{ResolveInput, ResolveOutput};
+use super::types::{PollBiunion, Types};
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::graph::{Add, Get, Outputs};
 use crate::node::biunion;
 use crate::node::biunion::Inputs;
-use crate::node::biunion::poll::factory::BiunionRoutineFactory;
-use crate::node::biunion::poll::routine::BiunionRoutine;
 use crate::poll::Sink;
 use crate::poll::edge::{Deferred, Edge, Null, Sync};
 use crate::poll::input;
 use crate::poll::thread::Thread;
 use crate::poll::wakers::WakerAllocator;
-use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::marker::PhantomData;
 
 /// Builder input edges grouped together.
-pub struct BuilderInput<
-    'params,
-    LeftEdge: Edge,
-    RightEdge: Edge,
-    Left,
-    Right,
-    SignalType: Origin,
-    ThreadIdType: ThreadId,
-> {
-    pub left: LeftEdge::Input<'params, Left, SignalType, ThreadIdType>,
-    pub right: RightEdge::Input<'params, Right, SignalType, ThreadIdType>,
+pub struct BuilderInput<'params, LeftEdge: Edge, RightEdge: Edge, T: Types<'params>> {
+    pub left: LeftEdge::Input<'params, T::Left, T::Signal, T::ThreadId>,
+    pub right: RightEdge::Input<'params, T::Right, T::Signal, T::ThreadId>,
 }
 
 /// Biunion node builder.
 #[must_use = "a node does nothing until owned (`via`) or added to a thread"]
-pub struct Node<
-    'params,
-    LeftEdge,
-    RightEdge,
-    OutEdge,
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    FactoryType,
-> where
-    LeftEdge: Edge,
-    RightEdge: Edge,
-    OutEdge: Edge,
-    SignalType: Origin,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    pub(crate) alloc: Inputs<LeftEdge::Alloc, RightEdge::Alloc>,
-    pub(crate) factory: FactoryType,
-    pub(crate) input:
-        BuilderInput<'params, LeftEdge, RightEdge, Left, Right, SignalType, ThreadIdType>,
-    pub(crate) output: OutEdge::Output<'params, Out, SignalType>,
-    pub(crate) options: Options,
-    pub(crate) _phantom: PhantomData<(fn() -> Out, fn() -> Left, fn() -> Right, ThreadIdType)>,
-}
-
-impl<'params, LeftEdge, RightEdge, OutEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Connection
-    for Node<
-        'params,
-        LeftEdge,
-        RightEdge,
-        OutEdge,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+pub struct Node<'params, LeftEdge, RightEdge, OutEdge, T>
 where
     LeftEdge: Edge,
     RightEdge: Edge,
     OutEdge: Edge,
-    SignalType: Origin,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    T: Types<'params>,
+{
+    pub(crate) alloc: Inputs<LeftEdge::Alloc, RightEdge::Alloc>,
+    pub(crate) factory: T::Factory,
+    pub(crate) input: BuilderInput<'params, LeftEdge, RightEdge, T>,
+    pub(crate) output: OutEdge::Output<'params, T::Out, T::Signal>,
+    pub(crate) options: Options,
+    pub(crate) _phantom: PhantomData<fn() -> T>,
+}
+
+impl<'params, LeftEdge, RightEdge, OutEdge, T> Connection
+    for Node<'params, LeftEdge, RightEdge, OutEdge, T>
+where
+    LeftEdge: Edge,
+    RightEdge: Edge,
+    OutEdge: Edge,
+    T: Types<'params>,
 {
 }
 
@@ -117,48 +78,24 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
         Deferred,
         Deferred,
         Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
+        PollBiunion<Left, Right, Out, SignalType, ThreadIdType, FactoryType>,
     >
     where
-        SignalType: Origin,
-        FactoryType: BiunionRoutineFactory<'params>,
-        FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+        PollBiunion<Left, Right, Out, SignalType, ThreadIdType, FactoryType>:
+            Types<'params, Factory = FactoryType>,
     {
         Node::deferred(factory, self.waker_allocator())
     }
 }
 
-impl<'params, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Node<
-        'params,
-        Deferred,
-        Deferred,
-        Deferred,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
-where
-    SignalType: Origin,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-{
-    pub(crate) fn deferred(factory: FactoryType, alloc: &mut WakerAllocator) -> Self {
+impl<'params, T: Types<'params>> Node<'params, Deferred, Deferred, Deferred, T> {
+    pub(crate) fn deferred(factory: T::Factory, alloc: &mut WakerAllocator) -> Self {
         Self::with_options(factory, alloc, Options::default())
     }
 
     /// A deferred node with `options`, set before any edge exists.
     pub(crate) fn with_options(
-        factory: FactoryType,
+        factory: T::Factory,
         alloc: &mut WakerAllocator,
         options: Options,
     ) -> Self {
@@ -184,27 +121,12 @@ where
 // .input::<Side>() / .output() — Sync, dispatched via ResolveInput / ResolveOutput
 // ============================================================
 
-impl<'params, LeftEdge, RightEdge, OutEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Node<
-        'params,
-        LeftEdge,
-        RightEdge,
-        OutEdge,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, LeftEdge, RightEdge, OutEdge, T> Node<'params, LeftEdge, RightEdge, OutEdge, T>
 where
     LeftEdge: Edge,
     RightEdge: Edge,
     OutEdge: Edge,
-    SignalType: Origin,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    T: Types<'params>,
 {
     /// Resolve side `S`'s input to [`Sync`]: a sync→poll bridge woken by its reserved slot.
     pub fn input<S>(self) -> <S as ResolveInput<Sync, Self>>::Resolved
@@ -227,80 +149,30 @@ where
 // Get<_, Left/Right> — Sync inputs with multiplicity
 // ============================================================
 
-impl<
-    'params,
-    ConnectionType,
-    RightEdge,
-    OutEdge,
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    FactoryType,
-> Get<ConnectionType, biunion::Left>
-    for Node<
-        'params,
-        Sync,
-        RightEdge,
-        OutEdge,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, ConnectionType, RightEdge, OutEdge, T> Get<ConnectionType, biunion::Left>
+    for Node<'params, Sync, RightEdge, OutEdge, T>
 where
     ConnectionType: Connection + ?Sized,
     RightEdge: Edge,
     OutEdge: Edge,
-    Left: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    input::sync::Receiver<Left, SignalType>: Get<ConnectionType>,
+    T: Types<'params>,
+    T::Left: Send + std::marker::Sync,
+    input::sync::Receiver<T::Left, T::Signal>: Get<ConnectionType>,
 {
     fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input.left.edge)
     }
 }
 
-impl<
-    'params,
-    ConnectionType,
-    LeftEdge,
-    OutEdge,
-    Left,
-    Right,
-    Out,
-    SignalType,
-    ThreadIdType,
-    FactoryType,
-> Get<ConnectionType, biunion::Right>
-    for Node<
-        'params,
-        LeftEdge,
-        Sync,
-        OutEdge,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, ConnectionType, LeftEdge, OutEdge, T> Get<ConnectionType, biunion::Right>
+    for Node<'params, LeftEdge, Sync, OutEdge, T>
 where
     ConnectionType: Connection + ?Sized,
     LeftEdge: Edge,
     OutEdge: Edge,
-    Right: Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
-    input::sync::Receiver<Right, SignalType>: Get<ConnectionType>,
+    T: Types<'params>,
+    T::Right: Send + std::marker::Sync,
+    input::sync::Receiver<T::Right, T::Signal>: Get<ConnectionType>,
 {
     fn get(&self) -> Result<Box<ConnectionType>, Error> {
         Get::get(&self.input.right.edge)
@@ -311,33 +183,22 @@ where
 // Add<dyn Sink> — Sync output
 // ============================================================
 
-impl<'params, LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType>
-    Add<dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params>
-    for Node<
-        'params,
-        LeftEdge,
-        RightEdge,
-        Sync,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, LeftEdge, RightEdge, T>
+    Add<dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + std::marker::Sync + 'params>
+    for Node<'params, LeftEdge, RightEdge, Sync, T>
 where
     LeftEdge: Edge,
     RightEdge: Edge,
-    Out: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    T: Types<'params>,
+    T::Out: Clone + Send + std::marker::Sync,
 {
     fn add(
         &mut self,
         connection: Box<
-            dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params,
+            dyn Sink<DataType = T::Out, SignalType = T::Signal>
+                + Send
+                + std::marker::Sync
+                + 'params,
         >,
     ) -> Result<(), Error> {
         self.output.add(connection);
@@ -345,28 +206,13 @@ where
     }
 }
 
-impl<'params, LeftEdge, RightEdge, Left, Right, Out, SignalType, ThreadIdType, FactoryType> Outputs
-    for Node<
-        'params,
-        LeftEdge,
-        RightEdge,
-        Sync,
-        Left,
-        Right,
-        Out,
-        SignalType,
-        ThreadIdType,
-        FactoryType,
-    >
+impl<'params, LeftEdge, RightEdge, T> Outputs for Node<'params, LeftEdge, RightEdge, Sync, T>
 where
     LeftEdge: Edge,
     RightEdge: Edge,
-    Out: Clone + Send + std::marker::Sync + 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: BiunionRoutineFactory<'params>,
-    FactoryType::Routine: BiunionRoutine<Left, Right, Out>,
+    T: Types<'params>,
+    T::Out: Clone + Send + std::marker::Sync,
 {
     type Sink =
-        dyn Sink<DataType = Out, SignalType = SignalType> + Send + std::marker::Sync + 'params;
+        dyn Sink<DataType = T::Out, SignalType = T::Signal> + Send + std::marker::Sync + 'params;
 }

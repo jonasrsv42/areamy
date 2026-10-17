@@ -1,0 +1,24 @@
+# cargo-mutants: `cargo mutants -j 4 --timeout 30`. Excluded below: mutants no test can kill,
+# each with why. A new miss is a test gap or a new entry here, never left unexplained.
+exclude_re = [
+    # Logging only: "blocked" / "parked" diagnostics, nothing reads them back.
+    'src/edge/deadlock\.rs:.*replace (parked|resumed|log) with \(\)',
+    'src/edge/deadlock\.rs:.*Drop for Unblocked',
+    'Emit<.*>::log',
+    # Feeds only `Emit::log`.
+    'impl Rotate for Fanout<EdgeType>>::suspended',
+    # Already returns the default.
+    'for (ThreadStream|poll::Thread)<.*>>::spawn_options',
+    # `BinaryHeap` orders by `Ord`; `eq` is never called.
+    'impl PartialEq for DeadlineEntry>::eq',
+    # A leak: freed memory isn't observable without counting allocations.
+    'impl Drop for VyukovQueue>::drop',
+    # `rotate_left(1)` on one element is a no-op.
+    'replace > with >= in work_each',
+    # `producers_waiting >= 0` only adds a spurious `notify`.
+    'replace > with >= in Receiver<DataType, SignalType>::drained',
+    # `wait_while` returns at once on an edge with room.
+    'replace && with \|\| in Sender<DataType, SignalType>::push_back',
+    # The only non-Closed error an input edge returns is a poisoned lock.
+    'replace match guard e\.is_closed\(\) with true in Feed<.*>::recv',
+]

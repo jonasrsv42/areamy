@@ -1,4 +1,4 @@
-use crate::edge::policy::{Policied, PolicyEdge, SignalPolicy};
+use crate::edge::policy::{FollowData, FollowsData};
 use crate::graph;
 use crate::graph::{BoxAs, Pushable};
 use crate::signal::Origin;
@@ -12,14 +12,14 @@ impl<T: graph::Sink + Pushable> Sink for T {}
 pub type DynSink<'params, DataType, SignalType> =
     Box<dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params>;
 
-impl<'params, DataType, SignalType> Policied
+impl<'params, DataType, SignalType> FollowsData
     for dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params
 where
     DataType: 'params,
     SignalType: Origin + 'params,
 {
-    fn with_policy(this: Box<Self>, policy: SignalPolicy) -> Box<Self> {
-        Box::new(PolicyEdge::new(this, policy))
+    fn follow_data(this: Box<Self>) -> Box<Self> {
+        Box::new(FollowData::new(this))
     }
 }
 

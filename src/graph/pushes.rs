@@ -9,7 +9,7 @@ use crate::graph::{Get, Outlet, Outputs};
 /// [crate::At::at_ref] (downstream). The data type is an optional annotation:
 /// `up.pushes::<Frame>(&down)?`.
 ///
-/// Signals follow data ([crate::SignalPolicy::FollowData]): a push can be a back-edge, where
+/// Signals follow data ([crate::edge::policy::FollowData]): a push can be a back-edge, where
 /// forwarding every signal would loop.
 ///
 /// ```ignore

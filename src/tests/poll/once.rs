@@ -84,9 +84,9 @@ fn is_exhausted(errors: &[Error]) -> bool {
     matches!(errors, [e] if e.is::<once::Exhausted>())
 }
 
-/// Data then a Flush: the edges forward a signal only behind data ([SignalPolicy::FollowData]).
+/// Data then a Flush: the edges forward a signal only behind data ([FollowData]).
 ///
-/// [SignalPolicy::FollowData]: crate::edge::policy::SignalPolicy::FollowData
+/// [FollowData]: crate::edge::policy::FollowData
 fn segment(writer: &mut Writer<'_, usize, Signal>, values: &[usize]) {
     for value in values {
         writer.push(Message::Data(*value)).unwrap();

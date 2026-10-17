@@ -25,7 +25,7 @@ where
     /// processed (output, then the Flush, then close) before any node
     /// sees [crate::error::ErrorKind::Closed]. Close without a Flush
     /// keeps nothing. Edges from [crate::Pushes] use
-    /// [crate::edge::policy::SignalPolicy::FollowData] and drop a signal no data
+    /// [crate::edge::policy::FollowData] and drop a signal no data
     /// preceded. Pinned by `tests::close`.
     Flush(SignalType),
     /// Passed along as-is, never enters a routine.

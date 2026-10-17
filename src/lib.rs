@@ -26,7 +26,6 @@ pub mod writer;
 
 pub use typing::{Combine, Composable, Contains, Decomposable, Generates};
 
-pub use edge::policy::{PolicyEdge, SignalPolicy};
 pub use edge::sync;
 pub use graph::marker::{self, Connection};
 pub use graph::{At, Pushes, Via};

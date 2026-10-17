@@ -1,6 +1,5 @@
 //! Example nodes wiring the connection traits together.
 
-use crate::edge::policy::{PolicyEdge, SignalPolicy};
 use crate::edge::sync::Receiver;
 use crate::error::Error;
 use crate::fatal;
@@ -278,7 +277,7 @@ where
         let sink = Get::<
             dyn Sink<DataType = usize, SignalType = Trackable<&'static str>> + Send + Sync,
         >::get(&self)?;
-        let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
+        let upstream = upstream.feed(sink)?;
         Add::add(&mut self, upstream)?;
         Ok(self)
     }

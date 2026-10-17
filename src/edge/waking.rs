@@ -93,7 +93,8 @@ where
         Ok(())
     }
 
-    pub fn close(&self) -> Result<(), Error> {
+    /// This producer is done; the edge closes once every producer is. Idempotent.
+    pub fn close(&mut self) -> Result<(), Error> {
         self.inner.close()?;
         self.waker.0.wake_by_ref();
         Ok(())

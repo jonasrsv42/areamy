@@ -1,4 +1,5 @@
-//! Biunion nodes: the closing input's Flush survives, the other input does not.
+//! Biunion nodes: a side's close leaves the other running, the node ends with its last side, and
+//! each side's flushed data survives, whichever closes first.
 
 use super::mock::{
     HoldBiunion, IoThread, Msg, RIGHT, Signal, drain, drain_edge, hold, hold_biunion,
@@ -11,15 +12,18 @@ use crate::sync::Receiver;
 use crate::work;
 use crate::{At, Closeable, Message, Pushable, Pushes, Reads, Via, Writes, biunion};
 
-/// Whether the still-open right input's data got consumed before the
-/// Flush depends on scheduling; only the closing side is contractual.
-fn left_flushed(messages: Vec<Msg>) {
-    let right_data = Message::Data(5 + RIGHT);
-    let messages: Vec<Msg> = messages
-        .into_iter()
-        .filter(|message| *message != right_data)
-        .collect();
-    assert_eq!(messages, vec![Message::Data(1), Message::Flush("f".into())]);
+/// Each side's data came out before its own Flush.
+fn both_flushed(messages: Vec<Msg>) {
+    for (data, name) in [(1, "l"), (5 + RIGHT, "r")] {
+        let data = messages.iter().position(|m| *m == Message::Data(data));
+        let flush = messages
+            .iter()
+            .position(|m| *m == Message::Flush(name.into()));
+        assert!(
+            matches!((data, flush), (Some(d), Some(f)) if d < f),
+            "side {name} lost: {messages:?}"
+        );
+    }
 }
 
 fn right_flushed(messages: Vec<Msg>) {
@@ -29,36 +33,51 @@ fn right_flushed(messages: Vec<Msg>) {
     );
 }
 
-fn send<L, R>(close_left: bool, left: &mut L, right: &mut R) -> Result<(), Error>
+/// One side's segment, then its close.
+fn segment(
+    side: &mut (impl Pushable<DataType = usize, SignalType = Signal> + Closeable),
+    value: usize,
+    name: &'static str,
+) -> Result<(), Error> {
+    side.push(Message::Data(value))?;
+    side.push(Message::Flush(name.into()))?;
+    side.close()
+}
+
+/// Each side flushes and closes in turn: the first is closed before the other pushes anything.
+fn send<L, R>(left_first: bool, left: &mut L, right: &mut R) -> Result<(), Error>
 where
     L: Pushable<DataType = usize, SignalType = Signal> + Closeable,
     R: Pushable<DataType = usize, SignalType = Signal> + Closeable,
 {
-    if close_left {
-        left.push(Message::Data(1))?;
-        right.push(Message::Data(5))?;
-        left.push(Message::Flush("f".into()))?;
-        left.close()
+    if left_first {
+        segment(left, 1, "l")?;
+        segment(right, 5, "r")
     } else {
-        right.push(Message::Data(5))?;
-        right.push(Message::Flush("f".into()))?;
-        right.close()
+        segment(right, 5, "r")?;
+        segment(left, 1, "l")
     }
 }
 
-fn work_biunion(close_left: bool) -> Result<Vec<Msg>, Error> {
+fn work_biunion(left_first: bool) -> Result<Vec<Msg>, Error> {
     let node = work::Biunion::of(HoldBiunion::new());
     let mut left = node.at_ref::<biunion::Left>().writer()?;
     let mut right = node.at_ref::<biunion::Right>().writer()?;
     let mut reader = node.reader()?;
 
-    send(close_left, &mut left, &mut right)?;
+    send(left_first, &mut left, &mut right)?;
     drain(&mut reader)
 }
 
 #[test]
-fn work_biunion_close_left() -> Result<(), Error> {
-    left_flushed(work_biunion(true)?);
+fn work_biunion_left_closes_first() -> Result<(), Error> {
+    both_flushed(work_biunion(true)?);
+    Ok(())
+}
+
+#[test]
+fn work_biunion_right_closes_first() -> Result<(), Error> {
+    both_flushed(work_biunion(false)?);
     Ok(())
 }
 
@@ -78,14 +97,8 @@ fn work_biunion_unconnected_left() -> Result<(), Error> {
     Ok(())
 }
 
-#[test]
-fn work_biunion_close_right() -> Result<(), Error> {
-    right_flushed(work_biunion(false)?);
-    Ok(())
-}
-
 /// Push everything, then run the poll thread inline until it drains and exits.
-fn poll_biunion<R>(routine: fn(BiunionWakers) -> R, close_left: bool) -> Result<Vec<Msg>, Error>
+fn poll_biunion<R>(routine: fn(BiunionWakers) -> R, left_first: bool) -> Result<Vec<Msg>, Error>
 where
     R: PollBiunionRoutine<usize, usize, usize> + 'static,
 {
@@ -101,37 +114,37 @@ where
     node.pushes(&output)?;
     async_thread.add(node);
 
-    send(close_left, &mut left, &mut right)?;
+    send(left_first, &mut left, &mut right)?;
     async_thread.run()?;
     drain_edge(&output)
 }
 
 #[test]
-fn poll_biunion_close_left() -> Result<(), Error> {
-    left_flushed(poll_biunion(hold_biunion, true)?);
+fn poll_biunion_left_closes_first() -> Result<(), Error> {
+    both_flushed(poll_biunion(hold_biunion, true)?);
     Ok(())
 }
 
 #[test]
-fn poll_biunion_close_right() -> Result<(), Error> {
-    right_flushed(poll_biunion(hold_biunion, false)?);
+fn poll_biunion_right_closes_first() -> Result<(), Error> {
+    both_flushed(poll_biunion(hold_biunion, false)?);
     Ok(())
 }
 
-/// Close is already queued while the flush still needs several polls.
+/// Closes are already queued while each flush still needs several polls.
 #[test]
-fn poll_biunion_slow_flush_close_left() -> Result<(), Error> {
-    left_flushed(poll_biunion(slow_hold_biunion, true)?);
+fn poll_biunion_slow_flush_left_closes_first() -> Result<(), Error> {
+    both_flushed(poll_biunion(slow_hold_biunion, true)?);
     Ok(())
 }
 
 #[test]
-fn poll_biunion_slow_flush_close_right() -> Result<(), Error> {
-    right_flushed(poll_biunion(slow_hold_biunion, false)?);
+fn poll_biunion_slow_flush_right_closes_first() -> Result<(), Error> {
+    both_flushed(poll_biunion(slow_hold_biunion, false)?);
     Ok(())
 }
 
-/// Left input is an async parent line; closing it closes the biunion.
+/// Left input is an async parent line: its close ends the left side only.
 #[test]
 fn poll_biunion_async_parent_flush_then_close() -> Result<(), Error> {
     let mut async_thread = poll::Thread::<IoThread>::new();
@@ -152,6 +165,6 @@ fn poll_biunion_async_parent_flush_then_close() -> Result<(), Error> {
 
     send(true, &mut left, &mut right)?;
     async_thread.run()?;
-    left_flushed(drain_edge(&output)?);
+    both_flushed(drain_edge(&output)?);
     Ok(())
 }

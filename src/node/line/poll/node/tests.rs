@@ -95,7 +95,7 @@ impl<R: LineRoutine<usize, usize>> Line<R> {
             match self.downstream.poll() {
                 Ok(Some(message)) => received.push(message),
                 Ok(None) => return received,
-                Err(e) if matches!(e.kind, ErrorKind::Closed) => return received,
+                Err(e) if e.is_closed() => return received,
                 Err(e) => panic!("downstream failed: {e:?}"),
             }
         }

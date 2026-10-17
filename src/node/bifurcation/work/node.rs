@@ -1,7 +1,7 @@
 use crate::closed;
 use crate::edge::fanout::Fanout;
 use crate::edge::sync::Receiver;
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
 use crate::graph::{Add, Closeable, Get, Outputs};
 use crate::message::Message;
@@ -258,7 +258,7 @@ fn next_input<T: Types>(
                 // No parents left: block on the edge. Closed once it can never fill.
                 if workers.is_empty() {
                     match input.wait_front() {
-                        Err(error) if matches!(error.kind, ErrorKind::Closed) => {
+                        Err(error) if error.is_closed() => {
                             return Ok(Incoming::Closed);
                         }
                         waited => waited?,
@@ -268,7 +268,7 @@ fn next_input<T: Types>(
                 // every producer is gone.
                 work_each(workers)?;
             }
-            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(Incoming::Closed),
+            Err(error) if error.is_closed() => return Ok(Incoming::Closed),
             Err(error) => return Err(error),
         }
     }
@@ -370,6 +370,7 @@ pub mod tests {
     use crate::Pushable;
     use crate::closed;
     use crate::edge::sync::tests::{join_within, wait_until};
+    use crate::error::ErrorKind;
     use crate::graph::Closeable;
     use crate::node::bifurcation::routine::tests::{HoldBifurcation, MockBifurcation};
     use crate::work::Writer;

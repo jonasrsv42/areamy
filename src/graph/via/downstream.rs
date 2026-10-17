@@ -4,8 +4,8 @@ use crate::error::Error;
 /// nodes implement it in [crate::work], poll builders next to their builders.
 ///
 /// It is the extension point for custom work nodes. Take the upstream through
-/// [crate::work::Upstream] (a whole node, or a side moved with [crate::At::at]), give it a
-/// forwarding edge into this node's input, and own it:
+/// [crate::work::Upstream] (a whole node, or a side moved with [crate::At::at]), feed it this
+/// node's input, and own it:
 ///
 /// ```ignore
 /// impl<Up, Shape> Downstream<Up, Frame, OwnedWork<Shape, Signal, Thread>> for MyNode
@@ -14,8 +14,7 @@ use crate::error::Error;
 /// {
 ///     type Out = Self;
 ///     fn own(mut self, upstream: Up) -> Result<Self, Error> {
-///         let sink = Get::get(&self)?;
-///         let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
+///         let upstream = upstream.feed(Get::get(&self)?)?;
 ///         Add::add(&mut self, upstream)?;
 ///         Ok(self)
 ///     }

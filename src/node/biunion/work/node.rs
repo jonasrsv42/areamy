@@ -1,7 +1,7 @@
 use crate::closed;
 use crate::edge::fanout::Fanout;
 use crate::edge::waking;
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
 use crate::graph::{Add, Closeable, Get, Outputs};
 use crate::message::Message;
@@ -178,7 +178,7 @@ impl<T: Types> Workable for Biunion<'_, T> {
                 Ok(())
             }
             Incoming::Closed => {
-                // An input closed: close the outputs too, so children see it. Other errors, the
+                // Both inputs closed: close the outputs too, so children see it. Other errors, the
                 // routine's `Closed` included, leave them to close on drop.
                 let _ = outputs.close();
                 Err(closed!())
@@ -213,7 +213,7 @@ where
 
 /// The next message for a [Biunion] to push: routine output first, then a pending signal (so a
 /// Flush goes out behind everything its flush produced), then new input, left before right;
-/// closed once either input has. Parents are scheduled only once both inputs polled empty: own
+/// closed once both inputs have. Parents are scheduled only once both inputs polled empty: own
 /// input goes out first, and a parent refused by an input always finds progress (`Full`) when
 /// re-entered.
 fn next_message<T: Types>(
@@ -229,13 +229,15 @@ fn next_message<T: Types>(
         if let Some(signal) = pending.take() {
             return Ok(Incoming::Message(signal));
         }
+        // A closed side just stops feeding: the node ends with its last input.
+        let mut open = false;
         match input.left.poll() {
             Ok(Some(message)) => {
                 accept(routine, pending, message, biunion::Left)?;
                 continue;
             }
-            Ok(None) => {}
-            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(Incoming::Closed),
+            Ok(None) => open = true,
+            Err(error) if error.is_closed() => {}
             Err(error) => return Err(error),
         }
         match input.right.poll() {
@@ -243,14 +245,17 @@ fn next_message<T: Types>(
                 accept(routine, pending, message, biunion::Right)?;
                 continue;
             }
-            Ok(None) => {}
-            Err(error) if matches!(error.kind, ErrorKind::Closed) => return Ok(Incoming::Closed),
+            Ok(None) => open = true,
+            Err(error) if error.is_closed() => {}
             Err(error) => return Err(error),
+        }
+        if !open {
+            return Ok(Incoming::Closed);
         }
         // No parents left: block until either edge has data. Closed once neither can.
         if workers.left.is_empty() && workers.right.is_empty() {
             match input.wait_any() {
-                Err(error) if matches!(error.kind, ErrorKind::Closed) => {
+                Err(error) if error.is_closed() => {
                     return Ok(Incoming::Closed);
                 }
                 waited => waited?,
@@ -360,6 +365,7 @@ pub mod tests {
     use super::*;
     use crate::edge::sync::Receiver;
     use crate::edge::sync::tests::{join_within, wait_until};
+    use crate::error::ErrorKind;
     use crate::graph::TryPush;
     use crate::graph::marker::Connection;
     use crate::node::biunion::routine::tests::{HoldBiunion, MockBiunion};

@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::graph::Receivable;
 use crate::graph::marker::Connection;
 use crate::node::biunion;
-use crate::node::poll::Feed;
+use crate::node::poll::{Feed, Open};
 use crate::poll::Context;
 use crate::poll::Pollable;
 
@@ -34,6 +34,7 @@ impl<T: Types> Feeding<T> for biunion::Left {
     fn drain(state: &mut SharedState<T>, held: &mut Option<T::Left>) -> Result<(), Error> {
         let SharedState {
             input,
+            open,
             work,
             output,
             state,
@@ -42,6 +43,10 @@ impl<T: Types> Feeding<T> for biunion::Left {
         Feed {
             inlet: &mut input.left.target,
             waker: &input.left.waker,
+            open: Open {
+                this: &mut open.left,
+                others: open.right,
+            },
             work,
             state,
             budget: budget.input,
@@ -59,6 +64,7 @@ impl<T: Types> Feeding<T> for biunion::Right {
     fn drain(state: &mut SharedState<T>, held: &mut Option<T::Right>) -> Result<(), Error> {
         let SharedState {
             input,
+            open,
             work,
             output,
             state,
@@ -67,6 +73,10 @@ impl<T: Types> Feeding<T> for biunion::Right {
         Feed {
             inlet: &mut input.right.target,
             waker: &input.right.waker,
+            open: Open {
+                this: &mut open.right,
+                others: open.left,
+            },
             work,
             state,
             budget: budget.input,

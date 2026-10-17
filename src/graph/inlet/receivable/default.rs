@@ -1,5 +1,5 @@
 use crate::closed;
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::graph::Receivable;
 use crate::message::Message;
 
@@ -11,7 +11,7 @@ impl<T: Receivable> Receivable for Vec<T> {
             match input.try_recv() {
                 Ok(Some(msg)) => return Ok(Some(msg)),
                 Ok(None) => all_closed = false,
-                Err(e) if matches!(e.kind, ErrorKind::Closed) => continue,
+                Err(e) if e.is_closed() => continue,
                 Err(e) => return Err(e),
             }
         }

@@ -8,7 +8,6 @@ mod poll;
 mod work;
 
 use crate::edge::sync::Receiver;
-use crate::error::ErrorKind;
 use crate::graph::{TryPush, TryPushable};
 use crate::message::Message;
 use crate::signal::Trackable;
@@ -46,7 +45,7 @@ fn read(output: &Receiver<usize, Signal>) -> Option<Msg> {
         match output.poll() {
             Ok(Some(message)) => return Some(message),
             Ok(None) => {}
-            Err(e) if matches!(e.kind, ErrorKind::Closed) => return None,
+            Err(e) if e.is_closed() => return None,
             Err(e) => panic!("read failed: {e:?}"),
         }
         assert!(Instant::now() < deadline, "timed out reading");

@@ -1,7 +1,7 @@
 use super::{NodeState, Shared, SharedState, Types};
 use crate::error::Error;
 use crate::graph::marker::{Connection, Unary};
-use crate::node::poll::Feed;
+use crate::node::poll::{Feed, Open};
 use crate::poll::Context;
 use crate::poll::Pollable;
 
@@ -10,6 +10,7 @@ impl<T: Types> SharedState<T> {
     fn drain(&mut self, held: &mut Option<T::In>) -> Result<(), Error> {
         let SharedState {
             input,
+            open,
             work,
             output,
             state,
@@ -18,6 +19,10 @@ impl<T: Types> SharedState<T> {
         Feed {
             inlet: &mut input.target,
             waker: &input.waker,
+            open: Open {
+                this: open,
+                others: false,
+            },
             work,
             state,
             budget: budget.input,

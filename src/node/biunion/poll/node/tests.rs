@@ -146,7 +146,7 @@ impl<R: Routine> Biunion<R> {
             match self.downstream.poll() {
                 Ok(Some(message)) => received.push(message),
                 Ok(None) => return received,
-                Err(e) if matches!(e.kind, ErrorKind::Closed) => return received,
+                Err(e) if e.is_closed() => return received,
                 Err(e) => panic!("downstream failed: {e:?}"),
             }
         }
@@ -307,7 +307,7 @@ trait TestSide {
     const MUL: usize;
     /// `room` on this side, unbounded on the other.
     fn room(room: usize) -> Inputs<usize, usize>;
-    fn upstream<R: Routine>(b: &Biunion<R>) -> &input::sync::Sender<usize, Signal>;
+    fn upstream<R: Routine>(b: &mut Biunion<R>) -> &mut input::sync::Sender<usize, Signal>;
     fn poll<R: Routine>(b: &mut Biunion<R>) -> Result<core::task::Poll<()>, Error>;
     fn woken<R: Routine>(b: &Biunion<R>) -> &Flag;
 }
@@ -321,8 +321,8 @@ impl TestSide for Left {
             right: usize::MAX,
         }
     }
-    fn upstream<R: Routine>(b: &Biunion<R>) -> &input::sync::Sender<usize, Signal> {
-        &b.upstream.left
+    fn upstream<R: Routine>(b: &mut Biunion<R>) -> &mut input::sync::Sender<usize, Signal> {
+        &mut b.upstream.left
     }
     fn poll<R: Routine>(b: &mut Biunion<R>) -> Result<core::task::Poll<()>, Error> {
         b.input.left.poll(&mut noop_context())
@@ -341,8 +341,8 @@ impl TestSide for Right {
             right: room,
         }
     }
-    fn upstream<R: Routine>(b: &Biunion<R>) -> &input::sync::Sender<usize, Signal> {
-        &b.upstream.right
+    fn upstream<R: Routine>(b: &mut Biunion<R>) -> &mut input::sync::Sender<usize, Signal> {
+        &mut b.upstream.right
     }
     fn poll<R: Routine>(b: &mut Biunion<R>) -> Result<core::task::Poll<()>, Error> {
         b.input.right.poll(&mut noop_context())
@@ -499,23 +499,79 @@ fn marker_from_right_forwards() {
     );
 }
 
-// --- Close propagation ---
+// --- Close: the node ends with its last side ---
 
-#[test]
-fn close_from_left_propagates() {
+/// Close `S::Other` and let it see the close: `S` is then the node's last open side.
+fn close_the_other_side<S: TestSide, R: Routine>(b: &mut Biunion<R>) {
+    S::Other::upstream(b).close().unwrap();
+    assert!(S::Other::poll(b).unwrap().is_pending());
+}
+
+/// A side's close alone ends nothing and wakes nothing: the other side still flows.
+fn one_sides_close_leaves_the_node_running<S: TestSide>() {
     let mut b = Biunion::new();
     let mut cx = noop_context();
-    b.upstream.left.close().unwrap();
-    let _ = b.input.left.poll(&mut cx);
-    assert!(matches!(
-        b.input.right.poll(&mut cx).unwrap_err().kind,
-        ErrorKind::Closed
-    ));
+    b.woken.reset();
+    S::upstream(&mut b).close().unwrap();
+    assert!(S::poll(&mut b).unwrap().is_pending());
+    assert!(
+        !b.woken.work.get(),
+        "a side's close alone must not wake work"
+    );
+    assert!(
+        !b.woken.output.get(),
+        "a side's close alone must not wake output"
+    );
+    assert!(!S::Other::woken(&b).get(), "nor the other side");
+
+    S::Other::upstream(&mut b)
+        .push_back(Message::Data(7))
+        .unwrap();
+    let _ = S::Other::poll(&mut b).unwrap();
+    let _ = b.work.poll(&mut cx).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
+    assert_eq!(b.received(), data::<S::Other>([7]));
+}
+
+#[test]
+fn lefts_close_leaves_the_node_running() {
+    one_sides_close_leaves_the_node_running::<Left>();
+}
+
+#[test]
+fn rights_close_leaves_the_node_running() {
+    one_sides_close_leaves_the_node_running::<Right>();
+}
+
+/// The last side's close is a fast close: it wakes the other side, Work and Output directly, and
+/// every phase reports Closed.
+fn the_last_sides_close_ends_the_node<S: TestSide>() {
+    let mut b = Biunion::new();
+    let mut cx = noop_context();
+    close_the_other_side::<S, _>(&mut b);
+    b.woken.reset();
+    S::upstream(&mut b).close().unwrap();
+    let _ = S::poll(&mut b);
+    assert!(
+        S::Other::woken(&b).get(),
+        "the last close must wake the other side"
+    );
+    assert!(b.woken.work.get(), "the last close must wake work");
+    assert!(b.woken.output.get(), "the last close must wake output");
+
+    assert!(S::Other::poll(&mut b).unwrap_err().is_closed());
     let _ = b.work.poll(&mut cx);
-    assert!(matches!(
-        b.output.poll(&mut cx).unwrap_err().kind,
-        ErrorKind::Closed
-    ));
+    assert!(b.output.poll(&mut cx).unwrap_err().is_closed());
+}
+
+#[test]
+fn lefts_close_after_right_ends_the_node() {
+    the_last_sides_close_ends_the_node::<Left>();
+}
+
+#[test]
+fn rights_close_after_left_ends_the_node() {
+    the_last_sides_close_ends_the_node::<Right>();
 }
 
 #[test]
@@ -528,13 +584,11 @@ fn data_then_close_drains_before_closing() {
     let _ = b.output.poll(&mut cx).unwrap();
     assert_eq!(b.downstream.poll().unwrap(), Some(Message::Data(14))); // 7 * 2
 
+    close_the_other_side::<Left, _>(&mut b);
     b.upstream.left.close().unwrap();
     let _ = b.input.left.poll(&mut cx);
     let _ = b.work.poll(&mut cx);
-    assert!(matches!(
-        b.output.poll(&mut cx).unwrap_err().kind,
-        ErrorKind::Closed
-    ));
+    assert!(b.output.poll(&mut cx).unwrap_err().is_closed());
 }
 
 // --- Closed outlet: Output's close error tears the whole node down ---
@@ -612,55 +666,7 @@ fn closed_outlet_on_a_marker_closes_the_node() {
     b.close_downstream_under_output();
 }
 
-// --- Input waker: close wakes other input ---
-
-#[test]
-fn close_from_left_wakes_right() {
-    let mut b = Biunion::new();
-    let mut cx = noop_context();
-    b.woken.reset();
-    b.upstream.left.close().unwrap();
-    let _ = b.input.left.poll(&mut cx);
-    assert!(
-        b.woken.input.right.get(),
-        "closing left must wake right input"
-    );
-}
-
-#[test]
-fn close_from_right_wakes_left() {
-    let mut b = Biunion::new();
-    let mut cx = noop_context();
-    b.woken.reset();
-    b.upstream.right.close().unwrap();
-    let _ = b.input.right.poll(&mut cx);
-    assert!(
-        b.woken.input.left.get(),
-        "closing right must wake left input"
-    );
-}
-
-// --- Input waker: close/flush/marker wakes work ---
-
-#[test]
-fn close_from_left_wakes_work() {
-    let mut b = Biunion::new();
-    let mut cx = noop_context();
-    b.woken.reset();
-    b.upstream.left.close().unwrap();
-    let _ = b.input.left.poll(&mut cx);
-    assert!(b.woken.work.get(), "closing left must wake work phase");
-}
-
-#[test]
-fn close_from_right_wakes_work() {
-    let mut b = Biunion::new();
-    let mut cx = noop_context();
-    b.woken.reset();
-    b.upstream.right.close().unwrap();
-    let _ = b.input.right.poll(&mut cx);
-    assert!(b.woken.work.get(), "closing right must wake work phase");
-}
+// --- Input waker: flush/marker wakes work ---
 
 #[test]
 fn flush_from_left_wakes_work() {
@@ -734,18 +740,6 @@ fn flush_ready_wakes_output() {
 }
 
 #[test]
-fn close_wakes_output_directly() {
-    // Fast close: Input transitions straight to CloseReady and
-    // wakes Output directly (no flush, no work polling).
-    let mut b = Biunion::new();
-    let mut cx = noop_context();
-    b.upstream.left.close().unwrap();
-    b.woken.reset();
-    let _ = b.input.left.poll(&mut cx);
-    assert!(b.woken.output.get(), "left input must wake output on close");
-}
-
-#[test]
 fn marker_ready_wakes_output() {
     let mut b = Biunion::new();
     let mut cx = noop_context();
@@ -813,9 +807,9 @@ fn marker_forwarded_wakes_both_inputs() {
 fn held_goes_before_a_flush_queued_behind_it<S: TestSide>() {
     let mut b = bounded::<S>(1);
     let mut cx = noop_context();
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
-    S::upstream(&b)
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b)
         .push_back(Message::Flush("f".into()))
         .unwrap();
 
@@ -844,9 +838,9 @@ fn right_held_goes_before_a_flush_queued_behind_it() {
 fn held_goes_before_a_marker_queued_behind_it<S: TestSide>() {
     let mut b = bounded::<S>(1);
     let mut cx = noop_context();
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
-    S::upstream(&b)
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b)
         .push_back(Message::Marker("m".into()))
         .unwrap();
 
@@ -873,9 +867,9 @@ fn right_held_goes_before_a_marker_queued_behind_it() {
 fn spurious_wake_while_full_reads_nothing_past_the_held_message<S: TestSide>() {
     let mut b = bounded::<S>(1);
     let mut cx = noop_context();
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
-    S::upstream(&b)
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b)
         .push_back(Message::Flush("f".into()))
         .unwrap();
     let _ = S::poll(&mut b).unwrap();
@@ -909,7 +903,7 @@ fn refused_messages_are_not_stranded<S: TestSide>() {
     let mut b = bounded::<S>(1);
     let mut cx = noop_context();
     for value in 0..5 {
-        S::upstream(&b).push_back(Message::Data(value)).unwrap();
+        S::upstream(&mut b).push_back(Message::Data(value)).unwrap();
     }
 
     // The side runs only when woken, as on the poll thread: each wake must come from the routine.
@@ -940,7 +934,7 @@ fn takes_at_most_budget_then_wakes_only_itself<S: TestSide>() {
     let mut b = Biunion::new();
     let mut cx = noop_context();
     for value in 0..BUDGET + 8 {
-        S::upstream(&b).push_back(Message::Data(value)).unwrap();
+        S::upstream(&mut b).push_back(Message::Data(value)).unwrap();
     }
 
     // One poll takes exactly BUDGET and owes itself, not the other side, the rest.
@@ -973,12 +967,13 @@ fn right_takes_at_most_budget_then_wakes_only_itself() {
 fn close_delivers_what_the_routine_still_accepts<S: TestSide>() {
     let mut b = bounded::<S>(2);
     let mut cx = noop_context();
+    close_the_other_side::<S, _>(&mut b);
     for value in 1..=3 {
-        S::upstream(&b).push_back(Message::Data(value)).unwrap();
+        S::upstream(&mut b).push_back(Message::Data(value)).unwrap();
     }
     // 1 and 2 fit, 3 is held. Then upstream closes.
     let _ = S::poll(&mut b).unwrap();
-    S::upstream(&b).close().unwrap();
+    S::upstream(&mut b).close().unwrap();
 
     // Output makes room, so the held message still goes in before the side sees the close.
     let _ = b.output.poll(&mut cx).unwrap();
@@ -1003,8 +998,8 @@ fn right_close_delivers_what_the_routine_still_accepts() {
     close_delivers_what_the_routine_still_accepts::<Right>();
 }
 
-/// Once the routine makes room the side hands the held message over, sees the close, and
-/// closes the node: nothing queued before the close is dropped.
+/// Once the routine makes room the side hands the held message over, sees the close, and, the
+/// node's last side, closes it: nothing queued before the close is dropped.
 fn hands_over_then_closes<S: TestSide>(b: &mut Biunion<Bounded>) {
     let mut cx = noop_context();
     b.woken.reset();
@@ -1020,12 +1015,13 @@ fn hands_over_then_closes<S: TestSide>(b: &mut Biunion<Bounded>) {
 /// A close behind a held message waits for the routine's room, which the refusal owes a wake.
 fn close_while_holding_waits_for_room<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
+    close_the_other_side::<S, _>(&mut b);
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
 
     // 2 is held. The close wakes the side, which keeps holding.
     assert!(S::poll(&mut b).unwrap().is_pending());
-    S::upstream(&b).close().unwrap();
+    S::upstream(&mut b).close().unwrap();
     assert!(S::poll(&mut b).unwrap().is_pending());
     hands_over_then_closes::<S>(&mut b);
 }
@@ -1044,9 +1040,10 @@ fn right_close_while_holding_waits_for_room() {
 /// comes once it makes room.
 fn close_before_the_refusal_waits_for_room<S: TestSide>() {
     let mut b = bounded::<S>(1);
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
-    S::upstream(&b).close().unwrap();
+    close_the_other_side::<S, _>(&mut b);
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b).close().unwrap();
 
     assert!(S::poll(&mut b).unwrap().is_pending());
     hands_over_then_closes::<S>(&mut b);
@@ -1064,7 +1061,7 @@ fn right_close_before_the_refusal_waits_for_room() {
 
 fn routine_returning_closed_from_try_send_becomes_fatal<S: TestSide>() {
     let mut b = Biunion::with(|_| ClosedTrySend);
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
 
     let err = S::poll(&mut b).unwrap_err();
     assert!(
@@ -1089,12 +1086,14 @@ fn right_routine_returning_closed_from_try_send_becomes_fatal() {
 fn one_side_holding_never_stops_the_other<S: TestSide>() {
     let mut b = bounded::<S>(1);
     let mut cx = noop_context();
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
 
     // S holds 2; the other side still flows.
-    S::Other::upstream(&b).push_back(Message::Data(5)).unwrap();
+    S::Other::upstream(&mut b)
+        .push_back(Message::Data(5))
+        .unwrap();
     let _ = S::Other::poll(&mut b).unwrap();
     let _ = b.output.poll(&mut cx).unwrap();
     let mut expected = data::<S>([1]);
@@ -1115,12 +1114,12 @@ fn right_holding_never_stops_left() {
 fn held_message_lands_after_the_other_sides_flush<S: TestSide>() {
     let mut b = bounded::<S>(1);
     let mut cx = noop_context();
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
 
     // The other side flushes while S holds 2.
-    S::Other::upstream(&b)
+    S::Other::upstream(&mut b)
         .push_back(Message::Flush("f".into()))
         .unwrap();
     let _ = S::Other::poll(&mut b).unwrap();
@@ -1156,11 +1155,11 @@ fn right_held_message_lands_after_lefts_flush() {
 fn held_message_lands_after_the_other_sides_marker<S: TestSide>() {
     let mut b = bounded_mute::<S>(1);
     let mut cx = noop_context();
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
 
-    S::Other::upstream(&b)
+    S::Other::upstream(&mut b)
         .push_back(Message::Marker("m".into()))
         .unwrap();
     let _ = S::Other::poll(&mut b).unwrap();
@@ -1189,40 +1188,37 @@ fn right_held_message_lands_after_lefts_marker() {
     held_message_lands_after_the_other_sides_marker::<Right>();
 }
 
-fn the_other_sides_close_tears_down_a_holding_side<S: TestSide>() {
+fn the_other_sides_close_leaves_a_holding_side_running<S: TestSide>() {
     let mut b = bounded::<S>(1);
     let mut cx = noop_context();
-    S::upstream(&b).push_back(Message::Data(1)).unwrap();
-    S::upstream(&b).push_back(Message::Data(2)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(1)).unwrap();
+    S::upstream(&mut b).push_back(Message::Data(2)).unwrap();
     let _ = S::poll(&mut b).unwrap();
 
-    // The other side closes while S holds 2: the node closes, and S must hear it.
-    S::Other::upstream(&b).close().unwrap();
+    // The other side closes while S holds 2: the node runs on, and the held 2 still goes in.
+    close_the_other_side::<S, _>(&mut b);
     b.woken.reset();
-    let result = S::Other::poll(&mut b);
-    assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
+    let _ = b.output.poll(&mut cx).unwrap();
     assert!(S::woken(&b).get());
+    let _ = S::poll(&mut b).unwrap();
+    let _ = b.output.poll(&mut cx).unwrap();
+    assert_eq!(b.received(), data::<S>(1..=2));
 
-    // Every phase ends; the held 2 drops with the node.
-    assert!(matches!(
-        S::poll(&mut b).unwrap_err().kind,
-        ErrorKind::Closed
-    ));
-    let result = b.work.poll(&mut cx);
-    assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
-    let result = b.output.poll(&mut cx);
-    assert!(matches!(result.unwrap_err().kind, ErrorKind::Closed));
-    assert_eq!(b.received(), data::<S>([1]));
+    // S's own close, the last, ends the node.
+    S::upstream(&mut b).close().unwrap();
+    let _ = S::poll(&mut b);
+    let _ = b.work.poll(&mut cx);
+    assert!(b.output.poll(&mut cx).unwrap_err().is_closed());
 }
 
 #[test]
-fn rights_close_tears_down_a_holding_left() {
-    the_other_sides_close_tears_down_a_holding_side::<Left>();
+fn rights_close_leaves_a_holding_left_running() {
+    the_other_sides_close_leaves_a_holding_side_running::<Left>();
 }
 
 #[test]
-fn lefts_close_tears_down_a_holding_right() {
-    the_other_sides_close_tears_down_a_holding_side::<Right>();
+fn lefts_close_leaves_a_holding_right_running() {
+    the_other_sides_close_leaves_a_holding_side_running::<Right>();
 }
 
 #[test]

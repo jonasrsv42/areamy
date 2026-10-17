@@ -31,6 +31,7 @@ impl<T: Types> Pollable for Output<T> {
             output,
             state,
             budget,
+            ..
         } = &mut *s;
         Emit {
             routine: &mut work.target,

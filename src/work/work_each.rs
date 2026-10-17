@@ -1,6 +1,6 @@
 //! Helpers shared by the sync work nodes.
 
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::thread::ThreadId;
 use crate::work::Workable;
 
@@ -15,7 +15,7 @@ pub(crate) fn work_each<'params, ThreadIdType: ThreadId>(
     while i < workables.len() {
         match workables[i].work() {
             Ok(()) => i += 1,
-            Err(e) if matches!(e.kind, ErrorKind::Closed) => {
+            Err(e) if e.is_closed() => {
                 workables.swap_remove(i);
             }
             Err(e) => return Err(e),

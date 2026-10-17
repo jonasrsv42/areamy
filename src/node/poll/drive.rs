@@ -1,5 +1,5 @@
 use super::NodeState;
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::fatal;
 use crate::node::routine;
 use crate::poll::Context;
@@ -65,7 +65,7 @@ impl<RoutineType: routine::Poll, SignalType> Drive<'_, RoutineType, SignalType> 
     fn poll_routine(&mut self, cx: &mut Context) -> Result<core::task::Poll<()>, Error> {
         match routine::Poll::poll(self.routine, cx) {
             Ok(poll) => Ok(poll),
-            Err(e) if matches!(e.kind, ErrorKind::Closed) => Err(fatal!(
+            Err(e) if e.is_closed() => Err(fatal!(
                 "routine returned Closed error — routines must handle close, not propagate it"
             )),
             Err(e) => Err(e),

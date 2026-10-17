@@ -95,6 +95,7 @@ where
             shared: self.shared.clone(),
             refused_at: None,
             waker: None,
+            released: false,
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::biunion::poll::routine::BiunionRoutine as PollBiunionRoutine;
-use crate::error::{Error, ErrorKind};
+use crate::error::Error;
 use crate::graph::marker::{Connection, Multiplicity};
 use crate::poll::{BiunionWakers, Context, LineWakers};
 use crate::sync::Receiver;
@@ -13,10 +13,6 @@ pub type Signal = Trackable<&'static str>;
 pub type Msg = Message<usize, Signal>;
 
 crate::thread_id!(pub IoThread);
-
-pub fn is_closed(error: &Error) -> bool {
-    matches!(error.kind, ErrorKind::Closed)
-}
 
 /// Routine holding input until flush; output only exists because of Flush.
 pub struct Hold {
@@ -317,7 +313,7 @@ pub fn drive_work(workable: &mut (impl Workable + ?Sized)) -> Result<(), Error> 
     loop {
         match workable.work() {
             Ok(()) => continue,
-            Err(e) if is_closed(&e) => return Ok(()),
+            Err(e) if e.is_closed() => return Ok(()),
             Err(e) => return Err(e),
         }
     }
@@ -328,7 +324,7 @@ fn collect(mut next: impl FnMut() -> Result<Msg, Error>) -> Result<Vec<Msg>, Err
     loop {
         match next() {
             Ok(msg) => out.push(msg),
-            Err(e) if is_closed(&e) => return Ok(out),
+            Err(e) if e.is_closed() => return Ok(out),
             Err(e) => return Err(e),
         }
     }

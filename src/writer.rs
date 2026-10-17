@@ -6,7 +6,8 @@
 //! The shutdown flow works as follows:
 //!
 //! 1. **Close the writer**: Call [`crate::graph::Closeable::close`] (or let a reader drop, which
-//!    calls close automatically). This marks the underlying edge as closed.
+//!    calls close automatically). This writer is done; the edge closes once every writer into it
+//!    is.
 //!
 //! 2. **Buffered data drains**: Any data already in the edge's buffer can still be read.
 //!    Only when the buffer is empty will reads return `Closed`.
@@ -19,13 +20,13 @@
 //!
 //! # Closed Semantics
 //!
-//! Once an edge is closed:
-//! - **Pushes fail immediately** with `Closed` - no new data can enter
-//! - **Reads succeed** while buffered data remains
-//! - **Reads return `Closed`** only when the buffer is empty
+//! Each sender is one producer. Closing it:
+//! - **Ends that producer**: its pushes fail with `Closed`; other producers keep pushing
+//! - **Closes the edge with the last producer**, like Rust's channels on drop
+//! - **Keeps what it pushed**: reads succeed while buffered data remains, and return `Closed`
+//!   only once the edge is closed and empty
 //!
-//! This follows Rust's channel semantics where senders can close, but receivers
-//! can still drain remaining messages.
+//! Closing the receiver closes the edge for every producer.
 //!
 //! # Example
 //!
@@ -33,27 +34,23 @@
 //! use areamy::sync::Receiver;
 //! use areamy::{Message, error::ErrorKind};
 //!
-//! // Create a receiver and mint a sender.
+//! // Create a receiver and mint two producers.
 //! let rx = Receiver::<i32, usize>::new();
-//! let tx = rx.sender();
+//! let mut a = rx.sender();
+//! let mut b = rx.sender();
 //!
-//! tx.push_back(Message::Data(1)).unwrap();
-//! tx.push_back(Message::Data(2)).unwrap();
+//! a.push_back(Message::Data(1)).unwrap();
+//! a.close().unwrap();
 //!
-//! // Close the channel via the sender.
-//! tx.close().unwrap();
+//! // `a` is done; `b` still pushes.
+//! assert!(matches!(a.push_back(Message::Data(9)).unwrap_err().kind, ErrorKind::Closed));
+//! b.push_back(Message::Data(2)).unwrap();
+//! b.close().unwrap();
 //!
-//! // Pushes now fail with Closed.
-//! let err = tx.push_back(Message::Data(3)).unwrap_err();
-//! assert!(matches!(err.kind, ErrorKind::Closed));
-//!
-//! // But buffered data can still be read.
+//! // Buffered data still reads; then the edge, closed by its last producer, reports Closed.
 //! assert_eq!(rx.read_front().unwrap(), Message::Data(1));
 //! assert_eq!(rx.read_front().unwrap(), Message::Data(2));
-//!
-//! // Now buffer is empty — reads return Closed.
-//! let err = rx.read_front().unwrap_err();
-//! assert!(matches!(err.kind, ErrorKind::Closed));
+//! assert!(matches!(rx.read_front().unwrap_err().kind, ErrorKind::Closed));
 //! ```
 //!
 //! # Automatic Close on Drop

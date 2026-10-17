@@ -13,8 +13,9 @@ use std::mem;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, MutexGuard};
 
-/// Producer handle. `Send + Sync + Clone`. Dropping the last clone
-/// closes the edge and wakes any blocked [`Receiver`](super::Receiver).
+/// Producer handle. `Send + Sync + Clone`. Each clone is one producer: closing or dropping it
+/// says that producer is done, and the edge closes once every producer is. Closing the
+/// [`Receiver`](super::Receiver) closes the edge for all of them.
 ///
 /// Use one handle per producer: [`Sender::try_push_back`] remembers this handle's last
 /// refusal, so two producers sharing one handle can see a false [`TryPush::Stuck`].
@@ -31,6 +32,8 @@ pub struct Sender<DataType, SignalType: Origin> {
     /// Recorded on each `Full`, woken by the next pop or close; `None` until scheduled. Only
     /// `.sync`: the edge crosses threads.
     pub(super) waker: Option<Waker>,
+    /// This producer is done: it no longer counts toward keeping the edge open.
+    pub(super) released: bool,
 }
 
 /// Wakes once, after a refused `try_push_back` (`Full`), at the next pop or close.
@@ -63,22 +66,34 @@ where
     SignalType: Origin + Send + Sync,
 {
     fn clone(&self) -> Self {
-        // Matches std::sync::Arc::clone: no synchronization needed at the
-        // clone site since the new reference can only be used through the
-        // new owner.
-        self.shared.producer_count.fetch_add(1, Ordering::Relaxed);
+        // A done producer's clone is done too: it can't reopen what it finished.
+        if !self.released {
+            // Matches std::sync::Arc::clone: no synchronization needed at the
+            // clone site since the new reference can only be used through the
+            // new owner.
+            self.shared.producer_count.fetch_add(1, Ordering::Relaxed);
+        }
         // A new producer: this handle's refusals and waker aren't its.
         Self {
             shared: self.shared.clone(),
             refused_at: None,
             waker: None,
+            released: self.released,
         }
+    }
+}
+
+impl<DataType, SignalType: Origin> Sender<DataType, SignalType> {
+    /// Stop counting as a producer, once. True when this was the last one: the caller closes.
+    fn release(&mut self) -> bool {
+        !mem::replace(&mut self.released, true)
+            && self.shared.producer_count.fetch_sub(1, Ordering::AcqRel) == 1
     }
 }
 
 impl<DataType, SignalType: Origin> Drop for Sender<DataType, SignalType> {
     fn drop(&mut self) {
-        if self.shared.producer_count.fetch_sub(1, Ordering::AcqRel) == 1 {
+        if self.release() {
             close_infallible(&self.shared);
         }
     }
@@ -93,6 +108,9 @@ where
     /// receiver pops or the edge closes. Returns [`crate::error::ErrorKind::Closed`] if the
     /// receiver has been dropped or the edge has been closed.
     pub fn push_back(&self, message: Message<DataType, SignalType>) -> Result<(), Error> {
+        if self.released {
+            return Err(closed!());
+        }
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         if inner.is_full() && !inner.closed {
             inner = self.wait_for_room(inner)?;
@@ -140,6 +158,9 @@ where
         &mut self,
         message: Message<DataType, SignalType>,
     ) -> Result<TryPush<Message<DataType, SignalType>>, Error> {
+        if self.released {
+            return Err(closed!());
+        }
         let mut inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
         if inner.closed {
             return Err(closed!());
@@ -174,10 +195,13 @@ where
         }
     }
 
-    /// Mark the edge closed. Idempotent.
-    pub fn close(&self) -> Result<(), Error> {
-        let inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
-        close(&self.shared, inner);
+    /// This producer is done; the edge closes once every producer is. What it pushed before
+    /// stays queued for the receiver. Idempotent.
+    pub fn close(&mut self) -> Result<(), Error> {
+        if self.release() {
+            let inner = self.shared.inner.lock().map_err(|e| fatal!(e))?;
+            close(&self.shared, inner);
+        }
         Ok(())
     }
 }

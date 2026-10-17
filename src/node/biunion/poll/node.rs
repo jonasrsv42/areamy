@@ -139,6 +139,8 @@ where
 /// Shared state between the two Inputs, Work, and Output phases.
 pub(crate) struct SharedState<T: Types> {
     input: Inputs<Phase<T::LeftInlet>, Phase<T::RightInlet>>,
+    /// Which sides still feed the node; the node ends with its last.
+    open: Inputs<bool, bool>,
     work: Phase<T::Routine>,
     output: Phase<T::Output>,
     state: NodeState<T::Signal>,
@@ -192,6 +194,10 @@ where
         Schedule::schedule(&mut output, output_wake);
         let shared = Rc::new(RefCell::new(SharedState {
             input,
+            open: Inputs {
+                left: true,
+                right: true,
+            },
             work,
             output: Phase {
                 target: output,

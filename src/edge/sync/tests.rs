@@ -271,17 +271,42 @@ fn receiver_drop_releases_blocked_producer() {
     assert!(is_closed(join_within(producer)));
 }
 
+/// One producer finishing doesn't end the others: a blocked producer stays blocked until room,
+/// and the edge closes only after the last producer is done.
 #[test]
-fn sender_close_releases_other_blocked_producer() {
+fn sender_close_leaves_other_producers_open() {
     let rx = bounded(1);
-    let closer = rx.sender();
+    let mut closer = rx.sender();
     closer.push_back(Message::Data(1)).unwrap();
-    let tx = rx.sender();
-    let producer = thread::spawn(move || tx.push_back(Message::Data(2)));
+    let mut tx = rx.sender();
+    let producer = thread::spawn(move || {
+        tx.push_back(Message::Data(2))?;
+        tx.close()
+    });
 
     wait_until(|| rx.producers_waiting() == 1);
     closer.close().unwrap();
-    assert!(is_closed(join_within(producer)));
+    assert_eq!(rx.read_front().unwrap(), Message::Data(1));
+    join_within(producer).unwrap();
+    assert_eq!(rx.read_front().unwrap(), Message::Data(2));
+    assert!(is_closed(rx.read_front().map(drop)));
+}
+
+/// Pushes through a closed handle fail, and its clones are done too: they can't reopen it.
+#[test]
+fn a_closed_sender_and_its_clones_are_done() {
+    let rx = Receiver::<usize, TestSignal>::new();
+    let mut tx = rx.sender();
+    let other = rx.sender();
+    tx.close().unwrap();
+    let clone = tx.clone();
+    assert!(is_closed(tx.push_back(Message::Data(1))));
+    assert!(is_closed(clone.push_back(Message::Data(1))));
+    // The other producer keeps the edge open.
+    other.push_back(Message::Data(2)).unwrap();
+    assert_eq!(rx.read_front().unwrap(), Message::Data(2));
+    drop((clone, other));
+    assert!(is_closed(rx.read_front().map(drop)));
 }
 
 #[test]
@@ -444,7 +469,7 @@ fn clone_does_not_close_prematurely() {
 #[test]
 fn explicit_close_on_sender() {
     let rx = Receiver::<usize, TestSignal>::new();
-    let tx = rx.sender();
+    let mut tx = rx.sender();
     tx.close().unwrap();
     assert!(matches!(
         rx.read_front().unwrap_err().kind,
@@ -627,7 +652,7 @@ fn read_all_unblocked_by_last_sender_drop() {
 #[test]
 fn push_back_after_explicit_sender_close_returns_closed() {
     let rx = Receiver::<usize, TestSignal>::new();
-    let tx = rx.sender();
+    let mut tx = rx.sender();
     tx.close().unwrap();
     assert!(matches!(
         tx.push_back(Message::Data(1)).unwrap_err().kind,
@@ -645,7 +670,7 @@ fn receiver_moved_cross_thread_reads() {
         loop {
             match rx.read_front() {
                 Ok(Message::Data(v)) => got.push(v),
-                Err(e) if matches!(e.kind, ErrorKind::Closed) => break,
+                Err(e) if e.is_closed() => break,
                 other => panic!("unexpected {:?}", other),
             }
         }
@@ -717,7 +742,7 @@ fn cross_thread_fan_in() {
     loop {
         match rx.read_front() {
             Ok(Message::Data(v)) => got.push(v),
-            Err(e) if matches!(e.kind, ErrorKind::Closed) => break,
+            Err(e) if e.is_closed() => break,
             other => panic!("unexpected {:?}", other),
         }
     }
@@ -962,7 +987,7 @@ fn rescheduling_the_same_target_keeps_one_entry() {
 #[test]
 fn every_close_path_wakes_the_refused_sender() {
     // After each close, dropping both ends closes again: still once, so the close took the list.
-    let (rx, tx, counter) = refused();
+    let (rx, mut tx, counter) = refused();
     tx.close().unwrap();
     assert_eq!(wakes(&counter), 1, "Sender::close");
     drop((rx, tx));
@@ -1057,7 +1082,7 @@ fn wakes_run_after_unlocking() {
         |rx, _tx| drop(rx.read_front().unwrap()),
         |rx, _tx| drop(rx.poll().unwrap()),
         |rx, _tx| drop(rx.read_all().unwrap()),
-        |_rx, tx| tx.close().unwrap(),
+        |_rx, mut tx| tx.close().unwrap(),
         |rx, _tx| rx.close().unwrap(),
         |rx, tx| {
             drop(tx);

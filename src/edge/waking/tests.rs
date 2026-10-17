@@ -15,7 +15,7 @@ type Signal = Trackable<&'static str>;
 
 /// A pop on an empty edge takes nothing and reports whether it is closed.
 fn closed_and_empty(rx: &Receiver<usize, Signal>) -> bool {
-    matches!(rx.inner.poll(), Err(e) if matches!(e.kind, ErrorKind::Closed))
+    matches!(rx.inner.poll(), Err(e) if e.is_closed())
 }
 
 fn _assert_sender_send_sync() {
@@ -113,7 +113,7 @@ fn try_push_wakes_after_the_message_lands_unlocked() {
 
 #[test]
 fn close_wakes_after_the_edge_is_closed() {
-    let (probe, tx) = probed();
+    let (probe, mut tx) = probed();
     let seen = seen_by(probe, move || {
         tx.close().unwrap();
         tx

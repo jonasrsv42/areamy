@@ -1,4 +1,3 @@
-use crate::edge::policy::{PolicyEdge, SignalPolicy};
 use crate::error::Error;
 use crate::graph::marker::{Multiplicity, Unary};
 use crate::graph::{Add, Downstream, Get, Select};
@@ -25,10 +24,11 @@ pub struct OwnedWork<ShapeType, SignalType, ThreadIdType>(
 type UpstreamSink<'params, DataType, SignalType> =
     dyn Sink<DataType = DataType, SignalType = SignalType> + Send + Sync + 'params;
 
-/// The downstream owns the upstream: it schedules it, and the upstream pushes into its input.
+/// The downstream owns the upstream: it schedules it, and the upstream pushes into its input
+/// directly.
 ///
-/// Signals are forwarded ([SignalPolicy::Forward]): the upstream is moved into the downstream, so
-/// owning chains can't cycle and forwarding can't loop.
+/// Signals pass as-is: the upstream is moved into the downstream, so owning chains can't cycle
+/// and forwarding can't loop.
 fn adopt<'params, DataType, SignalType, ThreadIdType, ShapeType, DownstreamMultiplicity>(
     upstream: impl Upstream<'params, DataType, SignalType, ThreadIdType, ShapeType>,
     downstream: &mut (
@@ -41,8 +41,7 @@ where
     SignalType: Origin + Send + Sync + 'static,
     DownstreamMultiplicity: Multiplicity,
 {
-    let sink = downstream.get()?;
-    let upstream = upstream.feed(Box::new(PolicyEdge::new(sink, SignalPolicy::Forward)))?;
+    let upstream = upstream.feed(downstream.get()?)?;
     Add::add(downstream, upstream)
 }
 

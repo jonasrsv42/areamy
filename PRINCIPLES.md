@@ -30,6 +30,13 @@ This rules out designs that decouple nodes from ownership: arenas, index or hand
 - Allocation, boxing and binding happen while the graph is built. Nodes and upstreams are passed by value; a `Box` appears only where a node stores an upstream as `dyn`.
 - The hot path avoids extra heap allocation, locks and syscalls where placement allows.
 
+## Close travels like data
+
+- A node owns sender handles, never an edge. Closing a sender ends that producer only; an edge closes once every producer into it is done. Closing a receiver closes the edge for all.
+- A merge ends with its last input: fan-in, writers into one node, and both biunion sides alike. There are no half-closed graphs to support, only no data lost to which source closed first.
+- Flush, then close, delivers what each source flushed. Close is fast: anything unflushed may drop. Pinned in `src/tests/close`.
+- Errors are not closes: the first error tears the graph down.
+
 ## Layers
 
 - `graph` is the vocabulary (`Outlet`, `TryPushable`, `Pushable`, `Closeable`, `Schedule`, `Add`, `Get`, `Outputs`, `graph::Sink`) and declares the wiring verbs (`Via` / `Downstream`, `Pushes`, `At`); the runtimes and `edge` implement them. Outside its tests and doc links it uses only `message`, `wake`, `signal` and `error`.

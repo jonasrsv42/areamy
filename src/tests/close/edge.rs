@@ -1,6 +1,6 @@
 //! Every edge type drains its buffer before reporting Closed.
 
-use super::mock::{Signal, is_closed};
+use super::mock::Signal;
 use crate::Message;
 use crate::error::Error;
 use crate::graph::{Closeable, Receivable, TryPush, TryPushable};
@@ -15,7 +15,7 @@ use std::pin::Pin;
 
 fn assert_closed<T: std::fmt::Debug>(result: Result<T, Error>) {
     match result {
-        Err(e) if is_closed(&e) => {}
+        Err(e) if e.is_closed() => {}
         other => panic!("expected Closed, got {:?}", other),
     }
 }
@@ -23,7 +23,7 @@ fn assert_closed<T: std::fmt::Debug>(result: Result<T, Error>) {
 #[test]
 fn sync_edge_read_front() -> Result<(), Error> {
     let rx = Receiver::<usize, Signal>::new();
-    let tx = rx.sender();
+    let mut tx = rx.sender();
     tx.push_back(Message::Data(1))?;
     tx.push_back(Message::Flush("f".into()))?;
     tx.close()?;
@@ -38,7 +38,7 @@ fn sync_edge_read_front() -> Result<(), Error> {
 #[test]
 fn sync_edge_poll() -> Result<(), Error> {
     let rx = Receiver::<usize, Signal>::new();
-    let tx = rx.sender();
+    let mut tx = rx.sender();
     tx.push_back(Message::Flush("f".into()))?;
     tx.close()?;
 
@@ -50,7 +50,7 @@ fn sync_edge_poll() -> Result<(), Error> {
 #[test]
 fn sync_edge_read_all() -> Result<(), Error> {
     let rx = Receiver::<usize, Signal>::new();
-    let tx = rx.sender();
+    let mut tx = rx.sender();
     tx.push_back(Message::Data(1))?;
     tx.push_back(Message::Flush("f".into()))?;
     tx.close()?;
@@ -86,7 +86,7 @@ fn sync_edge_close_by_drop() -> Result<(), Error> {
 #[test]
 fn poll_input_edge() -> Result<(), Error> {
     let rx = input::sync::Receiver::<usize, Signal>::new(std::task::Waker::noop().clone(), None);
-    let tx = rx.sender();
+    let mut tx = rx.sender();
     tx.push_back(Message::Data(1))?;
     tx.push_back(Message::Flush("f".into()))?;
     tx.close()?;

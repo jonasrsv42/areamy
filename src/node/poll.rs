@@ -8,5 +8,5 @@ mod state;
 
 pub(crate) use drive::Drive;
 pub(crate) use emit::Emit;
-pub(crate) use feed::Feed;
+pub(crate) use feed::{Feed, Open};
 pub(crate) use state::NodeState;

@@ -1,8 +1,6 @@
 //! Line nodes: work, pull, bridged, and poll.
 
-use super::mock::{
-    Hold, IoThread, Msg, Script, drain, drain_edge, echo, hold, is_closed, slow_hold,
-};
+use super::mock::{Hold, IoThread, Msg, Script, drain, drain_edge, echo, hold, slow_hold};
 use crate::edge::sync::tests::join_within;
 use crate::error::Error;
 use crate::poll::{self, LineWakers};
@@ -102,9 +100,10 @@ fn work_line_close_without_flush_keeps_nothing() -> Result<(), Error> {
     Ok(())
 }
 
-/// One writer closing a fan-in edge closes it for every writer.
+/// One writer closing a fan-in edge leaves the others writing; the edge closes with the last,
+/// and every writer's flushed data is delivered.
 #[test]
-fn work_line_fan_in_close_by_one_writer() -> Result<(), Error> {
+fn work_line_fan_in_closes_with_the_last_writer() -> Result<(), Error> {
     let line = work::Line::of(Hold::new());
     let mut a = line.writer()?;
     let mut b = line.writer()?;
@@ -114,9 +113,20 @@ fn work_line_fan_in_close_by_one_writer() -> Result<(), Error> {
     b.push(Message::Data(2))?;
     a.push(Message::Flush("f".into()))?;
     a.close()?;
-    assert!(b.push(Message::Data(3)).is_err());
+    b.push(Message::Data(3))?;
+    b.push(Message::Flush("g".into()))?;
+    b.close()?;
 
-    flushed(drain(&mut reader)?);
+    assert_eq!(
+        drain(&mut reader)?,
+        vec![
+            Message::Data(1),
+            Message::Data(2),
+            Message::Flush("f".into()),
+            Message::Data(3),
+            Message::Flush("g".into()),
+        ]
+    );
     Ok(())
 }
 
@@ -277,7 +287,7 @@ fn poll_line_chain_child_closes_first() -> Result<(), Error> {
     // Not `start`: its scope joins on exit, so a broken cascade would hang the suite instead of
     // failing `join_within`.
     let run = thread::spawn(move || async_thread.run());
-    assert!(is_closed(&join_within(producer)));
+    assert!(join_within(producer).is_closed());
     join_within(run)?;
     Ok(())
 }

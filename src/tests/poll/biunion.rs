@@ -100,8 +100,9 @@ fn biunion_audio_with_config() {
         audio_writer.push(Message::Data(10)).unwrap();
         assert_eq!(output_edge.read_front().unwrap(), Message::Data(30)); // 10 * 3
 
-        // Close audio — should close the whole node (wakes right input too)
+        // The node ends with its last side: close both.
         audio_writer.close().unwrap();
+        config_writer.close().unwrap();
 
         assert!(matches!(handle.join(), Join::Ok));
     });
@@ -197,6 +198,7 @@ fn biunion_with_async_parent() {
         assert_eq!(output_edge.read_front().unwrap(), Message::Data(30));
 
         audio_writer.close().unwrap();
+        config_writer.close().unwrap();
         assert!(matches!(handle.join(), Join::Ok));
     });
 }

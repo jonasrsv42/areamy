@@ -115,6 +115,8 @@ where
 /// Shared state between Input, Work, and Output phases.
 pub(crate) struct SharedState<T: Types> {
     input: Phase<T::Inlet>,
+    /// The input still feeds the node; cleared once its edge closes.
+    open: bool,
     work: Phase<T::Routine>,
     output: Phase<T::Output>,
     state: NodeState<T::Signal>,
@@ -149,6 +151,7 @@ where
         Schedule::schedule(&mut output, output_wake);
         let shared = Rc::new(RefCell::new(SharedState {
             input,
+            open: true,
             work,
             output: Phase {
                 target: output,

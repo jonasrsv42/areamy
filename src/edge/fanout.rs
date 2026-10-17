@@ -464,7 +464,7 @@ mod tests {
         drop(receivers.remove(1));
 
         let error = fanout.ready().unwrap().push(Message::Data(7)).unwrap_err();
-        assert!(matches!(error.kind, ErrorKind::Closed));
+        assert!(error.is_closed());
         assert_eq!(fanout.suspended(), None);
         assert_eq!(receivers[0].poll().unwrap(), Some(Message::Data(7)));
         // The edge after the closed one never got it.

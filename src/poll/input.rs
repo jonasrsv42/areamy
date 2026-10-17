@@ -12,4 +12,7 @@
 //!   edges built from those parents.
 
 pub mod r#async;
+mod ready;
 pub mod sync;
+
+pub(crate) use ready::Ready;

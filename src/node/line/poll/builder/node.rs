@@ -32,18 +32,18 @@ use crate::edge::rotate::Rotate;
 use crate::edge::single::Single;
 use crate::error::Error;
 use crate::graph::marker::Connection;
-use crate::graph::{Add, Downstream, Get, Outputs};
+use crate::graph::{Add, Downstream, Get, Outputs, Receivable};
 use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node;
 use crate::node::line::poll::routine::LineRoutine;
 use crate::poll::Sink;
 use crate::poll::edge::{self, Async, Deferred, Direct, Edge, Null, Sync};
 use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
-use crate::poll::input;
+use crate::poll::input::{self, Ready};
 use crate::poll::thread::Thread;
 use crate::poll::traits::{AsyncParent, OwnedPoll};
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
-use crate::poll::{NodeId, Phase};
+use crate::poll::{Budget, Phase};
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use std::marker::PhantomData;
@@ -448,82 +448,24 @@ where
 // Build — shared phase assembly
 // ============================================================
 
-/// Build the three phase pollables for a node with a resolved [`Sync`]
-/// input, draining into `output`.
-fn sync_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
+/// Add a line node's three phases to `graph`, reading `input` and draining into `output`. Its
+/// work and output slots are allocated here, after any parents of `input` were built.
+fn assemble<
+    'params,
+    InType,
+    OutType,
+    SignalType,
+    ThreadIdType,
+    FactoryType,
+    TargetType,
+    OutputType,
+>(
     factory: FactoryType,
-    input: input::sync::Input<InType, SignalType>,
+    input: Ready<TargetType>,
     output: OutputType,
-    mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    options: Options,
-) -> Result<Graph<'params, ThreadIdType>, Error>
-where
-    InType: Send + std::marker::Sync + 'static,
-    OutType: 'static,
-    SignalType: Origin + Clone + Send + std::marker::Sync + 'static,
-    ThreadIdType: ThreadId,
-    FactoryType: LineRoutineFactory<'params>,
-    FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
-    OutputType: Rotate<DataType = OutType, SignalType = SignalType> + 'params,
-{
-    let work = allocator.next();
-    let output_slot = allocator.next();
-    let input_waker = allocator.local_waker(input.slot.id);
-    let routine = factory.create(LineWakers {
-        input: input_waker.clone(),
-        work: work.value.wake.clone(),
-        timer: work.value.timer.clone(),
-        output: output_slot.value.wake.local.clone(),
-    });
-    let (input_phase, work_phase, output_phase) = node::Node::phases(
-        Phase {
-            target: input.edge,
-            waker: input_waker,
-        },
-        Phase {
-            target: routine,
-            waker: work.value.wake.local,
-        },
-        output,
-        output_slot.value.wake,
-        options.budget,
-    );
-    let nodes = vec![
-        GraphNode {
-            id: input.slot.id,
-            pollable: Box::new(input_phase),
-        },
-        GraphNode {
-            id: work.id,
-            pollable: Box::new(work_phase),
-        },
-        GraphNode {
-            id: output_slot.id,
-            pollable: Box::new(output_phase),
-        },
-    ];
-    Ok(Graph { allocator, nodes })
-}
-
-/// Build the parent graphs and the three phase pollables for a node with an
-/// [`Async`] input, draining into `output`.
-fn async_input<'params, InType, OutType, SignalType, ThreadIdType, FactoryType, OutputType>(
-    factory: FactoryType,
-    parents: Vec<
-        Box<
-            dyn AsyncParent<
-                    'params,
-                    OutType = InType,
-                    SignalType = SignalType,
-                    ThreadIdType = ThreadIdType,
-                > + 'params,
-        >,
-    >,
-    input_id: NodeId,
-    output: OutputType,
-    mut allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    options: Options,
-) -> Result<Graph<'params, ThreadIdType>, Error>
+    budget: Budget,
+    mut graph: Graph<'params, ThreadIdType>,
+) -> Graph<'params, ThreadIdType>
 where
     InType: 'static,
     OutType: 'static,
@@ -531,23 +473,12 @@ where
     ThreadIdType: ThreadId,
     FactoryType: LineRoutineFactory<'params>,
     FactoryType::Routine: LineRoutine<InType, OutType> + 'params,
+    TargetType: Receivable<DataType = InType, SignalType = SignalType> + 'params,
     OutputType: Rotate<DataType = OutType, SignalType = SignalType> + 'params,
 {
-    let input_waker = allocator.local_waker(input_id);
-    let edge_waker = input_waker.clone();
-    let mut edges = Vec::new();
-    let mut nodes = Vec::new();
-
-    for parent in parents {
-        let (sender, receiver) = edge::channel(edge_waker.clone(), options.bound);
-        let parent_graph = parent.build(sender, allocator)?;
-        allocator = parent_graph.allocator;
-        nodes.extend(parent_graph.nodes);
-        edges.push(receiver);
-    }
-
-    let work = allocator.next();
-    let output_slot = allocator.next();
+    let work = graph.allocator.next();
+    let output_slot = graph.allocator.next();
+    let input_waker = graph.allocator.local_waker(input.id);
     let routine = factory.create(LineWakers {
         input: input_waker.clone(),
         work: work.value.wake.clone(),
@@ -556,7 +487,7 @@ where
     });
     let (input_phase, work_phase, output_phase) = node::Node::phases(
         Phase {
-            target: edges,
+            target: input.target,
             waker: input_waker,
         },
         Phase {
@@ -565,21 +496,21 @@ where
         },
         output,
         output_slot.value.wake,
-        options.budget,
+        budget,
     );
-    nodes.push(GraphNode {
-        id: input_id,
+    graph.nodes.push(GraphNode {
+        id: input.id,
         pollable: Box::new(input_phase),
     });
-    nodes.push(GraphNode {
+    graph.nodes.push(GraphNode {
         id: work.id,
         pollable: Box::new(work_phase),
     });
-    nodes.push(GraphNode {
+    graph.nodes.push(GraphNode {
         id: output_slot.id,
         pollable: Box::new(output_phase),
     });
-    Ok(Graph { allocator, nodes })
+    graph
 }
 
 // ============================================================
@@ -602,13 +533,15 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(
+        let graph = Graph::empty(allocator);
+        let input = self.input.ready();
+        Ok(assemble(
             self.factory,
-            self.input,
+            input,
             self.output,
-            allocator,
-            self.options,
-        )
+            self.options.budget,
+            graph,
+        ))
     }
 }
 
@@ -628,14 +561,15 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        async_input(
+        let graph = Graph::empty(allocator);
+        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
+        Ok(assemble(
             self.factory,
-            self.input.parents,
-            self.alloc,
+            input,
             self.output,
-            allocator,
-            self.options,
-        )
+            self.options.budget,
+            graph,
+        ))
     }
 }
 
@@ -655,13 +589,16 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(
+        let graph = Graph::empty(allocator);
+        let input = self.input.ready();
+        let output = Single::from(self.output);
+        Ok(assemble(
             self.factory,
-            self.input,
-            Single::from(self.output),
-            allocator,
-            self.options,
-        )
+            input,
+            output,
+            self.options.budget,
+            graph,
+        ))
     }
 }
 
@@ -681,14 +618,16 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        async_input(
+        let graph = Graph::empty(allocator);
+        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
+        let output = Single::from(self.output);
+        Ok(assemble(
             self.factory,
-            self.input.parents,
-            self.alloc,
-            Single::from(self.output),
-            allocator,
-            self.options,
-        )
+            input,
+            output,
+            self.options.budget,
+            graph,
+        ))
     }
 }
 
@@ -708,13 +647,16 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(
+        let graph = Graph::empty(allocator);
+        let input = self.input.ready();
+        let output = Single::from(self.output);
+        Ok(assemble(
             self.factory,
-            self.input,
-            Single::from(self.output),
-            allocator,
-            self.options,
-        )
+            input,
+            output,
+            self.options.budget,
+            graph,
+        ))
     }
 }
 
@@ -734,14 +676,16 @@ where
         self: Box<Self>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        async_input(
+        let graph = Graph::empty(allocator);
+        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
+        let output = Single::from(self.output);
+        Ok(assemble(
             self.factory,
-            self.input.parents,
-            self.alloc,
-            Single::from(self.output),
-            allocator,
-            self.options,
-        )
+            input,
+            output,
+            self.options.budget,
+            graph,
+        ))
     }
 }
 
@@ -769,13 +713,16 @@ where
         edge: edge::Sender<OutType, SignalType>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        sync_input(
+        let graph = Graph::empty(allocator);
+        let input = self.input.ready();
+        let output = Single::from(edge);
+        Ok(assemble(
             self.factory,
-            self.input,
-            Single::from(edge),
-            allocator,
-            self.options,
-        )
+            input,
+            output,
+            self.options.budget,
+            graph,
+        ))
     }
 }
 
@@ -799,13 +746,15 @@ where
         output_edge: edge::Sender<OutType, SignalType>,
         allocator: ThreadLocalWakerAllocator<ThreadIdType>,
     ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        async_input(
+        let graph = Graph::empty(allocator);
+        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
+        let output = Single::from(output_edge);
+        Ok(assemble(
             self.factory,
-            self.input.parents,
-            self.alloc,
-            Single::from(output_edge),
-            allocator,
-            self.options,
-        )
+            input,
+            output,
+            self.options.budget,
+            graph,
+        ))
     }
 }

@@ -27,6 +27,16 @@ pub struct Graph<'params, ThreadIdType: ThreadId> {
     pub nodes: Vec<GraphNode<'params, ThreadIdType>>,
 }
 
+impl<ThreadIdType: ThreadId> Graph<'_, ThreadIdType> {
+    /// No nodes yet: what a builder grows its own nodes into.
+    pub(crate) fn empty(allocator: ThreadLocalWakerAllocator<ThreadIdType>) -> Self {
+        Self {
+            allocator,
+            nodes: Vec::new(),
+        }
+    }
+}
+
 /// One-shot builder for async poll graph nodes.
 ///
 /// Constructed on any thread ([Send]), then [GraphBuilder::build] is called

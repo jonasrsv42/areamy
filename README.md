@@ -3,7 +3,7 @@
 
 <p align="center"><img src="assets/stream.svg" alt="A signal flowing through a streaming graph" width="100%"></p>
 
-Streaming graphs for Rust where a wrong graph doesn't compile.
+All Streaming (Areamy) Streaming Pipelines with compile time guarantees! :)
 
 Areamy runs low-latency pipelines across threads: audio, video, sensor readings or any other
 stream goes in, through stages such as model inference, and out, with blocking and async stages

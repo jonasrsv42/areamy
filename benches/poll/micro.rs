@@ -1,32 +1,27 @@
-//! Poll runtime: sync → `FutureRoutine` line → sync.
-
-mod support;
+//! One `FutureRoutine` line between two sync edges: the bench thread pushes straight into the
+//! poll node's input and reads its output edge.
+//!
+//! `round_trip` is two OS hand-offs (see `edge/cross_thread/ping_pong`), so runtime costs
+//! below a microsecond don't show in it; `burst` shows them.
 
 use areamy::error::Error;
+use areamy::graph::Get;
 use areamy::poll::future::line::FutureRoutine;
 use areamy::poll::future::{Input, input, output};
 use areamy::sync::Receiver;
-use areamy::work::Line;
-use areamy::{
-    Closeable, DefaultThread, Message, Pushable, Pushes, Streams, ThreadBundle, Trackable, Writes,
-    poll,
-};
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use areamy::{Closeable, Message, Pushable, Pushes, Trackable, poll, work};
+use criterion::{Criterion, Throughput};
 use std::hint::black_box;
 use std::thread;
 use std::time::Instant;
-use support::Pass;
 
 areamy::thread_id!(IoThread);
 
 type Signal = Trackable<&'static str>;
 
-fn sync_poll_sync(c: &mut Criterion) {
-    let mut group = c.benchmark_group("poll/sync_poll_sync");
+pub fn future_line(c: &mut Criterion) {
+    let mut group = c.benchmark_group("poll/micro/future_line");
     group.throughput(Throughput::Elements(1));
-
-    let mut writer_node = Line::of(Pass::<usize>::new());
-    let mut writer = writer_node.writer().unwrap();
 
     let mut io_thread = poll::Thread::<IoThread>::new();
     let routine = FutureRoutine::factory(
@@ -40,18 +35,14 @@ fn sync_poll_sync(c: &mut Criterion) {
         },
     );
     let mut node = io_thread.line(routine).input().output();
-    writer_node.pushes(&node).unwrap();
+    let mut writer: Box<dyn work::Sink<DataType = usize, SignalType = Signal> + Send + Sync> =
+        Get::get(&node).unwrap();
     let output = Receiver::<usize, Signal>::new();
     node.pushes(&output).unwrap();
     io_thread.add(node);
 
-    let mut bundle = ThreadBundle::new();
-    bundle
-        .add(writer_node.stream::<DefaultThread>())
-        .add(io_thread);
-
     thread::scope(|s| {
-        let handle = bundle.start(s);
+        let handle = io_thread.start(s);
 
         group.bench_function("burst", |b| {
             b.iter_custom(|iters| {
@@ -78,6 +69,3 @@ fn sync_poll_sync(c: &mut Criterion) {
     });
     group.finish();
 }
-
-criterion_group!(benches, sync_poll_sync);
-criterion_main!(benches);

@@ -1,10 +1,14 @@
 //! Raw sync edge: the queue every work connection is built on.
 
+#[cfg(feature = "trace")]
+compile_error!("benches time with `trace` off: its logs fire on every full edge");
+
 use areamy::sync::Receiver;
 use areamy::{Message, Trackable};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::num::NonZeroUsize;
+use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Instant;
 
@@ -16,9 +20,9 @@ fn same_thread(c: &mut Criterion) {
     let receiver = Receiver::<u64, Signal>::new();
     let sender = receiver.sender();
 
-    let mut group = c.benchmark_group("edge");
+    let mut group = c.benchmark_group("edge/same_thread");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("push_poll_same_thread", |b| {
+    group.bench_function("push_poll", |b| {
         b.iter(|| {
             sender.push_back(Message::Data(black_box(1))).unwrap();
             black_box(receiver.poll().unwrap());
@@ -28,20 +32,27 @@ fn same_thread(c: &mut Criterion) {
 }
 
 fn cross_thread(c: &mut Criterion) {
-    let mut group = c.benchmark_group("edge");
+    let mut group = c.benchmark_group("edge/cross_thread");
     group.throughput(Throughput::Elements(1));
 
     // Producer thread bursts `iters` messages; the consumer blocks on each.
-    group.bench_function("burst_cross_thread", |b| {
+    group.bench_function("burst", |b| {
         b.iter_custom(|iters| {
             let receiver = Receiver::<u64, Signal>::new();
             let sender = receiver.sender();
-            let start = Instant::now();
-            let producer = thread::spawn(move || {
-                for i in 0..iters {
-                    sender.push_back(Message::Data(i)).unwrap();
+            // Spawned before the clock starts, released once it has.
+            let go = Arc::new(Barrier::new(2));
+            let producer = thread::spawn({
+                let go = go.clone();
+                move || {
+                    go.wait();
+                    for i in 0..iters {
+                        sender.push_back(Message::Data(i)).unwrap();
+                    }
                 }
             });
+            go.wait();
+            let start = Instant::now();
             for _ in 0..iters {
                 black_box(receiver.read_front().unwrap());
             }
@@ -52,16 +63,23 @@ fn cross_thread(c: &mut Criterion) {
     });
 
     // Same burst, but the producer blocks whenever 64 messages are queued.
-    group.bench_function("bounded_burst_cross_thread", |b| {
+    group.bench_function("bounded_burst", |b| {
         b.iter_custom(|iters| {
             let receiver = Receiver::<u64, Signal>::bounded(BOUND);
             let sender = receiver.sender();
-            let start = Instant::now();
-            let producer = thread::spawn(move || {
-                for i in 0..iters {
-                    sender.push_back(Message::Data(i)).unwrap();
+            // Spawned before the clock starts, released once it has.
+            let go = Arc::new(Barrier::new(2));
+            let producer = thread::spawn({
+                let go = go.clone();
+                move || {
+                    go.wait();
+                    for i in 0..iters {
+                        sender.push_back(Message::Data(i)).unwrap();
+                    }
                 }
             });
+            go.wait();
+            let start = Instant::now();
             for _ in 0..iters {
                 black_box(receiver.read_front().unwrap());
             }

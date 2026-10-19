@@ -2,7 +2,7 @@
 name = "areamy"
 version = "0.1.0"
 edition = "2024"
-# benches/support.rs is shared code, not a bench target.
+# benches/common.rs and modules under benches/<area>/ are shared code, not bench targets.
 autobenches = false
 
 [features]
@@ -12,6 +12,9 @@ default = []
 # if the caller doesn't properly join. This can make debugging silent failures
 # very difficult. Enable this feature to suppress these prints.
 silent = []
+# Logs every block, park and resume on a full edge to stderr. Backpressure is normal
+# operation, so this is opt-in: turn it on to find a stall.
+trace = []
 # Exposes the test mocks (`wake::mock`, `poll::context::mock`,
 # `poll::timer::mock`) to downstream crates. Enable from [dev-dependencies] only.
 testing = []
@@ -37,6 +40,7 @@ harness = false
 
 [[bench]]
 name = "poll"
+path = "benches/poll/main.rs"
 harness = false
 
 # `cargo test` runs the example's `main`, so its backpressure check can't regress unnoticed.

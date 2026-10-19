@@ -23,8 +23,8 @@
 //! Every input holds at most a few chunks. When the decoder falls behind, the encoder blocks on
 //! the decoder's full input, then the frontend on the encoder's, and finally the reader of the
 //! recording itself: memory stays flat however long the file, and the whole run goes at the
-//! decoder's pace. Each wait prints a "blocked" / "unblocked" pair to stderr (hide them with
-//! `2>/dev/null`).
+//! decoder's pace. With `--features trace`, each wait prints a "blocked" / "unblocked" pair to
+//! stderr.
 //!
 //! Run with `cargo run --example simple_speech_example`. `cargo test` runs it too.
 

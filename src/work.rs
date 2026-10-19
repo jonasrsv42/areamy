@@ -19,7 +19,7 @@
 //! because the node drains its input before scheduling its upstreams again. Keep an input unbounded when a producer on the same thread would push into
 //! it without its consumer getting to run first: a [crate::Pushes] side path into a node that the
 //! same owner schedules, an upstream shared by two owners, a back-edge, or a [Writer] on the
-//! reader's thread. Such a push blocks forever, logged as "blocked" with no "unblocked".
+//! reader's thread. Such a push blocks forever, logged (`trace` feature) as "blocked" with no "unblocked".
 //!
 //! A "blocked" with no "unblocked" can also be a producer starved by others refilling the edge
 //! first; the logs can't tell the two apart.

@@ -1,4 +1,4 @@
-//! Shared bench routines and payloads.
+//! Routines and payloads shared by every bench target.
 // Each bench uses a subset.
 #![allow(dead_code)]
 

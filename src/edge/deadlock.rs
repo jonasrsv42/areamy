@@ -31,9 +31,10 @@ pub(crate) fn resumed(node: &str, edge: usize) {
     log(node, edge, "resumed");
 }
 
+/// Opt-in (`trace`): these fire on every full edge, which is normal operation.
 fn log(node: &str, edge: usize, state: &str) {
-    #[cfg(not(feature = "silent"))]
+    #[cfg(feature = "trace")]
     eprintln!("{node} edge {edge}: {state}");
-    #[cfg(feature = "silent")]
+    #[cfg(not(feature = "trace"))]
     let _ = (node, edge, state);
 }

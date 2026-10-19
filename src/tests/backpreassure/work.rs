@@ -57,7 +57,7 @@ fn slow_consumer_blocks_the_producer_thread() {
         let writing = scope.spawn(|| write(writer, 0, BURST, &pushed));
 
         // Nothing read: the sink fills, the source's push is refused `Full`, then `Stuck`, and
-        // the producer thread blocks. Run with `--nocapture` to see "blocked" / "unblocked".
+        // the producer thread blocks. Run with `--features trace -- --nocapture` to see "blocked" / "unblocked".
         let filled = settled(&pushed, IN_FLIGHT);
 
         for value in 0..BURST {
@@ -106,7 +106,7 @@ fn slow_biunion_blocks_producers_on_both_bounded_inputs() {
         let right_writing = scope.spawn(|| write(right_writer, RIGHT, BURST, &right_pushed));
 
         // Nothing read: both biunion inputs fill and both producer threads block on them; run
-        // with `--nocapture` to see "blocked" / "unblocked".
+        // with `--features trace -- --nocapture` to see "blocked" / "unblocked".
         let left_filled = settled(&left_pushed, IN_FLIGHT);
         let right_filled = settled(&right_pushed, IN_FLIGHT);
 
@@ -163,7 +163,7 @@ fn slow_consumers_block_a_producing_bifurcation() {
         let writing = scope.spawn(|| write(writer, 0, BURST, &pushed));
 
         // Nothing read: both sinks fill and the producer blocks on one; run with
-        // `--nocapture` to see "blocked" / "unblocked".
+        // `--features trace -- --nocapture` to see "blocked" / "unblocked".
         let filled = settled(&pushed, IN_FLIGHT);
 
         for value in 0..BURST {

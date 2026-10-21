@@ -17,6 +17,7 @@ criterion_group!(
     benches,
     micro::future_line,
     realistic::assistant::assistant,
-    realistic::floor::floor
+    realistic::floor::floor,
+    realistic::proxy::proxy
 );
 criterion_main!(benches);

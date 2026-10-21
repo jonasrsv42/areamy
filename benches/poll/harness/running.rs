@@ -5,6 +5,7 @@ use super::output::drain;
 use super::{Graph, Input, Load, Metric};
 use crate::support::{AudioFrame, audio_frame};
 use areamy::{Closeable, Message, Pushable, ThreadBundleHandle};
+use std::hint;
 use std::mem;
 use std::process;
 use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
@@ -19,6 +20,7 @@ pub(super) struct Running<'s> {
     /// The measured thread's clock; none for wall time.
     clock: Option<CpuClock>,
     check: fn(),
+    pace: Duration,
     /// Frames pushed so far, for the output thread's count to match.
     pushed: usize,
     /// The frames the next batch pushes.
@@ -48,6 +50,7 @@ impl<'s> Running<'s> {
             input: ClosingInput(graph.input),
             clock: None,
             check: graph.check,
+            pace: load.pace,
             pushed: 0,
             held: (0..load.batch).map(|_| audio_frame()).collect(),
             emptied,
@@ -94,7 +97,15 @@ impl<'s> Running<'s> {
 
     fn push_held(&mut self) {
         self.pushed += self.held.len();
+        // Paced against a running schedule, so a late push doesn't delay every one after it.
+        let mut at = Instant::now();
         for frame in self.held.drain(..) {
+            if !self.pace.is_zero() {
+                at += self.pace;
+                while Instant::now() < at {
+                    hint::spin_loop();
+                }
+            }
             self.input.0.push(Message::Data(frame)).unwrap();
         }
         let emptied = mem::take(&mut self.held);
@@ -114,6 +125,12 @@ impl<'s> Running<'s> {
             output,
             ..
         } = self;
+        // The batch in flight comes back first: a close drops what a FutureRoutine's queues hold,
+        // so closing behind it would lose its tail under some poll orders.
+        if filled.recv_timeout(STALL).is_err() {
+            eprintln!("pipeline stalled: the last batch never came back");
+            process::exit(101);
+        }
         // Let the output thread go: it waits on `emptied` for a batch, then drains the edge to its
         // close.
         drop((input, held, emptied, filled));

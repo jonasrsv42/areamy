@@ -15,6 +15,8 @@
 //! - `slow_speaker`: the speaker is far slower than the graph, so the edge stays full and the
 //!   graph parks after nearly every push, woken per freed slot. Wall time is the speaker's; the
 //!   metric is the graph thread's CPU, which also holds the wakes from the mic's pushes.
+//! - `paced`: the mic sends one frame per period, as live, so only the brain's reply bursts.
+//!   Graph CPU, mostly parking and waking once per frame.
 //!
 //! `sleep(ZERO)` resolves without registering a timer, so only the smoother's deadlines touch the
 //! timer heap.
@@ -45,6 +47,9 @@ const SPEAKER_BOUND: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 /// A speaker far slower than the graph (about 0.7 µs per frame unpaced): closer, the graph
 /// wakes late enough that slots have piled up, and its wakes per frame follow the host's latency.
 const SLOW_SPEAKER: Duration = Duration::from_micros(6);
+/// The paced mic's period: compressed from 20 ms so a sample takes seconds, still slow enough
+/// that the graph drains each frame before the next.
+const MIC_PERIOD: Duration = Duration::from_micros(50);
 /// The network's answer time; none when unpaced.
 const NETWORK: Duration = Duration::ZERO;
 /// The smoother releases a partial chunk after this long without a frame. Firmware's is 1 s;
@@ -162,5 +167,11 @@ pub fn assistant(c: &mut Criterion) {
     .output_cost(SLOW_SPEAKER)
     .metric(Metric::Cpu(GraphThread::name()))
     .run(|| graph(bounded));
+    // Steady input, so a change that only helps bursts shows as none here.
+    let period = MIC_PERIOD.as_micros();
+    Bench::new(&mut group, &format!("paced/period={period}us/bound=none"))
+        .pace(MIC_PERIOD)
+        .metric(Metric::Cpu(GraphThread::name()))
+        .run(|| graph(None));
     group.finish();
 }

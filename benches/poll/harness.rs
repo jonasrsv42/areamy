@@ -83,6 +83,8 @@ impl fmt::Display for Metric {
 struct Load {
     batch: usize,
     output_cost: Duration,
+    /// Time between the input's pushes; zero pushes as fast as it can.
+    pace: Duration,
 }
 
 /// One bench id: `Bench::new(&mut group, "unpaced/bound=8").run(|| graph())`. Its id gains the
@@ -102,6 +104,7 @@ impl<'g, 'c> Bench<'g, 'c> {
             load: Load {
                 batch: BATCH,
                 output_cost: Duration::ZERO,
+                pace: Duration::ZERO,
             },
             metric: Metric::Wall,
         }
@@ -110,6 +113,18 @@ impl<'g, 'c> Bench<'g, 'c> {
     /// The output thread's busy time per frame: above the graph's, the output edge stays full.
     pub fn output_cost(mut self, cost: Duration) -> Self {
         self.load.output_cost = cost;
+        self
+    }
+
+    /// Frames per measured batch; a burst must fit in one.
+    pub fn batch(mut self, batch: usize) -> Self {
+        self.load.batch = batch;
+        self
+    }
+
+    /// The input's period: one frame per `pace`, for a steady stream instead of a burst.
+    pub fn pace(mut self, pace: Duration) -> Self {
+        self.load.pace = pace;
         self
     }
 

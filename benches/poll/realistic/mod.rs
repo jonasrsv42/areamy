@@ -2,3 +2,4 @@
 
 pub mod assistant;
 pub mod floor;
+pub mod proxy;

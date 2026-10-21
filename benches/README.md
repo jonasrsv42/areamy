@@ -9,7 +9,7 @@ One criterion target per area. Benchmark ids are `area/scenario/params`, paramet
 | `work` | `work/*` | work lines, fan-out, biunion, helper threads |
 | `pull` | `pull/*` | pull lines |
 | `poll` | `poll/micro/*` | one routine between two sync edges |
-| | `poll/realistic/*` | graphs shaped like downstream's, and the harness's floor |
+| | `poll/realistic/*` | graphs shaped like downstream's (`assistant`: firmware, `proxy`: gemproxy), and the harness's floor |
 
 ```bash
 cargo bench --bench poll -- realistic     # one area, one group
@@ -27,6 +27,9 @@ Realistic ids end in their metric:
 - `cpu=<thread>`: on-CPU time of that thread, kernel time included (Linux, 64-bit), for when
   another thread sets the wall time, such as a slow speaker. Criterion's throughput line then
   means frames per CPU-second of that thread.
+
+Each realistic graph has bursty ids and a steady one (`paced`, `steady`): judge a change on both,
+so one that helps bursts doesn't cost the steady stream.
 
 `poll/realistic/floor` is the realistic harness with no graph. A bench near it is measuring the
 harness, not areamy.
@@ -51,6 +54,9 @@ between runs of identical code (five runs each, 2026-10-19):
 | `poll/realistic/assistant/unpaced/bound=none/*` | ~3% | ~1% |
 | `poll/realistic/assistant/slow_speaker/*` | <1% | ~1% |
 | `poll/realistic/floor/*` | ~10% | ~10% |
+
+Not yet measured this way: `assistant/paced` and `proxy/*`. Over three alternating rounds
+(2026-10-21) they spread ~1–3%, except `proxy/burst` on the current scheduler at ~7%.
 
 `unpaced/bound=8` also shifts level with core placement: about 15% faster when its threads land
 on SMT siblings, which hand off wakes sooner. Compare its baselines only from the same `taskset`

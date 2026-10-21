@@ -11,8 +11,8 @@ use crate::error::Error;
 use crate::fatal;
 use crate::poll::graph::GraphNode;
 use crate::poll::marker::NodeId;
-use crate::poll::queue::{Producer, ThreadLocalProducer};
 use crate::poll::runtime::{Node, Runtime};
+use crate::poll::scheduler::{Producer, ThreadLocalProducer};
 use crate::poll::timer::Timer;
 use crate::poll::wakers::{sync, thread_local};
 use crate::poll::{Context, Pollable};
@@ -161,7 +161,7 @@ fn context(id: NodeId, sync: core::task::Waker, local_producer: &ThreadLocalProd
 mod tests {
     use super::*;
     use crate::graph::marker::Connection;
-    use crate::poll::queue::PollQueue;
+    use crate::poll::scheduler::PollQueue;
 
     crate::thread_id!(AllocatorThread);
 

@@ -101,7 +101,7 @@ impl Future for SleepFut {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poll::queue::PollQueue;
+    use crate::poll::scheduler::PollQueue;
     use crate::poll::thread::tls::ThreadLocalGuard;
     use crate::poll::timer::Timer;
     use crate::poll::timer::mock::noop_timer;

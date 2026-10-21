@@ -4,7 +4,7 @@
 //! the same thread and not parked. `!Send`, `!Sync`.
 
 use crate::poll::marker::NodeId;
-use crate::poll::queue::ThreadLocalProducer;
+use crate::poll::scheduler::ThreadLocalProducer;
 use crate::wake::{LocalWake, LocalWaker};
 
 /// Local wake impl backed by [ThreadLocalProducer].
@@ -32,7 +32,7 @@ impl LocalWake for Waker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poll::queue::PollQueue;
+    use crate::poll::scheduler::PollQueue;
 
     #[test]
     fn wake_via_local_waker_drives_consumer() {

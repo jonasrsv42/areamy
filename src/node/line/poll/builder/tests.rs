@@ -12,7 +12,7 @@ use crate::poll::Budget;
 use crate::poll::context::mock::noop_context;
 use crate::poll::edge::{self, Null};
 use crate::poll::graph::{Graph, GraphBuilder};
-use crate::poll::queue::PollQueue;
+use crate::poll::scheduler::PollQueue;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;

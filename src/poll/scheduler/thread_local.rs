@@ -3,7 +3,7 @@
 //! Thin handle over [super::scheduler::Scheduler]. Clone'd by every
 //! waker that wants same-thread wake/schedule.
 
-use super::scheduler::Scheduler;
+use super::core::Scheduler;
 use crate::poll::marker::NodeId;
 use crate::poll::timer::TimerKey;
 
@@ -12,7 +12,7 @@ use core::cell::RefCell;
 use std::time::Instant;
 
 /// ```compile_fail
-/// use areamy::poll::queue::{PollQueue, ThreadLocalProducer};
+/// use areamy::poll::scheduler::{PollQueue, ThreadLocalProducer};
 /// fn require_send<T: Send>() {}
 /// let q = PollQueue::new();
 /// let (_, local) = q.local();
@@ -20,7 +20,7 @@ use std::time::Instant;
 /// ```
 ///
 /// ```compile_fail
-/// use areamy::poll::queue::{PollQueue, ThreadLocalProducer};
+/// use areamy::poll::scheduler::{PollQueue, ThreadLocalProducer};
 /// fn require_sync<T: Sync>() {}
 /// let q = PollQueue::new();
 /// let (_, local) = q.local();

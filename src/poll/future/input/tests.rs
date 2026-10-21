@@ -1,6 +1,6 @@
 use super::{Input, Receiver, Sender, channel};
 use crate::node::routine::Accept;
-use crate::poll::queue::PollQueue;
+use crate::poll::scheduler::PollQueue;
 use crate::poll::timer::Timer;
 use crate::wake::mock::{
     counting_local_waker, counting_waker, local_waker, noop_local_waker, noop_waker,

@@ -1,6 +1,6 @@
 //! [Producer] — cross-thread producer. `Send + Sync + Clone`.
 
-use super::core::VyukovQueue;
+use super::vyukov::VyukovQueue;
 use crate::poll::marker::NodeId;
 
 use alloc::sync::Arc;

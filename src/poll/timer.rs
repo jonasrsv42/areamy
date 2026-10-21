@@ -1,5 +1,6 @@
 //! Deadline re-polls: a [Timer] re-polls its node once a deadline passes.
 
+pub(crate) mod deadline;
 mod guard;
 mod key;
 
@@ -8,7 +9,7 @@ pub use key::TimerKey;
 pub(crate) use key::{Generation, SlotId};
 
 use crate::poll::marker::NodeId;
-use crate::poll::queue::ThreadLocalProducer;
+use crate::poll::scheduler::ThreadLocalProducer;
 
 use std::time::Instant;
 
@@ -50,7 +51,7 @@ impl Timer {
 #[cfg(any(test, feature = "testing"))]
 pub mod mock {
     use super::Timer;
-    use crate::poll::queue::PollQueue;
+    use crate::poll::scheduler::PollQueue;
 
     /// A timer on a private queue nobody drains: keys are real and deadlines register, nothing
     /// fires.
@@ -63,7 +64,7 @@ pub mod mock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poll::queue::PollQueue;
+    use crate::poll::scheduler::PollQueue;
     use core::time::Duration;
 
     #[test]

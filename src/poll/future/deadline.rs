@@ -46,7 +46,7 @@ impl Deadline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poll::queue::PollQueue;
+    use crate::poll::scheduler::PollQueue;
 
     fn timer() -> Timer {
         // A real Timer bound to a real Scheduler; the consumer never runs here.

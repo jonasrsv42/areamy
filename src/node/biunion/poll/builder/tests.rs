@@ -14,7 +14,7 @@ use crate::poll::NodeId;
 use crate::poll::context::mock::noop_context;
 use crate::poll::edge;
 use crate::poll::graph::{Graph, GraphBuilder};
-use crate::poll::queue::{Consumer, PollQueue, Producer};
+use crate::poll::scheduler::{Consumer, PollQueue, Producer};
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;

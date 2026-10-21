@@ -11,10 +11,10 @@
 //! `pending: bool` dedupes the cycling `DeadlinePending` sentinel —
 //! exactly one is ever live in the queue.
 
-use super::core::{Item, VyukovQueue};
-use super::deadline::DeadlineHeap;
+use super::vyukov::{Item, VyukovQueue};
 use crate::poll::marker::NodeId;
 use crate::poll::timer::TimerKey;
+use crate::poll::timer::deadline::DeadlineHeap;
 use crate::wake::Parker;
 
 use alloc::sync::Arc;

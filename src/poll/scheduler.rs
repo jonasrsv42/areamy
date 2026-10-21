@@ -13,10 +13,9 @@
 
 mod consumer;
 mod core;
-mod deadline;
 mod producer;
-mod scheduler;
 mod thread_local;
+mod vyukov;
 
 pub use consumer::Consumer;
 pub use producer::Producer;
@@ -28,13 +27,13 @@ use alloc::rc::Rc;
 use alloc::sync::Arc;
 
 /// ```compile_fail
-/// use areamy::poll::queue::PollQueue;
+/// use areamy::poll::scheduler::PollQueue;
 /// fn require_sync<T: Sync>() {}
 /// require_sync::<PollQueue>(); // must not compile: it owns the consumer's parker
 /// ```
 pub struct PollQueue {
     /// Shared by every producer and the consumer.
-    inner: Arc<core::VyukovQueue>,
+    inner: Arc<vyukov::VyukovQueue>,
     /// Built here, before the poll thread exists: producers take its waker now, the consumer
     /// takes the parker itself in [Self::local].
     parker: Parker,
@@ -49,7 +48,7 @@ impl Default for PollQueue {
 impl PollQueue {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(core::VyukovQueue::new()),
+            inner: Arc::new(vyukov::VyukovQueue::new()),
             parker: Parker::new(),
         }
     }
@@ -66,10 +65,7 @@ impl PollQueue {
     /// Must be called on the async thread — returns `!Send` types.
     pub fn local(self) -> (Consumer, ThreadLocalProducer) {
         // The parker moves to the thread that parks on it; producers keep only its waker.
-        let scheduler = Rc::new(RefCell::new(scheduler::Scheduler::new(
-            self.inner,
-            self.parker,
-        )));
+        let scheduler = Rc::new(RefCell::new(core::Scheduler::new(self.inner, self.parker)));
         (
             Consumer {
                 inner: scheduler.clone(),

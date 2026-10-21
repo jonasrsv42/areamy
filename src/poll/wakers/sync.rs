@@ -1,10 +1,10 @@
 //! Sync (cross-thread) waker for async poll runtime.
 //!
 //! `Waker` implements [alloc::task::Wake] — enqueues a node ID via
-//! [crate::poll::queue::Producer], which wakes the consumer.
+//! [crate::poll::scheduler::Producer], which wakes the consumer.
 
 use crate::poll::marker::NodeId;
-use crate::poll::queue::Producer;
+use crate::poll::scheduler::Producer;
 
 use alloc::sync::Arc;
 use alloc::task::Wake;

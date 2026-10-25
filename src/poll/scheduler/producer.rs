@@ -1,12 +1,12 @@
 //! [Producer] — cross-thread producer. `Send + Sync + Clone`.
 
-use super::treiber::{Pushed, TreiberStack};
+use super::treiber::TreiberStack;
 use crate::poll::marker::NodeId;
 
 use alloc::sync::Arc;
 use core::task::Waker;
 
-/// Pushes an id and, if the consumer may be parked, wakes it.
+/// Pushes an id and wakes the consumer.
 #[derive(Clone)]
 pub struct Producer {
     pub(super) stack: Arc<TreiberStack>,
@@ -15,14 +15,15 @@ pub struct Producer {
 }
 
 impl Producer {
-    /// Pushes `id`, from any thread. O(1): a [TreiberStack::push]; a signal adds the parker's lock
-    /// (two RMWs) and a notify when it sleeps.
+    /// Pushes `id`, from any thread. O(1): a [TreiberStack::push], then the parker's lock (two
+    /// RMWs) and a notify when it sleeps.
+    ///
+    /// Every push wakes: the push that found the stack empty may be preempted before its wake,
+    /// and the ids pushed onto it would wait on that producer's priority.
     #[inline]
     pub fn push(&self, id: NodeId) {
-        // Only the first push since a take can find the consumer parked.
-        if self.stack.push(id) == Pushed::First {
-            self.waker.wake_by_ref();
-        }
+        self.stack.push(id);
+        self.waker.wake_by_ref();
     }
 }
 
@@ -75,29 +76,14 @@ mod tests {
         assert_eq!(witness.taken.load(Ordering::SeqCst), 3);
     }
 
+    /// First, linked and coalesced alike.
     #[test]
-    fn only_the_first_push_since_a_take_wakes_the_parker() {
+    fn every_push_wakes_the_parker() {
         let parker = Parker::new();
         let producer = started(8, parker.waker());
-        producer.push(1);
-        assert!(parker.take_woken());
-        producer.push(2);
-        producer.push(1);
-        assert!(!parker.take_woken());
-        let mut cursor = producer.stack.take();
-        while producer.stack.next(&mut cursor).is_some() {}
-        producer.push(2);
-        assert!(parker.take_woken());
-    }
-
-    #[test]
-    fn a_push_before_init_wakes_no_one() {
-        let parker = Parker::new();
-        let producer = Producer {
-            stack: Arc::new(TreiberStack::new()),
-            waker: parker.waker(),
-        };
-        producer.push(1);
-        assert!(!parker.take_woken());
+        for id in [1, 2, 1] {
+            producer.push(id);
+            assert!(parker.take_woken(), "push of {id}");
+        }
     }
 }

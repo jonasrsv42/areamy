@@ -3,7 +3,7 @@
 //! Thin handle over [super::core::Scheduler]: pushes local wakes and registers timers.
 
 use super::core::Scheduler;
-use super::treiber::{Pushed, TreiberStack};
+use super::treiber::TreiberStack;
 use crate::poll::marker::NodeId;
 use crate::poll::timer::TimerKey;
 
@@ -22,8 +22,8 @@ pub struct ThreadLocalProducer {
 impl ThreadLocalProducer {
     /// Pushes `id`. O(1): a [TreiberStack::push].
     #[inline]
-    pub(crate) fn push(&self, id: NodeId) -> Pushed {
-        self.stack.push(id)
+    pub(crate) fn push(&self, id: NodeId) {
+        self.stack.push(id);
     }
 
     /// Register a wake at `deadline` for `node_id`. O(log h): [Scheduler::schedule].

@@ -74,7 +74,7 @@ fn a_push_coalesces_until_the_release_and_claims_after_it() {
 fn a_node_pushed_again_mid_batch_keeps_the_batch_whole() {
     let stack = started(4);
     for id in 0..4 {
-        let _ = stack.push(id);
+        stack.push(id);
     }
     let mut walk = stack.take();
     assert_eq!(stack.next(&mut walk), Some(3));
@@ -88,13 +88,13 @@ fn a_node_pushed_again_mid_batch_keeps_the_batch_whole() {
 fn an_id_waking_itself_every_poll_starves_nobody() {
     let stack = started(3);
     for id in 0..3 {
-        let _ = stack.push(id);
+        stack.push(id);
     }
     let mut polled = Vec::new();
     for _ in 0..3 {
         for id in batch(&stack) {
             if id == 0 {
-                let _ = stack.push(0);
+                stack.push(0);
             }
             polled.push(id);
         }
@@ -181,7 +181,7 @@ fn a_push_racing_the_release_never_loses_its_wake() {
                 // The consumer's order.
                 for id in (0..N).rev() {
                     data[id].store(1, Ordering::Relaxed);
-                    let _ = stack.push(id);
+                    stack.push(id);
                 }
                 go.wait();
             }
@@ -191,7 +191,7 @@ fn a_push_racing_the_release_never_loses_its_wake() {
     for _ in 0..CHUNKS {
         for (id, data) in data.iter().enumerate() {
             data.store(0, Ordering::Relaxed);
-            let _ = stack.push(id);
+            stack.push(id);
         }
         go.wait();
         go.wait();
@@ -273,9 +273,9 @@ fn pushes_racing_init_all_land_once_init_is_seen() {
                 thread::spawn(move || {
                     go.wait();
                     loop {
-                        let _ = stack.push(id);
+                        stack.push(id);
                         if seen.load(Ordering::SeqCst) {
-                            let _ = stack.push(id);
+                            stack.push(id);
                             break;
                         }
                         // More wakers than cores would starve init.

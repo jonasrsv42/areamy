@@ -28,6 +28,6 @@ impl LocalWake for Waker {
     #[inline]
     fn wake(&self) {
         // No signal: the consumer runs on this thread.
-        let _ = self.producer.push(self.id);
+        self.producer.push(self.id);
     }
 }

@@ -5,7 +5,7 @@
 //! A poll thread polls its woken nodes in batches, newest wake first: a batch is every node woken
 //! since the previous batch began, and wakes before a node's poll coalesce into it. A wake after
 //! its node's poll, `local` or `sync` alike, joins the next batch. Expired timers join each batch
-//! as it begins, so they lead it.
+//! as it begins, so they lead it, latest deadline first.
 //!
 //! A wake polls only its own node, at any graph size; a poll still means "may have work": a wake
 //! that lands while its node is being polled polls it once more.

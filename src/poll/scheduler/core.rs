@@ -25,7 +25,7 @@ pub(super) struct Scheduler {
     batch: Link,
     /// Timers; expired ones are pushed at each batch boundary.
     deadline: DeadlineHeap,
-    /// Parked on while a take finds the stack empty; a remote push onto the empty stack wakes it.
+    /// Parked on while a take finds the stack empty; every remote push wakes it.
     ///
     /// # Same-thread assumption
     ///
@@ -52,7 +52,7 @@ impl Scheduler {
         self.stack.init(len);
         // Last to first, so the first batch runs in id order.
         for id in (0..len).rev() {
-            let _ = self.stack.push(id);
+            self.stack.push(id);
         }
     }
 
@@ -98,7 +98,7 @@ impl Scheduler {
         if self.deadline.peek().is_some() {
             let now = Instant::now();
             while let Some(id) = self.deadline.pop(now) {
-                let _ = self.stack.push(id);
+                self.stack.push(id);
             }
         }
     }
@@ -123,7 +123,10 @@ mod tests {
     use crate::edge::sync::tests::wait_until;
     use crate::poll::scheduler::Producer;
     use crate::tests::support::{DEADLINE, allocations, deadline, live_bytes};
+    use alloc::task::Wake;
+    use core::task::Waker;
     use core::time::Duration;
+    use std::sync::{Mutex, mpsc};
     use std::thread;
 
     const BITS: usize = usize::BITS as usize;
@@ -155,7 +158,7 @@ mod tests {
 
     /// As a local waker pushes.
     fn wake(s: &Scheduler, id: NodeId) {
-        let _ = s.stack.push(id);
+        s.stack.push(id);
     }
 
     fn past() -> Instant {
@@ -209,7 +212,7 @@ mod tests {
         s.stack.init(3);
         producer.push(1);
         for id in (0..3).rev() {
-            let _ = s.stack.push(id);
+            s.stack.push(id);
         }
         assert_eq!(s.woken(), [0, 2, 1]);
         assert!(s.parker.take_woken());
@@ -253,6 +256,46 @@ mod tests {
         });
         assert_eq!(s.next(), 2);
         handle.join().unwrap();
+    }
+
+    /// The first producer is preempted between its push and its wake, as a low-priority task
+    /// would be: a later push's own wake serves both ids.
+    #[test]
+    fn a_wake_never_waits_on_a_stalled_first_producer() {
+        struct Stalled {
+            pushed: Mutex<mpsc::Sender<()>>,
+            resume: Mutex<mpsc::Receiver<()>>,
+        }
+        impl Wake for Stalled {
+            fn wake(self: Arc<Self>) {
+                self.wake_by_ref();
+            }
+            fn wake_by_ref(self: &Arc<Self>) {
+                let _ = self.pushed.lock().map(|tx| tx.send(()));
+                let _ = self.resume.lock().map(|rx| rx.recv());
+            }
+        }
+        let _deadline = deadline(DEADLINE);
+        let (mut s, fast, parked) = started(8);
+        let (pushed, landed) = mpsc::channel();
+        let (resume, stalled) = mpsc::channel();
+        let slow = Producer {
+            stack: fast.stack.clone(),
+            waker: Waker::from(Arc::new(Stalled {
+                pushed: Mutex::new(pushed),
+                resume: Mutex::new(stalled),
+            })),
+        };
+        let pusher = thread::spawn(move || {
+            wait_until(parked);
+            let low = thread::spawn(move || slow.push(3));
+            landed.recv().unwrap();
+            fast.push(5);
+            low
+        });
+        assert_eq!((s.next(), s.next()), (5, 3));
+        resume.send(()).unwrap();
+        pusher.join().unwrap().join().unwrap();
     }
 
     // ---- timers ----

@@ -13,6 +13,9 @@
 //! - The consumer parks only after a take found the stack empty.
 //!
 //! Breaking any loses wakes.
+//!
+//! A wake that coalesces into a node claimed but not yet published is served once that push
+//! publishes: on a priority scheduler, at the claiming producer's priority.
 
 mod link;
 mod node;
@@ -29,7 +32,6 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 /// What a push did.
-#[must_use = "a remote push that came first must wake the consumer"]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Pushed {
     /// Onto an empty stack.
@@ -132,7 +134,8 @@ impl TreiberStack {
                 // Linked onto existing element.
                 Ok(_) => return Pushed::Linked,
                 // Another push or the take moved `head` since our read: relink to the new top and
-                // retry. At most about n retries per batch: each id is claimed once per batch.
+                // retry. Bounded by the pushes that land meanwhile: each owns its id until the
+                // take, so at most about n per batch.
                 Err(current) => below = current,
             }
         }

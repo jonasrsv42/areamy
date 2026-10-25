@@ -1,4 +1,14 @@
 //! Poll graphs: event-driven nodes driven by wakers through [Pollable].
+//!
+//! # Wake order
+//!
+//! A poll thread polls its woken nodes in batches, newest wake first: a batch is every node woken
+//! since the previous batch began, and wakes before a node's poll coalesce into it. A wake after
+//! its node's poll, `local` or `sync` alike, joins the next batch. Expired timers join each batch
+//! as it begins, so they lead it.
+//!
+//! A wake polls only its own node, at any graph size; a poll still means "may have work": a wake
+//! that lands while its node is being polled polls it once more.
 
 mod budget;
 mod builder;
@@ -13,7 +23,7 @@ mod phase;
 mod pollable;
 pub mod race;
 pub mod runtime;
-pub mod scheduler;
+pub(crate) mod scheduler;
 pub(crate) mod sink;
 pub mod sleep;
 pub mod thread;

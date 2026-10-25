@@ -7,6 +7,7 @@ use crate::error::{Error, ErrorKind};
 use crate::node::line::poll::routine::tests::MockLine;
 use crate::poll::thread::Thread;
 use crate::sync::Receiver;
+use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
 use crate::work;
 use crate::{
@@ -139,6 +140,7 @@ fn middle_thread_error_does_not_deadlock_drain() {
 /// forever.
 #[test]
 fn poll_thread_does_not_deadlock_when_sync_input_drops() {
+    let _deadline = deadline(DEADLINE);
     let mut thread = Thread::<PollThread>::new();
     let node = thread.line(MockLine::new).input().output();
 
@@ -207,6 +209,7 @@ impl BifurcationRoutine<usize, usize, usize> for Tee {}
 /// the bifurcation and both consumer threads exit cleanly.
 #[test]
 fn fan_out_bifurcation_into_two_consumer_threads() {
+    let _deadline = deadline(DEADLINE);
     let mut tee = work::Bifurcation::of(Tee::new());
     let mut consumer_a = work::Line::of(PassThrough::new());
     let mut consumer_b = work::Line::of(PassThrough::new());

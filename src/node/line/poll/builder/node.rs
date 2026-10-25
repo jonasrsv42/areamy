@@ -378,7 +378,7 @@ fn assemble<'params, T, TargetType, OutputType>(
     output: OutputType,
     budget: Budget,
     mut graph: Graph<'params, T::ThreadId>,
-) -> Graph<'params, T::ThreadId>
+) -> Result<Graph<'params, T::ThreadId>, Error>
 where
     T: Types<'params>,
     TargetType: Receivable<DataType = T::In, SignalType = T::Signal> + 'params,
@@ -386,7 +386,7 @@ where
 {
     let work = graph.allocator.next();
     let output_slot = graph.allocator.next();
-    let input_waker = graph.allocator.local_waker(input.id);
+    let input_waker = graph.allocator.local_waker(input.id)?;
     let routine = factory.create(LineWakers {
         input: input_waker.clone(),
         work: work.value.wake.clone(),
@@ -418,7 +418,7 @@ where
         id: output_slot.id,
         pollable: Box::new(output_phase),
     });
-    graph
+    Ok(graph)
 }
 
 // ============================================================
@@ -438,13 +438,7 @@ where
     ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let input = self.input.ready();
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            self.output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, self.output, self.options.budget, graph)
     }
 }
 
@@ -460,13 +454,7 @@ where
     ) -> Result<Graph<'params, T::ThreadId>, Error> {
         let graph = Graph::empty(allocator);
         let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            self.output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, self.output, self.options.budget, graph)
     }
 }
 
@@ -483,13 +471,7 @@ where
         let graph = Graph::empty(allocator);
         let input = self.input.ready();
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
     }
 }
 
@@ -504,13 +486,7 @@ impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
         let graph = Graph::empty(allocator);
         let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
     }
 }
 
@@ -527,13 +503,7 @@ where
         let graph = Graph::empty(allocator);
         let input = self.input.ready();
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
     }
 }
 
@@ -548,13 +518,7 @@ impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
         let graph = Graph::empty(allocator);
         let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
     }
 }
 
@@ -580,13 +544,7 @@ where
         let graph = Graph::empty(allocator);
         let input = self.input.ready();
         let output = Single::from(edge);
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
     }
 }
 
@@ -604,12 +562,6 @@ impl<'params, T: Types<'params>> AsyncParent<'params> for Node<'params, Async, D
         let graph = Graph::empty(allocator);
         let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
         let output = Single::from(output_edge);
-        Ok(assemble::<T, _, _>(
-            self.factory,
-            input,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
     }
 }

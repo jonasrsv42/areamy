@@ -3,7 +3,7 @@
 //! The base `Runtime` is a flat `Vec<Node>`. The poll loop wants to
 //! drop a node *in place* as soon as it returns `Ready` or `Closed`
 //! so its close-on-drop cascade fires immediately — but it must keep
-//! indexing stable because node IDs in the ready queue refer to slot
+//! indexing stable because woken node IDs refer to slot
 //! positions. `ClosableRuntime` wraps each slot in `Option<Node>`:
 //! a slot becomes `None` when its node terminates, indexing stays
 //! valid, and a wake for a `None` slot is observable.

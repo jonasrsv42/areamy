@@ -22,6 +22,8 @@ use crate::wake::{self, LocalWaker};
 ///   is polled with, so its `.sync` `will_wake` the `cx` a future sees.
 /// - `output` wakes the output phase (drains the routine's output).
 /// - `timer` re-polls the work phase at a deadline.
+///
+/// Polls don't follow wake order: see [wake order](crate::poll#wake-order).
 pub struct LineWakers {
     pub input: LocalWaker,
     pub work: wake::Waker,

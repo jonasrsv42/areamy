@@ -24,7 +24,7 @@ fn assemble<'params, T, LeftTargetType, RightTargetType, OutputType>(
     output: OutputType,
     budget: Budget,
     mut graph: Graph<'params, T::ThreadId>,
-) -> Graph<'params, T::ThreadId>
+) -> Result<Graph<'params, T::ThreadId>, Error>
 where
     T: Types<'params>,
     LeftTargetType: Receivable<DataType = T::Left, SignalType = T::Signal> + 'params,
@@ -33,8 +33,8 @@ where
 {
     let work = graph.allocator.next();
     let output_slot = graph.allocator.next();
-    let left_waker = graph.allocator.local_waker(inputs.left.id);
-    let right_waker = graph.allocator.local_waker(inputs.right.id);
+    let left_waker = graph.allocator.local_waker(inputs.left.id)?;
+    let right_waker = graph.allocator.local_waker(inputs.right.id)?;
     let routine = factory.create(BiunionWakers {
         input: Inputs {
             left: left_waker.clone(),
@@ -79,7 +79,7 @@ where
         id: output_slot.id,
         pollable: Box::new(phases.output),
     });
-    graph
+    Ok(graph)
 }
 
 // ============================================================
@@ -102,13 +102,13 @@ where
         let left = self.input.left.ready();
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
-        Ok(assemble::<T, _, _, _>(
+        assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
             self.options.budget,
             graph,
-        ))
+        )
     }
 }
 
@@ -128,13 +128,7 @@ where
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }
 
@@ -159,13 +153,7 @@ where
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }
 
@@ -191,13 +179,13 @@ where
                 .ready(self.alloc.left, self.options.bound.left, graph)?;
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
-        Ok(assemble::<T, _, _, _>(
+        assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
             self.options.budget,
             graph,
-        ))
+        )
     }
 }
 
@@ -219,13 +207,7 @@ where
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }
 
@@ -252,13 +234,7 @@ where
         let right = self.input.right.ready();
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }
 
@@ -284,13 +260,13 @@ where
                 .right
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
-        Ok(assemble::<T, _, _, _>(
+        assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
             self.options.budget,
             graph,
-        ))
+        )
     }
 }
 
@@ -312,13 +288,7 @@ where
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }
 
@@ -345,13 +315,7 @@ where
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }
 
@@ -379,13 +343,13 @@ where
                 .right
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
-        Ok(assemble::<T, _, _, _>(
+        assemble::<T, _, _, _>(
             self.factory,
             inputs,
             self.output,
             self.options.budget,
             graph,
-        ))
+        )
     }
 }
 
@@ -408,13 +372,7 @@ impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }
 
@@ -440,12 +398,6 @@ impl<'params, T: Types<'params>> AsyncParent<'params> for Node<'params, Async, A
                 .ready(self.alloc.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        Ok(assemble::<T, _, _, _>(
-            self.factory,
-            inputs,
-            output,
-            self.options.budget,
-            graph,
-        ))
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
     }
 }

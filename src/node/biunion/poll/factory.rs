@@ -23,6 +23,8 @@ pub type BiunionInputs = Inputs<LocalWaker, LocalWaker>;
 ///   so its `.sync` `will_wake` the `cx` a future sees.
 /// - `output` wakes the output phase to drain.
 /// - `timer` re-polls the work phase at a deadline.
+///
+/// Polls don't follow wake order: see [wake order](crate::poll#wake-order).
 pub struct BiunionWakers {
     pub input: BiunionInputs,
     pub work: wake::Waker,

@@ -1,20 +1,20 @@
-//! Local waker backed by [ThreadLocalProducer].
+//! Local (same-thread) waker for the async poll runtime.
 //!
-//! Enqueues a node ID without waking the parker — the consumer is on
-//! the same thread and not parked. `!Send`, `!Sync`.
+//! `Waker` pushes a node's id through its poll thread's `ThreadLocalProducer`.
 
 use crate::poll::marker::NodeId;
 use crate::poll::scheduler::ThreadLocalProducer;
 use crate::wake::{LocalWake, LocalWaker};
 
-/// Local wake impl backed by [ThreadLocalProducer].
+/// `!Send`, `!Sync` behind [LocalWaker].
 pub(crate) struct Waker {
     id: NodeId,
     producer: ThreadLocalProducer,
 }
 
 impl Waker {
-    /// A local waker for a node ID on the given producer.
+    /// `id`'s local waker. A new one per call, which `will_wake` only its own clones: keep one per
+    /// id. O(1): the producer's `Rc` and `Arc` clones, and an `Rc` for the waker.
     pub(crate) fn local(id: NodeId, producer: &ThreadLocalProducer) -> LocalWaker {
         LocalWaker::new(Self {
             id,
@@ -24,22 +24,10 @@ impl Waker {
 }
 
 impl LocalWake for Waker {
+    /// O(1): a [ThreadLocalProducer::push].
+    #[inline]
     fn wake(&self) {
-        self.producer.push(self.id);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::poll::scheduler::PollQueue;
-
-    #[test]
-    fn wake_via_local_waker_drives_consumer() {
-        let q = PollQueue::new();
-        let (mut consumer, local) = q.local();
-        let waker = Waker::local(7, &local);
-        waker.wake();
-        assert_eq!(consumer.next(), 7);
+        // No signal: the consumer runs on this thread.
+        let _ = self.producer.push(self.id);
     }
 }

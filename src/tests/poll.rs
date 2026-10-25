@@ -7,5 +7,6 @@ mod flush;
 mod mock;
 mod once;
 mod routines;
+mod scheduler;
 mod sleep;
 mod wakers;

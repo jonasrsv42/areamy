@@ -1,7 +1,7 @@
 //! Internal type-erasure for [`ThreadBundle`].
 //!
 //! Lets the bundle store a mixed bag of [`ThreadStream`] (sync) and
-//! [`poll::Thread`](crate::poll::Thread) (async)
+//! [`poll::Thread`] (async)
 //! behind a uniform `Box<dyn ...>` interface.
 //!
 //! Each erased thread exposes a `run()` that drives its work loop

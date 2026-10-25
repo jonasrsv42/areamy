@@ -3,7 +3,7 @@
 //! Both [`ThreadStream`] (sync) and [`Thread`] (poll) hold a list of
 //! callbacks to fire on thread exit. The list is wrapped in an
 //! [`InitGuard`] when the thread becomes a task, before any spawn: the
-//! normal exit path takes the callbacks out via [`InitGuard::drain`]
+//! normal exit path takes the callbacks out via [`RunGuard::drain`]
 //! and invokes them with the actual [`Done`] outcome, while the guard's
 //! [`Drop`] covers the rest: a panic, or a spawn the OS refused.
 //!

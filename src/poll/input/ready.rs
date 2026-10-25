@@ -46,7 +46,7 @@ where
         ),
         Error,
     > {
-        let waker = graph.allocator.local_waker(id);
+        let waker = graph.allocator.local_waker(id)?;
         let mut edges = Vec::new();
         for parent in self.parents {
             let (sender, receiver) = edge::channel(waker.clone(), bound);

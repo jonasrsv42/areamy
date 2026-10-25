@@ -1,20 +1,20 @@
 //! Per-thread deadline heap.
 //!
 //! [DeadlineHeap] is a min-heap of `(deadline, slot, generation)`
-//! entries, each backed by a slot in a slot table. [Self::register]
+//! entries, each backed by a slot in a slot table. [DeadlineHeap::register]
 //! returns a [TimerKey] identifying one timer; many timers per node
-//! coexist. [Self::cancel] releases a timer early.
+//! coexist. [DeadlineHeap::cancel] releases a timer early.
 //!
-//! Pure data structure. Coordination with the poll queue (sentinel
-//! push, re-arm, etc.) lives in the [Scheduler](super::scheduler)
-//! above — this module knows nothing about wakers, queues, or threads.
+//! Pure data structure. Marking expired timers' nodes ready lives in
+//! the poll scheduler above — this module knows nothing about wakers,
+//! queues, or threads.
 //!
 //! # Slots and lazy removal
 //!
 //! [BinaryHeap] cannot remove arbitrary entries in better than O(n).
 //! Cancel and fire instead vacate the timer's slot (bumping its
 //! generation); the heap entry stays behind and is discarded when it
-//! bubbles to the top and [Self::peek] / [Self::pop] see the mismatch.
+//! bubbles to the top and [DeadlineHeap::peek] / [DeadlineHeap::pop] see the mismatch.
 //! The generation is a pure reuse guard: a recycled slot never matches
 //! entries (or [TimerKey]s) from its previous life.
 //!
@@ -43,6 +43,7 @@ struct DeadlineEntry {
 }
 
 impl Ord for DeadlineEntry {
+    /// O(1): up to three compares.
     fn cmp(&self, other: &Self) -> Ordering {
         // Tie-break by slot then generation purely for determinism;
         // neither field carries semantic meaning at the same deadline.
@@ -54,6 +55,7 @@ impl Ord for DeadlineEntry {
 }
 
 impl PartialOrd for DeadlineEntry {
+    /// O(1): [Ord::cmp].
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -62,6 +64,7 @@ impl PartialOrd for DeadlineEntry {
 impl Eq for DeadlineEntry {}
 
 impl PartialEq for DeadlineEntry {
+    /// O(1): [Ord::cmp].
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == Ordering::Equal
     }
@@ -79,6 +82,7 @@ struct Slot {
 }
 
 /// Per-thread min-heap of pending deadlines. See module docs.
+/// Costs: h heap entries, dead ones included.
 pub struct DeadlineHeap {
     heap: BinaryHeap<Reverse<DeadlineEntry>>,
     /// Grows to the peak count of concurrently awaiting timers and
@@ -92,6 +96,7 @@ pub struct DeadlineHeap {
 }
 
 impl DeadlineHeap {
+    /// O(1): no allocation.
     pub fn new() -> Self {
         Self {
             heap: BinaryHeap::new(),
@@ -104,6 +109,8 @@ impl DeadlineHeap {
     /// of any other timer — including others for the same node. The
     /// returned key cancels it; dropping the key just means the timer
     /// fires and is reclaimed then.
+    /// O(log h) worst case, O(1) for a deadline later than those queued: a recycled slot or a
+    /// push, and a heap push sifting past the later deadlines; no RMW.
     pub fn register(&mut self, node_id: NodeId, deadline: Instant) -> TimerKey {
         // Recycle before growing: `slots` stays bounded by peak
         // concurrent timers, not by churn.
@@ -138,6 +145,8 @@ impl DeadlineHeap {
     /// (already fired or already cancelled). The heap entry dies
     /// lazily when it bubbles up. Key possession is authorization —
     /// a key names exactly one timer, whichever waker carries it.
+    /// O(1): a [Self::take_live]; [Self::peek] or [Self::pop] discards the entry later, in
+    /// O(log h).
     pub fn cancel(&mut self, key: TimerKey) {
         // Result dropped: a dead key (fired, cancelled, recycled) is a
         // legal no-op, guarded by the generation match inside.
@@ -147,6 +156,8 @@ impl DeadlineHeap {
     /// Returns the earliest live deadline. Drains dead entries off the
     /// top of the heap as a side effect. `None` if no live entries
     /// remain.
+    /// O(d log h) for d dead entries on top: O(1) amortized, each discard charged to its cancel.
+    /// A live top: a load and a [Self::is_live].
     pub fn peek(&mut self) -> Option<Instant> {
         while let Some(&Reverse(top)) = self.heap.peek() {
             if self.is_live(top.slot, top.generation) {
@@ -163,6 +174,8 @@ impl DeadlineHeap {
     /// slot. `None` once no such entry exists (heap drained, or
     /// earliest live is in the future). Caller drains by looping
     /// until `None`.
+    /// O(log h) for the entry popped, a sift-down of about log h compares, plus dead ones drained
+    /// as in [Self::peek]. None due: as [Self::peek], and a compare.
     pub fn pop(&mut self, now: Instant) -> Option<NodeId> {
         while let Some(&Reverse(top)) = self.heap.peek() {
             if !self.is_live(top.slot, top.generation) {
@@ -182,7 +195,7 @@ impl DeadlineHeap {
     }
 
     /// True iff `(slot, generation)` addresses an occupied slot of the
-    /// same generation.
+    /// same generation. O(1): a bounds check, two loads and two compares.
     fn is_live(&self, slot: SlotId, generation: Generation) -> bool {
         match self.slots.get(slot.index()) {
             Some(slot) => slot.generation == generation && slot.node_id.is_some(),
@@ -193,6 +206,7 @@ impl DeadlineHeap {
     /// Release a live slot: bump generation (invalidating lingering
     /// heap entries and [TimerKey]s), mark vacant, recycle. Returns
     /// the occupant; `None` if `(slot, generation)` was dead.
+    /// O(1) amortized: an [Self::is_live], two stores and a free-list push.
     fn take_live(&mut self, slot_id: SlotId, generation: Generation) -> Option<NodeId> {
         if !self.is_live(slot_id, generation) {
             return None;

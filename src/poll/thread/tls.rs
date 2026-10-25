@@ -1,7 +1,7 @@
 //! Current-node timer TLS.
 //!
 //! The poll loop installs the timer of the node it is about to poll;
-//! leaf futures created without a handle ([sleep](crate::poll::sleep))
+//! leaf futures created without a handle ([sleep](fn@crate::poll::sleep))
 //! capture it on their first poll. One slot suffices: polling on a
 //! thread is serial, so the slot always names the owner of the
 //! innermost running poll frame. That holds for donated threads too

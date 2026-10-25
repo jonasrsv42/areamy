@@ -3,7 +3,7 @@
 //! Stage 1 — [WakerAllocator]: pre-allocates sync wakers on the main
 //! thread. `Send` — crosses to the async thread.
 //!
-//! Stage 2 — [ThreadLocalWakerAllocator]: created via [WakerAllocator::local].
+//! Stage 2 — [ThreadLocalWakerAllocator]: created via `WakerAllocator::local`.
 //! Allocates both sync + local wakers. `!Send`. Consumed by
 //! [ThreadLocalWakerAllocator::build] to produce a [Runtime].
 
@@ -36,7 +36,7 @@ pub struct WakerAllocator {
 }
 
 impl WakerAllocator {
-    pub fn new(producer: Producer) -> Self {
+    pub(crate) fn new(producer: Producer) -> Self {
         Self {
             producer,
             sync: Vec::new(),
@@ -53,7 +53,7 @@ impl WakerAllocator {
     }
 
     /// Transition to stage 2. Must be called on the async thread.
-    pub fn local<ThreadIdType: ThreadId>(
+    pub(crate) fn local<ThreadIdType: ThreadId>(
         self,
         local_producer: ThreadLocalProducer,
     ) -> ThreadLocalWakerAllocator<ThreadIdType> {
@@ -96,17 +96,24 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
         Slot { id, value: cx }
     }
 
-    /// Create a [LocalWaker] for an existing node ID.
-    /// Does not allocate a new slot.
-    pub fn local_waker(&self, id: NodeId) -> LocalWaker {
-        thread_local::Waker::local(id, &self.local_producer)
+    /// The [LocalWaker] of an existing node ID: a clone of its context's, so every one handed out
+    /// for an ID `will_wake` the others. Does not allocate a new slot; an ID never allocated is an
+    /// error.
+    pub fn local_waker(&self, id: NodeId) -> Result<LocalWaker, Error> {
+        match self.contexts.get(id) {
+            Some(cx) => Ok(cx.wake.local.clone()),
+            None => Err(fatal!(
+                "local_waker: slot {} out of range (only {} allocated)",
+                id,
+                self.contexts.len()
+            )),
+        }
     }
 
     /// Finalize allocation and build the [Runtime].
     ///
     /// Each [GraphNode] is placed at its ID index. Every allocated slot
-    /// must be filled exactly once. Pairs each with its context and enqueues all
-    /// nodes for initial poll.
+    /// must be filled exactly once. Pairs each with its context.
     pub fn build<'params>(
         self,
         nodes: Vec<GraphNode<'params, ThreadIdType>>,
@@ -138,11 +145,6 @@ impl<ThreadIdType: ThreadId> ThreadLocalWakerAllocator<ThreadIdType> {
             }
         }
 
-        // Enqueue all nodes for initial poll.
-        for i in 0..count {
-            self.local_producer.push(i);
-        }
-
         Ok(Runtime { nodes: result })
     }
 }
@@ -160,6 +162,7 @@ fn context(id: NodeId, sync: core::task::Waker, local_producer: &ThreadLocalProd
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ErrorKind;
     use crate::graph::marker::Connection;
     use crate::poll::scheduler::PollQueue;
 
@@ -188,7 +191,7 @@ mod tests {
         let queue = PollQueue::new();
         let mut stage_one = WakerAllocator::new(queue.producer());
         let early = stage_one.next();
-        let (_consumer, local_producer) = queue.local();
+        let (_uninit, local_producer) = queue.local();
         let mut stage_two = stage_one.local::<AllocatorThread>(local_producer);
         let late = stage_two.next();
 
@@ -199,5 +202,55 @@ mod tests {
         let cx = &runtime.nodes[late.id].cx;
         assert!(late.value.wake.sync.will_wake(&cx.wake.sync));
         assert!(late.value.wake.local.will_wake(&cx.wake.local));
+    }
+
+    #[test]
+    fn local_wakers_handed_out_for_one_id_will_wake_each_other_only() {
+        let queue = PollQueue::new();
+        let mut stage_one = WakerAllocator::new(queue.producer());
+        let early = stage_one.next();
+        let (_uninit, local_producer) = queue.local();
+        let mut stage_two = stage_one.local::<AllocatorThread>(local_producer);
+        let late = stage_two.next();
+        let local = |id| stage_two.local_waker(id).unwrap();
+        assert!(local(early.id).will_wake(&local(early.id)));
+        assert!(local(late.id).will_wake(&late.value.wake.local));
+        assert!(!local(early.id).will_wake(&local(late.id)));
+    }
+
+    /// As `prepare` does: init, after the build, marks every node for a first poll.
+    #[test]
+    fn init_after_the_build_marks_every_node_for_a_first_poll() {
+        let queue = PollQueue::new();
+        let mut stage_one = WakerAllocator::new(queue.producer());
+        let early = stage_one.next();
+        let (uninit, local_producer) = queue.local();
+        let mut stage_two = stage_one.local::<AllocatorThread>(local_producer);
+        let late = stage_two.next();
+
+        let runtime = stage_two
+            .build(vec![idle(early.id), idle(late.id)])
+            .unwrap();
+        let mut consumer = uninit.init(runtime.nodes.len());
+        assert_eq!(consumer.woken(), [early.id, late.id]);
+    }
+
+    #[test]
+    fn a_local_waker_for_a_slot_never_allocated_is_an_error() {
+        let queue = PollQueue::new();
+        let stage_one = WakerAllocator::new(queue.producer());
+        let (_uninit, local_producer) = queue.local();
+        let mut stage_two = stage_one.local::<AllocatorThread>(local_producer);
+        let slot = stage_two.next();
+        assert!(stage_two.local_waker(slot.id).is_ok());
+        for id in [slot.id + 1, NodeId::MAX] {
+            assert!(matches!(
+                stage_two.local_waker(id),
+                Err(Error {
+                    kind: ErrorKind::Fatal(_),
+                    ..
+                })
+            ));
+        }
     }
 }

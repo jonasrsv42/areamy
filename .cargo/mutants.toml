@@ -5,14 +5,14 @@ exclude_re = [
     'src/edge/deadlock\.rs:.*replace (parked|resumed|log) with \(\)',
     'src/edge/deadlock\.rs:.*Drop for Unblocked',
     'Emit<.*>::log',
+    # Prints a dropped out-of-range push to stderr; nothing reads it back.
+    'src/poll/scheduler/treiber\.rs:.*replace past_the_graph with \(\)',
     # Feeds only `Emit::log`.
     'impl Rotate for Fanout<EdgeType>>::suspended',
     # Already returns the default.
     'for (ThreadStream|poll::Thread)<.*>>::spawn_options',
     # `BinaryHeap` orders by `Ord`; `eq` is never called.
     'impl PartialEq for DeadlineEntry>::eq',
-    # A leak: freed memory isn't observable without counting allocations.
-    'impl Drop for VyukovQueue>::drop',
     # `rotate_left(1)` on one element is a no-op.
     'replace > with >= in work_each',
     # `producers_waiting >= 0` only adds a spurious `notify`.

@@ -175,7 +175,7 @@ fn prepare<'params, ThreadIdType: ThreadId>(
     waker_allocator: WakerAllocator,
     queue: PollQueue,
 ) -> Result<(ClosableRuntime<'params, ThreadIdType>, Consumer), Error> {
-    let (consumer, local_producer) = queue.local();
+    let (uninit, local_producer) = queue.local();
     let mut allocator = waker_allocator.local::<ThreadIdType>(local_producer);
     let mut all_nodes = Vec::new();
 
@@ -186,6 +186,7 @@ fn prepare<'params, ThreadIdType: ThreadId>(
     }
 
     let runtime = allocator.build(all_nodes)?;
+    let consumer = uninit.init(runtime.nodes.len());
     Ok((runtime.into(), consumer))
 }
 
@@ -196,7 +197,7 @@ impl<'threads> ThreadHandle<'threads> {
     }
 }
 
-/// Waker-driven poll loop. Blocks on ready queue, polls only woken
+/// Waker-driven poll loop. Parks while no node is woken, polls only woken
 /// nodes. A node returning `Ready` or `Closed` is taken out of its
 /// slot here — its close-on-drop cascade fires immediately, and a
 /// later wake for the same id is observable as `None`.
@@ -216,8 +217,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
         let Some(RuntimeNode { pollable, cx }) = slot.as_mut() else {
             // Benign: a cross-thread producer or sibling node can fire
             // this slot's waker after we eager-dropped the node on a
-            // prior Ready/Closed. The wake event was already in flight
-            // when the slot was set to None. Silently skip.
+            // prior Ready/Closed. Silently skip.
             continue;
         };
 
@@ -265,6 +265,7 @@ mod tests {
 
     #[test]
     fn async_thread_starts_and_stops() {
+        let _deadline = deadline(DEADLINE);
         let mut thread = Thread::<IoThread>::new();
 
         let node = thread.line(MockLine::new).input().output();
@@ -326,6 +327,7 @@ mod tests {
 
     #[test]
     fn on_done_fires_close_on_clean_exit() {
+        let _deadline = deadline(DEADLINE);
         let mut thread = Thread::<IoThread>::new();
         let node = thread.line(MockLine::new).input().output();
 
@@ -346,6 +348,7 @@ mod tests {
 
     #[test]
     fn on_done_multiple_callbacks_fire_in_registration_order() {
+        let _deadline = deadline(DEADLINE);
         let mut thread = Thread::<IoThread>::new();
         let node = thread.line(MockLine::new).input().output();
 

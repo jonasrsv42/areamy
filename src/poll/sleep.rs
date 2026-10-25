@@ -105,6 +105,7 @@ mod tests {
     use crate::poll::thread::tls::ThreadLocalGuard;
     use crate::poll::timer::Timer;
     use crate::poll::timer::mock::noop_timer;
+    use crate::tests::support::{DEADLINE, deadline};
     use core::task::Context;
     use std::thread;
 
@@ -140,8 +141,12 @@ mod tests {
 
     #[test]
     fn sleep_arms_and_wakes_owning_node() {
+        let _deadline = deadline(DEADLINE);
         let q = PollQueue::new();
-        let (mut consumer, local) = q.local();
+        let (uninit, local) = q.local();
+        // The graph: ids 0..8, past their first polls.
+        let mut consumer = uninit.init(8);
+        assert_eq!(consumer.woken().len(), 8);
         let timer = Timer::new(7, &local);
 
         let mut fut = sleep(Duration::from_millis(20));
@@ -161,7 +166,10 @@ mod tests {
     #[test]
     fn dropped_sleep_cancels_its_deadline() {
         let q = PollQueue::new();
-        let (mut consumer, local) = q.local();
+        let (uninit, local) = q.local();
+        // Initialized: before init a fired timer would push nothing either.
+        let mut consumer = uninit.init(8);
+        assert_eq!(consumer.woken().len(), 8);
         let timer = Timer::new(7, &local);
 
         let mut fut = sleep(Duration::from_millis(20));
@@ -171,12 +179,10 @@ mod tests {
         }
         drop(fut);
 
-        // Let the (cancelled) deadline expire, then push. Without the
-        // drop-cancel, next() would surface node 7's expired deadline
-        // ahead of the push; with it, the push is the only event.
+        // Past the (cancelled) deadline: without the drop-cancel, node 7
+        // would be woken.
         thread::sleep(Duration::from_millis(40));
-        local.push(9);
-        assert_eq!(consumer.next(), 9);
+        assert!(consumer.woken().is_empty());
     }
 
     #[test]
@@ -185,32 +191,37 @@ mod tests {
         // the inner guard shadows the outer timer only for its own
         // frame; sleeps capture whichever frame first polls them.
         let q = PollQueue::new();
-        let (mut consumer, local) = q.local();
+        let (_uninit, local) = q.local();
         let outer = Timer::new(1, &local);
         let inner = Timer::new(2, &local);
 
-        let mut before = sleep(Duration::from_millis(10));
-        let mut nested = sleep(Duration::from_millis(20));
-        let mut after = sleep(Duration::from_millis(30));
+        let mut before = sleep(Duration::from_secs(60));
+        let mut nested = sleep(Duration::from_secs(60));
+        let mut after = sleep(Duration::from_secs(60));
 
-        let _outer_guard = ThreadLocalGuard::set(outer);
+        let _outer_guard = ThreadLocalGuard::set(outer.clone());
         assert!(matches!(poll_once(&mut before), Poll::Pending));
         {
-            let _inner_guard = ThreadLocalGuard::set(inner);
+            let _inner_guard = ThreadLocalGuard::set(inner.clone());
             assert!(matches!(poll_once(&mut nested), Poll::Pending));
         }
         // Inner frame exited — outer timer restored.
         assert!(matches!(poll_once(&mut after), Poll::Pending));
 
-        assert_eq!(consumer.next(), 1); // before → outer
-        assert_eq!(consumer.next(), 2); // nested → inner
-        assert_eq!(consumer.next(), 1); // after → outer
+        let armed_on = |fut: &SleepFut, timer: &Timer| {
+            fut.timer
+                .as_ref()
+                .is_some_and(|guard| guard.timer().same_target(timer))
+        };
+        assert!(armed_on(&before, &outer));
+        assert!(armed_on(&nested, &inner));
+        assert!(armed_on(&after, &outer));
     }
 
     #[test]
     fn same_frame_repoll_stays_pending() {
         let q = PollQueue::new();
-        let (_consumer, local) = q.local();
+        let (_uninit, local) = q.local();
         let timer = Timer::new(1, &local);
 
         let mut fut = sleep(Duration::from_secs(60));
@@ -226,7 +237,7 @@ mod tests {
     #[cfg(debug_assertions)]
     fn moved_sleep_errors_under_foreign_frame() {
         let q = PollQueue::new();
-        let (_consumer, local) = q.local();
+        let (_uninit, local) = q.local();
         let first = Timer::new(1, &local);
         let second = Timer::new(2, &local);
 

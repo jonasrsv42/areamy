@@ -1,4 +1,4 @@
-//! [EXPPERIMENTAL] Track signals in graph using [Trackable].
+//! \[EXPERIMENTAL\] Track signals in graph using [Trackable].
 use crate::signal::Origin;
 use alloc::sync::Arc;
 use core::fmt::Debug;

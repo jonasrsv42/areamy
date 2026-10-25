@@ -10,6 +10,7 @@ One criterion target per area. Benchmark ids are `area/scenario/params`, paramet
 | `pull` | `pull/*` | pull lines |
 | `poll` | `poll/micro/*` | one routine between two sync edges |
 | | `poll/realistic/*` | graphs shaped like downstream's (`assistant`: firmware, `proxy`: gemproxy), and the harness's floor |
+| | `poll/scale/*` | graphs of 64 to 10240 ids, mostly idle (`sparse`, `remote`) or all fed at once (`burst`): how the scheduler scales with graph size |
 
 ```bash
 cargo bench --bench poll -- realistic     # one area, one group
@@ -21,7 +22,7 @@ such as `poll/harness.rs`, which drives the realistic graphs.
 
 ## Metrics
 
-Realistic ids end in their metric:
+Realistic and scale ids end in their metric:
 
 - `wall`: the pipeline's throughput, wakes and waits included.
 - `cpu=<thread>`: on-CPU time of that thread, kernel time included (Linux, 64-bit), for when
@@ -55,8 +56,9 @@ between runs of identical code (five runs each, 2026-10-19):
 | `poll/realistic/assistant/slow_speaker/*` | <1% | ~1% |
 | `poll/realistic/floor/*` | ~10% | ~10% |
 
-Not yet measured this way: `assistant/paced` and `proxy/*`. Over three alternating rounds
-(2026-10-21) they spread ~1–3%, except `proxy/burst` on the current scheduler at ~7%.
+Not yet measured this way: `assistant/paced` and `proxy/*`. Over three alternating rounds they
+spread ~1–3% (2026-10-21), `proxy/burst` up to ~5% and `assistant/paced` up to ~6%
+(2026-10-25).
 
 `unpaced/bound=8` also shifts level with core placement: about 15% faster when its threads land
 on SMT siblings, which hand off wakes sooner. Compare its baselines only from the same `taskset`

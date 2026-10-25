@@ -10,11 +10,10 @@ use crate::graph::{Get, TryPushable};
 use crate::message::Message;
 use crate::node::biunion::poll::routine::tests::MockBiunion;
 use crate::poll::Budget;
-use crate::poll::NodeId;
 use crate::poll::context::mock::noop_context;
 use crate::poll::edge;
 use crate::poll::graph::{Graph, GraphBuilder};
-use crate::poll::scheduler::{Consumer, PollQueue, Producer};
+use crate::poll::scheduler::PollQueue;
 use crate::poll::traits::AsyncParent;
 use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
@@ -421,24 +420,13 @@ fn the_built_parented_biunion_uses_its_budget() {
     assert_eq!(delivered_from_a_parent_in_one_round(output), 1);
 }
 
-/// Ids woken since the last call: a sentinel pushed behind them marks the end, so this never
-/// parks on an empty queue.
-fn woken(consumer: &mut Consumer, remote: &Producer) -> Vec<NodeId> {
-    const SENTINEL: NodeId = NodeId::MAX;
-    remote.push(SENTINEL);
-    core::iter::from_fn(|| Some(consumer.next()))
-        .take_while(|&id| id != SENTINEL)
-        .collect()
-}
-
 /// A side that spends its input budget with messages left wakes its own slot for the rest,
 /// never the other side's: the build hands each Input phase its own waker.
 #[test]
 fn a_side_out_of_budget_wakes_its_own_slot() {
     let queue = PollQueue::new();
-    let remote = queue.producer();
     let mut alloc = WakerAllocator::new(queue.producer());
-    let (mut consumer, local) = queue.local();
+    let (uninit, local) = queue.local();
     let options = Options {
         budget: Budget::default().input(NonZeroUsize::MIN),
         ..Options::default()
@@ -460,19 +448,21 @@ fn a_side_out_of_budget_wakes_its_own_slot() {
         left.push(Message::Data(value)).unwrap();
         right.push(Message::Data(value)).unwrap();
     }
-    let mut graph = Box::new(node).build(alloc.local(local)).unwrap();
+    let mut graph = Box::new(node).build(alloc.local(local.clone())).unwrap();
     // Built Left, Right, Work, Output.
     let (left_id, right_id) = (graph.nodes[0].id, graph.nodes[1].id);
-    woken(&mut consumer, &remote);
+    // Initialized as the runtime's prepare would, then past the first polls.
+    let mut consumer = uninit.init(graph.nodes.len());
+    consumer.woken();
     let mut cx = noop_context();
 
     let _ = graph.nodes[0].pollable.poll(&mut cx).unwrap();
-    let after_left = woken(&mut consumer, &remote);
+    let after_left = consumer.woken();
     assert!(after_left.contains(&left_id), "{after_left:?}");
     assert!(!after_left.contains(&right_id), "{after_left:?}");
 
     let _ = graph.nodes[1].pollable.poll(&mut cx).unwrap();
-    let after_right = woken(&mut consumer, &remote);
+    let after_right = consumer.woken();
     assert!(after_right.contains(&right_id), "{after_right:?}");
     assert!(!after_right.contains(&left_id), "{after_right:?}");
 }

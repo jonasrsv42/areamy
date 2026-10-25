@@ -13,14 +13,14 @@ pub struct TimerGuard {
 }
 
 impl TimerGuard {
-    /// Arm `timer` at `deadline`.
+    /// Arm `timer` at `deadline`. O(log h), h heap entries: [Timer::schedule_at].
     #[must_use]
     pub fn arm(timer: Timer, deadline: Instant) -> Self {
         let key = timer.schedule_at(deadline);
         Self { timer, key }
     }
 
-    /// The timer that will re-poll the node.
+    /// The timer that will re-poll the node. O(1).
     pub fn timer(&self) -> &Timer {
         &self.timer
     }
@@ -32,6 +32,7 @@ impl TimerGuard {
 }
 
 impl Drop for TimerGuard {
+    /// O(1): [Timer::cancel].
     fn drop(&mut self) {
         self.timer.cancel(self.key);
     }

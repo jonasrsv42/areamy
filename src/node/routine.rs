@@ -74,7 +74,8 @@ pub trait Flush {
 /// [`Poll`] trait is the async component of async routines.
 ///
 /// When a node is woken, the framework calls [Poll::poll] with the
-/// node's [Context]: its wakers and its timer.
+/// node's [Context]: its wakers and its timer. It can be called unwoken too, so a poll means
+/// "may have work": see [wake order](crate::poll#wake-order).
 ///
 /// Routines that drive standard futures can build a [core::task::Context]
 /// from `cx.wake.sync`: `core::task::Context::from_waker(&cx.wake.sync)`.

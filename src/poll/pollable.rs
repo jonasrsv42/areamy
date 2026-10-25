@@ -6,7 +6,8 @@ use crate::thread::ThreadId;
 /// [`Pollable`] is a [Connection] for event-driven nodes.
 ///
 /// Unlike [crate::work::Workable] which blocks until work is done, [Pollable::poll] is non-blocking
-/// and receives the node's [Context]: its wakers and its timer.
+/// and receives the node's [Context]: its wakers and its timer. A poll means the node may have
+/// work, not that it was woken: see [wake order](crate::poll#wake-order).
 ///
 /// Like [crate::work::Workable], [Pollable] has an associated [Pollable::ThreadId] to ensure
 /// nodes are only added to matching threads (compile-time safety).

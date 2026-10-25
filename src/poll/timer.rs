@@ -21,7 +21,8 @@ pub struct Timer {
 }
 
 impl Timer {
-    pub fn new(id: NodeId, producer: &ThreadLocalProducer) -> Self {
+    /// O(1): an `Rc` clone.
+    pub(crate) fn new(id: NodeId, producer: &ThreadLocalProducer) -> Self {
         Self {
             id,
             producer: producer.clone(),
@@ -29,18 +30,19 @@ impl Timer {
     }
 
     /// Re-poll the node at `deadline`. The key cancels the timer; dropping it means the timer
-    /// just fires.
+    /// just fires. O(log h), h timers on the thread's heap: a slot and a heap push; no RMW.
     #[must_use]
     pub fn schedule_at(&self, deadline: Instant) -> TimerKey {
         self.producer.schedule(self.id, deadline)
     }
 
     /// Release a timer before it fires. Dead keys are a no-op.
+    /// O(1): its slot is freed, its heap entry discarded once it reaches the top.
     pub fn cancel(&self, key: TimerKey) {
         self.producer.cancel(key);
     }
 
-    /// True iff `other` re-polls the same node on the same queue.
+    /// True iff `other` re-polls the same node on the same queue. O(1): two compares.
     pub fn same_target(&self, other: &Timer) -> bool {
         self.id == other.id && self.producer.same_queue(&other.producer)
     }
@@ -56,7 +58,7 @@ pub mod mock {
     /// A timer on a private queue nobody drains: keys are real and deadlines register, nothing
     /// fires.
     pub fn noop_timer() -> Timer {
-        let (_consumer, producer) = PollQueue::new().local();
+        let (_uninit, producer) = PollQueue::new().local();
         Timer::new(0, &producer)
     }
 }
@@ -65,12 +67,17 @@ pub mod mock {
 mod tests {
     use super::*;
     use crate::poll::scheduler::PollQueue;
+    use crate::tests::support::{DEADLINE, deadline};
     use core::time::Duration;
 
     #[test]
     fn schedule_at_drives_consumer() {
+        let _deadline = deadline(DEADLINE);
         let q = PollQueue::new();
-        let (mut consumer, local) = q.local();
+        let (uninit, local) = q.local();
+        // The graph: ids 0..43, past their first polls.
+        let mut consumer = uninit.init(43);
+        assert_eq!(consumer.woken().len(), 43);
         let timer = Timer::new(42, &local);
         let past = Instant::now() - Duration::from_millis(50);
         let _ = timer.schedule_at(past);

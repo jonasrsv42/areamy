@@ -7,7 +7,8 @@ use crate::wake;
 /// and [routine::Poll::poll](crate::node::routine::Poll::poll).
 /// Created on the async thread during graph construction — never crosses threads.
 ///
-/// - `wake`: wakes the node, from any thread (`wake.sync`) or this one (`wake.local`)
+/// - `wake`: wakes the node, from any thread (`wake.sync`) or this one (`wake.local`); polls
+///   don't follow wake order (see [wake order](crate::poll#wake-order))
 /// - `timer`: re-polls the node at a deadline
 ///
 /// A clone wakes the same node: `will_wake` holds between them.

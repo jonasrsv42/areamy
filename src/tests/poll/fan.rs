@@ -257,6 +257,7 @@ fn node_sink_deferred_output() -> Result<(), Error> {
 /// Both sinks accumulate values. Test verifies correct values arrive.
 #[test]
 fn async_only_multiple_sinks() -> Result<(), Error> {
+    let _deadline = deadline(DEADLINE);
     let mut writer_a_node = work::Line::of(Double::new());
     let mut writer_a = writer_a_node.writer()?;
 

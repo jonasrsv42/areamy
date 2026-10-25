@@ -120,7 +120,7 @@ impl Parker {
     }
 
     /// Whether the parker is asleep, readable from another thread.
-    pub(crate) fn parked_probe(&self) -> impl Fn() -> bool + Send + 'static {
+    pub(crate) fn parked_probe(&self) -> impl Fn() -> bool + Send + 'static + use<> {
         let inner = self.inner.clone();
         move || inner.state.lock().unwrap_or_else(|p| p.into_inner()).parked
     }

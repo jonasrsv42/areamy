@@ -13,7 +13,7 @@
     not(all(target_os = "linux", target_pointer_width = "64")),
     path = "harness/cpu_clock_unsupported.rs"
 )]
-mod cpu_clock;
+pub mod cpu_clock;
 mod output;
 mod running;
 

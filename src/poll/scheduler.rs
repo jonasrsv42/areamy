@@ -3,7 +3,7 @@
 //!
 //! - [Scheduler]: made with the thread, before it runs; its [Producer] mints cross-thread wakers.
 //! - [Scheduler::local], on the poll thread: the [Uninit] consumer, and the [Local] half that
-//!   mints the graph's same-thread wakers and timers.
+//!   mints each node's context.
 //! - [Uninit::init], once the graph is built: the [Consumer].
 
 mod consumer;

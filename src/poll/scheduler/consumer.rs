@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(s.woken(), [0, 1, 2, 3]);
     }
 
-    /// Armed before init, it can only be checked when it fires.
+    /// A timer arms for any id: one past the graph is checked only when it fires, and dropped.
     #[test]
     fn a_timer_past_the_graph_is_dropped_when_it_fires() {
         let (mut s, local, _, _) = Scheduler::started(BITS + 2);

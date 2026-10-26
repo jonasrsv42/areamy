@@ -1,5 +1,5 @@
-//! A routine's `work` waker, as its node's builder hands it over, is the very one it's polled with:
-//! a future parked on it is woken where the runtime polls.
+//! A routine's `work` context's wakers, as its node's builder hands them over, are the very ones
+//! it's polled with: a future parked on them is woken where the runtime polls.
 
 use crate::error::Error;
 use crate::poll;

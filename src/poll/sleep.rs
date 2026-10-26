@@ -46,7 +46,7 @@ pub fn sleep_until(deadline: Instant) -> SleepFut {
 /// Future returned by [sleep]. Resolves once its deadline has passed.
 ///
 /// The armed [TimerGuard] owns the timer captured at first poll and
-/// cancels on early drop (lost `Select` race, cancelled routine) so
+/// cancels on early drop (a lost [race](fn@crate::poll::race), a cancelled routine) so
 /// no dead deadline lingers in the heap.
 pub struct SleepFut {
     deadline: Instant,

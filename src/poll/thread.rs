@@ -195,7 +195,8 @@ fn poll_loop<ThreadIdType: ThreadId>(
     while alive > 0 {
         let node_id = consumer.next();
 
-        // A waker or timer made for an id outside this graph.
+        // Unreachable: the consumer yields only ids the stack has nodes for, sized from these
+        // nodes. A guard against drift.
         let Some(slot) = runtime.nodes.get_mut(node_id) else {
             return Err(fatal!("woken for node {node_id}, not in this graph"));
         };

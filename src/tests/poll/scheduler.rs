@@ -23,7 +23,7 @@ use super::mock::IoThread;
 
 crate::thread_id!(OuterThread, InnerThread);
 
-/// Ids per machine word: the graph here reaches past it.
+/// A size unit for test graphs.
 const BITS: usize = usize::BITS as usize;
 
 /// Builds one node from `P`, on a slot of its own.
@@ -99,7 +99,7 @@ fn a_remote_wake_past_bits_polls_only_its_node() {
     let stop = Arc::new(AtomicBool::new(false));
     let polls: Arc<Vec<AtomicUsize>> = Arc::new((0..len).map(|_| AtomicUsize::new(0)).collect());
     let mut poll_thread = poll::Thread::<IoThread>::new();
-    // A node per id, reserved before the thread exists, and its cross-thread waker.
+    // A node per id, reserved before the thread starts, and its cross-thread waker.
     let reserved: Vec<_> = (0..len).map(|_| poll_thread.reserve()).collect();
     let wakers: Vec<_> = reserved.iter().map(|r| r.waker().clone()).collect();
     poll_thread.add(Counting {

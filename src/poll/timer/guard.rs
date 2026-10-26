@@ -2,8 +2,8 @@
 
 use super::{Timer, TimerKey};
 
-/// An armed timer, from [Timer::arm]: dropping it cancels the deadline, so early resolve, lost
-/// `Select` races and teardown share one cancellation path.
+/// An armed timer, from [Timer::arm]: dropping it cancels the deadline, so early resolve, a lost
+/// [race](fn@crate::poll::race) and teardown share one cancellation path.
 pub struct TimerGuard {
     timer: Timer,
     key: TimerKey,

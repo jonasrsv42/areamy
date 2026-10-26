@@ -412,7 +412,7 @@ fn assemble<'params, T, TargetType, OutputType>(
 }
 
 // ============================================================
-// Spawnable — calls factory.create() on async thread
+// GraphBuilder — calls factory.create() on the poll thread
 // ============================================================
 
 /// Terminal: Node<Sync, Sync>

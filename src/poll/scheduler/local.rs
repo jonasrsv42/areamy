@@ -17,7 +17,8 @@ pub(crate) struct Local {
 }
 
 impl Local {
-    /// A new node's context. O(1): an `Arc` for its sync waker, and [Self::context_with]'s.
+    /// A new node's context. O(1): an `Arc` for its sync waker, two `Arc` clones, and
+    /// [Self::context_with]'s.
     pub(crate) fn context(&self, id: NodeId) -> Context {
         self.context_with(id, self.producer.waker(id))
     }

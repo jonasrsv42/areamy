@@ -5,9 +5,7 @@
 //! returns a [TimerKey] identifying one timer; many timers per node
 //! coexist. [DeadlineHeap::cancel] releases a timer early.
 //!
-//! Pure data structure. Marking expired timers' nodes ready lives in
-//! the poll scheduler above — this module knows nothing about wakers,
-//! queues, or threads.
+//! Pure data structure: it knows nothing about wakers, stacks or threads.
 //!
 //! # Cells and lazy removal
 //!

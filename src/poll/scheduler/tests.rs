@@ -8,7 +8,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
-/// Ids per machine word: graph sizes here reach past it and its square.
+/// A size unit for test graphs; sizes here reach past it and its square.
 const BITS: usize = usize::BITS as usize;
 
 fn require_send<T: Send>() {}

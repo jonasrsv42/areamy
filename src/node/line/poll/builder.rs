@@ -7,7 +7,7 @@
 //! - `.input()` → resolve input to Sync
 //! - `.output()` → resolve output to Sync
 //! - `up.via(node)` → Async input (adds parent `up`)
-//! - `thread.add(node)` → Sync output (Spawnable)
+//! - `thread.add(node)` → Sync output (GraphBuilder)
 //! - consumed by `node.via(down)` → Async output (AsyncParent)
 
 pub mod node;

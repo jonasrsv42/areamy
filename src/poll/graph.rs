@@ -42,7 +42,8 @@ pub struct Graph<'params, ThreadIdType: ThreadId> {
 }
 
 impl<'params, ThreadIdType: ThreadId> Graph<'params, ThreadIdType> {
-    /// A new node's slot. O(1) amortized: an `Arc` for its sync waker, and [Self::claim]'s.
+    /// A new node's slot. O(1) amortized: an `Arc` for its sync waker, two `Arc` clones, and
+    /// [Self::claim]'s.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Slot<ThreadIdType> {
         let id = self.nodes.len();
@@ -57,7 +58,8 @@ impl<'params, ThreadIdType: ThreadId> Graph<'params, ThreadIdType> {
         Slot::new(reserved.id, cx)
     }
 
-    /// Places `pollable` in `slot`: the runtime polls it with the slot's context. O(1): a box.
+    /// Places `pollable` in `slot`: the runtime polls it with the slot's context. A slot past the
+    /// graph drops it. O(1): a box.
     pub fn add(
         &mut self,
         slot: Slot<ThreadIdType>,
@@ -80,7 +82,7 @@ impl<'params, ThreadIdType: ThreadId> Graph<'params, ThreadIdType> {
 
     /// The runtime, each node at its id, and the consumer of their wakes. O(n).
     ///
-    /// Fails for a node reserved but never added.
+    /// Fails for a slot never added, reserved or made.
     pub(crate) fn finish(self) -> Result<(Runtime<'params, ThreadIdType>, Consumer), Error> {
         if let Some(id) = self.nodes.iter().position(Option::is_none) {
             return Err(fatal!("graph: slot {} is empty", id));

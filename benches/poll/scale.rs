@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 
 areamy::thread_id!(ScaleThread);
 
-/// Graph sizes in ids: one 64-bit word, 16, and 160.
+/// Graph sizes in ids.
 const IDS: [usize; 3] = [64, 1024, 10240];
 /// Ids per line: input, work, output.
 const LINE: usize = 3;

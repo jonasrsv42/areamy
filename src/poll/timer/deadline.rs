@@ -17,8 +17,7 @@
 //! entries (or [TimerKey]s) from its previous life.
 //!
 //! Dead entries linger until their deadline reaches the heap top, so
-//! transient heap size ~ cancel rate × deadline horizon. Accepted:
-//! compaction deferred until long-timeout churn hurts in practice.
+//! the heap holds about cancel rate × deadline horizon of them.
 
 use super::TimerKey;
 use super::key::{CellId, Generation};
@@ -75,8 +74,8 @@ struct Cell {
     /// this cell after reuse fails the generation match instead of
     /// cancelling/firing the new occupant.
     generation: Generation,
-    // If this node is occupied. Can be vacant post a deadline and
-    // before a new deadline is allocated in this cell.
+    /// The timer's node; `None` from its fire or cancel until the cell
+    /// is reused.
     node_id: Option<NodeId>,
 }
 
@@ -84,10 +83,9 @@ struct Cell {
 /// Costs: h heap entries, dead ones included.
 pub(crate) struct DeadlineHeap {
     heap: BinaryHeap<Reverse<DeadlineEntry>>,
-    /// Grows to the peak count of concurrently awaiting timers and
-    /// stays there — vacated cells are recycled, never freed. Design
-    /// choice: the high-water mark is small (~24 bytes/cell) and
-    /// bounded by tasks, not churn, so shrinking isn't worth the code.
+    /// Grows to the peak count of live timers and stays there: vacated
+    /// cells are recycled, never freed. About 24 bytes a cell, bounded
+    /// by live timers, not churn.
     cells: Vec<Cell>,
     /// Vacant cell indices, reused before growing `cells`. Same
     /// high-water bound as `cells`.
@@ -120,7 +118,7 @@ impl DeadlineHeap {
             }
             None => {
                 // len before push == index after push.
-                let cell = CellId(self.cells.len());
+                let cell = CellId::new(self.cells.len());
                 self.cells.push(Cell {
                     generation: Generation::first(),
                     node_id: Some(node_id),

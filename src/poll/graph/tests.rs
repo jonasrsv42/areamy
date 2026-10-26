@@ -30,11 +30,11 @@ fn fails_with(graph: Graph<'static, GraphThread>, message: &str) {
 #[test]
 fn the_runtime_polls_with_the_wakers_handed_out() {
     let mut reservations = Reservations::<GraphThread>::new();
-    let reserved = reservations.next();
+    let reserved = reservations.reserve();
     let early = reserved.waker().clone();
     let mut graph = reservations.local();
     let slot = graph.claim(reserved);
-    let late = graph.next();
+    let late = graph.slot();
     let late_cx = late.cx().clone();
     graph.add(slot, Idle);
     graph.add(late, Idle);
@@ -52,9 +52,9 @@ fn the_runtime_polls_with_the_wakers_handed_out() {
 #[test]
 fn finish_marks_every_node_for_a_first_poll_in_id_order() {
     let mut reservations = Reservations::<GraphThread>::new();
-    let reserved = reservations.next();
+    let reserved = reservations.reserve();
     let mut graph = reservations.local();
-    let late = graph.next();
+    let late = graph.slot();
     graph.add(late, Idle);
     let slot = graph.claim(reserved);
     graph.add(slot, Idle);
@@ -66,9 +66,9 @@ fn finish_marks_every_node_for_a_first_poll_in_id_order() {
 #[test]
 fn a_node_reserved_but_never_added_fails_the_build() {
     let mut reservations = Reservations::<GraphThread>::new();
-    let _orphan = reservations.next();
+    let _orphan = reservations.reserve();
     let mut graph = reservations.local();
-    let slot = graph.next();
+    let slot = graph.slot();
     graph.add(slot, Idle);
     fails_with(graph, "slot 0 is empty");
 }
@@ -76,9 +76,9 @@ fn a_node_reserved_but_never_added_fails_the_build() {
 #[test]
 fn a_slot_made_but_never_added_fails_the_build() {
     let mut graph = Reservations::<GraphThread>::new().local();
-    let slot = graph.next();
+    let slot = graph.slot();
     graph.add(slot, Idle);
-    let _orphan = graph.next();
+    let _orphan = graph.slot();
     fails_with(graph, "slot 1 is empty");
 }
 
@@ -99,10 +99,10 @@ fn a_slot_past_the_graph_is_dropped() {
         }
     }
     let mut other = Reservations::<GraphThread>::new().local();
-    let _first = other.next();
-    let past = other.next();
+    let _first = other.slot();
+    let past = other.slot();
     let mut graph = Reservations::<GraphThread>::new().local();
-    let slot = graph.next();
+    let slot = graph.slot();
     graph.add(slot, Idle);
     let dropped = Rc::new(Cell::new(false));
     graph.add(past, Dropped(dropped.clone()));
@@ -116,11 +116,11 @@ fn a_slot_past_the_graph_is_dropped() {
 fn a_graph_frees_all_it_made() {
     let life = || {
         let mut reservations = Reservations::<GraphThread>::new();
-        let reserved = reservations.next();
+        let reserved = reservations.reserve();
         let mut graph = reservations.local();
         let slot = graph.claim(reserved);
         graph.add(slot, Idle);
-        let slot = graph.next();
+        let slot = graph.slot();
         graph.add(slot, Idle);
         drop(graph.finish().unwrap());
     };

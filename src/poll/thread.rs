@@ -1,17 +1,15 @@
 //! Async thread that runs [Pollable](crate::poll::Pollable) nodes driven by wakers.
 
-pub(crate) mod runtime;
 pub(crate) mod tls;
 
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
-use crate::poll::graph::{GraphBuilder, Reservations, Reserved};
+use crate::poll::graph::{GraphBuilder, Node, Reservations, Reserved, Runtime};
 use crate::poll::scheduler::Consumer;
 use crate::thread::callback::{self, InitGuard, OnDone};
 use crate::thread::done::Done;
 use crate::thread::join::Spawned;
 use crate::thread::{Join, Spawn, ThreadId};
-use runtime::{Node, Runtime};
 use std::thread::Scope;
 
 /// An idle async thread. Add builders via [Thread::add], then
@@ -62,7 +60,7 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     /// [`Pollable`](crate::poll::Pollable) to it; a node left out fails the build with "slot N is
     /// empty".
     pub fn reserve(&mut self) -> Reserved<ThreadIdType> {
-        self.reservations.next()
+        self.reservations.reserve()
     }
 
     /// For builders that reserve their nodes at mint.

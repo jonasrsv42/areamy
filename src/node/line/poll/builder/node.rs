@@ -120,7 +120,7 @@ impl<'params, T: Types<'params>> Node<'params, Deferred, Deferred, T> {
     ) -> Self {
         Self {
             // Reserved at mint: a node never added leaves its slot empty at build.
-            reservation: reservations.next(),
+            reservation: reservations.reserve(),
             factory,
             input: Default::default(),
             output: Null::new(),
@@ -385,8 +385,8 @@ fn assemble<'params, T, TargetType, OutputType>(
     TargetType: Receivable<DataType = T::In, SignalType = T::Signal> + 'params,
     OutputType: Rotate<DataType = T::Out, SignalType = T::Signal> + 'params,
 {
-    let work = graph.next();
-    let output_slot = graph.next();
+    let work = graph.slot();
+    let output_slot = graph.slot();
     let input_waker = input.slot.cx().wake.local.clone();
     let routine = factory.create(LineWakers {
         input: input_waker.clone(),

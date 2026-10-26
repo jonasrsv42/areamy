@@ -34,7 +34,7 @@ where
     P: Pollable + Send + 'static,
 {
     fn build(self: Box<Self>, graph: &mut Graph<'static, P::ThreadId>) -> Result<(), Error> {
-        let slot = graph.next();
+        let slot = graph.slot();
         graph.add(slot, self.0);
         Ok(())
     }

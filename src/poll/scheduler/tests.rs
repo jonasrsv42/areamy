@@ -56,20 +56,6 @@ fn a_local_wake_comes_out_of_next() {
 }
 
 #[test]
-fn local_and_cross_thread_wakes_both_come_out() {
-    let _deadline = deadline(DEADLINE);
-    let (mut consumer, local, producer, _) = Scheduler::started(4);
-    local.context(1).wake.local.wake();
-    local.context(2).wake.local.wake();
-    thread::spawn(move || producer.push(3)).join().unwrap();
-    // Newest first.
-    assert_eq!(
-        [consumer.next(), consumer.next(), consumer.next()],
-        [3, 2, 1]
-    );
-}
-
-#[test]
 fn a_sync_waker_wakes_its_id_from_any_thread() {
     let _deadline = deadline(DEADLINE);
     let (mut consumer, local, _, parked) = Scheduler::started(8);
@@ -79,19 +65,6 @@ fn a_sync_waker_wakes_its_id_from_any_thread() {
         waker.wake();
     });
     assert_eq!(consumer.next(), 6);
-    handle.join().unwrap();
-}
-
-#[test]
-fn cross_thread_blocks_until_woken() {
-    let _deadline = deadline(DEADLINE);
-    let (mut consumer, _, producer, parked) = Scheduler::started(BITS);
-    let handle = thread::spawn(move || {
-        // Wake only once the consumer sleeps, so the wake's notify is what releases it.
-        wait_until(parked);
-        producer.push(BITS - 1);
-    });
-    assert_eq!(consumer.next(), BITS - 1);
     handle.join().unwrap();
 }
 

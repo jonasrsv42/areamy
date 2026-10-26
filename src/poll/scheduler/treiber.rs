@@ -131,8 +131,8 @@ impl TreiberStack {
                 // Published: the next take finds it.
                 Ok(_) => return,
                 // Another push or the take moved `head` since our read: relink to the new top and
-                // retry. Bounded by the pushes that land meanwhile: each owns its id until the
-                // take, so at most about n per batch.
+                // retry. Lock-free: bounded by the pushes that land meanwhile, and each owns its id
+                // until the consumer releases it, so about n per batch.
                 Err(current) => below = current,
             }
         }

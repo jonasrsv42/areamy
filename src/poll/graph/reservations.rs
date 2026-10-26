@@ -25,8 +25,7 @@ impl<ThreadIdType: ThreadId> Reservations<ThreadIdType> {
     }
 
     /// Reserve the next node. O(1): an `Arc` for its waker, and two `Arc` clones.
-    #[allow(clippy::should_implement_trait)]
-    pub(crate) fn next(&mut self) -> Reserved<ThreadIdType> {
+    pub(crate) fn reserve(&mut self) -> Reserved<ThreadIdType> {
         let id = self.len;
         self.len += 1;
         Reserved::new(id, self.scheduler.producer().waker(id))

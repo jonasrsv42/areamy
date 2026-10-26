@@ -106,8 +106,8 @@ impl<'params, T: Types<'params>> Node<'params, Deferred, Deferred, Deferred, T> 
         Self {
             // Reserved at mint: a node never added leaves its slots empty at build.
             reservation: Inputs {
-                left: reservations.next(),
-                right: reservations.next(),
+                left: reservations.reserve(),
+                right: reservations.reserve(),
             },
             factory,
             input: BuilderInput {

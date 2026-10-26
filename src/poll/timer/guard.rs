@@ -15,7 +15,8 @@ impl TimerGuard {
     }
 
     /// The timer that will re-poll the node. O(1).
-    pub fn timer(&self) -> &Timer {
+    #[cfg(any(test, debug_assertions))]
+    pub(crate) fn timer(&self) -> &Timer {
         &self.timer
     }
 

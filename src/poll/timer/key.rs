@@ -4,9 +4,13 @@
 /// cell indices can't be mixed up with node ids or other counters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub(crate) struct CellId(pub(crate) usize);
+pub(crate) struct CellId(usize);
 
 impl CellId {
+    pub(crate) fn new(index: usize) -> Self {
+        Self(index)
+    }
+
     pub(crate) fn index(self) -> usize {
         self.0
     }

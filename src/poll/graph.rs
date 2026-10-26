@@ -4,12 +4,13 @@
 //!
 //! - [Thread::reserve](crate::poll::Thread::reserve), before the thread runs: reserves a node and
 //!   hands out its cross-thread waker.
-//! - [Graph], on the poll thread: [Graph::next] makes a new node's [Slot], [Graph::claim] a
+//! - [Graph], on the poll thread: [Graph::slot] makes a new node's [Slot], [Graph::claim] a
 //!   reserved node's, and [Graph::add] places a pollable in it.
 //!
 //! [Reserved] and [Slot] carry their thread's type and move into their node, so one from another
 //! thread type's graph doesn't compile, and none is placed twice. One poll thread per type, so its
-//! graph is the only one of that type.
+//! graph is the only one of that type; a slot of another thread of the same type breaks that
+//! contract, and lands unchecked.
 
 mod reservations;
 mod slot;
@@ -21,9 +22,8 @@ pub use slot::{Reserved, Slot};
 
 use crate::error::Error;
 use crate::fatal;
-use crate::poll::Pollable;
 use crate::poll::scheduler::{Consumer, Local, Uninit};
-use crate::poll::thread::runtime::{Node, Runtime};
+use crate::poll::{Context, Pollable};
 use crate::thread::ThreadId;
 
 use alloc::vec::Vec;
@@ -31,9 +31,20 @@ use alloc::vec::Vec;
 /// A node's index in its thread's graph.
 pub(crate) type NodeId = usize;
 
+/// A pollable and the context it's polled with.
+pub(crate) struct Node<'params, ThreadIdType: ThreadId> {
+    pub(crate) pollable: Box<dyn Pollable<ThreadId = ThreadIdType> + 'params>,
+    pub(crate) cx: Context,
+}
+
+/// The poll loop's nodes, each at its id; a finished one is `None`.
+pub(crate) struct Runtime<'params, ThreadIdType: ThreadId> {
+    pub(crate) nodes: Vec<Option<Node<'params, ThreadIdType>>>,
+}
+
 /// The graph being built on the poll thread. `!Send`.
 pub struct Graph<'params, ThreadIdType: ThreadId> {
-    /// Mints each node's wakers and timer.
+    /// Mints each node's context.
     local: Local,
     /// Made the consumer of this graph's wakes by [Self::finish].
     uninit: Uninit,
@@ -44,8 +55,7 @@ pub struct Graph<'params, ThreadIdType: ThreadId> {
 impl<'params, ThreadIdType: ThreadId> Graph<'params, ThreadIdType> {
     /// A new node's slot. O(1) amortized: an `Arc` for its sync waker, two `Arc` clones, and
     /// [Self::claim]'s.
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Slot<ThreadIdType> {
+    pub fn slot(&mut self) -> Slot<ThreadIdType> {
         let id = self.nodes.len();
         self.nodes.push(None);
         Slot::new(id, self.local.context(id))

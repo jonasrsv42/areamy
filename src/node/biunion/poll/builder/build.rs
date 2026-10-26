@@ -29,8 +29,8 @@ fn assemble<'params, T, LeftTargetType, RightTargetType, OutputType>(
     RightTargetType: Receivable<DataType = T::Right, SignalType = T::Signal> + 'params,
     OutputType: Rotate<DataType = T::Out, SignalType = T::Signal> + 'params,
 {
-    let work = graph.next();
-    let output_slot = graph.next();
+    let work = graph.slot();
+    let output_slot = graph.slot();
     let left_waker = inputs.left.slot.cx().wake.local.clone();
     let right_waker = inputs.right.slot.cx().wake.local.clone();
     let routine = factory.create(BiunionWakers {

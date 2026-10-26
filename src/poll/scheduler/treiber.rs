@@ -70,32 +70,45 @@ impl TreiberStack {
     #[inline]
     pub(super) fn push(&self, id: NodeId) {
         match self.nodes.get() {
+            // Initialized: the usual path.
             Some(nodes) => self.push_onto(nodes, id),
+            // Before init: a waker handed out at reserve, woken before the thread runs.
             None => self.push_early(id),
         }
     }
 
     /// A push before `init`: dropped, unless init lands during it.
+    // Exhaustive: each branch says when it happens.
+    #[allow(clippy::single_match)]
     fn push_early(&self, id: NodeId) {
         // AcqRel: ordered against init's swap; see `early`.
         self.early.fetch_or(1, Ordering::AcqRel);
-        if let Some(nodes) = self.nodes.get() {
-            self.push_onto(nodes, id);
+        match self.nodes.get() {
+            // Init landed between `push`'s look and the RMW: push as usual.
+            Some(nodes) => self.push_onto(nodes, id),
+            // Still before init: dropped. Init's first batch polls every id, and sees this
+            // waker's writes through `early`.
+            None => {}
         }
     }
 
+    // Exhaustive: each branch says when it happens; `silent` empties the last.
+    #[allow(clippy::single_match)]
     #[inline]
     fn push_onto(&self, nodes: &Nodes, id: NodeId) {
-        let Some(node) = nodes.get(id) else {
-            #[cfg(not(feature = "silent"))]
-            past_the_graph(id, self);
-            return;
-        };
-        match node.claim() {
-            // Queued: its coming poll serves this wake.
-            State::Queued => {}
-            // Idle: this push owns the node until it publishes it.
-            State::Idle => self.publish(node, id),
+        match nodes.get(id) {
+            Some(node) => match node.claim() {
+                // Queued: coalesced, pushing nothing; its coming poll serves this wake.
+                State::Queued => {}
+                // Idle: this push owns the node until it publishes it.
+                State::Idle => self.publish(node, id),
+            },
+            // Past the graph: only a waker of another thread of this type, which breaks the one
+            // thread per type contract. Printed and dropped.
+            None => {
+                #[cfg(not(feature = "silent"))]
+                past_the_graph(id, self);
+            }
         }
     }
 
@@ -115,6 +128,7 @@ impl TreiberStack {
                 Ordering::Release,
                 Ordering::Relaxed,
             ) {
+                // Published: the next take finds it.
                 Ok(_) => return,
                 // Another push or the take moved `head` since our read: relink to the new top and
                 // retry. Bounded by the pushes that land meanwhile: each owns its id until the
@@ -138,13 +152,18 @@ impl TreiberStack {
     #[inline]
     pub(super) fn next(&self, walk: &mut Link) -> Option<NodeId> {
         let id = walk.index();
-        let Some(node) = self.nodes.get().and_then(|nodes| nodes.get(id)) else {
-            // The batch's end: links hold only published ids, so never one without a node.
-            debug_assert_eq!(*walk, Link::NONE, "batch links id {id}, past the graph");
-            return None;
-        };
-        *walk = node.release();
-        Some(id)
+        match self.nodes.get().and_then(|nodes| nodes.get(id)) {
+            Some(node) => {
+                *walk = node.release();
+                Some(id)
+            }
+            // The batch's end, `NONE`: links hold only published ids, so never one without a
+            // node.
+            None => {
+                debug_assert_eq!(*walk, Link::NONE, "batch links id {id}, past the graph");
+                None
+            }
+        }
     }
 }
 

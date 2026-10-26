@@ -138,7 +138,11 @@ impl TreiberStack {
     #[inline]
     pub(super) fn next(&self, walk: &mut Link) -> Option<NodeId> {
         let id = walk.index();
-        let node = self.nodes.get()?.get(id)?;
+        let Some(node) = self.nodes.get().and_then(|nodes| nodes.get(id)) else {
+            // The batch's end: links hold only published ids, so never one without a node.
+            debug_assert_eq!(*walk, Link::NONE, "batch links id {id}, past the graph");
+            return None;
+        };
         *walk = node.release();
         Some(id)
     }

@@ -3,6 +3,8 @@ use crate::graph::marker::Connection;
 use crate::poll::Context;
 use crate::tests::support::live_bytes;
 
+use alloc::rc::Rc;
+use core::cell::Cell;
 use core::task::Poll;
 
 crate::thread_id!(GraphThread);
@@ -78,6 +80,35 @@ fn a_slot_made_but_never_added_fails_the_build() {
     graph.add(slot, Idle);
     let _orphan = graph.next();
     fails_with(graph, "slot 1 is empty");
+}
+
+/// Another thread's slot past this graph's ids: its pollable drops, and the graph builds without it.
+#[test]
+fn a_slot_past_the_graph_is_dropped() {
+    struct Dropped(Rc<Cell<bool>>);
+    impl Connection for Dropped {}
+    impl Pollable for Dropped {
+        type ThreadId = GraphThread;
+        fn poll(&mut self, _cx: &mut Context) -> Result<Poll<()>, Error> {
+            Ok(Poll::Pending)
+        }
+    }
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+    let mut other = Reservations::<GraphThread>::new().local();
+    let _first = other.next();
+    let past = other.next();
+    let mut graph = Reservations::<GraphThread>::new().local();
+    let slot = graph.next();
+    graph.add(slot, Idle);
+    let dropped = Rc::new(Cell::new(false));
+    graph.add(past, Dropped(dropped.clone()));
+    assert!(dropped.get());
+    let (runtime, _) = graph.finish().unwrap();
+    assert_eq!(runtime.nodes.len(), 1);
 }
 
 /// A graph's build, finished and dropped, frees all it made.

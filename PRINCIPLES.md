@@ -16,7 +16,7 @@ This rules out designs that decouple nodes from ownership: arenas, index or hand
 - Every node carries a `ThreadId`, and connections require matching ids.
 - Blueprints are `Send`. Thread-affine state (`Rc` edges, local wakers, `!Send` routines) is created on the thread it lives on.
 - Work and pull nodes are standalone; their `ThreadId` is inferred from wiring.
-- Poll nodes are minted by their thread (`&mut self`) because they reserve wake slots eagerly. A minted node that is never added fails at build.
+- Poll nodes are minted by their thread (`&mut self`) because they reserve their nodes eagerly. A minted node that is never added fails at build.
 
 ## Explicit over implicit
 

@@ -68,10 +68,14 @@ impl<'params, ThreadIdType: ThreadId> Graph<'params, ThreadIdType> {
             cx: slot.cx,
         };
         // In range and unplaced: the thread type's one graph hands out each id once, and slots
-        // move.
-        if let Some(place) = self.nodes.get_mut(slot.id) {
-            *place = Some(node);
-        }
+        // move. Out of range only for another thread's slot of this type, which breaks the one
+        // thread per type contract: a guard, printed and dropped.
+        let Some(place) = self.nodes.get_mut(slot.id) else {
+            #[cfg(not(feature = "silent"))]
+            added_past_the_graph(slot.id, self.nodes.len());
+            return;
+        };
+        *place = Some(node);
     }
 
     /// The runtime, each node at its id, and the consumer of their wakes. O(n).
@@ -84,6 +88,15 @@ impl<'params, ThreadIdType: ThreadId> Graph<'params, ThreadIdType> {
         let consumer = self.uninit.init(self.nodes.len());
         Ok((Runtime { nodes: self.nodes }, consumer))
     }
+}
+
+/// Prints a slot added past the graph: one of another thread's of the same type. Cold and out of
+/// line, so the add itself needs no stack frame.
+#[cfg(not(feature = "silent"))]
+#[cold]
+#[inline(never)]
+fn added_past_the_graph(id: NodeId, n: usize) {
+    eprintln!("added slot {id}, past the graph of {n} ids");
 }
 
 /// One-shot builder for poll graph nodes.

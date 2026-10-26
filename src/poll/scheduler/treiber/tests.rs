@@ -142,6 +142,15 @@ fn pushes_and_walks_match_a_model() {
     }
 }
 
+/// A link to an id without a node is a stack bug: debug builds catch it.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "batch links id 9, past the graph")]
+fn a_link_past_the_graph_fails_debug_builds() {
+    let stack = started(4);
+    stack.next(&mut Link::of(9));
+}
+
 // ---- the claim/release race ----
 
 /// Store-buffer litmus on the claim and release: the consumer releases a queued node, then reads

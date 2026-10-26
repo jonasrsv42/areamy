@@ -8,13 +8,12 @@ use super::types::Types;
 use crate::error::Error;
 use crate::graph::{Downstream, Select};
 use crate::node::biunion;
-use crate::node::biunion::Inputs;
 use crate::poll::edge::{Async, Deferred, Edge};
 use crate::poll::input;
 use crate::poll::traits::{AsyncParent, OwnedPoll};
 use core::marker::PhantomData;
 
-/// `up.via(node.at::<Left>())`: left Deferred → Async, keeping its reserved slot's id.
+/// `up.via(node.at::<Left>())`: left Deferred → Async, keeping its reserved node.
 impl<'params, RightEdge, OutEdge, T>
     ResolveParent<'params, Node<'params, Deferred, RightEdge, OutEdge, T>, T::Signal, T::ThreadId>
     for biunion::Left
@@ -37,10 +36,7 @@ where
         >,
     ) -> Self::Resolved {
         Node {
-            alloc: Inputs {
-                left: node.alloc.left.id,
-                right: node.alloc.right,
-            },
+            reservation: node.reservation,
             factory: node.factory,
             options: node.options,
             input: BuilderInput {
@@ -55,7 +51,7 @@ where
     }
 }
 
-/// `up.via(node.at::<Right>())`: right Deferred → Async, keeping its reserved slot's id.
+/// `up.via(node.at::<Right>())`: right Deferred → Async, keeping its reserved node.
 impl<'params, LeftEdge, OutEdge, T>
     ResolveParent<'params, Node<'params, LeftEdge, Deferred, OutEdge, T>, T::Signal, T::ThreadId>
     for biunion::Right
@@ -78,10 +74,7 @@ where
         >,
     ) -> Self::Resolved {
         Node {
-            alloc: Inputs {
-                left: node.alloc.left,
-                right: node.alloc.right.id,
-            },
+            reservation: node.reservation,
             factory: node.factory,
             options: node.options,
             input: BuilderInput {

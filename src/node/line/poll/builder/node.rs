@@ -19,7 +19,7 @@
 //!
 //! `Deferred` output is wired at build time when consumed by `node.via(down)`.
 //!
-//! The input's wake slot is reserved at mint, so nodes mint in any order and a node never added
+//! The input's node is reserved at mint, so nodes mint in any order and a node never added
 //! leaves its slot empty at build.
 //!
 //! Stores a [LineRoutineFactory] instead of the routine. The factory is [Send]
@@ -38,11 +38,10 @@ use crate::node::line::poll::factory::{LineRoutineFactory, LineWakers};
 use crate::node::line::poll::node;
 use crate::poll::Sink;
 use crate::poll::edge::{self, Async, Deferred, Direct, Edge, Null, Sync};
-use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
+use crate::poll::graph::{Graph, GraphBuilder, Reservations};
 use crate::poll::input::{self, Ready};
 use crate::poll::thread::Thread;
 use crate::poll::traits::{AsyncParent, OwnedPoll};
-use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::poll::{Budget, Phase};
 use crate::thread::ThreadId;
 use core::marker::PhantomData;
@@ -55,7 +54,7 @@ where
     OutEdgeType: Edge,
     T: Types<'params>,
 {
-    alloc: InEdgeType::Alloc,
+    reservation: InEdgeType::Reservation<T::ThreadId>,
     factory: T::Factory,
     input: InEdgeType::Input<'params, T::In, T::Signal, T::ThreadId>,
     output: OutEdgeType::Output<'params, T::Out, T::Signal>,
@@ -98,27 +97,30 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     >
     where
         PollLine<InType, OutType, SignalType, ThreadIdType, FactoryType>:
-            Types<'params, Factory = FactoryType>,
+            Types<'params, Factory = FactoryType, ThreadId = ThreadIdType>,
     {
-        Node::deferred(factory, self.waker_allocator())
+        Node::deferred(factory, self.reservations())
     }
 }
 
 /// Node<Deferred, Deferred> — unresolved, input slot reserved.
 impl<'params, T: Types<'params>> Node<'params, Deferred, Deferred, T> {
-    pub(crate) fn deferred(factory: T::Factory, alloc: &mut WakerAllocator) -> Self {
-        Self::with_options(factory, alloc, Options::default())
+    pub(crate) fn deferred(
+        factory: T::Factory,
+        reservations: &mut Reservations<T::ThreadId>,
+    ) -> Self {
+        Self::with_options(factory, reservations, Options::default())
     }
 
     /// A deferred node with `options`, set before any edge exists.
     pub(crate) fn with_options(
         factory: T::Factory,
-        alloc: &mut WakerAllocator,
+        reservations: &mut Reservations<T::ThreadId>,
         options: Options,
     ) -> Self {
         Self {
             // Reserved at mint: a node never added leaves its slot empty at build.
-            alloc: alloc.next(),
+            reservation: reservations.next(),
             factory,
             input: Default::default(),
             output: Null::new(),
@@ -127,19 +129,19 @@ impl<'params, T: Types<'params>> Node<'params, Deferred, Deferred, T> {
         }
     }
 
-    /// Resolve input to [`Sync`]: a sync→poll bridge receiver woken by the reserved slot.
+    /// Resolve input to [`Sync`]: a sync→poll bridge receiver woken by the reserved node.
     /// Output stays Deferred.
     pub fn input(self) -> Node<'params, Sync, Deferred, T>
     where
         Sync: ResolveInput<'params, T::In, T::Signal, T::ThreadId>,
     {
-        let (input, alloc) =
+        let (input, reservation) =
             <Sync as ResolveInput<'params, T::In, T::Signal, T::ThreadId>>::resolve(
-                self.alloc,
+                self.reservation,
                 self.options.bound,
             );
         Node {
-            alloc,
+            reservation,
             factory: self.factory,
             input,
             output: self.output,
@@ -154,7 +156,7 @@ impl<'params, T: Types<'params>> Node<'params, Deferred, Deferred, T> {
         Sync: ResolveOutput<'params, T::Out, T::Signal>,
     {
         Node {
-            alloc: self.alloc,
+            reservation: self.reservation,
             factory: self.factory,
             input: self.input,
             output: <Sync as ResolveOutput<'params, T::Out, T::Signal>>::resolve(),
@@ -174,13 +176,13 @@ impl<'params, T: Types<'params>> Node<'params, Deferred, Sync, T> {
     where
         Sync: ResolveInput<'params, T::In, T::Signal, T::ThreadId>,
     {
-        let (input, alloc) =
+        let (input, reservation) =
             <Sync as ResolveInput<'params, T::In, T::Signal, T::ThreadId>>::resolve(
-                self.alloc,
+                self.reservation,
                 self.options.bound,
             );
         Node {
-            alloc,
+            reservation,
             factory: self.factory,
             input,
             output: self.output,
@@ -205,7 +207,7 @@ where
         Sync: ResolveOutput<'params, T::Out, T::Signal>,
     {
         Node {
-            alloc: (),
+            reservation: (),
             factory: self.factory,
             input: self.input,
             output: <Sync as ResolveOutput<'params, T::Out, T::Signal>>::resolve(),
@@ -222,7 +224,7 @@ where
         sink: impl Sink<DataType = T::Out, SignalType = T::Signal> + Send + 'params,
     ) -> Node<'params, Sync, Direct, T> {
         Node {
-            alloc: (),
+            reservation: (),
             factory: self.factory,
             input: self.input,
             output: Box::new(sink),
@@ -239,7 +241,7 @@ impl<'params, T: Types<'params>> Node<'params, Async, Deferred, T> {
         Sync: ResolveOutput<'params, T::Out, T::Signal>,
     {
         Node {
-            alloc: self.alloc,
+            reservation: self.reservation,
             factory: self.factory,
             input: self.input,
             output: <Sync as ResolveOutput<'params, T::Out, T::Signal>>::resolve(),
@@ -256,7 +258,7 @@ impl<'params, T: Types<'params>> Node<'params, Async, Deferred, T> {
         sink: impl Sink<DataType = T::Out, SignalType = T::Signal> + Send + 'params,
     ) -> Node<'params, Async, Direct, T> {
         Node {
-            alloc: self.alloc,
+            reservation: self.reservation,
             factory: self.factory,
             input: self.input,
             output: Box::new(sink),
@@ -283,7 +285,7 @@ where
 
     fn own(self, upstream: UpstreamType) -> Result<Self::Out, Error> {
         Ok(Node {
-            alloc: self.alloc.id,
+            reservation: self.reservation,
             factory: self.factory,
             input: input::r#async::Input {
                 parents: vec![Box::new(upstream)],
@@ -371,27 +373,25 @@ where
 // ============================================================
 
 /// Add a line node's three phases to `graph`, reading `input` and draining into `output`. Its
-/// work and output slots are allocated here, after any parents of `input` were built.
+/// work and output slots are made here, after any parents of `input` were built.
 fn assemble<'params, T, TargetType, OutputType>(
     factory: T::Factory,
-    input: Ready<TargetType>,
+    input: Ready<TargetType, T::ThreadId>,
     output: OutputType,
     budget: Budget,
-    mut graph: Graph<'params, T::ThreadId>,
-) -> Result<Graph<'params, T::ThreadId>, Error>
-where
+    graph: &mut Graph<'params, T::ThreadId>,
+) where
     T: Types<'params>,
     TargetType: Receivable<DataType = T::In, SignalType = T::Signal> + 'params,
     OutputType: Rotate<DataType = T::Out, SignalType = T::Signal> + 'params,
 {
-    let work = graph.allocator.next();
-    let output_slot = graph.allocator.next();
-    let input_waker = graph.allocator.local_waker(input.id)?;
+    let work = graph.next();
+    let output_slot = graph.next();
+    let input_waker = input.slot.cx().wake.local.clone();
     let routine = factory.create(LineWakers {
         input: input_waker.clone(),
-        work: work.value.wake.clone(),
-        timer: work.value.timer.clone(),
-        output: output_slot.value.wake.local.clone(),
+        work: work.cx().clone(),
+        output: output_slot.cx().wake.local.clone(),
     });
     let (input_phase, work_phase, output_phase) = node::Node::phases(
         Phase {
@@ -400,25 +400,15 @@ where
         },
         Phase {
             target: routine,
-            waker: work.value.wake.local,
+            waker: work.cx().wake.local.clone(),
         },
         output,
-        output_slot.value.wake,
+        output_slot.cx().wake.clone(),
         budget,
     );
-    graph.nodes.push(GraphNode {
-        id: input.id,
-        pollable: Box::new(input_phase),
-    });
-    graph.nodes.push(GraphNode {
-        id: work.id,
-        pollable: Box::new(work_phase),
-    });
-    graph.nodes.push(GraphNode {
-        id: output_slot.id,
-        pollable: Box::new(output_phase),
-    });
-    Ok(graph)
+    graph.add(input.slot, input_phase);
+    graph.add(work, work_phase);
+    graph.add(output_slot, output_phase);
 }
 
 // ============================================================
@@ -432,13 +422,10 @@ where
     T::In: Send + core::marker::Sync,
     T::Out: Clone + Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let input = self.input.ready();
-        assemble::<T, _, _>(self.factory, input, self.output, self.options.budget, graph)
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let input = self.input.ready(graph);
+        assemble::<T, _, _>(self.factory, input, self.output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -448,13 +435,12 @@ where
     T: Types<'params>,
     T::Out: Clone + Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
-        assemble::<T, _, _>(self.factory, input, self.output, self.options.budget, graph)
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let input = self
+            .input
+            .ready(self.reservation, self.options.bound, graph)?;
+        assemble::<T, _, _>(self.factory, input, self.output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -464,14 +450,11 @@ where
     T: Types<'params>,
     T::In: Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let input = self.input.ready();
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let input = self.input.ready(graph);
         let output = Single::from(self.output);
-        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -479,14 +462,13 @@ where
 impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
     for Node<'params, Async, Direct, T>
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let input = self
+            .input
+            .ready(self.reservation, self.options.bound, graph)?;
         let output = Single::from(self.output);
-        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -496,14 +478,11 @@ where
     T: Types<'params>,
     T::In: Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let input = self.input.ready();
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let input = self.input.ready(graph);
         let output = Single::from(self.output);
-        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -511,14 +490,13 @@ where
 impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
     for Node<'params, Async, Deferred, T>
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let input = self
+            .input
+            .ready(self.reservation, self.options.bound, graph)?;
         let output = Single::from(self.output);
-        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -539,12 +517,12 @@ where
     fn build(
         self: Box<Self>,
         edge: edge::Sender<T::Out, T::Signal>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let input = self.input.ready();
+        graph: &mut Graph<'params, T::ThreadId>,
+    ) -> Result<(), Error> {
+        let input = self.input.ready(graph);
         let output = Single::from(edge);
-        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -557,11 +535,13 @@ impl<'params, T: Types<'params>> AsyncParent<'params> for Node<'params, Async, D
     fn build(
         self: Box<Self>,
         output_edge: edge::Sender<T::Out, T::Signal>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (input, graph) = self.input.ready(self.alloc, self.options.bound, graph)?;
+        graph: &mut Graph<'params, T::ThreadId>,
+    ) -> Result<(), Error> {
+        let input = self
+            .input
+            .ready(self.reservation, self.options.bound, graph)?;
         let output = Single::from(output_edge);
-        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph)
+        assemble::<T, _, _>(self.factory, input, output, self.options.budget, graph);
+        Ok(())
     }
 }

@@ -111,7 +111,7 @@ fn a_line_routine_is_polled_with_its_work_waker() {
     let mut thread = poll::Thread::<IoThread>::new();
     let node = thread
         .line(move |wakers: LineWakers| Probe {
-            work: wakers.work,
+            work: wakers.work.wake,
             seen: record,
         })
         .input();
@@ -129,7 +129,7 @@ fn a_biunion_routine_is_polled_with_its_work_waker() {
         let mut thread = poll::Thread::<IoThread>::new();
         let node = thread
             .biunion(move |wakers: BiunionWakers| Probe {
-                work: wakers.work,
+                work: wakers.work.wake,
                 seen: record,
             })
             .input::<biunion::Left>()

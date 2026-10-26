@@ -5,10 +5,10 @@ use crate::Message;
 use crate::error::Error;
 use crate::graph::{Closeable, Receivable, TryPush, TryPushable};
 use crate::node::routine::Accept;
+use crate::poll::context::mock::noop_context;
 use crate::poll::edge;
 use crate::poll::future::{self, Input};
 use crate::poll::input;
-use crate::poll::timer::mock::noop_timer;
 use crate::sync::Receiver;
 use crate::wake::mock;
 use core::pin::Pin;
@@ -115,12 +115,8 @@ fn poll_local_edge() -> Result<(), Error> {
 /// The future input queue closes itself on Flush; renew opens the next segment's.
 #[test]
 fn future_input_queue() -> Result<(), Error> {
-    let (mut sender, receiver) = future::input::channel(
-        mock::noop_local_waker(),
-        mock::noop_waker(),
-        noop_timer(),
-        None,
-    );
+    let (mut sender, receiver) =
+        future::input::channel(mock::noop_local_waker(), noop_context(), None);
     let waker = core::task::Waker::noop();
     let mut cx = core::task::Context::from_waker(waker);
     assert_eq!(sender.try_send(1)?, Accept::Accepted);

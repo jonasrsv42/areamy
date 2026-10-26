@@ -13,9 +13,11 @@ fn started(n: usize) -> TreiberStack {
     stack
 }
 
-/// The rest of the batch at `walk`, each id released.
+/// The rest of the batch at `walk`, each id released. Capped one past the nodes, so a cycle fails
+/// the test instead of hanging it.
 fn rest(stack: &TreiberStack, walk: &mut Link) -> Vec<NodeId> {
-    iter::from_fn(|| stack.next(walk)).collect()
+    let cap = stack.nodes.get().map_or(0, Nodes::len) + 1;
+    iter::from_fn(|| stack.next(walk)).take(cap).collect()
 }
 
 fn batch(stack: &TreiberStack) -> Vec<NodeId> {
@@ -40,13 +42,13 @@ impl Rng {
 #[test]
 fn a_batch_is_every_push_once_newest_first() {
     let stack = started(8);
-    assert_eq!(stack.push(5), Pushed::First);
-    assert_eq!(stack.push(3), Pushed::Linked);
-    assert_eq!(stack.push(5), Pushed::Coalesced);
-    assert_eq!(stack.push(7), Pushed::Linked);
+    stack.push(5);
+    stack.push(3);
+    stack.push(5);
+    stack.push(7);
     assert_eq!(batch(&stack), [7, 3, 5]);
     assert!(batch(&stack).is_empty());
-    assert_eq!(stack.push(5), Pushed::First);
+    stack.push(5);
     assert_eq!(batch(&stack), [5]);
 }
 
@@ -54,17 +56,18 @@ fn a_batch_is_every_push_once_newest_first() {
 #[test]
 fn a_push_coalesces_until_the_release_and_claims_after_it() {
     let stack = started(4);
-    assert_eq!(stack.push(1), Pushed::First);
-    assert_eq!(stack.push(2), Pushed::Linked);
+    stack.push(1);
+    stack.push(2);
     // Queued in the stack.
-    assert_eq!(stack.push(1), Pushed::Coalesced);
+    stack.push(1);
     let mut walk = stack.take();
     // Taken, not yet released.
-    assert_eq!(stack.push(1), Pushed::Coalesced);
+    stack.push(1);
+    assert_eq!(stack.take(), Link::NONE);
     assert_eq!(stack.next(&mut walk), Some(2));
     assert_eq!(stack.next(&mut walk), Some(1));
     // Released: a wake during its poll pushes it anew.
-    assert_eq!(stack.push(1), Pushed::First);
+    stack.push(1);
     assert_eq!(stack.next(&mut walk), None);
     assert_eq!(batch(&stack), [1]);
 }
@@ -78,8 +81,8 @@ fn a_node_pushed_again_mid_batch_keeps_the_batch_whole() {
     }
     let mut walk = stack.take();
     assert_eq!(stack.next(&mut walk), Some(3));
-    assert_eq!(stack.push(3), Pushed::First);
-    assert_eq!(stack.push(0), Pushed::Coalesced);
+    stack.push(3);
+    stack.push(0);
     assert_eq!(rest(&stack, &mut walk), [2, 1, 0]);
     assert_eq!(batch(&stack), [3]);
 }
@@ -119,12 +122,7 @@ fn pushes_and_walks_match_a_model() {
             // Mostly low ids, so pushes often meet queued ones.
             let span = 1 + rng.below(n);
             let id = rng.below(span);
-            let expected = match (queued[id], pushed.is_empty()) {
-                (true, _) => Pushed::Coalesced,
-                (false, true) => Pushed::First,
-                (false, false) => Pushed::Linked,
-            };
-            assert_eq!(stack.push(id), expected, "step {step}");
+            stack.push(id);
             if !queued[id] {
                 queued[id] = true;
                 pushed.push(id);
@@ -215,7 +213,7 @@ fn a_push_racing_the_release_never_loses_its_wake() {
 fn init_pushes_nothing_itself() {
     let stack = started(4);
     assert!(batch(&stack).is_empty());
-    assert_eq!(stack.push(3), Pushed::First);
+    stack.push(3);
     assert_eq!(batch(&stack), [3]);
 }
 
@@ -223,18 +221,19 @@ fn init_pushes_nothing_itself() {
 #[test]
 fn a_push_past_the_graph_is_dropped() {
     let stack = started(4);
-    assert_eq!(stack.push(4), Pushed::Dropped);
+    stack.push(4);
     assert!(batch(&stack).is_empty());
 }
 
 #[test]
 fn a_push_before_init_pushes_nothing() {
     let stack = TreiberStack::new();
-    assert_eq!(stack.push(1), Pushed::Dropped);
+    stack.push(1);
     assert!(batch(&stack).is_empty());
     stack.init(4);
     assert!(batch(&stack).is_empty());
-    assert_eq!(stack.push(1), Pushed::First);
+    stack.push(1);
+    assert_eq!(batch(&stack), [1]);
 }
 
 /// Init lands between the push's look for the nodes and its RMW.
@@ -242,7 +241,7 @@ fn a_push_before_init_pushes_nothing() {
 fn a_push_that_missed_the_nodes_finds_them_after_its_rmw() {
     let stack = TreiberStack::new();
     stack.init(4);
-    assert_eq!(stack.push_early(2), Pushed::First);
+    stack.push_early(2);
     assert_eq!(batch(&stack), [2]);
 }
 
@@ -250,7 +249,7 @@ fn a_push_that_missed_the_nodes_finds_them_after_its_rmw() {
 #[test]
 fn a_push_whose_rmw_beat_init_is_dropped() {
     let stack = TreiberStack::new();
-    assert_eq!(stack.push_early(2), Pushed::Dropped);
+    stack.push_early(2);
     stack.init(4);
     assert!(batch(&stack).is_empty());
 }
@@ -309,7 +308,7 @@ fn the_nodes_are_one_allocation_made_at_init() {
     let made = allocations();
     stack.init(4_000);
     assert_eq!(allocations() - made, 1);
-    assert_eq!(stack.push(3_999), Pushed::First);
+    stack.push(3_999);
     assert_eq!(batch(&stack), [3_999]);
     drop(stack);
     assert_eq!(live_bytes(), before);

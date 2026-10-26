@@ -8,7 +8,6 @@ use crate::message::Message;
 use crate::node::biunion::poll::routine::tests::MockBiunion;
 use crate::node::line::poll::routine::tests::MockLine;
 use crate::poll::graph::Graph;
-use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::poll::{self, AsyncParent};
 use crate::signal::Trackable;
 use crate::work;
@@ -174,16 +173,13 @@ impl AsyncParent<'static> for Probe {
     fn build(
         self: Box<Self>,
         mut edge: poll::edge::Sender<usize, Signal>,
-        allocator: ThreadLocalWakerAllocator<IoThread>,
-    ) -> Result<Graph<'static, IoThread>, Error> {
+        _graph: &mut Graph<'static, IoThread>,
+    ) -> Result<(), Error> {
         for value in 0..2 {
             let pushed = matches!(edge.try_push(Message::Data(value))?, TryPush::Pushed);
             self.0.lock().unwrap().push(pushed);
         }
-        Ok(Graph {
-            allocator,
-            nodes: vec![],
-        })
+        Ok(())
     }
 }
 

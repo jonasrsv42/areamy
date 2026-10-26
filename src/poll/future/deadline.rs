@@ -35,7 +35,7 @@ impl Deadline {
             Poll::Ready(_) => self.armed = None,
             Poll::Pending => {
                 if self.armed.is_none() {
-                    self.armed = Some(TimerGuard::arm(timer.clone(), self.at));
+                    self.armed = Some(timer.arm(self.at));
                 }
             }
         }
@@ -46,14 +46,7 @@ impl Deadline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poll::scheduler::PollQueue;
-
-    fn timer() -> Timer {
-        // A real Timer bound to a real Scheduler; the consumer never runs here.
-        let pq = PollQueue::new();
-        let (_consumer, local_producer) = pq.local();
-        Timer::new(0, &local_producer)
-    }
+    use crate::poll::timer::mock::noop_timer as timer;
 
     fn expired() -> Deadline {
         Deadline {

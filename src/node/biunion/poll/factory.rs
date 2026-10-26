@@ -8,28 +8,28 @@
 //! it produces) may hold borrows captured from the surrounding scope.
 
 use crate::node::biunion::Inputs;
-use crate::poll::timer::Timer;
-use crate::wake::{self, LocalWaker};
+use crate::poll::Context;
+use crate::wake::LocalWaker;
 
 /// Per-input wakers, grouped under [`BiunionWakers::input`] so a
 /// routine accesses them via `wakers.input.left` / `wakers.input.right`.
 pub type BiunionInputs = Inputs<LocalWaker, LocalWaker>;
 
-/// Phase wakers the framework hands to a biunion routine.
+/// What the framework hands a biunion routine at construction: its I/O phases' wakers and its own
+/// context.
 ///
 /// - `input.left` / `input.right` wake the two input phases. Wake a side after
 ///   [crate::node::routine::Accept::Full] on it once room frees.
-/// - `work` wakes the work phase (polls the routine): the very bundle the routine is polled with,
-///   so its `.sync` `will_wake` the `cx` a future sees.
+/// - `work` is the work phase's context (the phase that polls the routine): the very one the
+///   routine is polled with, so its wakers `will_wake` the `cx` a future sees, and its timer
+///   re-polls the routine at a deadline.
 /// - `output` wakes the output phase to drain.
-/// - `timer` re-polls the work phase at a deadline.
 ///
 /// Polls don't follow wake order: see [wake order](crate::poll#wake-order).
 pub struct BiunionWakers {
     pub input: BiunionInputs,
-    pub work: wake::Waker,
+    pub work: Context,
     pub output: LocalWaker,
-    pub timer: Timer,
 }
 
 /// Factory for poll biunion routines. [Send] — crosses threads.

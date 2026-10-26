@@ -22,7 +22,7 @@ pub(super) struct PollDouble {
 impl PollDouble {
     pub(super) fn new(wakers: LineWakers) -> Self {
         // The timer would re-poll the routine at a `recv_with_timeout` deadline.
-        let (input, receiver) = input::channel(wakers.input, wakers.work, wakers.timer, None);
+        let (input, receiver) = input::channel(wakers.input, wakers.work, None);
         Self {
             input,
             receiver,

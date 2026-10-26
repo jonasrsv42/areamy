@@ -68,9 +68,9 @@ impl<'thread, 'params, ThreadIdType: ThreadId> BiunionBuilder<'thread, 'params, 
     >
     where
         PollBiunion<Left, Right, Out, SignalType, ThreadIdType, FactoryType>:
-            Types<'params, Factory = FactoryType>,
+            Types<'params, Factory = FactoryType, ThreadId = ThreadIdType>,
     {
-        Node::with_options(factory, self.thread.waker_allocator(), self.options)
+        Node::with_options(factory, self.thread.reservations(), self.options)
     }
 }
 

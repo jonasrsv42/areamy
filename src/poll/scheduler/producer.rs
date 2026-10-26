@@ -1,17 +1,18 @@
-//! [Producer] — cross-thread producer. `Send + Sync + Clone`.
+//! [Producer] — cross-thread producer, and the cross-thread waker it backs. `Send + Sync + Clone`.
 
 use super::treiber::TreiberStack;
-use crate::poll::marker::NodeId;
+use crate::poll::graph::NodeId;
 
 use alloc::sync::Arc;
-use core::task::Waker;
+use alloc::task::Wake;
+use core::task;
 
 /// Pushes an id and wakes the consumer.
 #[derive(Clone)]
-pub struct Producer {
+pub(crate) struct Producer {
     pub(super) stack: Arc<TreiberStack>,
-    /// The consumer's parker.
-    pub(super) waker: Waker,
+    /// Wakes the consumer's parker.
+    pub(super) unpark: task::Waker,
 }
 
 impl Producer {
@@ -21,9 +22,38 @@ impl Producer {
     /// Every push wakes: the push that found the stack empty may be preempted before its wake,
     /// and the ids pushed onto it would wait on that producer's priority.
     #[inline]
-    pub fn push(&self, id: NodeId) {
+    pub(crate) fn push(&self, id: NodeId) {
         self.stack.push(id);
-        self.waker.wake_by_ref();
+        self.unpark.wake_by_ref();
+    }
+
+    /// `id`'s cross-thread waker. O(1): an `Arc` for the waker, and this producer's two `Arc`
+    /// clones.
+    pub(crate) fn waker(&self, id: NodeId) -> task::Waker {
+        task::Waker::from(Arc::new(Waker {
+            id,
+            producer: self.clone(),
+        }))
+    }
+}
+
+/// A node's cross-thread waker.
+struct Waker {
+    id: NodeId,
+    producer: Producer,
+}
+
+impl Wake for Waker {
+    /// O(1): [Self::wake_by_ref].
+    #[inline]
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    /// O(1): a [Producer::push].
+    #[inline]
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.producer.push(self.id);
     }
 }
 
@@ -31,7 +61,6 @@ impl Producer {
 mod tests {
     use super::*;
     use crate::wake::Parker;
-    use alloc::task::Wake;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     /// Stands in for the parker: takes when woken, as the consumer would.
@@ -53,10 +82,10 @@ mod tests {
         }
     }
 
-    fn started(n: usize, waker: Waker) -> Producer {
+    fn started(n: usize, unpark: task::Waker) -> Producer {
         let stack = Arc::new(TreiberStack::new());
         stack.init(n);
-        Producer { stack, waker }
+        Producer { stack, unpark }
     }
 
     /// Push, then wake: a consumer woken first could find nothing and sleep on it.
@@ -70,7 +99,7 @@ mod tests {
         });
         let producer = Producer {
             stack,
-            waker: Waker::from(witness.clone()),
+            unpark: task::Waker::from(witness.clone()),
         };
         producer.push(3);
         assert_eq!(witness.taken.load(Ordering::SeqCst), 3);
@@ -85,5 +114,18 @@ mod tests {
             producer.push(id);
             assert!(parker.take_woken(), "push of {id}");
         }
+    }
+
+    #[test]
+    fn a_nodes_waker_pushes_its_id_and_wakes_the_parker() {
+        let parker = Parker::new();
+        let producer = started(8, parker.waker());
+        let waker = producer.waker(5);
+        waker.wake_by_ref();
+        assert!(parker.take_woken());
+        waker.wake();
+        let mut walk = producer.stack.take();
+        assert_eq!(producer.stack.next(&mut walk), Some(5));
+        assert_eq!(producer.stack.next(&mut walk), None);
     }
 }

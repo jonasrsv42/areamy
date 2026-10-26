@@ -53,7 +53,7 @@ pub trait ResolveOutput<Node> {
 // ResolveInput — Sync, on the side still Deferred
 // ============================================================
 
-/// Left Deferred → Sync, woken by its reserved slot.
+/// Left Deferred → Sync, woken by its reserved node.
 impl<'params, RightEdge, OutEdge, T>
     ResolveInput<Sync, Node<'params, Deferred, RightEdge, OutEdge, T>> for biunion::Left
 where
@@ -64,19 +64,19 @@ where
 {
     type Resolved = Node<'params, Sync, RightEdge, OutEdge, T>;
     fn resolve(node: Node<'params, Deferred, RightEdge, OutEdge, T>) -> Self::Resolved {
-        let slot = node.alloc.left;
-        let waker = slot.value.clone();
+        let reserved = node.reservation.left;
+        let waker = reserved.waker().clone();
         Node {
-            alloc: Inputs {
+            reservation: Inputs {
                 left: (),
-                right: node.alloc.right,
+                right: node.reservation.right,
             },
             factory: node.factory,
             options: node.options,
             input: BuilderInput {
                 left: Input {
                     edge: Receiver::new(waker, node.options.bound.left),
-                    slot,
+                    reserved,
                 },
                 right: node.input.right,
             },
@@ -86,7 +86,7 @@ where
     }
 }
 
-/// Right Deferred → Sync, woken by its reserved slot.
+/// Right Deferred → Sync, woken by its reserved node.
 impl<'params, LeftEdge, OutEdge, T>
     ResolveInput<Sync, Node<'params, LeftEdge, Deferred, OutEdge, T>> for biunion::Right
 where
@@ -97,11 +97,11 @@ where
 {
     type Resolved = Node<'params, LeftEdge, Sync, OutEdge, T>;
     fn resolve(node: Node<'params, LeftEdge, Deferred, OutEdge, T>) -> Self::Resolved {
-        let slot = node.alloc.right;
-        let waker = slot.value.clone();
+        let reserved = node.reservation.right;
+        let waker = reserved.waker().clone();
         Node {
-            alloc: Inputs {
-                left: node.alloc.left,
+            reservation: Inputs {
+                left: node.reservation.left,
                 right: (),
             },
             factory: node.factory,
@@ -110,7 +110,7 @@ where
                 left: node.input.left,
                 right: Input {
                     edge: Receiver::new(waker, node.options.bound.right),
-                    slot,
+                    reserved,
                 },
             },
             output: node.output,
@@ -135,7 +135,7 @@ where
     type Resolved = Node<'params, LeftEdge, RightEdge, Sync, T>;
     fn resolve(node: Node<'params, LeftEdge, RightEdge, Deferred, T>) -> Self::Resolved {
         Node {
-            alloc: node.alloc,
+            reservation: node.reservation,
             factory: node.factory,
             options: node.options,
             input: node.input,

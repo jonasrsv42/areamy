@@ -52,7 +52,7 @@ fn ends_with(fail: fn() -> Error) -> Result<Vec<ErrorKind>, Error> {
     let mut async_thread = poll::Thread::<IoThread>::new();
     let node = async_thread
         .line(move |wakers: LineWakers| Failing {
-            work: wakers.work.local,
+            work: wakers.work.wake.local,
             fail,
         })
         .input();

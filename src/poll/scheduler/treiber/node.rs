@@ -114,7 +114,7 @@ impl Nodes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poll::marker::NodeId;
+    use crate::poll::graph::NodeId;
 
     fn at(nodes: &Nodes, id: NodeId) -> &Node {
         nodes.get(id).expect("an id of the graph")

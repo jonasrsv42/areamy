@@ -44,21 +44,11 @@ where
 {
     /// `bound` caps each input queue and the output queue; `None` is unbounded.
     pub fn new(wakers: BiunionWakers, bound: Option<NonZeroUsize>, factory: F) -> Self {
-        // `work` is the waker the routine is polled with: the queues' home. Every queue gets the
-        // timer so a `*_with_timeout` deadline re-polls the routine.
-        let (left, _) = input::channel(
-            wakers.input.left,
-            wakers.work.clone(),
-            wakers.timer.clone(),
-            bound,
-        );
-        let (right, _) = input::channel(
-            wakers.input.right,
-            wakers.work.clone(),
-            wakers.timer.clone(),
-            bound,
-        );
-        let (sender, output) = output::channel(wakers.output, wakers.work, wakers.timer, bound);
+        // `work` is the context the routine is polled with: the queues' home, whose timer
+        // re-polls the routine at a `*_with_timeout` deadline.
+        let (left, _) = input::channel(wakers.input.left, wakers.work.clone(), bound);
+        let (right, _) = input::channel(wakers.input.right, wakers.work.clone(), bound);
+        let (sender, output) = output::channel(wakers.output, wakers.work, bound);
         Self {
             input: Inputs { left, right },
             output,

@@ -11,10 +11,9 @@ use crate::node::line::poll::routine::tests::MockLine;
 use crate::poll::Budget;
 use crate::poll::context::mock::noop_context;
 use crate::poll::edge::{self, Null};
-use crate::poll::graph::{Graph, GraphBuilder};
-use crate::poll::scheduler::PollQueue;
+use crate::poll::graph::{Graph, GraphBuilder, Reservations};
+use crate::poll::thread::runtime::Runtime;
 use crate::poll::traits::AsyncParent;
-use crate::poll::wakers::{ThreadLocalWakerAllocator, WakerAllocator};
 use crate::wake::mock::noop_local_waker;
 use crate::{Pushable, Pushes, Trackable, Via, work};
 use core::num::NonZeroUsize;
@@ -25,15 +24,39 @@ fn mock_factory() -> impl FnOnce(crate::poll::LineWakers) -> MockLine + Send {
     |wakers| MockLine::new(wakers)
 }
 
-fn make_allocators() -> (
-    WakerAllocator,
-    impl FnOnce(WakerAllocator) -> ThreadLocalWakerAllocator<TestThread>,
-) {
-    let queue = PollQueue::new();
-    let producer = queue.producer();
-    let (_, local_producer) = queue.local();
-    let alloc = WakerAllocator::new(producer);
-    (alloc, move |a: WakerAllocator| a.local(local_producer))
+/// The runtime `node` builds into, from the nodes `reservations` reserved.
+fn built(
+    node: impl GraphBuilder<'static, TestThread>,
+    reservations: Reservations<TestThread>,
+) -> Runtime<'static, TestThread> {
+    let mut graph = reservations.local();
+    Box::new(node).build(&mut graph).unwrap();
+    graph.finish().unwrap().0
+}
+
+/// The same for `node` built as a parent, feeding a fresh edge.
+fn built_as_parent(
+    node: impl AsyncParent<
+        'static,
+        OutType = usize,
+        SignalType = Trackable<&'static str>,
+        ThreadIdType = TestThread,
+    >,
+    reservations: Reservations<TestThread>,
+) -> Runtime<'static, TestThread> {
+    let mut graph = reservations.local();
+    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
+    Box::new(node).build(sender, &mut graph).unwrap();
+    graph.finish().unwrap().0
+}
+
+/// Polls the built node at `id` once.
+fn poll(
+    runtime: &mut Runtime<'static, TestThread>,
+    id: usize,
+) -> Result<core::task::Poll<()>, Error> {
+    let node = runtime.nodes[id].as_mut().expect("a node at every id");
+    node.pollable.poll(&mut noop_context())
 }
 
 /// Minimal AsyncParent that produces zero nodes of its own.
@@ -47,20 +70,17 @@ impl AsyncParent<'static> for MockParent {
     fn build(
         self: Box<Self>,
         _edge: edge::Sender<usize, Trackable<&'static str>>,
-        allocator: ThreadLocalWakerAllocator<TestThread>,
-    ) -> Result<Graph<'static, TestThread>, Error> {
-        Ok(Graph {
-            allocator,
-            nodes: vec![],
-        })
+        _graph: &mut Graph<'static, TestThread>,
+    ) -> Result<(), Error> {
+        Ok(())
     }
 }
 
 macro_rules! deferred {
-    ($alloc:expr) => {
+    ($reservations:expr) => {
         Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::deferred(
             mock_factory(),
-            $alloc,
+            $reservations,
         )
     };
 }
@@ -71,20 +91,16 @@ macro_rules! deferred {
 
 #[test]
 fn input_sync_output_sync() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input().output();
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = deferred!(&mut reservations).input().output();
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 #[test]
 fn input_sync_deferred_sink() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input();
-    let local = to_local(alloc);
-    let graph = GraphBuilder::build(Box::new(node), local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = deferred!(&mut reservations).input();
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 // ============================================================
@@ -93,20 +109,18 @@ fn input_sync_deferred_sink() {
 
 #[test]
 fn output_sync_input_sync() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).output().input();
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = deferred!(&mut reservations).output().input();
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 #[test]
 fn output_sync_then_parent() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = MockParent.via(deferred!(&mut alloc).output()).unwrap();
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = MockParent
+        .via(deferred!(&mut reservations).output())
+        .unwrap();
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 // ============================================================
@@ -115,30 +129,27 @@ fn output_sync_then_parent() {
 
 #[test]
 fn parent_output_sync() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = MockParent.via(deferred!(&mut alloc)).unwrap().output();
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = MockParent
+        .via(deferred!(&mut reservations))
+        .unwrap()
+        .output();
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 #[test]
 fn parent_deferred_sink() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = MockParent.via(deferred!(&mut alloc)).unwrap();
-    let local = to_local(alloc);
-    let graph = GraphBuilder::build(Box::new(node), local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = MockParent.via(deferred!(&mut reservations)).unwrap();
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 #[test]
 fn multiple_parents_output_sync() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = MockParent.via(deferred!(&mut alloc)).unwrap();
+    let mut reservations = Reservations::new();
+    let node = MockParent.via(deferred!(&mut reservations)).unwrap();
     let node = MockParent.via(node).unwrap().output();
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 // ============================================================
@@ -147,22 +158,16 @@ fn multiple_parents_output_sync() {
 
 #[test]
 fn sync_deferred_as_parent() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input();
-    let local = to_local(alloc);
-    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
-    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = deferred!(&mut reservations).input();
+    assert_eq!(built_as_parent(node, reservations).nodes.len(), 3);
 }
 
 #[test]
 fn async_deferred_as_parent() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = MockParent.via(deferred!(&mut alloc)).unwrap();
-    let local = to_local(alloc);
-    let (sender, _receiver) = edge::channel(noop_local_waker(), None);
-    let graph = AsyncParent::build(Box::new(node), sender, local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = MockParent.via(deferred!(&mut reservations)).unwrap();
+    assert_eq!(built_as_parent(node, reservations).nodes.len(), 3);
 }
 
 // ============================================================
@@ -171,23 +176,19 @@ fn async_deferred_as_parent() {
 
 #[test]
 fn input_sync_direct_sink() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input().sink(Null::new());
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    let mut reservations = Reservations::new();
+    let node = deferred!(&mut reservations).input().sink(Null::new());
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 #[test]
 fn parent_direct_sink() {
-    let (mut alloc, to_local) = make_allocators();
+    let mut reservations = Reservations::new();
     let node = MockParent
-        .via(deferred!(&mut alloc))
+        .via(deferred!(&mut reservations))
         .unwrap()
         .sink(Null::new());
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    assert_eq!(graph.nodes.len(), 3);
+    assert_eq!(built(node, reservations).nodes.len(), 3);
 }
 
 // ============================================================
@@ -200,7 +201,7 @@ type WorkSink = dyn work::Sink<DataType = usize, SignalType = Trackable<&'static
 
 /// After 3 pushes, one Input poll and one Output poll: what reached downstream.
 fn delivered_in_one_round(budget: Budget) -> usize {
-    let (mut alloc, to_local) = make_allocators();
+    let mut reservations = Reservations::new();
     let options = Options {
         bound: None,
         budget,
@@ -208,7 +209,7 @@ fn delivered_in_one_round(budget: Budget) -> usize {
     let mut node =
         Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::with_options(
             mock_factory(),
-            &mut alloc,
+            &mut reservations,
             options,
         )
         .input()
@@ -219,11 +220,10 @@ fn delivered_in_one_round(budget: Budget) -> usize {
     for value in 0..3 {
         upstream.push(Message::Data(value)).unwrap();
     }
-    let mut graph = Box::new(node).build(to_local(alloc)).unwrap();
-    let mut cx = noop_context();
+    let mut runtime = built(node, reservations);
     // Built Input, Work, Output.
-    let _ = graph.nodes[0].pollable.poll(&mut cx).unwrap();
-    let _ = graph.nodes[2].pollable.poll(&mut cx).unwrap();
+    let _ = poll(&mut runtime, 0).unwrap();
+    let _ = poll(&mut runtime, 2).unwrap();
     downstream.len().unwrap()
 }
 
@@ -238,21 +238,18 @@ impl AsyncParent<'static> for PushingParent {
     fn build(
         self: Box<Self>,
         mut edge: edge::Sender<usize, Trackable<&'static str>>,
-        allocator: ThreadLocalWakerAllocator<TestThread>,
-    ) -> Result<Graph<'static, TestThread>, Error> {
+        _graph: &mut Graph<'static, TestThread>,
+    ) -> Result<(), Error> {
         for value in 0..3 {
             let _ = edge.try_push(Message::Data(value))?;
         }
-        Ok(Graph {
-            allocator,
-            nodes: vec![],
-        })
+        Ok(())
     }
 }
 
 /// Same, with the 3 messages from a parent's edge.
 fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
-    let (mut alloc, to_local) = make_allocators();
+    let mut reservations = Reservations::new();
     let options = Options {
         bound: None,
         budget,
@@ -262,16 +259,17 @@ fn delivered_from_a_parent_in_one_round(budget: Budget) -> usize {
             _,
             _,
             PollLine<usize, usize, Trackable<&'static str>, TestThread, _>,
-        >::with_options(mock_factory(), &mut alloc, options))
+        >::with_options(
+            mock_factory(), &mut reservations, options
+        ))
         .unwrap()
         .output();
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
-    let mut graph = Box::new(node).build(to_local(alloc)).unwrap();
-    let mut cx = noop_context();
+    let mut runtime = built(node, reservations);
     // The parent's edge closed as it was built: draining it all ends in Closed.
-    let _ = graph.nodes[0].pollable.poll(&mut cx);
-    let _ = graph.nodes[2].pollable.poll(&mut cx);
+    let _ = poll(&mut runtime, 0);
+    let _ = poll(&mut runtime, 2);
     downstream.len().unwrap()
 }
 
@@ -301,15 +299,14 @@ fn the_built_node_uses_its_output_budget() {
 fn one_round(
     node: impl GraphBuilder<'static, TestThread>,
     mut upstream: Box<WorkSink>,
-    alloc: ThreadLocalWakerAllocator<TestThread>,
+    reservations: Reservations<TestThread>,
 ) {
     for value in 0..3 {
         upstream.push(Message::Data(value)).unwrap();
     }
-    let mut graph = Box::new(node).build(alloc).unwrap();
-    let mut cx = noop_context();
-    let _ = graph.nodes[0].pollable.poll(&mut cx).unwrap();
-    let _ = graph.nodes[2].pollable.poll(&mut cx).unwrap();
+    let mut runtime = built(node, reservations);
+    let _ = poll(&mut runtime, 0).unwrap();
+    let _ = poll(&mut runtime, 2).unwrap();
 }
 
 /// Options survive the other transition orders: output before input, and a direct sink.
@@ -320,11 +317,11 @@ fn options_survive_output_first_and_a_sink() {
         budget: Budget::default().output(NonZeroUsize::MIN),
     };
 
-    let (mut alloc, to_local) = make_allocators();
+    let mut reservations = Reservations::new();
     let mut node =
         Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::with_options(
             mock_factory(),
-            &mut alloc,
+            &mut reservations,
             one,
         )
         .output()
@@ -332,21 +329,21 @@ fn options_survive_output_first_and_a_sink() {
     let downstream = Receiver::new();
     node.pushes(&downstream).unwrap();
     let upstream = Get::get(&node).unwrap();
-    one_round(node, upstream, to_local(alloc));
+    one_round(node, upstream, reservations);
     assert_eq!(downstream.len().unwrap(), 1);
 
-    let (mut alloc, to_local) = make_allocators();
+    let mut reservations = Reservations::new();
     let downstream = Receiver::new();
     let node =
         Node::<_, _, PollLine<usize, usize, Trackable<&'static str>, TestThread, _>>::with_options(
             mock_factory(),
-            &mut alloc,
+            &mut reservations,
             one,
         )
         .input()
         .sink(downstream.sender());
     let upstream = Get::get(&node).unwrap();
-    one_round(node, upstream, to_local(alloc));
+    one_round(node, upstream, reservations);
     assert_eq!(downstream.len().unwrap(), 1);
 }
 
@@ -356,9 +353,9 @@ fn options_survive_output_first_and_a_sink() {
 
 #[test]
 fn a_minted_node_never_built_leaves_its_slot_empty() {
-    let (mut alloc, to_local) = make_allocators();
-    let _orphan = deferred!(&mut alloc);
-    match to_local(alloc).build(Vec::new()) {
+    let mut reservations = Reservations::new();
+    let _orphan = deferred!(&mut reservations);
+    match reservations.local::<'static>().finish() {
         Err(e) => assert!(e.to_string().contains("slot 0 is empty"), "{e}"),
         Ok(_) => panic!("an unbuilt node's reserved slot must fail the build"),
     }
@@ -366,31 +363,14 @@ fn a_minted_node_never_built_leaves_its_slot_empty() {
 
 #[test]
 fn nodes_wired_out_of_mint_order_fill_every_slot() {
-    let (mut alloc, to_local) = make_allocators();
-    let first = deferred!(&mut alloc);
-    let second = deferred!(&mut alloc).input();
+    let mut reservations = Reservations::new();
+    let first = deferred!(&mut reservations);
+    let second = deferred!(&mut reservations).input();
     let first = MockParent.via(first).unwrap().output();
-    let graph = GraphBuilder::build(Box::new(second), to_local(alloc)).unwrap();
-    let mut nodes = graph.nodes;
-    let graph = Box::new(first).build(graph.allocator).unwrap();
-    // The parented input landed in the slot reserved at mint, before `second`'s.
-    assert!(graph.nodes.iter().any(|n| n.id == 0));
-    nodes.extend(graph.nodes);
-    assert!(graph.allocator.build(nodes).is_ok());
-}
-
-// ============================================================
-// Node IDs are unique
-// ============================================================
-
-#[test]
-fn node_ids_are_unique() {
-    let (mut alloc, to_local) = make_allocators();
-    let node = deferred!(&mut alloc).input().output();
-    let local = to_local(alloc);
-    let graph = Box::new(node).build(local).unwrap();
-    let mut ids: Vec<_> = graph.nodes.iter().map(|n| n.id).collect();
-    ids.sort();
-    ids.dedup();
-    assert_eq!(ids.len(), 3);
+    let mut graph = reservations.local();
+    GraphBuilder::build(Box::new(second), &mut graph).unwrap();
+    // The parented input lands in the slot reserved at mint, before `second`'s.
+    GraphBuilder::build(Box::new(first), &mut graph).unwrap();
+    let (runtime, _) = graph.finish().unwrap();
+    assert_eq!(runtime.nodes.len(), 6);
 }

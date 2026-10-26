@@ -1,7 +1,7 @@
 use super::{Input, Receiver, Sender, channel};
 use crate::node::routine::Accept;
-use crate::poll::scheduler::PollQueue;
-use crate::poll::timer::Timer;
+use crate::poll;
+use crate::poll::timer::mock::noop_timer;
 use crate::wake::mock::{
     counting_local_waker, counting_waker, local_waker, noop_local_waker, noop_waker,
 };
@@ -16,24 +16,24 @@ use core::task::Waker;
 use core::task::{Context, Poll};
 use core::time::Duration;
 
-fn timer() -> Timer {
-    // A real Timer bound to a real Scheduler. Node id is arbitrary — we never run the
-    // consumer in these tests.
-    let pq = PollQueue::new();
-    let (_consumer, local_producer) = pq.local();
-    Timer::new(0, &local_producer)
+/// The routine's context, waking through `wake`; its timer's deadlines never fire.
+fn home(wake: wake::Waker) -> poll::Context {
+    poll::Context {
+        wake,
+        timer: noop_timer(),
+    }
 }
 
 fn unbounded() -> (Sender<usize>, Receiver<usize>) {
     homed(noop_waker())
 }
 
-fn homed(home: wake::Waker) -> (Sender<usize>, Receiver<usize>) {
-    channel(noop_local_waker(), home, timer(), None)
+fn homed(wake: wake::Waker) -> (Sender<usize>, Receiver<usize>) {
+    channel(noop_local_waker(), home(wake), None)
 }
 
 fn bounded(input: LocalWaker, bound: usize) -> (Sender<usize>, Receiver<usize>) {
-    channel(input, noop_waker(), timer(), NonZeroUsize::new(bound))
+    channel(input, home(noop_waker()), NonZeroUsize::new(bound))
 }
 
 fn poll_once<F: Future + Unpin>(fut: &mut F) -> Poll<F::Output> {
@@ -240,11 +240,11 @@ fn renew_opens_a_fresh_queue_with_the_same_wakes_and_bound() {
     let (home, home_count) = counting_local_waker();
     let (sync, _) = counting_waker();
     let cx_waker = sync.sync.clone();
-    let home = wake::Waker {
+    let wake = wake::Waker {
         sync: sync.sync,
         local: home,
     };
-    let (mut sender, receiver) = channel(input, home, timer(), NonZeroUsize::new(1));
+    let (mut sender, receiver) = channel(input, self::home(wake), NonZeroUsize::new(1));
     sender.flush().unwrap();
     assert!(matches!(
         poll_once(&mut receiver.recv()),

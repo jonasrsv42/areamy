@@ -7,7 +7,7 @@
 //! - `up.via(node.at::<Left>())` / `up.via(node.at::<Right>())` → Async input
 //! - `.output()` → resolve output to Sync
 //!
-//! Both input wake slots are reserved at mint, so nodes mint in any order and a node never added
+//! Both input nodes are reserved at mint, so nodes mint in any order and a node never added
 //! leaves its slots empty at build.
 
 use super::options::Options;
@@ -20,9 +20,9 @@ use crate::node::biunion;
 use crate::node::biunion::Inputs;
 use crate::poll::Sink;
 use crate::poll::edge::{Deferred, Edge, Null, Sync};
+use crate::poll::graph::Reservations;
 use crate::poll::input;
 use crate::poll::thread::Thread;
-use crate::poll::wakers::WakerAllocator;
 use crate::thread::ThreadId;
 use core::marker::PhantomData;
 
@@ -41,7 +41,8 @@ where
     OutEdge: Edge,
     T: Types<'params>,
 {
-    pub(crate) alloc: Inputs<LeftEdge::Alloc, RightEdge::Alloc>,
+    pub(crate) reservation:
+        Inputs<LeftEdge::Reservation<T::ThreadId>, RightEdge::Reservation<T::ThreadId>>,
     pub(crate) factory: T::Factory,
     pub(crate) input: BuilderInput<'params, LeftEdge, RightEdge, T>,
     pub(crate) output: OutEdge::Output<'params, T::Out, T::Signal>,
@@ -82,28 +83,31 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     >
     where
         PollBiunion<Left, Right, Out, SignalType, ThreadIdType, FactoryType>:
-            Types<'params, Factory = FactoryType>,
+            Types<'params, Factory = FactoryType, ThreadId = ThreadIdType>,
     {
-        Node::deferred(factory, self.waker_allocator())
+        Node::deferred(factory, self.reservations())
     }
 }
 
 impl<'params, T: Types<'params>> Node<'params, Deferred, Deferred, Deferred, T> {
-    pub(crate) fn deferred(factory: T::Factory, alloc: &mut WakerAllocator) -> Self {
-        Self::with_options(factory, alloc, Options::default())
+    pub(crate) fn deferred(
+        factory: T::Factory,
+        reservations: &mut Reservations<T::ThreadId>,
+    ) -> Self {
+        Self::with_options(factory, reservations, Options::default())
     }
 
     /// A deferred node with `options`, set before any edge exists.
     pub(crate) fn with_options(
         factory: T::Factory,
-        alloc: &mut WakerAllocator,
+        reservations: &mut Reservations<T::ThreadId>,
         options: Options,
     ) -> Self {
         Self {
             // Reserved at mint: a node never added leaves its slots empty at build.
-            alloc: Inputs {
-                left: alloc.next(),
-                right: alloc.next(),
+            reservation: Inputs {
+                left: reservations.next(),
+                right: reservations.next(),
             },
             factory,
             input: BuilderInput {
@@ -128,7 +132,7 @@ where
     OutEdge: Edge,
     T: Types<'params>,
 {
-    /// Resolve side `S`'s input to [`Sync`]: a sync→poll bridge woken by its reserved slot.
+    /// Resolve side `S`'s input to [`Sync`]: a sync→poll bridge woken by its reserved node.
     pub fn input<S>(self) -> <S as ResolveInput<Sync, Self>>::Resolved
     where
         S: ResolveInput<Sync, Self>,

@@ -1,26 +1,17 @@
-//! Closable wrapper around [`crate::poll::runtime::Runtime`].
-//!
-//! The base `Runtime` is a flat `Vec<Node>`. The poll loop wants to
-//! drop a node *in place* as soon as it returns `Ready` or `Closed`
-//! so its close-on-drop cascade fires immediately — but it must keep
-//! indexing stable because woken node IDs refer to slot
-//! positions. `ClosableRuntime` wraps each slot in `Option<Node>`:
-//! a slot becomes `None` when its node terminates, indexing stays
-//! valid, and a wake for a `None` slot is observable.
+//! [Runtime] — the poll loop's nodes, each at its id with the context it's polled with; a finished
+//! one is `None`.
 
-use crate::poll::runtime::{Node, Runtime};
+use crate::poll::{Context, Pollable};
 use crate::thread::ThreadId;
 
-pub struct ClosableRuntime<'params, ThreadIdType: ThreadId> {
-    pub nodes: Vec<Option<Node<'params, ThreadIdType>>>,
+use alloc::vec::Vec;
+
+pub(crate) struct Node<'params, ThreadIdType: ThreadId> {
+    pub(crate) pollable: Box<dyn Pollable<ThreadId = ThreadIdType> + 'params>,
+    pub(crate) cx: Context,
 }
 
-impl<'params, ThreadIdType: ThreadId> From<Runtime<'params, ThreadIdType>>
-    for ClosableRuntime<'params, ThreadIdType>
-{
-    fn from(runtime: Runtime<'params, ThreadIdType>) -> Self {
-        Self {
-            nodes: runtime.nodes.into_iter().map(Some).collect(),
-        }
-    }
+/// Each node at its id.
+pub(crate) struct Runtime<'params, ThreadIdType: ThreadId> {
+    pub(crate) nodes: Vec<Option<Node<'params, ThreadIdType>>>,
 }

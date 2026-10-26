@@ -3,7 +3,6 @@ use crate::graph::Add;
 use crate::graph::marker::Connection;
 use crate::poll;
 use crate::poll::graph::{Graph, GraphBuilder};
-use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::{Done, Join, NeverStarted, ThreadBundle, ThreadId};
 use crate::work::{ThreadStream, Workable};
@@ -44,14 +43,11 @@ impl<ThreadIdType: ThreadId> Workable for RecordName<ThreadIdType> {
 
 /// A poll thread builds on its own thread: record the name there.
 impl<ThreadIdType: ThreadId> GraphBuilder<'static, ThreadIdType> for RecordName<ThreadIdType> {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'static, ThreadIdType>, Error> {
+    fn build(self: Box<Self>, _graph: &mut Graph<'static, ThreadIdType>) -> Result<(), Error> {
         if let Ok(mut name) = self.0.lock() {
             *name = std::thread::current().name().map(Into::into);
         }
-        Ok(Graph::empty(allocator))
+        Ok(())
     }
 }
 
@@ -113,10 +109,7 @@ fn a_bundle_names_each_os_thread_for_its_type() -> Result<(), Error> {
 struct FailingBuild;
 
 impl GraphBuilder<'static, NamedThread> for FailingBuild {
-    fn build(
-        self: Box<Self>,
-        _: ThreadLocalWakerAllocator<NamedThread>,
-    ) -> Result<Graph<'static, NamedThread>, Error> {
+    fn build(self: Box<Self>, _: &mut Graph<'static, NamedThread>) -> Result<(), Error> {
         Err(fatal!("build failed"))
     }
 }
@@ -259,11 +252,8 @@ impl Workable for DropFlag {
 }
 
 impl GraphBuilder<'static, NamedThread> for DropFlag {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<NamedThread>,
-    ) -> Result<Graph<'static, NamedThread>, Error> {
-        Ok(Graph::empty(allocator))
+    fn build(self: Box<Self>, _graph: &mut Graph<'static, NamedThread>) -> Result<(), Error> {
+        Ok(())
     }
 }
 

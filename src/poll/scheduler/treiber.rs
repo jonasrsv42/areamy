@@ -24,27 +24,14 @@ mod tests;
 
 pub(super) use link::Link;
 
-use crate::poll::marker::NodeId;
+use crate::poll::graph::NodeId;
 use link::AtomicLink;
 use node::{Node, Nodes, State};
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
-/// What a push did.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Pushed {
-    /// Onto an empty stack.
-    First,
-    /// Onto a non-empty stack.
-    Linked,
-    /// Nothing: the node was already queued.
-    Coalesced,
-    /// Nothing: no node for the id, before `init` or past the graph.
-    Dropped,
-}
-
-pub(crate) struct TreiberStack {
+pub(super) struct TreiberStack {
     /// The newest pushed id.
     head: AtomicLink,
     /// The arena, made at init.
@@ -81,7 +68,7 @@ impl TreiberStack {
     /// Pushes `id` unless queued, from any thread. O(1): a claim; an owning one adds a load, a
     /// store and a CAS.
     #[inline]
-    pub(crate) fn push(&self, id: NodeId) -> Pushed {
+    pub(super) fn push(&self, id: NodeId) {
         match self.nodes.get() {
             Some(nodes) => self.push_onto(nodes, id),
             None => self.push_early(id),
@@ -89,25 +76,24 @@ impl TreiberStack {
     }
 
     /// A push before `init`: dropped, unless init lands during it.
-    fn push_early(&self, id: NodeId) -> Pushed {
+    fn push_early(&self, id: NodeId) {
         // AcqRel: ordered against init's swap; see `early`.
         self.early.fetch_or(1, Ordering::AcqRel);
-        match self.nodes.get() {
-            Some(nodes) => self.push_onto(nodes, id),
-            None => Pushed::Dropped,
+        if let Some(nodes) = self.nodes.get() {
+            self.push_onto(nodes, id);
         }
     }
 
     #[inline]
-    fn push_onto(&self, nodes: &Nodes, id: NodeId) -> Pushed {
+    fn push_onto(&self, nodes: &Nodes, id: NodeId) {
         let Some(node) = nodes.get(id) else {
             #[cfg(not(feature = "silent"))]
             past_the_graph(id, self);
-            return Pushed::Dropped;
+            return;
         };
         match node.claim() {
             // Queued: its coming poll serves this wake.
-            State::Queued => Pushed::Coalesced,
+            State::Queued => {}
             // Idle: this push owns the node until it publishes it.
             State::Idle => self.publish(node, id),
         }
@@ -116,7 +102,7 @@ impl TreiberStack {
     /// Links the owned `node` on top. O(1): a load, a store and a CAS, and a store and a CAS per
     /// retry.
     #[inline]
-    fn publish(&self, node: &Node, id: NodeId) -> Pushed {
+    fn publish(&self, node: &Node, id: NodeId) {
         let mut below = self.head.load(Ordering::Relaxed);
         // CAS loop, try to commit the new node to our stack.
         loop {
@@ -129,10 +115,7 @@ impl TreiberStack {
                 Ordering::Release,
                 Ordering::Relaxed,
             ) {
-                // First commit on empty stack.
-                Ok(_) if below == Link::NONE => return Pushed::First,
-                // Linked onto existing element.
-                Ok(_) => return Pushed::Linked,
+                Ok(_) => return,
                 // Another push or the take moved `head` since our read: relink to the new top and
                 // retry. Bounded by the pushes that land meanwhile: each owns its id until the
                 // take, so at most about n per batch.

@@ -1,6 +1,6 @@
 //! [Link]: an id or none, in one word.
 
-use crate::poll::marker::NodeId;
+use crate::poll::graph::NodeId;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 

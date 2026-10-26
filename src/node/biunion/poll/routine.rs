@@ -36,9 +36,9 @@ pub mod tests {
     use crate::biunion;
     use crate::error::Error;
     use crate::poll::Context;
-    use crate::poll::timer::mock::noop_timer;
+    use crate::poll::context::mock::noop_context;
     use crate::wake::LocalWaker;
-    use crate::wake::mock::{noop_local_waker, noop_waker};
+    use crate::wake::mock::noop_local_waker;
     use alloc::collections::VecDeque;
 
     /// Mock biunion routine: left input doubled, right input tripled,
@@ -68,9 +68,8 @@ pub mod tests {
                 left: noop_local_waker(),
                 right: noop_local_waker(),
             },
-            work: noop_waker(),
+            work: noop_context(),
             output: noop_local_waker(),
-            timer: noop_timer(),
         }
     }
 

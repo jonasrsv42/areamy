@@ -2,21 +2,15 @@
 
 use super::{Timer, TimerKey};
 
-use std::time::Instant;
-
-/// An armed timer owned by a future. Dropping releases the heap slot
-/// (a fired key is a no-op), so early resolve, lost `Select` races,
-/// and teardown all share one cancellation path.
+/// An armed timer, from [Timer::arm]: dropping it cancels the deadline, so early resolve, lost
+/// `Select` races and teardown share one cancellation path.
 pub struct TimerGuard {
     timer: Timer,
     key: TimerKey,
 }
 
 impl TimerGuard {
-    /// Arm `timer` at `deadline`. O(log h), h heap entries: [Timer::schedule_at].
-    #[must_use]
-    pub fn arm(timer: Timer, deadline: Instant) -> Self {
-        let key = timer.schedule_at(deadline);
+    pub(super) fn new(timer: Timer, key: TimerKey) -> Self {
         Self { timer, key }
     }
 
@@ -32,7 +26,7 @@ impl TimerGuard {
 }
 
 impl Drop for TimerGuard {
-    /// O(1): [Timer::cancel].
+    /// O(1): frees the timer's cell; its heap entry goes once it reaches the top.
     fn drop(&mut self) {
         self.timer.cancel(self.key);
     }

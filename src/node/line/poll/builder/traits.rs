@@ -3,21 +3,20 @@
 use crate::edge::fanout::Fanout;
 use crate::poll::DynSink;
 use crate::poll::edge::{Edge, Sync};
+use crate::poll::graph::Reserved;
 use crate::poll::input::sync::{Input, Receiver};
-use crate::poll::wakers::Slot;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 use core::num::NonZeroUsize;
-use core::task::Waker;
 
-/// Resolve input edge. Implemented for [`Sync`] — wakes the reserved `slot`. `bound` caps the edge.
+/// Resolve input edge. Implemented for [`Sync`] — wakes the `reserved` node. `bound` caps the edge.
 pub trait ResolveInput<'params, InType, SignalType: Origin, ThreadIdType: ThreadId>: Edge {
     fn resolve(
-        slot: Slot<Waker>,
+        reserved: Reserved<ThreadIdType>,
         bound: Option<NonZeroUsize>,
     ) -> (
         Self::Input<'params, InType, SignalType, ThreadIdType>,
-        Self::Alloc,
+        Self::Reservation<ThreadIdType>,
     );
 }
 
@@ -28,12 +27,15 @@ where
     SignalType: Origin + Clone + Send + core::marker::Sync + 'static,
     ThreadIdType: ThreadId,
 {
-    fn resolve(slot: Slot<Waker>, bound: Option<NonZeroUsize>) -> (Input<InType, SignalType>, ()) {
-        let waker = slot.value.clone();
+    fn resolve(
+        reserved: Reserved<ThreadIdType>,
+        bound: Option<NonZeroUsize>,
+    ) -> (Input<InType, SignalType, ThreadIdType>, ()) {
+        let waker = reserved.waker().clone();
         (
             Input {
                 edge: Receiver::new(waker, bound),
-                slot,
+                reserved,
             },
             (),
         )

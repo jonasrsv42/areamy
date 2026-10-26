@@ -100,9 +100,8 @@ pub mod tests {
     use crate::error::Error;
     use crate::poll::Context;
     use crate::poll::context::mock::noop_context;
-    use crate::poll::timer::mock::noop_timer;
     use crate::wake::LocalWaker;
-    use crate::wake::mock::{noop_local_waker, noop_waker};
+    use crate::wake::mock::noop_local_waker;
     use crate::{Accept, Next, TrySend};
     use alloc::collections::VecDeque;
 
@@ -166,9 +165,8 @@ pub mod tests {
     pub fn noop_line_wakers() -> crate::poll::LineWakers {
         crate::poll::LineWakers {
             input: noop_local_waker(),
-            work: noop_waker(),
+            work: noop_context(),
             output: noop_local_waker(),
-            timer: noop_timer(),
         }
     }
 

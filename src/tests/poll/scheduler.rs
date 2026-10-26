@@ -5,9 +5,7 @@ use crate::edge::sync::tests::wait_until;
 use crate::error::Error;
 use crate::graph::marker::Connection;
 use crate::poll;
-use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
-use crate::poll::marker::NodeId;
-use crate::poll::wakers::ThreadLocalWakerAllocator;
+use crate::poll::graph::{Graph, GraphBuilder, NodeId, Reserved};
 use crate::poll::{Context, Pollable};
 use crate::tests::support::{DEADLINE, deadline};
 use crate::thread::Join;
@@ -35,17 +33,10 @@ impl<P> GraphBuilder<'static, P::ThreadId> for One<P>
 where
     P: Pollable + Send + 'static,
 {
-    fn build(
-        self: Box<Self>,
-        mut allocator: ThreadLocalWakerAllocator<P::ThreadId>,
-    ) -> Result<Graph<'static, P::ThreadId>, Error> {
-        let slot = allocator.next();
-        let mut graph = Graph::empty(allocator);
-        graph.nodes.push(GraphNode {
-            id: slot.id,
-            pollable: Box::new(self.0),
-        });
-        Ok(graph)
+    fn build(self: Box<Self>, graph: &mut Graph<'static, P::ThreadId>) -> Result<(), Error> {
+        let slot = graph.next();
+        graph.add(slot, self.0);
+        Ok(())
     }
 }
 
@@ -73,30 +64,27 @@ impl Pollable for Counted {
     }
 }
 
-/// A [Counted] node on every slot allocated before the thread started.
+/// A [Counted] node on every node reserved before the thread started, by reserve order.
 struct Counting {
+    reserved: Vec<Reserved<IoThread>>,
     dead: NodeId,
     stop: Arc<AtomicBool>,
     polls: Arc<Vec<AtomicUsize>>,
 }
 
 impl GraphBuilder<'static, IoThread> for Counting {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<IoThread>,
-    ) -> Result<Graph<'static, IoThread>, Error> {
-        let nodes = (0..self.polls.len())
-            .map(|id| GraphNode {
+    fn build(self: Box<Self>, graph: &mut Graph<'static, IoThread>) -> Result<(), Error> {
+        for (id, reserved) in self.reserved.into_iter().enumerate() {
+            let slot = graph.claim(reserved);
+            let counted = Counted {
                 id,
-                pollable: Box::new(Counted {
-                    id,
-                    dead: self.dead,
-                    stop: self.stop.clone(),
-                    polls: self.polls.clone(),
-                }) as Box<dyn Pollable<ThreadId = IoThread>>,
-            })
-            .collect();
-        Ok(Graph { allocator, nodes })
+                dead: self.dead,
+                stop: self.stop.clone(),
+                polls: self.polls.clone(),
+            };
+            graph.add(slot, counted);
+        }
+        Ok(())
     }
 }
 
@@ -111,11 +99,11 @@ fn a_remote_wake_past_bits_polls_only_its_node() {
     let stop = Arc::new(AtomicBool::new(false));
     let polls: Arc<Vec<AtomicUsize>> = Arc::new((0..len).map(|_| AtomicUsize::new(0)).collect());
     let mut poll_thread = poll::Thread::<IoThread>::new();
-    // A cross-thread waker per node, allocated before the thread exists.
-    let wakers: Vec<_> = (0..len)
-        .map(|_| poll_thread.waker_allocator().next().value)
-        .collect();
+    // A node per id, reserved before the thread exists, and its cross-thread waker.
+    let reserved: Vec<_> = (0..len).map(|_| poll_thread.reserve()).collect();
+    let wakers: Vec<_> = reserved.iter().map(|r| r.waker().clone()).collect();
     poll_thread.add(Counting {
+        reserved,
         dead,
         stop: stop.clone(),
         polls: polls.clone(),
@@ -186,7 +174,7 @@ impl Pollable for Inner {
             1 => cx.wake.local.wake(),
             2 => {
                 let due = Instant::now() + Duration::from_millis(5);
-                let _ = cx.timer.schedule_at(due);
+                cx.timer.schedule_at(due);
             }
             _ => {
                 OUTER.with_borrow(|outer| {

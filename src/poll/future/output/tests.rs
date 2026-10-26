@@ -1,7 +1,7 @@
 use super::{Receiver, Sender, channel};
 use crate::node::routine::Accept;
-use crate::poll::scheduler::PollQueue;
-use crate::poll::timer::Timer;
+use crate::poll;
+use crate::poll::timer::mock::noop_timer;
 use crate::wake::mock::{
     counting_local_waker, counting_waker, local_waker, noop_local_waker, noop_waker,
 };
@@ -16,23 +16,24 @@ use core::task::Waker;
 use core::task::{Context, Poll};
 use core::time::Duration;
 
-fn timer() -> Timer {
-    // A real Timer bound to a real Scheduler; the consumer never runs here.
-    let pq = PollQueue::new();
-    let (_consumer, local_producer) = pq.local();
-    Timer::new(0, &local_producer)
+/// The routine's context, waking through `wake`; its timer's deadlines never fire.
+fn home(wake: wake::Waker) -> poll::Context {
+    poll::Context {
+        wake,
+        timer: noop_timer(),
+    }
 }
 
 fn unbounded(output: LocalWaker) -> (Sender<usize>, Receiver<usize>) {
-    channel(output, noop_waker(), timer(), None)
+    channel(output, home(noop_waker()), None)
 }
 
 fn bounded(output: LocalWaker, bound: usize) -> (Sender<usize>, Receiver<usize>) {
-    channel(output, noop_waker(), timer(), NonZeroUsize::new(bound))
+    channel(output, home(noop_waker()), NonZeroUsize::new(bound))
 }
 
-fn homed(home: wake::Waker, bound: usize) -> (Sender<usize>, Receiver<usize>) {
-    channel(noop_local_waker(), home, timer(), NonZeroUsize::new(bound))
+fn homed(wake: wake::Waker, bound: usize) -> (Sender<usize>, Receiver<usize>) {
+    channel(noop_local_waker(), home(wake), NonZeroUsize::new(bound))
 }
 
 fn poll_with<F: Future + Unpin>(fut: &mut F, waker: &Waker) -> Poll<F::Output> {

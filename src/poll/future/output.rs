@@ -13,20 +13,19 @@ mod tests;
 pub use receiver::Receiver;
 pub use sender::Sender;
 
-use crate::poll::timer::Timer;
-use crate::wake::{self, LocalWaker};
+use crate::poll::Context;
+use crate::wake::LocalWaker;
 use alloc::rc::Rc;
 use core::num::NonZeroUsize;
 use shared::Shared;
 
 /// A queue holding at most `bound` items (`None`: unbounded). `output` is the node's Output
-/// waker, `home` the node's waker the routine is polled with (`LineWakers::work`).
+/// waker, `home` the context the routine is polled with (`LineWakers::work`).
 pub fn channel<T>(
     output: LocalWaker,
-    home: wake::Waker,
-    timer: Timer,
+    home: Context,
     bound: Option<NonZeroUsize>,
 ) -> (Sender<T>, Receiver<T>) {
-    let shared = Rc::new(Shared::new(output, home, timer, bound));
+    let shared = Rc::new(Shared::new(output, home.wake, home.timer, bound));
     (Sender(shared.clone()), Receiver(shared))
 }

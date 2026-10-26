@@ -91,7 +91,7 @@ impl Future for SleepFut {
                         "poll::sleep(..) awaited outside an areamy poll thread"
                     )));
                 };
-                this.timer = Some(TimerGuard::arm(current, this.deadline));
+                this.timer = Some(current.arm(this.deadline));
             }
         }
         Poll::Pending
@@ -101,7 +101,7 @@ impl Future for SleepFut {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poll::scheduler::PollQueue;
+    use crate::poll::scheduler::Scheduler;
     use crate::poll::thread::tls::ThreadLocalGuard;
     use crate::poll::timer::Timer;
     use crate::poll::timer::mock::noop_timer;
@@ -131,9 +131,8 @@ mod tests {
 
     #[test]
     fn mock_timer_arms_real_timer() {
-        // Mocks carry a private scheduler, so schedule_at is
-        // infallible everywhere — a sleep under a mock frame parks
-        // normally instead of erroring.
+        // A mock timer has a heap of its own: a sleep under a mock
+        // frame arms it and parks.
         let mut fut = sleep(Duration::from_secs(60));
         let _guard = ThreadLocalGuard::set(noop_timer());
         assert!(matches!(poll_once(&mut fut), Poll::Pending));
@@ -142,12 +141,8 @@ mod tests {
     #[test]
     fn sleep_arms_and_wakes_owning_node() {
         let _deadline = deadline(DEADLINE);
-        let q = PollQueue::new();
-        let (uninit, local) = q.local();
-        // The graph: ids 0..8, past their first polls.
-        let mut consumer = uninit.init(8);
-        assert_eq!(consumer.woken().len(), 8);
-        let timer = Timer::new(7, &local);
+        let (mut consumer, local, _, _) = Scheduler::started(8);
+        let timer = local.context(7).timer;
 
         let mut fut = sleep(Duration::from_millis(20));
         {
@@ -165,12 +160,9 @@ mod tests {
 
     #[test]
     fn dropped_sleep_cancels_its_deadline() {
-        let q = PollQueue::new();
-        let (uninit, local) = q.local();
         // Initialized: before init a fired timer would push nothing either.
-        let mut consumer = uninit.init(8);
-        assert_eq!(consumer.woken().len(), 8);
-        let timer = Timer::new(7, &local);
+        let (mut consumer, local, _, _) = Scheduler::started(8);
+        let timer = local.context(7).timer;
 
         let mut fut = sleep(Duration::from_millis(20));
         {
@@ -190,10 +182,9 @@ mod tests {
         // Donated-thread nesting (Thread::run inside a poll frame):
         // the inner guard shadows the outer timer only for its own
         // frame; sleeps capture whichever frame first polls them.
-        let q = PollQueue::new();
-        let (_uninit, local) = q.local();
-        let outer = Timer::new(1, &local);
-        let inner = Timer::new(2, &local);
+        let (_uninit, local) = Scheduler::new().local();
+        let outer = local.context(1).timer;
+        let inner = local.context(2).timer;
 
         let mut before = sleep(Duration::from_secs(60));
         let mut nested = sleep(Duration::from_secs(60));
@@ -220,9 +211,8 @@ mod tests {
 
     #[test]
     fn same_frame_repoll_stays_pending() {
-        let q = PollQueue::new();
-        let (_uninit, local) = q.local();
-        let timer = Timer::new(1, &local);
+        let (_uninit, local) = Scheduler::new().local();
+        let timer = local.context(1).timer;
 
         let mut fut = sleep(Duration::from_secs(60));
         // Spurious re-polls under the owning frame are the normal
@@ -236,10 +226,9 @@ mod tests {
     #[test]
     #[cfg(debug_assertions)]
     fn moved_sleep_errors_under_foreign_frame() {
-        let q = PollQueue::new();
-        let (_uninit, local) = q.local();
-        let first = Timer::new(1, &local);
-        let second = Timer::new(2, &local);
+        let (_uninit, local) = Scheduler::new().local();
+        let first = local.context(1).timer;
+        let second = local.context(2).timer;
 
         let mut fut = sleep(Duration::from_secs(60));
         {

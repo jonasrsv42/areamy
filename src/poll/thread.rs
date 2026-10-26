@@ -1,27 +1,26 @@
 //! Async thread that runs [Pollable](crate::poll::Pollable) nodes driven by wakers.
 
-mod runtime;
+pub(crate) mod runtime;
 pub(crate) mod tls;
 
 use crate::error::{Error, ErrorKind};
 use crate::fatal;
-use crate::poll::graph::GraphBuilder;
-use crate::poll::runtime::Node as RuntimeNode;
-use crate::poll::scheduler::{Consumer, PollQueue};
-use crate::poll::wakers::WakerAllocator;
+use crate::poll::graph::{GraphBuilder, Reservations, Reserved};
+use crate::poll::scheduler::Consumer;
 use crate::thread::callback::{self, InitGuard, OnDone};
 use crate::thread::done::Done;
 use crate::thread::join::Spawned;
 use crate::thread::{Join, Spawn, ThreadId};
-use runtime::ClosableRuntime;
+use runtime::{Node, Runtime};
 use std::thread::Scope;
 
 /// An idle async thread. Add builders via [Thread::add], then
 /// call [Thread::start] to spawn the OS thread.
+///
+/// One per [ThreadId] type: its reserved nodes and slots are typed by it alone.
 pub struct Thread<'params, ThreadIdType: ThreadId> {
     builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
-    waker_allocator: WakerAllocator,
-    queue: PollQueue,
+    reservations: Reservations<ThreadIdType>,
     on_done: Vec<OnDone>,
 }
 
@@ -38,12 +37,9 @@ impl<'params, ThreadIdType: ThreadId> Default for Thread<'params, ThreadIdType> 
 
 impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
     pub fn new() -> Self {
-        let queue = PollQueue::new();
-        let producer = queue.producer();
         Self {
             builders: Vec::new(),
-            waker_allocator: WakerAllocator::new(producer),
-            queue,
+            reservations: Reservations::new(),
             on_done: Vec::new(),
         }
     }
@@ -59,17 +55,19 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
         self
     }
 
-    /// Mutable access to the thread's [`WakerAllocator`]. Lets callers
-    /// pre-allocate sync waker slots before the thread starts — useful
-    /// for nodes that need to be woken from external producers running
-    /// on other threads.
+    /// Reserve a node before the thread starts: its waker goes to producers on other threads now.
+    /// O(1): an `Arc` for its waker, and two `Arc` clones.
     ///
-    /// Each allocated slot ID must be bound to a [`Pollable`](crate::poll::Pollable) via a
-    /// custom [`GraphBuilder`] returning a [`GraphNode`](crate::poll::GraphNode) with that ID;
-    /// otherwise the runtime will fail at build time with "slot N is
-    /// empty."
-    pub fn waker_allocator(&mut self) -> &mut WakerAllocator {
-        &mut self.waker_allocator
+    /// A custom [`GraphBuilder`] claims each reserved node and adds a
+    /// [`Pollable`](crate::poll::Pollable) to it; a node left out fails the build with "slot N is
+    /// empty".
+    pub fn reserve(&mut self) -> Reserved<ThreadIdType> {
+        self.reservations.next()
+    }
+
+    /// For builders that reserve their nodes at mint.
+    pub(crate) fn reservations(&mut self) -> &mut Reservations<ThreadIdType> {
+        &mut self.reservations
     }
 
     /// Add a node to the thread. It will be built when the thread starts.
@@ -92,31 +90,27 @@ impl<'params, ThreadIdType: ThreadId> Thread<'params, ThreadIdType> {
         /// exit.
         struct Unrun<'params, ThreadIdType: ThreadId> {
             builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
-            waker_allocator: WakerAllocator,
-            queue: PollQueue,
+            reservations: Reservations<ThreadIdType>,
             guard: InitGuard,
         }
         let Self {
             builders,
-            waker_allocator,
-            queue,
+            reservations,
             on_done,
         } = self;
         let unrun = Unrun {
             builders,
-            waker_allocator,
-            queue,
+            reservations,
             guard: InitGuard::new(ThreadIdType::name(), on_done),
         };
         move || {
             let Unrun {
                 builders,
-                waker_allocator,
-                queue,
+                reservations,
                 guard,
             } = unrun;
             let guard = guard.start();
-            let result = match prepare(builders, waker_allocator, queue) {
+            let result = match prepare(builders, reservations) {
                 Ok((mut runtime, mut consumer)) => poll_loop(&mut runtime, &mut consumer),
                 Err(e) => {
                     #[cfg(not(feature = "silent"))]
@@ -169,25 +163,16 @@ impl<'params, ThreadIdType: ThreadId> Spawn<Thread<'params, ThreadIdType>> {
     }
 }
 
-/// Build the runtime and return it with the consumer for the poll loop.
+/// Build the graph into the runtime and the consumer for the poll loop.
 fn prepare<'params, ThreadIdType: ThreadId>(
     builders: Vec<Box<dyn GraphBuilder<'params, ThreadIdType> + 'params>>,
-    waker_allocator: WakerAllocator,
-    queue: PollQueue,
-) -> Result<(ClosableRuntime<'params, ThreadIdType>, Consumer), Error> {
-    let (uninit, local_producer) = queue.local();
-    let mut allocator = waker_allocator.local::<ThreadIdType>(local_producer);
-    let mut all_nodes = Vec::new();
-
+    reservations: Reservations<ThreadIdType>,
+) -> Result<(Runtime<'params, ThreadIdType>, Consumer), Error> {
+    let mut graph = reservations.local();
     for builder in builders {
-        let graph = builder.build(allocator)?;
-        allocator = graph.allocator;
-        all_nodes.extend(graph.nodes);
+        builder.build(&mut graph)?;
     }
-
-    let runtime = allocator.build(all_nodes)?;
-    let consumer = uninit.init(runtime.nodes.len());
-    Ok((runtime.into(), consumer))
+    graph.finish()
 }
 
 impl<'threads> ThreadHandle<'threads> {
@@ -202,7 +187,7 @@ impl<'threads> ThreadHandle<'threads> {
 /// slot here — its close-on-drop cascade fires immediately, and a
 /// later wake for the same id is observable as `None`.
 fn poll_loop<ThreadIdType: ThreadId>(
-    runtime: &mut ClosableRuntime<ThreadIdType>,
+    runtime: &mut Runtime<ThreadIdType>,
     consumer: &mut Consumer,
 ) -> Result<(), Error> {
     let mut alive = runtime.nodes.len();
@@ -214,7 +199,7 @@ fn poll_loop<ThreadIdType: ThreadId>(
         let Some(slot) = runtime.nodes.get_mut(node_id) else {
             return Err(fatal!("woken for node {node_id}, not in this graph"));
         };
-        let Some(RuntimeNode { pollable, cx }) = slot.as_mut() else {
+        let Some(Node { pollable, cx }) = slot.as_mut() else {
             // Benign: a cross-thread producer or sibling node can fire
             // this slot's waker after we eager-dropped the node on a
             // prior Ready/Closed. Silently skip.

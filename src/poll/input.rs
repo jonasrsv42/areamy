@@ -4,7 +4,7 @@
 //!
 //! - [`sync`]: cross-thread input from work or poll producers, over a
 //!   [`waking`](crate::edge::waking) edge, plus an [`Input`](sync::Input)
-//!   bundle that pairs the receiver with its pre-allocated waker slot.
+//!   bundle that pairs the receiver with the node it wakes, reserved at mint.
 //!
 //! - `async`: same-thread input from one or more async parent
 //!   nodes. `async::Input` bundles the parent configs;

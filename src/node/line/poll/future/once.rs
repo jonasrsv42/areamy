@@ -56,13 +56,8 @@ where
     where
         F: FnOnce(input::Receiver<InType>, output::Sender<OutType>) -> Fut,
     {
-        let (input, receiver) = input::channel(
-            wakers.input,
-            wakers.work.clone(),
-            wakers.timer.clone(),
-            bound,
-        );
-        let (sender, output) = output::channel(wakers.output, wakers.work, wakers.timer, bound);
+        let (input, receiver) = input::channel(wakers.input, wakers.work.clone(), bound);
+        let (sender, output) = output::channel(wakers.output, wakers.work, bound);
         Self {
             input,
             output,

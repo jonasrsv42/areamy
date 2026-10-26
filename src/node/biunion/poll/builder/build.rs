@@ -10,39 +10,36 @@ use crate::node::biunion::Inputs;
 use crate::node::biunion::poll::factory::{BiunionRoutineFactory, BiunionWakers};
 use crate::node::biunion::poll::node;
 use crate::poll::edge::{self, Async, Deferred, Sync};
-use crate::poll::graph::{Graph, GraphBuilder, GraphNode};
+use crate::poll::graph::{Graph, GraphBuilder};
 use crate::poll::input::Ready;
 use crate::poll::traits::AsyncParent;
-use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::poll::{Budget, Phase};
 
 /// Add a biunion's four phases to `graph`, reading `inputs` and draining into `output`. Its work
-/// and output slots are allocated here, after any parents of `inputs` were built.
+/// and output slots are made here, after any parents of `inputs` were built.
 fn assemble<'params, T, LeftTargetType, RightTargetType, OutputType>(
     factory: T::Factory,
-    inputs: Inputs<Ready<LeftTargetType>, Ready<RightTargetType>>,
+    inputs: Inputs<Ready<LeftTargetType, T::ThreadId>, Ready<RightTargetType, T::ThreadId>>,
     output: OutputType,
     budget: Budget,
-    mut graph: Graph<'params, T::ThreadId>,
-) -> Result<Graph<'params, T::ThreadId>, Error>
-where
+    graph: &mut Graph<'params, T::ThreadId>,
+) where
     T: Types<'params>,
     LeftTargetType: Receivable<DataType = T::Left, SignalType = T::Signal> + 'params,
     RightTargetType: Receivable<DataType = T::Right, SignalType = T::Signal> + 'params,
     OutputType: Rotate<DataType = T::Out, SignalType = T::Signal> + 'params,
 {
-    let work = graph.allocator.next();
-    let output_slot = graph.allocator.next();
-    let left_waker = graph.allocator.local_waker(inputs.left.id)?;
-    let right_waker = graph.allocator.local_waker(inputs.right.id)?;
+    let work = graph.next();
+    let output_slot = graph.next();
+    let left_waker = inputs.left.slot.cx().wake.local.clone();
+    let right_waker = inputs.right.slot.cx().wake.local.clone();
     let routine = factory.create(BiunionWakers {
         input: Inputs {
             left: left_waker.clone(),
             right: right_waker.clone(),
         },
-        work: work.value.wake.clone(),
-        timer: work.value.timer.clone(),
-        output: output_slot.value.wake.local.clone(),
+        work: work.cx().clone(),
+        output: output_slot.cx().wake.local.clone(),
     });
     let phases = node::Node::phases(
         Inputs {
@@ -57,29 +54,16 @@ where
         },
         Phase {
             target: routine,
-            waker: work.value.wake.local,
+            waker: work.cx().wake.local.clone(),
         },
         output,
-        output_slot.value.wake,
+        output_slot.cx().wake.clone(),
         budget,
     );
-    graph.nodes.push(GraphNode {
-        id: inputs.left.id,
-        pollable: Box::new(phases.inputs.left),
-    });
-    graph.nodes.push(GraphNode {
-        id: inputs.right.id,
-        pollable: Box::new(phases.inputs.right),
-    });
-    graph.nodes.push(GraphNode {
-        id: work.id,
-        pollable: Box::new(phases.work),
-    });
-    graph.nodes.push(GraphNode {
-        id: output_slot.id,
-        pollable: Box::new(phases.output),
-    });
-    Ok(graph)
+    graph.add(inputs.left.slot, phases.inputs.left);
+    graph.add(inputs.right.slot, phases.inputs.right);
+    graph.add(work, phases.work);
+    graph.add(output_slot, phases.output);
 }
 
 // ============================================================
@@ -94,13 +78,9 @@ where
     T::Right: Send + core::marker::Sync,
     T::Out: Clone + Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let left = self.input.left.ready();
-        let right = self.input.right.ready();
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self.input.left.ready(graph);
+        let right = self.input.right.ready(graph);
         let inputs = Inputs { left, right };
         assemble::<T, _, _, _>(
             self.factory,
@@ -108,7 +88,8 @@ where
             self.output,
             self.options.budget,
             graph,
-        )
+        );
+        Ok(())
     }
 }
 
@@ -119,16 +100,13 @@ where
     T::Left: Send + core::marker::Sync,
     T::Right: Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let left = self.input.left.ready();
-        let right = self.input.right.ready();
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self.input.left.ready(graph);
+        let right = self.input.right.ready(graph);
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -146,14 +124,14 @@ where
     fn build(
         self: Box<Self>,
         edge: edge::Sender<T::Out, T::Signal>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let left = self.input.left.ready();
-        let right = self.input.right.ready();
+        graph: &mut Graph<'params, T::ThreadId>,
+    ) -> Result<(), Error> {
+        let left = self.input.left.ready(graph);
+        let right = self.input.right.ready(graph);
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -168,16 +146,12 @@ where
     T::Right: Send + core::marker::Sync,
     T::Out: Clone + Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (left, graph) =
-            self.input
-                .left
-                .ready(self.alloc.left, self.options.bound.left, graph)?;
-        let right = self.input.right.ready();
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self
+            .input
+            .left
+            .ready(self.reservation.left, self.options.bound.left, graph)?;
+        let right = self.input.right.ready(graph);
         let inputs = Inputs { left, right };
         assemble::<T, _, _, _>(
             self.factory,
@@ -185,7 +159,8 @@ where
             self.output,
             self.options.budget,
             graph,
-        )
+        );
+        Ok(())
     }
 }
 
@@ -195,19 +170,16 @@ where
     T: Types<'params>,
     T::Right: Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (left, graph) =
-            self.input
-                .left
-                .ready(self.alloc.left, self.options.bound.left, graph)?;
-        let right = self.input.right.ready();
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self
+            .input
+            .left
+            .ready(self.reservation.left, self.options.bound.left, graph)?;
+        let right = self.input.right.ready(graph);
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -224,17 +196,17 @@ where
     fn build(
         self: Box<Self>,
         edge: edge::Sender<T::Out, T::Signal>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (left, graph) =
-            self.input
-                .left
-                .ready(self.alloc.left, self.options.bound.left, graph)?;
-        let right = self.input.right.ready();
+        graph: &mut Graph<'params, T::ThreadId>,
+    ) -> Result<(), Error> {
+        let left = self
+            .input
+            .left
+            .ready(self.reservation.left, self.options.bound.left, graph)?;
+        let right = self.input.right.ready(graph);
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -249,16 +221,12 @@ where
     T::Left: Send + core::marker::Sync,
     T::Out: Clone + Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let left = self.input.left.ready();
-        let (right, graph) =
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self.input.left.ready(graph);
+        let right =
             self.input
                 .right
-                .ready(self.alloc.right, self.options.bound.right, graph)?;
+                .ready(self.reservation.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         assemble::<T, _, _, _>(
             self.factory,
@@ -266,7 +234,8 @@ where
             self.output,
             self.options.budget,
             graph,
-        )
+        );
+        Ok(())
     }
 }
 
@@ -276,19 +245,16 @@ where
     T: Types<'params>,
     T::Left: Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let left = self.input.left.ready();
-        let (right, graph) =
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self.input.left.ready(graph);
+        let right =
             self.input
                 .right
-                .ready(self.alloc.right, self.options.bound.right, graph)?;
+                .ready(self.reservation.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -305,17 +271,17 @@ where
     fn build(
         self: Box<Self>,
         edge: edge::Sender<T::Out, T::Signal>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let left = self.input.left.ready();
-        let (right, graph) =
+        graph: &mut Graph<'params, T::ThreadId>,
+    ) -> Result<(), Error> {
+        let left = self.input.left.ready(graph);
+        let right =
             self.input
                 .right
-                .ready(self.alloc.right, self.options.bound.right, graph)?;
+                .ready(self.reservation.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -329,19 +295,15 @@ where
     T: Types<'params>,
     T::Out: Clone + Send + core::marker::Sync,
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (left, graph) =
-            self.input
-                .left
-                .ready(self.alloc.left, self.options.bound.left, graph)?;
-        let (right, graph) =
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self
+            .input
+            .left
+            .ready(self.reservation.left, self.options.bound.left, graph)?;
+        let right =
             self.input
                 .right
-                .ready(self.alloc.right, self.options.bound.right, graph)?;
+                .ready(self.reservation.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         assemble::<T, _, _, _>(
             self.factory,
@@ -349,7 +311,8 @@ where
             self.output,
             self.options.budget,
             graph,
-        )
+        );
+        Ok(())
     }
 }
 
@@ -357,22 +320,19 @@ where
 impl<'params, T: Types<'params>> GraphBuilder<'params, T::ThreadId>
     for Node<'params, Async, Async, Deferred, T>
 {
-    fn build(
-        self: Box<Self>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (left, graph) =
-            self.input
-                .left
-                .ready(self.alloc.left, self.options.bound.left, graph)?;
-        let (right, graph) =
+    fn build(self: Box<Self>, graph: &mut Graph<'params, T::ThreadId>) -> Result<(), Error> {
+        let left = self
+            .input
+            .left
+            .ready(self.reservation.left, self.options.bound.left, graph)?;
+        let right =
             self.input
                 .right
-                .ready(self.alloc.right, self.options.bound.right, graph)?;
+                .ready(self.reservation.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(self.output);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }
 
@@ -385,19 +345,19 @@ impl<'params, T: Types<'params>> AsyncParent<'params> for Node<'params, Async, A
     fn build(
         self: Box<Self>,
         edge: edge::Sender<T::Out, T::Signal>,
-        allocator: ThreadLocalWakerAllocator<T::ThreadId>,
-    ) -> Result<Graph<'params, T::ThreadId>, Error> {
-        let graph = Graph::empty(allocator);
-        let (left, graph) =
-            self.input
-                .left
-                .ready(self.alloc.left, self.options.bound.left, graph)?;
-        let (right, graph) =
+        graph: &mut Graph<'params, T::ThreadId>,
+    ) -> Result<(), Error> {
+        let left = self
+            .input
+            .left
+            .ready(self.reservation.left, self.options.bound.left, graph)?;
+        let right =
             self.input
                 .right
-                .ready(self.alloc.right, self.options.bound.right, graph)?;
+                .ready(self.reservation.right, self.options.bound.right, graph)?;
         let inputs = Inputs { left, right };
         let output = Single::from(edge);
-        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph)
+        assemble::<T, _, _, _>(self.factory, inputs, output, self.options.budget, graph);
+        Ok(())
     }
 }

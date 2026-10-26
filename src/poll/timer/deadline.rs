@@ -1,7 +1,7 @@
 //! Per-thread deadline heap.
 //!
-//! [DeadlineHeap] is a min-heap of `(deadline, slot, generation)`
-//! entries, each backed by a slot in a slot table. [DeadlineHeap::register]
+//! [DeadlineHeap] is a min-heap of `(deadline, cell, generation)`
+//! entries, each backed by a cell in a cell table. [DeadlineHeap::register]
 //! returns a [TimerKey] identifying one timer; many timers per node
 //! coexist. [DeadlineHeap::cancel] releases a timer early.
 //!
@@ -9,21 +9,22 @@
 //! the poll scheduler above — this module knows nothing about wakers,
 //! queues, or threads.
 //!
-//! # Slots and lazy removal
+//! # Cells and lazy removal
 //!
 //! [BinaryHeap] cannot remove arbitrary entries in better than O(n).
-//! Cancel and fire instead vacate the timer's slot (bumping its
+//! Cancel and fire instead vacate the timer's cell (bumping its
 //! generation); the heap entry stays behind and is discarded when it
 //! bubbles to the top and [DeadlineHeap::peek] / [DeadlineHeap::pop] see the mismatch.
-//! The generation is a pure reuse guard: a recycled slot never matches
+//! The generation is a pure reuse guard: a recycled cell never matches
 //! entries (or [TimerKey]s) from its previous life.
 //!
 //! Dead entries linger until their deadline reaches the heap top, so
 //! transient heap size ~ cancel rate × deadline horizon. Accepted:
 //! compaction deferred until long-timeout churn hurts in practice.
 
-use crate::poll::marker::NodeId;
-use crate::poll::timer::{Generation, SlotId, TimerKey};
+use super::TimerKey;
+use super::key::{CellId, Generation};
+use crate::poll::graph::NodeId;
 
 use alloc::collections::BinaryHeap;
 use alloc::vec::Vec;
@@ -36,8 +37,8 @@ use std::time::Instant;
 #[derive(Clone, Copy)]
 struct DeadlineEntry {
     deadline: Instant,
-    slot: SlotId,
-    /// Snapshot of the slot's generation at register time. Compared
+    cell: CellId,
+    /// Snapshot of the cell's generation at register time. Compared
     /// against the live value on peek/pop to detect dead entries.
     generation: Generation,
 }
@@ -45,11 +46,11 @@ struct DeadlineEntry {
 impl Ord for DeadlineEntry {
     /// O(1): up to three compares.
     fn cmp(&self, other: &Self) -> Ordering {
-        // Tie-break by slot then generation purely for determinism;
+        // Tie-break by cell then generation purely for determinism;
         // neither field carries semantic meaning at the same deadline.
         self.deadline
             .cmp(&other.deadline)
-            .then_with(|| self.slot.cmp(&other.slot))
+            .then_with(|| self.cell.cmp(&other.cell))
             .then_with(|| self.generation.cmp(&other.generation))
     }
 }
@@ -70,37 +71,37 @@ impl PartialEq for DeadlineEntry {
     }
 }
 
-/// One timer slot. `node_id: None` = vacant.
-struct Slot {
+/// One timer cell. `node_id: None` = vacant.
+struct Cell {
     /// Bumped on every vacate — a stale key or heap entry addressing
-    /// this slot after reuse fails the generation match instead of
+    /// this cell after reuse fails the generation match instead of
     /// cancelling/firing the new occupant.
     generation: Generation,
     // If this node is occupied. Can be vacant post a deadline and
-    // before a new deadline is allocated in this slot.
+    // before a new deadline is allocated in this cell.
     node_id: Option<NodeId>,
 }
 
 /// Per-thread min-heap of pending deadlines. See module docs.
 /// Costs: h heap entries, dead ones included.
-pub struct DeadlineHeap {
+pub(crate) struct DeadlineHeap {
     heap: BinaryHeap<Reverse<DeadlineEntry>>,
     /// Grows to the peak count of concurrently awaiting timers and
-    /// stays there — vacated slots are recycled, never freed. Design
-    /// choice: the high-water mark is small (~24 bytes/slot) and
+    /// stays there — vacated cells are recycled, never freed. Design
+    /// choice: the high-water mark is small (~24 bytes/cell) and
     /// bounded by tasks, not churn, so shrinking isn't worth the code.
-    slots: Vec<Slot>,
-    /// Vacant slot indices, reused before growing `slots`. Same
-    /// high-water bound as `slots`.
-    free: Vec<SlotId>,
+    cells: Vec<Cell>,
+    /// Vacant cell indices, reused before growing `cells`. Same
+    /// high-water bound as `cells`.
+    free: Vec<CellId>,
 }
 
 impl DeadlineHeap {
     /// O(1): no allocation.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             heap: BinaryHeap::new(),
-            slots: Vec::new(),
+            cells: Vec::new(),
             free: Vec::new(),
         }
     }
@@ -109,36 +110,36 @@ impl DeadlineHeap {
     /// of any other timer — including others for the same node. The
     /// returned key cancels it; dropping the key just means the timer
     /// fires and is reclaimed then.
-    /// O(log h) worst case, O(1) for a deadline later than those queued: a recycled slot or a
+    /// O(log h) worst case, O(1) for a deadline later than those queued: a recycled cell or a
     /// push, and a heap push sifting past the later deadlines; no RMW.
-    pub fn register(&mut self, node_id: NodeId, deadline: Instant) -> TimerKey {
-        // Recycle before growing: `slots` stays bounded by peak
+    pub(crate) fn register(&mut self, node_id: NodeId, deadline: Instant) -> TimerKey {
+        // Recycle before growing: `cells` stays bounded by peak
         // concurrent timers, not by churn.
-        let slot = match self.free.pop() {
-            Some(slot) => {
-                self.slots[slot.index()].node_id = Some(node_id);
-                slot
+        let cell = match self.free.pop() {
+            Some(cell) => {
+                self.cells[cell.index()].node_id = Some(node_id);
+                cell
             }
             None => {
                 // len before push == index after push.
-                let slot = SlotId(self.slots.len());
-                self.slots.push(Slot {
+                let cell = CellId(self.cells.len());
+                self.cells.push(Cell {
                     generation: Generation::first(),
                     node_id: Some(node_id),
                 });
-                slot
+                cell
             }
         };
         // Snapshot the occupancy's generation into both the heap entry
         // and the key — they address this timer only, never a later
-        // occupant of the same slot.
-        let generation = self.slots[slot.index()].generation;
+        // occupant of the same cell.
+        let generation = self.cells[cell.index()].generation;
         self.heap.push(Reverse(DeadlineEntry {
             deadline,
-            slot,
+            cell,
             generation,
         }));
-        TimerKey { slot, generation }
+        TimerKey { cell, generation }
     }
 
     /// Release a timer before it fires. No-op if the key is dead
@@ -147,10 +148,10 @@ impl DeadlineHeap {
     /// a key names exactly one timer, whichever waker carries it.
     /// O(1): a [Self::take_live]; [Self::peek] or [Self::pop] discards the entry later, in
     /// O(log h).
-    pub fn cancel(&mut self, key: TimerKey) {
+    pub(crate) fn cancel(&mut self, key: TimerKey) {
         // Result dropped: a dead key (fired, cancelled, recycled) is a
         // legal no-op, guarded by the generation match inside.
-        self.take_live(key.slot, key.generation);
+        self.take_live(key.cell, key.generation);
     }
 
     /// Returns the earliest live deadline. Drains dead entries off the
@@ -158,9 +159,9 @@ impl DeadlineHeap {
     /// remain.
     /// O(d log h) for d dead entries on top: O(1) amortized, each discard charged to its cancel.
     /// A live top: a load and a [Self::is_live].
-    pub fn peek(&mut self) -> Option<Instant> {
+    pub(crate) fn peek(&mut self) -> Option<Instant> {
         while let Some(&Reverse(top)) = self.heap.peek() {
-            if self.is_live(top.slot, top.generation) {
+            if self.is_live(top.cell, top.generation) {
                 return Some(top.deadline);
             }
             // Dead — discard. peek just returned Some so pop is also
@@ -171,14 +172,14 @@ impl DeadlineHeap {
     }
 
     /// Pop one live entry whose deadline is `<= now`, vacating its
-    /// slot. `None` once no such entry exists (heap drained, or
+    /// cell. `None` once no such entry exists (heap drained, or
     /// earliest live is in the future). Caller drains by looping
     /// until `None`.
     /// O(log h) for the entry popped, a sift-down of about log h compares, plus dead ones drained
     /// as in [Self::peek]. None due: as [Self::peek], and a compare.
-    pub fn pop(&mut self, now: Instant) -> Option<NodeId> {
+    pub(crate) fn pop(&mut self, now: Instant) -> Option<NodeId> {
         while let Some(&Reverse(top)) = self.heap.peek() {
-            if !self.is_live(top.slot, top.generation) {
+            if !self.is_live(top.cell, top.generation) {
                 // Dead — discard and keep looking.
                 self.heap.pop();
                 continue;
@@ -189,34 +190,34 @@ impl DeadlineHeap {
             // Live and expired — physically pop and fire. peek just
             // returned Some so pop is also Some; `?` avoids unwrap.
             let Reverse(entry) = self.heap.pop()?;
-            return self.take_live(entry.slot, entry.generation);
+            return self.take_live(entry.cell, entry.generation);
         }
         None
     }
 
-    /// True iff `(slot, generation)` addresses an occupied slot of the
+    /// True iff `(cell, generation)` addresses an occupied cell of the
     /// same generation. O(1): a bounds check, two loads and two compares.
-    fn is_live(&self, slot: SlotId, generation: Generation) -> bool {
-        match self.slots.get(slot.index()) {
-            Some(slot) => slot.generation == generation && slot.node_id.is_some(),
+    fn is_live(&self, cell: CellId, generation: Generation) -> bool {
+        match self.cells.get(cell.index()) {
+            Some(cell) => cell.generation == generation && cell.node_id.is_some(),
             None => false,
         }
     }
 
-    /// Release a live slot: bump generation (invalidating lingering
+    /// Release a live cell: bump generation (invalidating lingering
     /// heap entries and [TimerKey]s), mark vacant, recycle. Returns
-    /// the occupant; `None` if `(slot, generation)` was dead.
+    /// the occupant; `None` if `(cell, generation)` was dead.
     /// O(1) amortized: an [Self::is_live], two stores and a free-list push.
-    fn take_live(&mut self, slot_id: SlotId, generation: Generation) -> Option<NodeId> {
-        if !self.is_live(slot_id, generation) {
+    fn take_live(&mut self, cell_id: CellId, generation: Generation) -> Option<NodeId> {
+        if !self.is_live(cell_id, generation) {
             return None;
         }
-        let slot = &mut self.slots[slot_id.index()];
-        let node_id = slot.node_id.take();
+        let cell = &mut self.cells[cell_id.index()];
+        let node_id = cell.node_id.take();
         // Bump at release, not at register: one step kills the spent
-        // key AND its lingering heap entry before the slot recycles.
-        slot.generation = slot.generation.next();
-        self.free.push(slot_id);
+        // key AND its lingering heap entry before the cell recycles.
+        cell.generation = cell.generation.next();
+        self.free.push(cell_id);
         node_id
     }
 }
@@ -363,16 +364,16 @@ mod tests {
         assert_eq!(heap.peek(), None);
     }
 
-    // ---- slot reuse / ABA ----
+    // ---- cell reuse / ABA ----
 
     #[test]
-    fn recycled_slot_ignores_stale_key_and_entry() {
+    fn recycled_cell_ignores_stale_key_and_entry() {
         let mut heap = DeadlineHeap::new();
         let stale = heap.register(0, past(10));
         heap.cancel(stale);
-        // Reuses the slot with a bumped generation.
+        // Reuses the cell with a bumped generation.
         let fresh = heap.register(1, at(50_000));
-        assert_eq!(stale.slot, fresh.slot);
+        assert_eq!(stale.cell, fresh.cell);
         assert_ne!(stale.generation, fresh.generation);
         // Stale key must not kill the new occupant.
         heap.cancel(stale);
@@ -382,12 +383,12 @@ mod tests {
     }
 
     #[test]
-    fn fired_slot_is_reused() {
+    fn fired_cell_is_reused() {
         let mut heap = DeadlineHeap::new();
         let first = heap.register(0, past(10));
         assert_eq!(heap.pop(Instant::now()), Some(0));
         let second = heap.register(1, past(10));
-        assert_eq!(second.slot, first.slot);
+        assert_eq!(second.cell, first.cell);
         assert_eq!(heap.pop(Instant::now()), Some(1));
     }
 

@@ -81,15 +81,10 @@ where
 {
     /// `bound` caps the input and the output queue each; `None` is unbounded.
     pub fn new(wakers: LineWakers, bound: Option<NonZeroUsize>, factory: F) -> Self {
-        // `work` is the waker the routine is polled with: the queues' home. The timer re-polls
-        // the routine at a `*_with_timeout` deadline.
-        let (input, _) = input::channel(
-            wakers.input,
-            wakers.work.clone(),
-            wakers.timer.clone(),
-            bound,
-        );
-        let (sender, output) = output::channel(wakers.output, wakers.work, wakers.timer, bound);
+        // `work` is the context the routine is polled with: the queues' home, whose timer
+        // re-polls the routine at a `*_with_timeout` deadline.
+        let (input, _) = input::channel(wakers.input, wakers.work.clone(), bound);
+        let (sender, output) = output::channel(wakers.output, wakers.work, bound);
         Self {
             input,
             output,

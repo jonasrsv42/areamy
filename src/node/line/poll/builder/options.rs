@@ -64,9 +64,9 @@ impl<'thread, 'params, ThreadIdType: ThreadId> LineBuilder<'thread, 'params, Thr
     >
     where
         PollLine<InType, OutType, SignalType, ThreadIdType, FactoryType>:
-            Types<'params, Factory = FactoryType>,
+            Types<'params, Factory = FactoryType, ThreadId = ThreadIdType>,
     {
-        Node::with_options(factory, self.thread.waker_allocator(), self.options)
+        Node::with_options(factory, self.thread.reservations(), self.options)
     }
 }
 

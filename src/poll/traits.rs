@@ -1,13 +1,12 @@
 //! Async poll graph traits.
 //!
-//! [AsyncParent] is a parent node config that can receive an output edge
-//! and be constructed with an allocator. Used by child nodes to link and
-//! construct their parents during [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
+//! [AsyncParent] is a parent node config that receives an output edge and adds its nodes to the
+//! graph. Child nodes build their parents during
+//! [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
 
 use crate::error::Error;
 use crate::poll::edge::Sender;
 use crate::poll::graph::Graph;
-use crate::poll::wakers::ThreadLocalWakerAllocator;
 use crate::signal::Origin;
 use crate::thread::ThreadId;
 
@@ -25,9 +24,9 @@ pub struct OwnedPoll;
 ///
 /// Mirrors [`Pollable`](crate::poll::Pollable)'s `type ThreadId` style.
 ///
-/// Receives an output edge and the allocator, produces a [Graph],
-/// and returns the allocator inside it. The child creates the edge and calls
-/// [AsyncParent::build] during its own [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
+/// Receives an output edge and adds its nodes to the [Graph]. The child creates the edge and
+/// calls [AsyncParent::build] during its own
+/// [GraphBuilder::build](crate::poll::graph::GraphBuilder::build).
 #[diagnostic::on_unimplemented(
     message = "`{Self}` can't be owned by a poll node",
     note = "a work node can't be owned by a poll node: bridge with a Sync input (`.input()` + `pushes`)",
@@ -41,8 +40,8 @@ pub trait AsyncParent<'params>: Send + 'params {
     fn build(
         self: Box<Self>,
         edge: Sender<Self::OutType, Self::SignalType>,
-        allocator: ThreadLocalWakerAllocator<Self::ThreadIdType>,
-    ) -> Result<Graph<'params, Self::ThreadIdType>, Error>;
+        graph: &mut Graph<'params, Self::ThreadIdType>,
+    ) -> Result<(), Error>;
 }
 
 /// A boxed parent: picks a stage at runtime (`Some(mic)` or not), one box at build time.
@@ -67,8 +66,8 @@ where
     fn build(
         self: Box<Self>,
         edge: Sender<OutType, SignalType>,
-        allocator: ThreadLocalWakerAllocator<ThreadIdType>,
-    ) -> Result<Graph<'params, ThreadIdType>, Error> {
-        (*self).build(edge, allocator)
+        graph: &mut Graph<'params, ThreadIdType>,
+    ) -> Result<(), Error> {
+        (*self).build(edge, graph)
     }
 }

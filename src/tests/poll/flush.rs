@@ -34,7 +34,7 @@ struct HalfCloseRoutine {
 
 impl HalfCloseRoutine {
     fn new(wakers: LineWakers, flush_cycles: usize, flush_count: Arc<Mutex<usize>>) -> Self {
-        let (input, receiver) = input::channel(wakers.input, wakers.work, wakers.timer, None);
+        let (input, receiver) = input::channel(wakers.input, wakers.work, None);
         Self {
             input,
             receiver,

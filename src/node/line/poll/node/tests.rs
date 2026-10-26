@@ -788,6 +788,21 @@ fn flush_wakes_input_for_remaining_data() {
     );
 }
 
+/// A routine that outputs in `try_send` costs two polls per message, Input then Output: the node
+/// never wakes Work for data.
+#[test]
+fn data_never_wakes_work() {
+    let mut line = Line::new(mock());
+    let mut cx = noop_context();
+    for value in 1..=3 {
+        line.upstream.push_back(Message::Data(value)).unwrap();
+    }
+    let _ = line.input.poll(&mut cx).unwrap();
+    let _ = line.output.poll(&mut cx).unwrap();
+    assert_eq!(line.received(), [2, 6, 12].map(Message::Data));
+    assert!(!line.work_woken.get());
+}
+
 /// Drive skips the routine while a signal waits for Output, swallowing a routine wake that lands
 /// then: the return to Running must wake Work to replay it.
 #[test]
